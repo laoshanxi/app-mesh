@@ -398,8 +398,14 @@ std::shared_ptr<HttpResponse> RestClient::request(const std::string &host, const
 		future.get();
 		if (state->response->statusCode == 0)
 			LOG_ERR << fname << "request to <" << host << "> failed: " << state->response->text;
-		// trantor objects must be released on their event loop thread.
-		loop->runInLoop([state]() mutable { state->client.reset(); });
+		// trantor objects must be released on their event loop thread. The connection's
+		// callbacks capture state, so conn must go too or the cycle keeps the socket open.
+		loop->runInLoop(
+			[state]() mutable
+			{
+				state->conn.reset();
+				state->client.reset();
+			});
 		return state->response;
 	}
 
@@ -409,6 +415,11 @@ std::shared_ptr<HttpResponse> RestClient::request(const std::string &host, const
 	auto timeoutResponse = std::make_shared<HttpResponse>();
 	timeoutResponse->statusCode = 0;
 	timeoutResponse->text = "request timeout";
-	loop->runInLoop([state = std::move(state)]() mutable { state->client.reset(); });
+	loop->runInLoop(
+		[state = std::move(state)]() mutable
+		{
+			state->conn.reset();
+			state->client.reset();
+		});
 	return timeoutResponse;
 }

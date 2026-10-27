@@ -192,9 +192,14 @@ changes only the target node. Apply this rule:
   administrative entry point.
 - Distribute the change in one of two ways: apply the same API calls on
   every node, or copy the owner's runtime
-  `work/config/authorization.yaml` to the followers. A copied file needs
-  no restart: a follower adopts an entry from disk when it first resolves
-  that principal, and a later save keeps the entry. Keep the file mode at
+  `work/config/authorization.yaml` to the followers. Copy the file before
+  the follower first serves an authenticated request. The first resolve of
+  an unknown principal auto-provisions a role-less record and saves it.
+  That in-memory record then shadows a later copy until the follower
+  restarts or an administrator re-applies the binding through the
+  principal API. A copy that lands first needs no
+  restart: the follower adopts the entry from disk when it first resolves
+  the principal, and a later save keeps the entry. Keep the file mode at
   0600. Keep the runtime user as owner.
   A follower bootstrap creates no `work/config` directory; create it
   first (`mkdir -p <home>/work/config`) before the first copy.
@@ -217,13 +222,17 @@ daemon keeps the defaults:
 | Port (container → host) | Service | Used by |
 | --- | --- | --- |
 | 6060 → 16060 | Go agent REST front | REST clients and SDKs; it applies its own `X-Target-Host` forwarding |
+| 6058 → 16058 | engine WSS/HTTPS listener | the CLI (`appm` speaks WSS) and SDK WSS clients, including event subscriptions |
+| 6059 → 16059 | engine TCP API | SDK TCP transport: event subscriptions and task workers |
 | 6062 → 127.0.0.1:16062 | Dex authentication listener | followers in-network; host loopback only, for password and device flows |
 | 443 → 443 | web UI | browsers; the UI shares the master network namespace |
 
-The engine WSS listener (6058) stays unpublished. The CLI speaks the WSS
-transport; run host-side CLI work inside the network with `docker exec`
-(see below). The `appmesh_mcp` service publishes its own Streamable HTTP
-endpoint at `127.0.0.1:16071` for host AI clients.
+The engine listeners 6058 and 6059 are TLS and bearer-authenticated, the
+same posture as the REST front. Host clients trust the master CA once
+(`docker cp appmesh_master:/opt/appmesh/ssl/ca.pem ./master-ca.pem`). Only
+the first sign-in runs inside the container (see below). The `appmesh_mcp`
+service publishes its own Streamable HTTP endpoint at `127.0.0.1:16071` for
+host AI clients.
 
 Environment variables:
 
@@ -284,9 +293,24 @@ docker exec appmesh_master sh -c 'printf "%s\n" "$(grep "^password=" /opt/appmes
   protected compose network.
 - The server certificate of the master covers `127.0.0.1`, the container
   address, `appmesh_master`, and `localhost`.
+- After the enrollment, host-side CLI work uses the published WSS port. The
+  issuer hostname does not resolve on the host, so point the CLI at the
+  published Dex route:
+
+  ```shell
+  docker cp appmesh_master:/opt/appmesh/ssl/ca.pem ./master-ca.pem
+  appm -H wss://127.0.0.1:16058 --ca-cert ./master-ca.pem logon \
+      --auth-access-url http://127.0.0.1:16062/auth --auth-allow-http
+  appm view
+  ```
+
+  The CA is remembered with the endpoint at logon; later commands need
+  neither `-H` nor `--ca-cert`.
 - Then copy the owner's `work/config/authorization.yaml` to every
-  follower. A copied file needs no restart: a follower adopts an entry
-  from disk when it first resolves that principal. See "Authorization
+  follower before the follower first serves an authenticated request. A
+  copy that lands first needs no restart: a follower adopts an entry from
+  disk when it first resolves that principal. A follower that already
+  served a request needs a restart after the copy. See "Authorization
   data consistency" above. A fresh follower has no `work/config`
   directory. Create the directory before the first copy.
 

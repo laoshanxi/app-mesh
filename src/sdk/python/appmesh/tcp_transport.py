@@ -134,18 +134,19 @@ class TCPTransport:
 
     def close(self) -> None:
         """Close socket"""
-        if self._socket:
+        # Detach first: the reader thread woken by shutdown() may close() concurrently.
+        sock, self._socket = self._socket, None
+        if sock is None:
+            return
+        try:
+            # close() alone does not wake a thread blocked in recv on Linux.
             try:
-                # close() alone does not wake a thread blocked in recv on Linux.
-                try:
-                    self._socket.shutdown(socket.SHUT_RDWR)
-                except OSError:
-                    pass
-                self._socket.close()
-            except Exception as e:
-                logger.warning("Error closing socket: %s", e)
-            finally:
-                self._socket = None
+                sock.shutdown(socket.SHUT_RDWR)
+            except OSError:
+                pass
+            sock.close()
+        except Exception as e:
+            logger.warning("Error closing socket: %s", e)
 
     @property
     def is_connected(self) -> bool:

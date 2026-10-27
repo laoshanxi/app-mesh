@@ -1,4 +1,5 @@
 // src/daemon/rest/HttpRequest.cpp
+#include <algorithm>
 #include <cstdio>
 #include <cstring>
 #include <map>
@@ -50,6 +51,7 @@ struct HttpReplyMetricState
 HttpRequest::HttpRequest(Request &&request)
 	: m_uuid(std::move(request.uuid)), m_method(std::move(request.http_method)),
 	  m_relative_uri(std::move(request.request_uri)), m_remote_address(std::move(request.client_addr)),
+	  m_connection_id(std::move(request.connection_id)),
 	  m_body(std::make_shared<std::vector<std::uint8_t>>(
 		  std::move(request.body))), // When HttpRequest is copied, m_body only copies the shared_ptr
 	  m_query(std::move(request.query)), m_headers(std::move(request.headers)), m_lwsRef{}, m_wsReplyContext(nullptr)
@@ -362,13 +364,83 @@ bool HttpRequestWithTimeout::reply(const std::string &requestUri, const std::str
 ////////////////////////////////////////////////////////////////////////////////
 // HttpRequestOutputView - handles viewing application output with async response
 ////////////////////////////////////////////////////////////////////////////////
+namespace
+{
+	// Output views held on a plain HTTP connection, indexed by that connection so its
+	// close can answer them at once. Multiplexed transports register nothing.
+	class HeldOutputViews
+	{
+	public:
+		static HeldOutputViews &instance()
+		{
+			static HeldOutputViews registry;
+			return registry;
+		}
+
+		void add(const std::string &connectionId, const std::shared_ptr<HttpRequestOutputView> &view)
+		{
+			std::lock_guard lock(m_mutex);
+			m_views[connectionId].emplace_back(view.get(), view);
+		}
+
+		void remove(const std::string &connectionId, const HttpRequestOutputView *view)
+		{
+			std::lock_guard lock(m_mutex);
+			const auto it = m_views.find(connectionId);
+			if (it == m_views.end())
+				return;
+			auto &views = it->second;
+			views.erase(
+				std::remove_if(views.begin(), views.end(), [view](const auto &entry) { return entry.first == view; }),
+				views.end());
+			if (views.empty())
+				m_views.erase(it);
+		}
+
+		std::vector<std::shared_ptr<HttpRequestOutputView>> take(const std::string &connectionId)
+		{
+			std::vector<std::shared_ptr<HttpRequestOutputView>> alive;
+			std::lock_guard lock(m_mutex);
+			const auto it = m_views.find(connectionId);
+			if (it == m_views.end())
+				return alive;
+			for (const auto &entry : it->second)
+				if (auto view = entry.second.lock())
+					alive.push_back(std::move(view));
+			m_views.erase(it);
+			return alive;
+		}
+
+	private:
+		std::mutex m_mutex;
+		std::map<std::string, std::vector<std::pair<const HttpRequestOutputView *, std::weak_ptr<HttpRequestOutputView>>>>
+			m_views;
+	};
+} // namespace
+
 HttpRequestOutputView::HttpRequestOutputView(const std::shared_ptr<HttpRequest> &message,
 											 const std::shared_ptr<Application> &appObj)
 	: HttpRequest(*message), m_timerResponseId(INVALID_TIMER_ID), m_app(appObj)
 {
 }
 
-HttpRequestOutputView::~HttpRequestOutputView() { unsubscribeRunCompletion(); }
+HttpRequestOutputView::~HttpRequestOutputView()
+{
+	if (!m_connection_id.empty())
+		HeldOutputViews::instance().remove(m_connection_id, this);
+	unsubscribeRunCompletion();
+}
+
+void HttpRequestOutputView::onConnectionClosed(const std::string &connectionId)
+{
+	const static char fname[] = "HttpRequestOutputView::onConnectionClosed() ";
+	const auto views = HeldOutputViews::instance().take(connectionId);
+	if (views.empty())
+		return;
+	LOG_DBG << fname << "connection <" << connectionId << "> closed, answering " << views.size() << " held output views";
+	for (const auto &view : views)
+		view->response();
+}
 
 void HttpRequestOutputView::init()
 {
@@ -381,7 +453,9 @@ void HttpRequestOutputView::init()
 		return;
 	}
 
-	size_t timeout = RestHandler::getHttpQueryValue(*this, HTTP_QUERY_KEY_stdout_timeout, 0, 0, 0);
+	// Clamp rather than reject: on multiplexed transports only this timer bounds a held view.
+	const size_t timeout = std::min<size_t>(RestHandler::getHttpQueryValue(*this, HTTP_QUERY_KEY_stdout_timeout, 0, 0, 0),
+											MAX_OUTPUT_VIEW_TIMEOUT_SECONDS);
 	const auto requestedRun = RestHandler::getHttpQueryString(*this, HTTP_QUERY_KEY_process_uuid);
 	if (timeout > 0)
 	{
@@ -407,10 +481,14 @@ void HttpRequestOutputView::init()
 			response();
 			return;
 		}
+		if (!m_connection_id.empty())
+			HeldOutputViews::instance().add(m_connection_id,
+											std::static_pointer_cast<HttpRequestOutputView>(shared_from_this()));
 		if (m_responseStarted.load(std::memory_order_acquire))
 			this->cancelTimer(m_timerResponseId);
 
-		LOG_DBG << fname << "app <" << app->getName() << "> waiting for run <" << requestedRun << "> completion";
+		LOG_DBG << fname << "app <" << app->getName() << "> waiting for run <" << requestedRun
+				<< "> completion on connection <" << m_connection_id << ">";
 	}
 	else
 	{

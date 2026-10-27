@@ -519,11 +519,12 @@ public class AppMeshClient implements Closeable {
     }
 
     /**
-     * Unsubscribe from events by subscription ID.
+     * Unsubscribe from events by subscription ID. Idempotent: the daemon drops a
+     * subscription itself when its app is removed.
      *
      * @param subscriptionId the subscription ID returned by {@link #subscribe}
-     * @return true if unsubscribed successfully
-     * @throws IOException on network failure or a non-2xx server response
+     * @return true if the server removed it, false if it was already gone (HTTP 404)
+     * @throws IOException on network failure or any other non-2xx server response
      */
     public boolean unsubscribe(String subscriptionId) throws IOException {
         return unsubscribe(subscriptionId, null);
@@ -534,14 +535,14 @@ public class AppMeshClient implements Closeable {
         Map<String, String> query = new HashMap<>();
         query.put("subscription_id", subscriptionId);
         HttpURLConnection conn = request("DELETE", "/appmesh/subscribe", null, extraHeaders, query);
-        ensureOk("unsubscribe", conn);
-        // Unregister from the demuxer only after the server confirmed, so a
-        // failed DELETE keeps the callback able to receive events (Python SDK order).
+        // 404: the daemon already dropped the subscription with its app. Any other
+        // failure keeps the callback able to receive events (Python SDK order).
+        boolean existed = ensureOkOrNotFound("unsubscribe", conn);
         MessageDemuxer demuxer = demuxerOrNull();
         if (demuxer != null) {
             demuxer.unregisterEventCallback(subscriptionId);
         }
-        return true;
+        return existed;
     }
 
     // -------- Application Output & Execution --------
@@ -1025,40 +1026,24 @@ public class AppMeshClient implements Closeable {
             headers.put(AUTHORIZATION_HEADER, BEARER_PREFIX + token);
         }
         if (this.forwardTo != null && !this.forwardTo.isEmpty()) {
-            headers.put("X-Target-Host", normalizeForwardHost(this.forwardTo));
+            headers.put("X-Target-Host", this.forwardTo);
         }
         return headers;
-    }
-
-    /** Append the base URL port when the forward host carries none. */
-    private String normalizeForwardHost(String host) {
-        if (host.contains(":")) {
-            return host;
-        }
-        try {
-            URL url = Utils.toUrl(this.baseURL);
-            int port = url.getPort();
-            if (port == -1) {
-                port = "https".equalsIgnoreCase(url.getProtocol()) ? 443 : 80;
-            }
-            return host + ":" + port;
-        } catch (Exception e) {
-            LOGGER.log(Level.SEVERE, "Failed to parse baseURL", e);
-            throw new RuntimeException("Failed to set forward host", e);
-        }
     }
 
     /**
      * Build a per-request {@code X-Target-Host} header map for the given forwarding host,
      * or null when no forwarding is requested. Explicit request headers override
      * {@link #commonHeaders()}, so this wins over the client-wide forward setting.
+     * The host is sent as given: a bare host is resolved to the server's own service
+     * port, since the client-side port may be a host-side mapping absent on the target.
      */
     Map<String, String> forwardHeaders(String forwardingHost) {
         if (forwardingHost == null || forwardingHost.isEmpty()) {
             return null;
         }
         Map<String, String> headers = new HashMap<>();
-        headers.put("X-Target-Host", normalizeForwardHost(forwardingHost));
+        headers.put("X-Target-Host", forwardingHost);
         return headers;
     }
 

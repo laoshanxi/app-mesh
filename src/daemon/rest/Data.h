@@ -65,9 +65,10 @@ public:
 	std::string request_uri;
 	std::string http_method;
 	std::string client_addr;
+	std::string connection_id; // HTTP connection the request arrived on; empty on multiplexed transports and when forwarded
 	std::vector<std::uint8_t> body; // raw binary
 	HttpHeaderMap headers;
 	std::map<std::string, std::string> query;
 
-	MSGPACK_DEFINE_MAP(uuid, request_uri, http_method, client_addr, body, headers, query);
+	MSGPACK_DEFINE_MAP(uuid, request_uri, http_method, client_addr, connection_id, body, headers, query);
 };

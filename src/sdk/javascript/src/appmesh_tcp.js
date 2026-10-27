@@ -926,15 +926,20 @@ class AppMeshClientTCP extends AppMeshClient {
   }
 
   /**
-   * Unsubscribe from app events.
+   * Unsubscribe from app events. Idempotent: the daemon drops a subscription
+   * itself when its app is removed, so an unknown id (HTTP 404) is not an error.
    *
    * @param {string} subscriptionId - The subscription ID to remove.
    * @returns {Promise<void>}
    */
   async unsubscribe (subscriptionId) {
-    await this._request('delete', '/appmesh/subscribe', null, {
-      params: { subscription_id: subscriptionId }
-    })
+    try {
+      await this._request('delete', '/appmesh/subscribe', null, {
+        params: { subscription_id: subscriptionId }
+      })
+    } catch (error) {
+      if (error.statusCode !== 404) throw error
+    }
 
     if (this._demuxer) {
       this._demuxer.unregisterEventCallback(subscriptionId)

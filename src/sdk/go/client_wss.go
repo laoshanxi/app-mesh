@@ -7,7 +7,6 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
-	"strings"
 )
 
 // AppMeshClientWSS interacts with the server over WSS transport.
@@ -77,13 +76,9 @@ func (c *AppMeshClientWSS) SendMessage(ctx context.Context, buffer []byte) error
 }
 
 // forwardTarget is the X-Target-Host value for the HTTP(S) data side channel,
-// normalized like the WSS control request.
+// the same value as the WSS control request (a bare host is resolved server-side).
 func (c *AppMeshClientWSS) forwardTarget() string {
-	host := c.wssReq.getForwardTo()
-	if host == "" || strings.Contains(host, ":") {
-		return host
-	}
-	return host + ":" + c.wssReq.baseURL.Port()
+	return c.wssReq.getForwardTo()
 }
 
 // DownloadFileContext downloads a file through the WSS control channel plus HTTP(S) streaming data path.

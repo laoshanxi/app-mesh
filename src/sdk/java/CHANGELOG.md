@@ -1,5 +1,15 @@
 # Changelog
 
+## 3.0.10
+
+- `forwardTo`: a bare host is sent as given instead of appending the client's own
+  port. The server resolves its service port; the client port may be a host-side
+  mapping (e.g. `16060`) that does not exist on the target node (same fix as Go,
+  Python 3.0.15, JavaScript 3.1.10 and Rust 3.0.13).
+- `unsubscribe` is idempotent: HTTP 404 (the daemon already dropped the
+  subscription with its app) returns `false` instead of throwing, and the local
+  callback is unregistered either way.
+
 ## 3.0.9
 
 - WSS `uploadFile`/`downloadFile`: the HTTPS data side channel carries the same

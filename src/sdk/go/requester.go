@@ -262,20 +262,14 @@ func (h *HTTPRequester) doContext(ctx context.Context, method string, apiPath st
 
 	// Set forwarding header. A caller-supplied X-Target-Host header overrides the
 	// client-wide forward target for this request only ("" disables forwarding).
+	// Sent as given: a bare host is resolved to the server's own service port; the
+	// client-side port may be a host-side mapping that does not exist on the target.
 	forwardingHost, forwardOverridden := headers[headerTargetHost]
 	if !forwardOverridden {
 		forwardingHost = h.forwardingHost.Load()
 	}
 	if forwardingHost != "" {
-		targetHost := forwardingHost
-		if !strings.Contains(forwardingHost, ":") {
-			port := u.Port()
-			if port == "" {
-				port = map[string]string{"https": "443", "http": "80"}[u.Scheme]
-			}
-			targetHost = forwardingHost + ":" + port
-		}
-		req.Header.Set(headerTargetHost, targetHost)
+		req.Header.Set(headerTargetHost, forwardingHost)
 	}
 
 	// Set default headers
@@ -429,17 +423,14 @@ func (t *TCPRequester) sendWithRetry(ctx context.Context, method string, u url.U
 		}
 
 		// A caller-supplied X-Target-Host header overrides the client-wide forward
-		// target for this request only ("" disables forwarding).
+		// target for this request only ("" disables forwarding). Sent as given: a bare
+		// host is resolved to the server's own service port.
 		forwardingHost, forwardOverridden := headers[headerTargetHost]
 		if !forwardOverridden {
 			forwardingHost = t.forwardingHost.Load()
 		}
 		if forwardingHost != "" {
-			if strings.Contains(forwardingHost, ":") {
-				req.Header.Set(headerTargetHost, forwardingHost)
-			} else {
-				req.Header.Set(headerTargetHost, forwardingHost+":"+u.Port())
-			}
+			req.Header.Set(headerTargetHost, forwardingHost)
 		}
 		req.Header.Set(userAgentHeaderName, userAgentTCP)
 		for k, v := range headers {
@@ -713,17 +704,14 @@ func (w *WSSRequester) sendWithRetry(ctx context.Context, method string, u url.U
 		token := w.getAccessToken()
 
 		// A caller-supplied X-Target-Host header overrides the client-wide forward
-		// target for this request only ("" disables forwarding).
+		// target for this request only ("" disables forwarding). Sent as given: a bare
+		// host is resolved to the server's own service port.
 		forwardingHost, forwardOverridden := headers[headerTargetHost]
 		if !forwardOverridden {
 			forwardingHost = w.forwardingHost.Load()
 		}
 		if forwardingHost != "" {
-			if strings.Contains(forwardingHost, ":") {
-				req.Header.Set(headerTargetHost, forwardingHost)
-			} else {
-				req.Header.Set(headerTargetHost, forwardingHost+":"+u.Port())
-			}
+			req.Header.Set(headerTargetHost, forwardingHost)
 			// The target receives a new TCP request and validates the bearer again.
 			// The gateway checks that it resolves to the WSS session principal.
 			if _, hasAuth := headers["Authorization"]; !hasAuth && token != "" {

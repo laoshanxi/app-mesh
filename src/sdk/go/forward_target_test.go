@@ -102,7 +102,7 @@ func TestWSSFileDataChannelCarriesForwardTarget(t *testing.T) {
 	require.NoError(t, os.WriteFile(src, []byte("payload"), 0o600))
 	require.NoError(t, c.UploadFile(src, "/tmp/remote-put.txt", false))
 
-	want := "appmesh_slave1:" + u.Port()
+	want := "appmesh_slave1" // sent as given: the server resolves its own service port
 	mu.Lock()
 	defer mu.Unlock()
 	assert.Equal(t, want, controlTargets[restPathDownload], "download control request")

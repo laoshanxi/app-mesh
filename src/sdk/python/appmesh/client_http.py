@@ -343,7 +343,7 @@ class AppMeshClient:
 
         Examples:
             >>> client.forward_to = "backend-node:6060"  # Use specific port
-            >>> client.forward_to = "backend-node"       # Use current service port
+            >>> client.forward_to = "backend-node"       # Server resolves its own service port
             >>> client.forward_to = None                 # Disable forwarding
         """
         self._forward_to = host
@@ -948,13 +948,9 @@ class AppMeshClient:
         provider = None if caller_manages_auth else self._token_provider
 
         if self.forward_to:
-            target_host = self.forward_to
-            if ":" not in target_host:
-                parsed = parse.urlsplit(self.base_url)
-                default_port = {"http": 80, "https": 443}.get(parsed.scheme)
-                port = parsed.port or default_port
-                target_host = f"{target_host}:{port}"
-            base_headers[self._HTTP_HEADER_KEY_X_TARGET_HOST] = target_host
+            # Sent as given: a bare host is resolved to the server's own service port. The
+            # client-side port may be a host-side mapping that does not exist on the target.
+            base_headers[self._HTTP_HEADER_KEY_X_TARGET_HOST] = self.forward_to
 
         base_headers[self._HTTP_HEADER_KEY_USER_AGENT] = self._HTTP_USER_AGENT
 

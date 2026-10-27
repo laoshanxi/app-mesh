@@ -80,6 +80,7 @@ public:
 	web::http::method m_method;
 	std::string m_relative_uri;
 	std::string m_remote_address;
+	std::string m_connection_id;
 	std::shared_ptr<std::vector<std::uint8_t>> m_body; // Shared pointer to avoid copying large data
 	std::map<std::string, std::string> m_query;
 	HttpHeaderMap m_headers;
@@ -170,6 +171,10 @@ public:
 
 	// Timer callback to respond with application output
 	bool onTimerResponse();
+
+	// Answers every view still held on that HTTP connection: a plain HTTP long-poll pins
+	// its connection, so a client that disconnects must not wait out the timer.
+	static void onConnectionClosed(const std::string &connectionId);
 
 private:
 	void unsubscribeRunCompletion();

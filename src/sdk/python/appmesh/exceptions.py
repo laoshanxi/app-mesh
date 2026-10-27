@@ -28,7 +28,15 @@ class AppMeshTimeoutError(AppMeshConnectionError):
 
 
 class AppMeshRequestError(AppMeshError):
-    """HTTP request failed."""
+    """HTTP request failed.
+
+    ``status_code`` is the HTTP status when the error came from a response, ``None``
+    otherwise.
+    """
+
+    def __init__(self, message: str, status_code=None):
+        super().__init__(message)
+        self.status_code = status_code
 
 
 class AppMeshAppRemovedError(AppMeshError):

@@ -118,22 +118,11 @@ impl HTTPRequester {
         }
 
         // Poisoning is benign here (guarded state stays valid), so recover the guard.
+        // Sent as given: a bare host is resolved to the server's own service port; the
+        // client-side port may be a host-side mapping that does not exist on the target.
         if let Some(forward_to) = self.forward_to.lock().unwrap_or_else(|e| e.into_inner()).as_ref() {
-            let forward_host = if forward_to.contains(':') {
-                forward_to.clone()
-            } else {
-                format!("{}:{}", forward_to, Self::parse_url_port(&self.url))
-            };
-            headers.insert(HTTP_HEADER_KEY_FORWARDING_HOST.to_string(), forward_host);
+            headers.insert(HTTP_HEADER_KEY_FORWARDING_HOST.to_string(), forward_to.clone());
         }
-    }
-
-    fn parse_url_port(url: &str) -> String {
-        url.parse::<url::Url>()
-            .ok()
-            .and_then(|parsed| parsed.port_or_known_default())
-            .map(|port| port.to_string())
-            .unwrap_or_else(|| "6060".to_string())
     }
 
     /// Execute a request and return the raw `reqwest::Response` without buffering the body.
@@ -946,7 +935,8 @@ impl AppMeshClient {
         Ok(result)
     }
 
-    /// Unsubscribe from events by subscription ID.
+    /// Unsubscribe from events by subscription ID. Returns `false` when the daemon had
+    /// already dropped it (its app was removed): unsubscribe is idempotent.
     ///
     /// Also unregisters the event callback from the demuxer (if active) — only
     /// after the server confirmed, so a failed DELETE keeps the callback able
@@ -955,13 +945,13 @@ impl AppMeshClient {
         let mut query = HashMap::new();
         query.insert("subscription_id".to_string(), subscription_id.to_string());
         let resp = self.send(Method::DELETE, "/appmesh/subscribe", None, None, Some(query), false).await?;
-        let unsubscribed = resp.status() == StatusCode::OK;
-        if unsubscribed {
+        let status = resp.status();
+        if status == StatusCode::OK || status == StatusCode::NOT_FOUND {
             if let Some(demuxer) = self.req.get_demuxer() {
                 demuxer.unregister_event_callback(subscription_id);
             }
         }
-        Ok(unsubscribed)
+        Ok(status == StatusCode::OK)
     }
 
     /// Deletes an application; returns `false` when it did not exist.

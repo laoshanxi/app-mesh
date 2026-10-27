@@ -26,6 +26,7 @@
 #include "../../security/Security.h"
 #include "../Data.h"
 #include "../EventDispatcher.h"
+#include "../HttpRequest.h"
 #include "../Worker.h"
 #include "FileTransferHandler.h" // FileUploadInfo: temp file + atomic rename
 #include "FrameCodec.h"          // tcpframe::enableKeepAlive
@@ -145,6 +146,12 @@ namespace
 			LOG_ERR << fname << "serialize/queue exception: " << e.what();
 			state->replyCtx->replyHTTP("500 Internal Server Error", "Internal Server Error", {}, "text/plain");
 		}
+	}
+
+	// One identity for a plain HTTP connection, shared by the requests it carries and its close callback.
+	std::string connectionId(const trantor::InetAddress &local, const trantor::InetAddress &peer)
+	{
+		return local.toIpPort() + "->" + peer.toIpPort();
 	}
 }
 
@@ -295,12 +302,17 @@ void DrogonAdaptor::setupRoutes()
 	app.setThreadNum(static_cast<size_t>(m_ioThreads));
 	app.setIdleConnectionTimeout(WS_IDLE_TIMEOUT_SECONDS);
 	// A closed connection stays allocated until its idle-timeout wheel entry
-	// expires; keepAlive() drops the entry's weak reference and frees it now.
+	// expires; keepAlive() drops the entry's weak reference and frees it now. The
+	// close also answers output long-polls held on that connection. drogon (1.9.13)
+	// installs this callback on Linux only; elsewhere the long-poll clamp is the bound.
 	app.setConnectionCallback(
 		[](const trantor::TcpConnectionPtr &conn)
 		{
 			if (!conn->connected())
+			{
+				HttpRequestOutputView::onConnectionClosed(connectionId(conn->localAddr(), conn->peerAddr()));
 				conn->keepAlive();
+			}
 		});
 	app.setMaxConnectionNum(MAX_WS_CONNECTIONS + 4096); // WS cap + HTTP headroom
 	// drogon's 128KB default would drop WSS sessions carrying larger requests.
@@ -541,6 +553,7 @@ void DrogonAdaptor::handleWorkerRequest(const drogon::HttpRequestPtr &req, drogo
 	}
 
 	requestState->client_addr = req->peerAddr().toIp();
+	requestState->connection_id = connectionId(req->localAddr(), req->peerAddr());
 
 	if (stream)
 	{

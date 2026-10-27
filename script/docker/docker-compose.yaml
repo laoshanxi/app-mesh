@@ -9,17 +9,21 @@
 # In-network usage (the issuer hostname resolves only inside the network):
 #   appm -H wss://appmesh_master:6058 -F appmesh_slave1 logon --auth-allow-http
 #   appm -H wss://appmesh_master:6058 -F appmesh_slave1 view
-# The CLI speaks WSS on 6058, not the REST port 6060 (the Go agent). The WSS
-# listener stays unpublished: run host-side CLI work inside the network with
-# docker exec (see "First sign-in in the compose cluster" in
-# docs/source/cluster/ClusterAuthDesign.md). The master's TLS material lives in
-# the appmesh_tls volume: the CA survives container re-creation, and the MCP
-# service mounts it read-only to verify the engine.
-# Host ports are remapped (+10000) so a local daemon can keep 6060/6062:
+# The CLI speaks WSS on 6058, not the REST port 6060 (the Go agent). The master's
+# TLS material lives in the appmesh_tls volume: the CA survives container
+# re-creation, and the MCP service mounts it read-only to verify the engine.
+# Host ports are remapped (+10000) so a local daemon can keep 6058/6059/6060/6062:
+#   trust the CA once: docker cp appmesh_master:/opt/appmesh/ssl/ca.pem ./master-ca.pem
 #   REST/SDK clients: https://127.0.0.1:16060
-#     (trust the CA: docker cp appmesh_master:/opt/appmesh/ssl/ca.pem ./master-ca.pem)
+#   SDK TCP transport (events, workers): 127.0.0.1:16059
+#   CLI and SDK WSS transport: wss://127.0.0.1:16058, e.g.
+#     appm -H wss://127.0.0.1:16058 --ca-cert ./master-ca.pem logon \
+#       --auth-access-url http://127.0.0.1:16062/auth --auth-allow-http
 #   host password/device flows: http://127.0.0.1:16062/auth
 #   host MCP clients: http://127.0.0.1:16071/mcp with a password-flow token
+# Only the first sign-in (administrator enrollment) must run inside the master
+# container: enrollment accepts a loopback client only (see "First sign-in in
+# the compose cluster" in docs/source/cluster/ClusterAuthDesign.md).
 name: appmesh_cluster
 services:
   appmesh_master:
@@ -59,6 +63,8 @@ services:
       # Host ports remapped (+10000) so a local daemon keeps the defaults.
       - "443:443" # for appmesh_ui
       - "16060:6060" # Go agent REST API for host REST clients and SDKs
+      - "16058:6058" # engine WSS/HTTPS listener: CLI (appm speaks WSS) and SDK WSS clients
+      - "16059:6059" # engine TCP API: SDK TCP transport, event subscriptions, workers
       # Issuer route for host-side password/device flows only. The port is
       # plaintext and binds to host loopback. Remove it if unneeded.
       - "127.0.0.1:16062:6062"

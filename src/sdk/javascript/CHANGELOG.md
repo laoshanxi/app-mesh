@@ -1,5 +1,14 @@
 # Changelog
 
+## 3.1.10
+
+- `forwardingHost`: a bare host is sent as given instead of appending the client's
+  own port. The server resolves its service port; the client port may be a host-side
+  mapping (e.g. `16060`) that does not exist on the target node (same fix as Go,
+  Python 3.0.15, Java 3.0.10 and Rust 3.0.13).
+- TCP client `unsubscribe` is idempotent: HTTP 404 (the daemon already dropped the
+  subscription with its app) no longer throws; the local callback is unregistered.
+
 ## 3.1.9
 
 File-attribute hardening on both transports:

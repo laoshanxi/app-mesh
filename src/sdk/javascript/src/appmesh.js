@@ -1135,16 +1135,10 @@ class AppMeshClient {
       headers[CONSTANTS.HTTP_HEADER_KEY_AUTH] = `Bearer ${token}`;
     }
 
-    // Add forwarding host if specified
+    // Forwarding host, sent as given: a bare host is resolved to the server's own
+    // service port; the client-side port may be a host-side mapping absent on the target.
     if (this.forwardingHost) {
-      if (this.forwardingHost.includes(":")) {
-        headers[CONSTANTS.HTTP_HEADER_KEY_X_TARGET_HOST] = this.forwardingHost;
-      } else {
-        const parsedUrl = new URL(this.baseURL);
-        const defaultPort = parsedUrl.protocol === 'https:' ? '443' : '80';
-        const port = parsedUrl.port || defaultPort;
-        headers[CONSTANTS.HTTP_HEADER_KEY_X_TARGET_HOST] = `${this.forwardingHost}:${port}`;
-      }
+      headers[CONSTANTS.HTTP_HEADER_KEY_X_TARGET_HOST] = this.forwardingHost;
     }
     return headers;
   }

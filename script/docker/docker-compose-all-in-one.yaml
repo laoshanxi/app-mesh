@@ -19,6 +19,9 @@ services:
       - no-new-privileges:true
     ports:
       - "443:443" # for appmesh_ui
+      - "6060:6060" # Go agent REST API for host REST clients and SDKs
+      - "6058:6058" # engine WSS/HTTPS listener: CLI (appm speaks WSS) and SDK WSS clients
+      - "6059:6059" # engine TCP API: SDK TCP transport, event subscriptions, workers
       - "6061:6061" # Prometheus exporter, unauthenticated: restrict this port
     networks:
       - frontend

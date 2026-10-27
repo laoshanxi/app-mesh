@@ -289,6 +289,7 @@ public:
 #define DEFAULT_RUN_APP_LIFECYCLE_SECONDS int((60 * 60 * 24) * 2.5) // run app max lifecycle 2.5 days
 #define MAX_RUN_APP_TIMEOUT_SECONDS int((60 * 60 * 24) * 3)         // run app max timeout 3 days
 #define DEFAULT_RUN_TASK_TIMEOUT_SECONDS int(300)                   // run_task (sync message) default 5 min
+#define MAX_OUTPUT_VIEW_TIMEOUT_SECONDS int(300) // output long-poll max wait; a dropped client is held this long
 #define CONSUL_SESSION_DEFAULT_TTL 30
 #define APP_STD_OUT_MAX_FILE_SIZE 1024 * 1024 * 100   // 100M
 #define APP_STD_OUT_VIEW_DEFAULT_SIZE 1024 * 1024 * 3 // 3M
