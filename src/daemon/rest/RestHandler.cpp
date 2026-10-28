@@ -1719,7 +1719,16 @@ void RestHandler::apiAppAdd(const std::shared_ptr<HttpRequest> &message)
 	// from_recover is a server-internal flag; never trust it from REST input.
 	jsonApp.removeMember(JSON_KEY_APP_from_recover);
 
-	auto appName = normalizeAppName(GET_JSON_STR_VALUE(jsonApp, JSON_KEY_APP_name));
+	// The body name is authoritative; a URL/body mismatch is a client bug that
+	// must not silently register a different application than the one addressed.
+	const auto urlName = regexSearch(Utility::decodeURIComponent(message->m_relative_uri), REST_PATH_APP_ADD);
+	const auto bodyName = GET_JSON_STR_VALUE(jsonApp, JSON_KEY_APP_name);
+	if (bodyName.empty())
+		throw std::invalid_argument("application name is required in the request body");
+	if (!urlName.empty() && urlName != bodyName)
+		throw std::invalid_argument("application name in the URL and the request body must match");
+
+	auto appName = normalizeAppName(bodyName);
 	jsonApp[JSON_KEY_APP_name] = appName;
 	LOG_DBG << fname << "Registering application <" << appName << ">";
 	auto config = Configuration::instance();

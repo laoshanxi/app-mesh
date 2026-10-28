@@ -49,6 +49,11 @@ endpoints, requests use an OAuth access token in the
 Applications use `owner_principal_id`; REST input cannot create
 `system: true` applications or choose an arbitrary process user.
 
+`PUT /appmesh/app/{name}` takes the application name from the request body.
+The name in the URI must match it; a mismatch or a missing body name is
+rejected with 400. Time fields such as `start_time` and `end_time` are
+epoch seconds; other formats are rejected.
+
 ## Run and tasks
 
 | Method | URI | Purpose |
