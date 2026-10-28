@@ -269,14 +269,73 @@ void HttpRequest::verifyHMAC() const
 ////////////////////////////////////////////////////////////////////////////////
 // HttpRequestAutoCleanup - automatically removes app from global map on cleanup
 ////////////////////////////////////////////////////////////////////////////////
+// Registry of sync-run requests pinned to a plain HTTP connection, so a client
+// disconnect can stop the on-demand run it waited on (mirrors HeldOutputViews).
+class HeldRunRequests
+{
+public:
+	static HeldRunRequests &instance()
+	{
+		static HeldRunRequests registry;
+		return registry;
+	}
+
+	void add(const std::string &connectionId, const std::shared_ptr<HttpRequestAutoCleanup> &request)
+	{
+		std::lock_guard lock(m_mutex);
+		m_requests[connectionId].emplace_back(request.get(), request);
+	}
+
+	void remove(const std::string &connectionId, const HttpRequestAutoCleanup *request)
+	{
+		std::lock_guard lock(m_mutex);
+		const auto it = m_requests.find(connectionId);
+		if (it == m_requests.end())
+			return;
+		auto &requests = it->second;
+		requests.erase(std::remove_if(requests.begin(), requests.end(),
+									  [request](const auto &entry) { return entry.first == request; }),
+					   requests.end());
+		if (requests.empty())
+			m_requests.erase(it);
+	}
+
+	std::vector<std::shared_ptr<HttpRequestAutoCleanup>> take(const std::string &connectionId)
+	{
+		std::vector<std::shared_ptr<HttpRequestAutoCleanup>> alive;
+		std::lock_guard lock(m_mutex);
+		const auto it = m_requests.find(connectionId);
+		if (it == m_requests.end())
+			return alive;
+		for (const auto &entry : it->second)
+			if (auto request = entry.second.lock())
+				alive.push_back(std::move(request));
+		m_requests.erase(it);
+		return alive;
+	}
+
+private:
+	std::mutex m_mutex;
+	std::map<std::string, std::vector<std::pair<const HttpRequestAutoCleanup *, std::weak_ptr<HttpRequestAutoCleanup>>>>
+		m_requests;
+};
+
 HttpRequestAutoCleanup::HttpRequestAutoCleanup(const std::shared_ptr<HttpRequest> &message,
 											   const std::shared_ptr<Application> &appObj)
 	: HttpRequest(*message), m_app(appObj)
 {
 }
 
+void HttpRequestAutoCleanup::holdForDisconnect(const std::shared_ptr<HttpRequestAutoCleanup> &request)
+{
+	if (request && !request->m_connection_id.empty())
+		HeldRunRequests::instance().add(request->m_connection_id, request);
+}
+
 HttpRequestAutoCleanup::~HttpRequestAutoCleanup()
 {
+	if (!m_connection_id.empty())
+		HeldRunRequests::instance().remove(m_connection_id, this);
 	// Destructors must not throw: shutdown may already have torn down the timer service.
 	try
 	{
@@ -285,6 +344,29 @@ HttpRequestAutoCleanup::~HttpRequestAutoCleanup()
 		{
 			app->scheduleRemoval(0);
 		}
+	}
+	catch (...)
+	{
+	}
+}
+
+void HttpRequestAutoCleanup::onConnectionClosed(const std::string &connectionId)
+{
+	const static char fname[] = "HttpRequestAutoCleanup::onConnectionClosed() ";
+	for (const auto &request : HeldRunRequests::instance().take(connectionId))
+		request->abortDisconnectedRun();
+}
+
+void HttpRequestAutoCleanup::abortDisconnectedRun() const
+{
+	const auto app = m_app.lock();
+	if (!app)
+		return;
+	LOG_WAR << "client disconnected; stopping the on-demand run <" << app->getName()
+			<< "> instead of leaving it running for its full lifecycle";
+	try
+	{
+		app->scheduleRemoval(0);
 	}
 	catch (...)
 	{

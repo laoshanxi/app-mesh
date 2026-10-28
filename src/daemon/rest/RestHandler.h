@@ -102,6 +102,8 @@ protected:
 	void apiRoleUpdate(const std::shared_ptr<HttpRequest> &message);
 	void apiRoleDelete(const std::shared_ptr<HttpRequest> &message);
 
+	void apiAuthReplicationPolicy(const std::shared_ptr<HttpRequest> &message);
+
 	void apiHealth(const std::shared_ptr<HttpRequest> &message);
 	void apiRestMetrics(const std::shared_ptr<HttpRequest> &message);
 

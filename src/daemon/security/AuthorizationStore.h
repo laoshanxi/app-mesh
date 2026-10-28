@@ -67,9 +67,34 @@ public:
 	void deleteRole(const std::string &role);
 	void save() const;
 
+	/// Serialize the policy in the on-disk shape ({"Authorization": {...}}); this
+	/// is the payload the cluster replication endpoint serves to followers.
+	Json::Value replicationSnapshotJson() const;
+	/// Replace the whole policy from a replicated owner snapshot. The snapshot is
+	/// validated before anything is committed: an invalid snapshot throws and
+	/// leaves the current policy untouched. Returns true when the policy changed.
+	bool applyReplicatedPolicy(const Json::Value &root);
+
 	static const std::string &systemPrincipalId();
 
 private:
+	/// A parsed policy snapshot. parsePolicy() throws on invalid input without
+	/// touching member state, so callers can validate before committing.
+	struct PolicyData
+	{
+		std::string provisioningMode;
+		std::string firstAdminRole;
+		std::string firstAdminSubject;
+		bool firstAdminEnrolled = false;
+		std::map<std::string, std::set<std::string>> roles;
+		std::map<std::string, std::shared_ptr<AuthorizationPrincipal>> principals;
+	};
+	static PolicyData parsePolicy(const Json::Value &root);
+	static Json::Value policyToJson(const PolicyData &data);
+	void commitPolicyLocked(const PolicyData &data);
+	/// Single-writer guard: a replica serves the owner's policy read-only.
+	void requireWritablePolicyLocked() const;
+
 	void load(const Json::Value &root);
 	void initializeFirstAdminEnrollment();
 	bool hasFirstAdminLocked() const;
@@ -91,4 +116,10 @@ private:
 	bool m_firstAdminEnrolled;
 	bool m_firstAdminEnrollmentEnabled;
 	bool m_builtinAuthentication;
+	/// Replica mode (APPMESH_AUTH_REPLICATION_FROM set): the store serves the
+	/// owner's replicated policy. It is cached under work/auth/replication/, the
+	/// node-local authorization.yaml stays untouched, and local policy edits are
+	/// rejected so the owner stays the single writer.
+	bool m_replicaMode = false;
+	std::string m_replicaCacheFile;
 };

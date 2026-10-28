@@ -121,7 +121,17 @@ public:
 	explicit HttpRequestAutoCleanup(const std::shared_ptr<HttpRequest> &message, const std::shared_ptr<Application> &appObj);
 	virtual ~HttpRequestAutoCleanup();
 
+	/// Answer sync-runs held on a closed connection: the caller is gone, so its
+	/// on-demand run is stopped and removed instead of living out its lifecycle
+	/// with no one reading the result.
+	static void onConnectionClosed(const std::string &connectionId);
+	/// Pin the request to its connection so onConnectionClosed can find it.
+	/// Call once after construction, while the shared_ptr exists.
+	static void holdForDisconnect(const std::shared_ptr<HttpRequestAutoCleanup> &request);
+
 private:
+	void abortDisconnectedRun() const;
+
 	std::weak_ptr<Application> m_app;
 };
 

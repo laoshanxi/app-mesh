@@ -303,14 +303,17 @@ void DrogonAdaptor::setupRoutes()
 	app.setIdleConnectionTimeout(WS_IDLE_TIMEOUT_SECONDS);
 	// A closed connection stays allocated until its idle-timeout wheel entry
 	// expires; keepAlive() drops the entry's weak reference and frees it now. The
-	// close also answers output long-polls held on that connection. drogon (1.9.13)
-	// installs this callback on Linux only; elsewhere the long-poll clamp is the bound.
+	// close also answers output long-polls and stops sync runs held on that
+	// connection. drogon (1.9.13) installs this callback on Linux only; elsewhere
+	// the long-poll clamp and the run lifecycle are the bounds.
 	app.setConnectionCallback(
 		[](const trantor::TcpConnectionPtr &conn)
 		{
 			if (!conn->connected())
 			{
-				HttpRequestOutputView::onConnectionClosed(connectionId(conn->localAddr(), conn->peerAddr()));
+				const auto id = connectionId(conn->localAddr(), conn->peerAddr());
+				HttpRequestOutputView::onConnectionClosed(id);
+				HttpRequestAutoCleanup::onConnectionClosed(id);
 				conn->keepAlive();
 			}
 		});

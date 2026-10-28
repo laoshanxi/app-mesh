@@ -2,6 +2,7 @@
 
 # --- Define library ---
 set(SRC_LIST
+  AuthReplicator.cpp
   AuthorizationStore.cpp
   HMACVerifier.cpp
   InternalCapability.cpp

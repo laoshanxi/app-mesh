@@ -24,6 +24,8 @@ public:
 	void deletePrincipal(const std::string &principalId) override;
 	void updateRole(const std::string &role, const Json::Value &permissions) override;
 	void deleteRole(const std::string &role) override;
+	Json::Value replicationPolicySnapshot() const override;
+	bool applyReplicatedPolicy(const Json::Value &policy) override;
 
 private:
 	OidcTokenVerifier m_verifier;

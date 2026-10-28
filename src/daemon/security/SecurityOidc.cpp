@@ -68,3 +68,7 @@ void SecurityOidc::updateRole(const std::string &role, const Json::Value &permis
 }
 
 void SecurityOidc::deleteRole(const std::string &role) { m_authorization.deleteRole(role); }
+
+Json::Value SecurityOidc::replicationPolicySnapshot() const { return m_authorization.replicationSnapshotJson(); }
+
+bool SecurityOidc::applyReplicatedPolicy(const Json::Value &policy) { return m_authorization.applyReplicatedPolicy(policy); }

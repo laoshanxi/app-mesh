@@ -30,7 +30,11 @@ ENV APPMESH_REST_RestListenAddress=0.0.0.0
 # certificates are deleted; the entrypoint regenerates them on first boot.
 ENV APPMESH_AUTH_MODE=builtin
 COPY --chmod=0755 --from=build_stage /workspace/app-mesh/script/pack/docker-entrypoint.sh /opt/appmesh/script/
+# CACHE_EPOCH busts the install layer: a stage bind-mount's content is not part
+# of the cache key, so pass a new value when the build stage output changes.
+ARG CACHE_EPOCH=0
 RUN --mount=type=bind,from=build_stage,source=/workspace/app-mesh/build,target=/tmp/build \
+	echo "cache epoch ${CACHE_EPOCH}" && \
 	apt-get update && \
 	apt-get install -y --no-install-recommends tini /tmp/build/appmesh*.deb && \
 	pip3 install --break-system-packages --no-cache-dir appmesh && \
@@ -49,6 +53,10 @@ RUN --mount=type=bind,from=build_stage,source=/workspace/app-mesh/build,target=/
 	useradd -m -r -u "$APPMESH_ID" -g appmesh appmesh && \
 	install -d -m 0700 -o appmesh -g appmesh /opt/appmesh/work && \
 	install -d -m 0700 -o appmesh -g appmesh /opt/appmesh/ssl && \
+	# Shared with followers (read-only volume) for cluster authorization replication.
+	# work/auth is created here so install never manufactures a root-owned intermediate.
+	install -d -m 0700 -o appmesh -g appmesh /opt/appmesh/work/auth && \
+	install -d -m 0755 -o appmesh -g appmesh /opt/appmesh/work/auth/replication && \
 	install -m 0640 -o appmesh -g appmesh /dev/null /opt/appmesh/appmesh.pid && \
 	chown root:appmesh /opt/appmesh/config/authorization.yaml && \
 	chmod 0640 /opt/appmesh/config/authorization.yaml && \

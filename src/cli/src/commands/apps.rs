@@ -279,14 +279,34 @@ fn parse_daily_time(s: &str) -> Result<u64> {
 pub async fn rm(cli: &Cli, args: &RmArgs) -> Result<i32> {
     let client = build_client_with_auth(cli).await?;
 
+    // Fail fast on unknown names before any confirmation prompt: a typo should
+    // error out, not offer to remove something that is not there.
+    let mut known = Vec::new();
+    for name in &args.app {
+        let lookup = client.get_app(name).await;
+        match lookup {
+            Ok(_) => known.push(name.clone()),
+            Err(e) => {
+                if format!("{}", e).contains("404") {
+                    eprintln!("Warning: application '{}' does not exist", name);
+                } else {
+                    return Err(e).context(format!("Failed to look up '{}'", name));
+                }
+            }
+        }
+    }
+    if known.is_empty() {
+        bail!("No matching application to remove");
+    }
+
     if !args.force {
-        let names = args.app.join(", ");
+        let names = known.join(", ");
         if !confirm::confirm(&format!("Remove application(s) '{}'?", names)) {
             return Ok(1);
         }
     }
 
-    for name in &args.app {
+    for name in &known {
         // delete_app maps 404 to Ok(false); surface it instead of exiting 0
         // while nothing was actually removed.
         if !client.delete_app(name).await.context(format!("Failed to remove '{}'", name))? {

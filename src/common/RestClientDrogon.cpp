@@ -285,7 +285,7 @@ std::shared_ptr<HttpResponse> RestClient::request(const std::string &host, const
 					"appmesh-rest");
 
 				client->setConnectionCallback(
-					[state](const trantor::TcpConnectionPtr &conn)
+					[state, loop](const trantor::TcpConnectionPtr &conn)
 					{
 						if (state->finished)
 							return;
@@ -337,7 +337,7 @@ std::shared_ptr<HttpResponse> RestClient::request(const std::string &host, const
 					});
 				client->setConnectionErrorCallback([state]() { state->finish("connection to peer failed"); });
 				client->setMessageCallback(
-					[state](const trantor::TcpConnectionPtr &conn, trantor::MsgBuffer *buf)
+					[state, loop](const trantor::TcpConnectionPtr &conn, trantor::MsgBuffer *buf)
 					{
 						if (!state->finished)
 						{
@@ -345,7 +345,11 @@ std::shared_ptr<HttpResponse> RestClient::request(const std::string &host, const
 							if (tryCompleteResponse(*state))
 							{
 								state->finish(std::string());
-								conn->forceClose();
+								// Defer the close off the data callback: force-closing
+								// an SSL connection from inside its own message
+								// callback races trantor's TLS teardown and logs a
+								// spurious FATAL (ENOTCONN shutdownWrite).
+								loop->queueInLoop([conn]() { conn->forceClose(); });
 							}
 						}
 						buf->retrieveAll();

@@ -140,7 +140,7 @@ pub async fn exec(cli: &Cli, args: &ExecArgs) -> Result<i32> {
     signal::register_cleanup(client.clone(), app_name.clone());
 
     loop {
-        let app = build_exec_app(&app_name, &command, args.session_login, &args.env);
+        let app = build_exec_app(&app_name, &command, args.session_login, &args.env, cli.forward_to.is_some());
 
         let (_app_run, exit_code) = client
             .run_and_wait(&app, timeout, lifecycle, appmesh::print_output_handler(), timeout)
@@ -180,7 +180,10 @@ pub async fn shell(cli: &Cli, args: &ShellArgs) -> Result<i32> {
     // Execute initial command if provided
     if !args.command.is_empty() {
         let initial_cmd = join_command(&args.command);
-        return_code = execute_shell_command(&client, &app_name, &initial_cmd, args, timeout, lifecycle).await.unwrap_or(1);
+        return_code =
+            execute_shell_command(&client, &app_name, &initial_cmd, args, timeout, lifecycle, cli.forward_to.is_some())
+                .await
+                .unwrap_or(1);
     }
 
     loop {
@@ -202,7 +205,10 @@ pub async fn shell(cli: &Cli, args: &ShellArgs) -> Result<i32> {
                     _ => {}
                 }
 
-                return_code = execute_shell_command(&client, &app_name, cmd, args, timeout, lifecycle).await.unwrap_or(1);
+                return_code =
+                    execute_shell_command(&client, &app_name, cmd, args, timeout, lifecycle, cli.forward_to.is_some())
+                        .await
+                        .unwrap_or(1);
             }
             Err(rustyline::error::ReadlineError::Interrupted) => continue,
             Err(rustyline::error::ReadlineError::Eof) => {
@@ -228,8 +234,9 @@ async fn execute_shell_command(
     args: &ShellArgs,
     timeout: i32,
     lifecycle: i32,
+    forwarded: bool,
 ) -> Result<i32> {
-    let app = build_exec_app(app_name, command, args.session_login, &args.env);
+    let app = build_exec_app(app_name, command, args.session_login, &args.env, forwarded);
 
     // On Ctrl+C, delete the app so the in-flight run observes REMOVED and returns
     // cleanly (unsubscribing itself); the shell then drops back to the prompt instead
@@ -253,7 +260,13 @@ async fn execute_shell_command(
     Ok(parse::normalize_exit_code(exit_code))
 }
 
-fn build_exec_app(app_name: &str, command: &str, session_login: bool, extra_env: &[String]) -> Application {
+fn build_exec_app(
+    app_name: &str,
+    command: &str,
+    session_login: bool,
+    extra_env: &[String],
+    forwarded: bool,
+) -> Application {
     let mut builder = Application::builder(app_name)
         .command(command)
         .shell(true)
@@ -264,9 +277,12 @@ fn build_exec_app(app_name: &str, command: &str, session_login: bool, extra_env:
         builder = builder.session_login(true);
     }
 
-    // Forward current working directory
-    if let Ok(cwd) = std::env::current_dir() {
-        builder = builder.working_dir(&cwd.to_string_lossy());
+    // Forward current working directory. A forwarded exec runs on another host
+    // where the local cwd does not exist, so keep the server default instead.
+    if !forwarded {
+        if let Ok(cwd) = std::env::current_dir() {
+            builder = builder.working_dir(&cwd.to_string_lossy());
+        }
     }
 
     // Ambient process variables are never copied to the remote application. Name-

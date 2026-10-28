@@ -235,6 +235,9 @@ constexpr auto REST_PATH_PRINCIPAL_PERMISSIONS = "/appmesh/principal/self/permis
 constexpr auto REST_PATH_SEC_PERM_VIEW_ALL = "/appmesh/permissions";
 constexpr auto REST_PATH_PRINCIPALS = "/appmesh/principals";
 constexpr auto REST_PATH_PRINCIPAL = R"(/appmesh/principal/([^/\*]+))";
+// Cluster authorization replication: the owner serves its policy snapshot to
+// followers authenticated by the shared replication token (no principal).
+constexpr auto REST_PATH_AUTH_REPLICATION_POLICY = "/appmesh/auth/replication/policy";
 
 // 10. resources
 constexpr auto REST_PATH_PROMETHEUS_METRICS = "/appmesh/metrics";
@@ -341,6 +344,8 @@ RestHandler::RestHandler() : m_metrics(std::make_shared<PrometheusRest>())
 				   std::bind(&RestHandler::apiPrincipalDelete, this, std::placeholders::_1));
 	bindRestMethod(web::http::methods::GET, REST_PATH_SEC_ROLE_VIEW_ALL,
 				   std::bind(&RestHandler::apiRolesView, this, std::placeholders::_1));
+	bindRestMethod(web::http::methods::GET, REST_PATH_AUTH_REPLICATION_POLICY,
+				   std::bind(&RestHandler::apiAuthReplicationPolicy, this, std::placeholders::_1));
 	bindRestMethod(web::http::methods::POST, REST_PATH_SEC_ROLE_UPDATE,
 				   std::bind(&RestHandler::apiRoleUpdate, this, std::placeholders::_1));
 	bindRestMethod(web::http::methods::DEL, REST_PATH_SEC_ROLE_DELETE,
@@ -885,7 +890,8 @@ void RestHandler::apiFileDownload(const std::shared_ptr<HttpRequest> &message)
 	std::vector<std::uint8_t> content(fileSize);
 	{
 		std::ifstream input(file, std::ios::binary);
-		if (!input.is_open() || !input.read(reinterpret_cast<char *>(content.data()), static_cast<std::streamsize>(fileSize)))
+		if (!input.is_open() ||
+			!input.read(reinterpret_cast<char *>(content.data()), static_cast<std::streamsize>(fileSize)))
 		{
 			message->reply(web::http::status_codes::InternalError, Utility::text2json("failed to read file"));
 			return;
@@ -1323,6 +1329,46 @@ void RestHandler::apiRolesView(const std::shared_ptr<HttpRequest> &message)
 	message->reply(web::http::status_codes::OK, Security::instance()->rolesJson());
 }
 
+void RestHandler::apiAuthReplicationPolicy(const std::shared_ptr<HttpRequest> &message)
+{
+	const static char fname[] = "RestHandler::apiAuthReplicationPolicy() ";
+	const auto tokenFile = Utility::stdStringTrim(Utility::getenv("APPMESH_AUTH_REPLICATION_TOKEN_FILE"));
+	if (tokenFile.empty())
+	{
+		// Feature off: answer as an unknown route so the endpoint's existence
+		// does not depend on the deployment.
+		LOG_DBG << fname << "replication policy requested but APPMESH_AUTH_REPLICATION_TOKEN_FILE is not configured";
+		throw NotFoundException("Path not found");
+	}
+	std::ifstream tokenStream(tokenFile, std::ios::binary);
+	if (!tokenStream)
+	{
+		LOG_WAR << fname << "replication token file <" << tokenFile << "> is not readable";
+		throw NotFoundException("Path not found");
+	}
+	std::string expected((std::istreambuf_iterator<char>(tokenStream)), std::istreambuf_iterator<char>());
+	expected = Utility::stdStringTrim(expected);
+
+	// Compare the bearer in constant time: the token authorizes a full policy
+	// snapshot (principals and roles), not just one principal's own record.
+	const auto authorization = Utility::stdStringTrim(message->m_headers.get(HTTP_HEADER_JWT_Authorization));
+	constexpr char scheme[] = "Bearer ";
+	std::string presented;
+	if (authorization.size() > sizeof(scheme) - 1 && authorization.compare(0, sizeof(scheme) - 1, scheme) == 0)
+		presented = Utility::stdStringTrim(authorization.substr(sizeof(scheme) - 1));
+	volatile unsigned char diff = presented.size() ^ expected.size();
+	const size_t n = std::min(presented.size(), expected.size());
+	for (size_t i = 0; i < n; ++i)
+		diff |= static_cast<unsigned char>(presented[i]) ^ static_cast<unsigned char>(expected[i]);
+	if (diff != 0)
+	{
+		LOG_WAR << fname << "replication policy request rejected: invalid token";
+		message->reply(web::http::status_codes::Unauthorized, Utility::text2json("invalid replication token"));
+		return;
+	}
+	message->reply(web::http::status_codes::OK, Security::instance()->replicationPolicySnapshot());
+}
+
 void RestHandler::apiRoleUpdate(const std::shared_ptr<HttpRequest> &message)
 {
 	const static char fname[] = "RestHandler::apiRoleUpdate() ";
@@ -1550,6 +1596,10 @@ void RestHandler::apiRunSync(const std::shared_ptr<HttpRequest> &message)
 
 	// Use async reply here
 	auto asyncRequest = std::make_shared<HttpRequestAutoCleanup>(message, appObj);
+	// If the waiting client drops its connection, stop the one-shot run instead
+	// of leaving it for the full lifecycle (no-op on multiplexed transports,
+	// whose connection id does not map to one HTTP connection).
+	HttpRequestAutoCleanup::holdForDisconnect(asyncRequest);
 	appObj->runSync(timeout, asyncRequest);
 }
 

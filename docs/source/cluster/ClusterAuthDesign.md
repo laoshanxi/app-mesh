@@ -186,29 +186,71 @@ gateway and the target share no secret. They only agree on the issuer.
 
 `authorization.yaml` is node-local. The principal and role APIs write the
 node that serves the request. A forwarded `POST /appmesh/principal/<id>`
-changes only the target node. Apply this rule:
+changes only the target node. Two ways keep the nodes consistent:
+
+### Cluster replication (recommended)
+
+The owner is the single writer; followers pull its policy and converge like
+read replicas. The engine implements the pull (no external tooling):
+
+- The owner publishes a random token into
+  `APPMESH_AUTH_REPLICATION_TOKEN_FILE` when that variable is set. The
+  packaged compose cluster shares the file through the read-only
+  `appmesh_replication` volume, the same trust boundary as the plaintext
+  Dex listener.
+- A follower with `APPMESH_AUTH_REPLICATION_FROM` (the owner's engine
+  listener, `https://appmesh_master:6058` in compose, verified with the
+  owner CA through `APPMESH_AUTH_REPLICATION_CA`) plus the token file pulls
+  the full policy snapshot every `APPMESH_AUTH_REPLICATION_INTERVAL`
+  seconds (default 30), and also right away when a login presents a
+  principal the follower has never seen.
+- The follower validates the snapshot before committing anything, and the
+  owner snapshot always wins — including over a locally auto-provisioned
+  role-less record. A replica never touches its node-local
+  `authorization.yaml`: the synced policy is cached under its own name,
+  `work/config/replica-policy.yaml`, so a restart authorizes immediately
+  and the cache can never be mistaken for a hand-edited policy file.
+  While replication is configured, the principal and role APIs on the
+  follower reject writes with a pointer to the owner.
+- The snapshot endpoint `GET /appmesh/auth/replication/policy` answers only
+  the replication token (compared in constant time). Without the token
+  file configured, the route behaves as if it did not exist.
+
+This follows the single-writer replica model used by configuration
+distribution systems (for example OPA bundles or kubelet configuration
+pulls): authorization decisions stay local on every node, only the policy
+source is centralized.
+
+### Manual distribution (fallback)
+
+Without replication, apply the rule by hand:
 
 - Mutate authorization data on one node. The owner is the natural
   administrative entry point.
-- Distribute the change in one of two ways: apply the same API calls on
-  every node, or copy the owner's runtime
-  `work/config/authorization.yaml` to the followers. Copy the file before
-  the follower first serves an authenticated request. The first resolve of
-  an unknown principal auto-provisions a role-less record and saves it.
-  That in-memory record then shadows a later copy until the follower
-  restarts or an administrator re-applies the binding through the
-  principal API. A copy that lands first needs no
+- Distribute the change by copying the owner's runtime
+  `work/config/authorization.yaml` to the followers. The daemon no longer
+  exits when that file is unreadable: it falls back to the packaged policy,
+  logs the reason, and keeps serving. Copy the file as the runtime user
+  (the daemon runs as `appmesh` in containers and cannot read a
+  `root:root 0600` file):
+
+  ```shell
+  docker exec -i -u appmesh appmesh_slave1 sh -c \
+      'mkdir -p /opt/appmesh/work/config && cat > /opt/appmesh/work/config/authorization.yaml' \
+      < authorization.yaml
+  ```
+
+  Copy the file before the follower first serves an authenticated request.
+  The first resolve of an unknown principal auto-provisions a role-less
+  record and saves it. That in-memory record then shadows a later copy
+  until the follower restarts or an administrator re-applies the binding
+  through the principal API. A copy that lands first needs no
   restart: the follower adopts the entry from disk when it first resolves
   the principal, and a later save keeps the entry. Keep the file mode at
   0600. Keep the runtime user as owner.
-  A follower bootstrap creates no `work/config` directory; create it
-  first (`mkdir -p <home>/work/config`) before the first copy.
 - A follower without a principal entry authenticates a user. It grants
   nothing beyond the configured provisioning policy
   (`explicit-or-minimal` by default).
-
-Automated replication is out of scope here. It needs its own design, for
-example watch-and-push or mutation forwarding to a configured writer node.
 
 ## docker-compose cluster
 
@@ -216,22 +258,21 @@ example watch-and-push or mutation forwarding to a configured writer node.
 node (`laoshanxi/appmesh:llm`, follower role, llm-agent preinstalled), and one
 MCP server, with the bundled authentication service.
 
-Listeners of `appmesh_master`. Host ports are remapped (+10000) so a local
-daemon keeps the defaults:
+Listeners of `appmesh_master`. Host ports use the daemon defaults:
 
 | Port (container → host) | Service | Used by |
 | --- | --- | --- |
-| 6060 → 16060 | Go agent REST front | REST clients and SDKs; it applies its own `X-Target-Host` forwarding |
-| 6058 → 16058 | engine WSS/HTTPS listener | the CLI (`appm` speaks WSS) and SDK WSS clients, including event subscriptions |
-| 6059 → 16059 | engine TCP API | SDK TCP transport: event subscriptions and task workers |
-| 6062 → 127.0.0.1:16062 | Dex authentication listener | followers in-network; host loopback only, for password and device flows |
+| 6060 → 6060 | Go agent REST front | REST clients and SDKs; it applies its own `X-Target-Host` forwarding |
+| 6058 → 6058 | engine WSS/HTTPS listener | the CLI (`appm` speaks WSS) and SDK WSS clients, including event subscriptions |
+| 6059 → 6059 | engine TCP API | SDK TCP transport: event subscriptions and task workers |
+| 6062 → 127.0.0.1:6062 | Dex authentication listener | followers in-network; host loopback only, for password and device flows |
 | 443 → 443 | web UI | browsers; the UI shares the master network namespace |
 
 The engine listeners 6058 and 6059 are TLS and bearer-authenticated, the
 same posture as the REST front. Host clients trust the master CA once
 (`docker cp appmesh_master:/opt/appmesh/ssl/ca.pem ./master-ca.pem`). Only
 the first sign-in runs inside the container (see below). The `appmesh_mcp`
-service publishes its own Streamable HTTP endpoint at `127.0.0.1:16071` for
+service publishes its own Streamable HTTP endpoint at `127.0.0.1:6071` for
 host AI clients.
 
 Environment variables:
@@ -267,14 +308,14 @@ cannot resolve. A host client therefore passes a token from the password flow
 instead of running the browser flow:
 
 ```shell
-curl -s -u "appmesh-mcp-user:" -X POST http://127.0.0.1:16062/auth/token \
+curl -s -u "appmesh-mcp-user:" -X POST http://127.0.0.1:6062/auth/token \
     --data-urlencode grant_type=password \
     --data-urlencode "username=admin@appmesh.local" \
     --data-urlencode "password=<password>" \
     --data-urlencode "scope=openid audience:server:client_id:appmesh-api"
 ```
 
-Point the MCP client at `http://127.0.0.1:16071/mcp` with the returned access
+Point the MCP client at `http://127.0.0.1:6071/mcp` with the returned access
 token as the bearer. The endpoint is plaintext on host loopback only, the same
 posture as the Dex port.
 
@@ -299,8 +340,8 @@ docker exec appmesh_master sh -c 'printf "%s\n" "$(grep "^password=" /opt/appmes
 
   ```shell
   docker cp appmesh_master:/opt/appmesh/ssl/ca.pem ./master-ca.pem
-  appm -H wss://127.0.0.1:16058 --ca-cert ./master-ca.pem logon \
-      --auth-access-url http://127.0.0.1:16062/auth --auth-allow-http
+  appm -H wss://127.0.0.1:6058 --ca-cert ./master-ca.pem logon \
+      --auth-access-url http://127.0.0.1:6062/auth --auth-allow-http
   appm view
   ```
 

@@ -49,6 +49,12 @@ public:
 	virtual void deletePrincipal(const std::string &principalId) = 0;
 	virtual void updateRole(const std::string &role, const Json::Value &permissions) = 0;
 	virtual void deleteRole(const std::string &role) = 0;
+	/// The full policy in on-disk shape, served to cluster followers by the
+	/// replication endpoint on the owner.
+	virtual Json::Value replicationPolicySnapshot() const = 0;
+	/// Replace the local policy with a replicated owner snapshot. Returns true
+	/// when the policy changed; throws on an invalid snapshot.
+	virtual bool applyReplicatedPolicy(const Json::Value &policy) = 0;
 
 	static void init();
 	static std::shared_ptr<Security> instance();

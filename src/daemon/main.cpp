@@ -44,6 +44,7 @@
 #include "rest/Worker.h"
 #include "rest/drogon/Adaptor.h"
 #include "rest/drogon/TcpAdaptor.h"
+#include "security/AuthReplicator.h"
 #include "security/Security.h"
 #if !defined(NDEBUG) && !defined(_WIN32)
 #include "../common/Valgrind.h"
@@ -282,6 +283,9 @@ void AppMeshDaemon::initializeSecurity()
 	const static char fname[] = "AppMeshDaemon::initializeSecurity() ";
 
 	Security::init();
+	// Owner side: publish the cluster replication token; follower pulls are
+	// driven by the schedule loop. No-op without the replication env config.
+	AuthReplicator::instance().start();
 
 	LOG_INF << fname << "Security initialized";
 }
@@ -570,6 +574,9 @@ void AppMeshDaemon::runMainLoop()
 				HealthCheckTask::instance()->doHealthCheck();
 			if (authRefreshTick++ % 1800 == 0)
 				refreshAuthenticationCache();
+			// Follower authorization replication: pulls per interval and right
+			// after a policy miss; no-op on standalone and owner nodes.
+			AuthReplicator::instance().onScheduleTick(config->getScheduleInterval());
 
 			// Refresh all process metrics once per completed scrape.
 			if (config->prometheusEnabled())
