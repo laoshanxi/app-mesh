@@ -38,10 +38,15 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let resources = client.get_host_resources().await?;
     println!("Host resources: \n{:#?}", resources);
 
-    // Run a command asynchronously using the convenience method
-    let ping_app = Application::builder("ping").command("ping 127.0.0.1").build();
-    let run = client.run_app_async(&ping_app, 5, 10).await?;
-    let _ = run.wait(appmesh::print_output_handler(), 10).await;
+    // Run a command asynchronously using the convenience method. The shell loop
+    // sleeps between echoes so the async stdout stream carries output over time,
+    // and uses only POSIX basics that exist in the packaged image.
+    let demo_app = Application::builder("async-demo")
+        .shell(true)
+        .command("for i in 1 2 3; do echo \"tick-$i\"; sleep 1; done")
+        .build();
+    let run = client.run_app_async(&demo_app, 15, 10).await?;
+    let _ = run.wait(appmesh::print_output_handler(), 30).await;
 
     // Run a command synchronously using the string shortcut
     let (exit_code, output) = client.run_sync("echo 'hello world'", 5, 10).await?;
