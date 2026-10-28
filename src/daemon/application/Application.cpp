@@ -416,11 +416,25 @@ void Application::FromJson(const std::shared_ptr<Application> &app, const Json::
 		app->m_stdoutCacheNum = 0;
 	}
 
+	// The epoch fields reject non-integer input with a message naming the field;
+	// the raw jsoncpp "not convertible to Int64" does not say which value is wrong.
+	const auto epochSeconds = [&jsonObj](const char *key) -> int64_t
+	{
+		try
+		{
+			return GET_JSON_INT64_VALUE(jsonObj, key);
+		}
+		catch (const std::exception &)
+		{
+			throw std::invalid_argument(std::string(key) + " must be an epoch timestamp in seconds");
+		}
+	};
+
 	if (HAS_JSON_FIELD(jsonObj, JSON_KEY_APP_start_time))
 	{
 		// 0 means "no window start" for clients that always send the field (the
 		// web UI form); epoch 1970 would make every schedule look expired.
-		const auto startTime = GET_JSON_INT64_VALUE(jsonObj, JSON_KEY_APP_start_time);
+		const auto startTime = epochSeconds(JSON_KEY_APP_start_time);
 		if (startTime > 0)
 			app->m_startTime = std::chrono::system_clock::from_time_t(startTime);
 	}
@@ -432,7 +446,7 @@ void Application::FromJson(const std::shared_ptr<Application> &app, const Json::
 
 	if (HAS_JSON_FIELD(jsonObj, JSON_KEY_APP_end_time))
 	{
-		const auto endTime = GET_JSON_INT64_VALUE(jsonObj, JSON_KEY_APP_end_time);
+		const auto endTime = epochSeconds(JSON_KEY_APP_end_time);
 		if (endTime > 0)
 			app->m_endTime = std::chrono::system_clock::from_time_t(endTime);
 	}
