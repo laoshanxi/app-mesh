@@ -901,15 +901,26 @@ void Configuration::hotUpdate(Json::Value &jsonValue)
 			auto baseConfig = jsonValue[JSON_KEY_BaseConfig];
 			if (HAS_JSON_FIELD(baseConfig, JSON_KEY_LogLevel))
 			{
-				if (this->m_baseConfig->m_logLevel != newConfig->m_baseConfig->m_logLevel)
+				const auto requested = GET_JSON_STR_VALUE(baseConfig, JSON_KEY_LogLevel);
+				if (this->m_baseConfig->m_logLevel != requested)
 				{
-					Utility::setLogLevel(newConfig->m_baseConfig->m_logLevel);
-					SET_COMPARE(this->m_baseConfig->m_logLevel, newConfig->m_baseConfig->m_logLevel);
+					// setLogLevel() ignores unknown names with a log line only;
+					// the stored value must not diverge from the effective one.
+					if (!Utility::setLogLevel(requested))
+						throw std::invalid_argument("unknown log level: " + requested);
+					SET_COMPARE(this->m_baseConfig->m_logLevel, requested);
 				}
 			}
 
 			if (HAS_JSON_FIELD(baseConfig, JSON_KEY_ScheduleIntervalSeconds))
+			{
+				// FromJson() would silently replace an out-of-range value with
+				// the default; reject it here so the caller sees what happened.
+				const auto requested = GET_JSON_INT_VALUE(baseConfig, JSON_KEY_ScheduleIntervalSeconds);
+				if (requested < 1 || requested > 100)
+					throw std::invalid_argument("ScheduleIntervalSeconds must be between 1 and 100");
 				SET_COMPARE(this->m_baseConfig->m_scheduleInterval, newConfig->m_baseConfig->m_scheduleInterval);
+			}
 			if (HAS_JSON_FIELD(baseConfig, JSON_KEY_DefaultExecUser))
 				SET_COMPARE(this->m_baseConfig->m_defaultExecUser, newConfig->m_baseConfig->m_defaultExecUser);
 			if (HAS_JSON_FIELD(baseConfig, JSON_KEY_DisableExecUser))

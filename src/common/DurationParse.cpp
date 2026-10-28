@@ -1,5 +1,7 @@
 // src/common/DurationParse.cpp
 #include <algorithm> // For std::max
+#include <limits>
+#include <stdexcept>
 
 #include <boost/algorithm/string_regex.hpp>
 
@@ -23,7 +25,12 @@ int DurationParse::parse(const std::string &duration)
 	}
 	if (Utility::isNumber(duration))
 	{
-		totalSeconds = std::stoi(duration);
+		// stoi() throws out_of_range (surfaced as a 500) on values beyond int;
+		// reject those as invalid input instead.
+		const long long seconds = std::stoll(duration);
+		if (seconds > std::numeric_limits<int>::max() || seconds < 0)
+			throw std::invalid_argument("duration is out of range: " + duration);
+		totalSeconds = static_cast<int>(seconds);
 		LOG_DBG << fname << "Numeric duration: <" << duration << "> = <" << totalSeconds << "> seconds";
 		return totalSeconds;
 	}

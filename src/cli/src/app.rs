@@ -253,7 +253,8 @@ pub struct AddArgs {
     #[arg(short = 'z', long = "secret-env")]
     pub secret_env: Vec<String>,
 
-    /// Process stop grace period (ISO 8601 duration)
+    /// Buffer time for a recurring schedule whose previous run is still
+    /// running (e.g. 'PT30S'); stopping an app always SIGKILLs its group
     #[arg(short = 'R', long = "stop-grace-period")]
     pub stop_grace_period: Option<String>,
 

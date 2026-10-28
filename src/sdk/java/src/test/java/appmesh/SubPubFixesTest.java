@@ -313,7 +313,7 @@ public class SubPubFixesTest {
 
         // ...and a separate client instance (its own connection) transfers fine.
         try (AppMeshClientTCP plain = liveTCPClient()) {
-            assertTrue(plain.downloadFile("/opt/appmesh/bin/appmesh", "/tmp/e2e-java-plain", false));
+            assertTrue(plain.downloadFile("/etc/hosts", "/tmp/e2e-java-plain", false));
         }
     }
 

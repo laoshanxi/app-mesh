@@ -99,6 +99,9 @@ private:
 	void initializeFirstAdminEnrollment();
 	bool hasFirstAdminLocked() const;
 	void validateRoles(const std::set<std::string> &roles) const;
+	/// Active principals still bound to the first-administrator role; caller
+	/// must hold m_mutex. Guards the last-administrator mutations.
+	std::size_t activeFirstAdminCountLocked() const;
 	/// Adopt role and principal bindings written directly to the on-disk policy
 	/// (e.g. by appmesh-auth.sh add-user) after this process loaded it, so the
 	/// next saveLocked() upserts them instead of overwriting from stale memory.

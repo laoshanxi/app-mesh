@@ -36,6 +36,14 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-cargo-
 
+      - name: Keep dependent lock files in sync
+        working-directory: ${{ github.workspace }}
+        run: |
+          # src/cli depends on this SDK by path; bumping its version without
+          # refreshing src/cli/Cargo.lock leaves a surprise diff for the next
+          # cargo run anywhere. --locked fails loudly when the lock is stale.
+          cargo metadata --locked --format-version 1 --manifest-path src/cli/Cargo.toml > /dev/null
+
       - name: Build (release)
         run: cargo build --release
         env:
