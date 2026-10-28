@@ -15,15 +15,17 @@ func TestAppmeshTCPFile(t *testing.T) {
 
 	client.SetToken(requireBearerToken(t))
 
+	// The daemon's own install tree is refused by the file API; any ordinary
+	// readable file exercises the transfer path.
 	var remotePath, localFile, tempFile string
 	if runtime.GOOS == "windows" {
-		remotePath = `C:\local\appmesh\bin\appmesh.exe`
-		localFile = "appmesh.exe"
-		tempFile = filepath.Join(os.TempDir(), "appmesh.exe")
+		remotePath = `C:\Windows\System32\drivers\etc\hosts`
+		localFile = "hosts"
+		tempFile = filepath.Join(os.TempDir(), "hosts.copy")
 	} else {
-		remotePath = "/opt/appmesh/bin/appmesh"
-		localFile = "appmesh"
-		tempFile = "/tmp/appmesh"
+		remotePath = "/etc/hostname"
+		localFile = "hostname"
+		tempFile = "/tmp/hostname.copy"
 	}
 
 	_ = os.Remove(localFile)
