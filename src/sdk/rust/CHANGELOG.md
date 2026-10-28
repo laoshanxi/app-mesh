@@ -1,5 +1,11 @@
 # Changelog
 
+## 3.0.14
+
+- `examples/simple.rs`: the async-run example sets a command on the application;
+  the server rejects a command-less registration with 400 "Should specify command
+  to run application".
+
 ## 3.0.13
 
 - `forward_to`: a bare host is sent as given instead of appending the client's own
