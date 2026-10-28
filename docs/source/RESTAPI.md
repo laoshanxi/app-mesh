@@ -60,6 +60,14 @@ Applications use `owner_principal_id`; REST input cannot create
 | PUT | `/appmesh/app/{name}/task` | Return the task result from a managed application process |
 | DELETE | `/appmesh/app/{name}/task` | Cancel the pending task request for a managed application |
 
+### Client disconnect during `syncrun`
+
+`syncrun` replies when the command finishes. The engine stops the on-demand run
+if the waiting client disconnects. This cleanup needs a direct connection to the
+REST listener. The agent port and the CLI/WebSocket transports multiplex
+requests over one connection. The engine cannot observe the client disconnect
+there. The run then continues until it finishes or reaches its timeout.
+
 ## Event subscription
 
 | Method | URI | Purpose |

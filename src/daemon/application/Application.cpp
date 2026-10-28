@@ -162,6 +162,12 @@ Application::~Application()
 	Utility::removeFile(m_stdoutFile);
 }
 
+void Application::releaseStdoutFiles()
+{
+	m_stdoutFileQueue->detachFiles();
+	m_stdoutFile.clear();
+}
+
 const std::string &Application::getName() const { return m_name; }
 
 void Application::health(bool newHealth)

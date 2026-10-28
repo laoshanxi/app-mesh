@@ -70,6 +70,8 @@ public:
 	virtual Json::Value AsJson(bool returnRuntimeInfo, void *ptree = nullptr);
 	virtual void save();
 	virtual void remove();
+	/// A same-name replacement writes the same stdout paths; destruction must not delete them.
+	void releaseStdoutFiles();
 
 	virtual void dump();
 	virtual std::string getYamlPath();

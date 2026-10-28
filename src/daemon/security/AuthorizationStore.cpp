@@ -746,6 +746,9 @@ void AuthorizationStore::saveLocked() const
 	// authorization.yaml keeps its own (packaged) content untouched.
 	const auto path =
 		m_replicaMode ? m_replicaCacheFile : Utility::getConfigFilePath(APPMESH_AUTHORIZATION_CONFIG_FILE, true);
+	if (m_replicaMode)
+		// The image ships no work/config/; only the non-replica branch creates it.
+		Utility::createDirectory(fs::path(path).parent_path().string());
 	const auto tmp = os::createTmpFile(path, Utility::jsonToYaml(root), 0600);
 	if (tmp.empty())
 		throw std::runtime_error("could not create temporary authorization configuration");

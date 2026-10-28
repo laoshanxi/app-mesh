@@ -39,7 +39,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
     println!("Host resources: \n{:#?}", resources);
 
     // Run a command asynchronously using the convenience method
-    let ping_app = Application::builder("ping").build();
+    let ping_app = Application::builder("ping").command("ping 127.0.0.1").build();
     let run = client.run_app_async(&ping_app, 5, 10).await?;
     let _ = run.wait(appmesh::print_output_handler(), 10).await;
 
