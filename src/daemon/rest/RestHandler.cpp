@@ -36,6 +36,57 @@ constexpr auto CONTENT_TYPE_PNG = "image/png";
 namespace
 {
 
+	// Daemon-owned trees the REST file API must never touch: writing the
+	// persisted application registry, authorization state or executed scripts is
+	// remote code execution on the daemon itself, and the auth directory holds
+	// bootstrap credentials. Legitimate transfers target application data.
+	bool isDaemonProtectedFilePath(const std::string &filePath)
+	{
+		const auto home = fs::path(Utility::getHomeDir());
+		const auto work = home / APPMESH_WORK_DIR;
+		static const std::vector<fs::path> protectedPrefixes = {
+			work / "auth",
+			work / APPMESH_APPLICATION_DIR,
+			work / APPMESH_WORK_CONFIG_DIR,
+			work / "shell",
+			fs::path(Utility::getBinDir()),
+			home / "script",
+		};
+		// Resolve symlinks when possible so an allowed path cannot point into a
+		// protected one; lexically_normal is the fallback for missing files.
+		std::error_code ec;
+		const auto candidate = fs::weakly_canonical(fs::path(filePath), ec);
+		const auto subject = ec ? fs::path(filePath).lexically_normal() : candidate;
+		for (const auto &prefix : protectedPrefixes)
+		{
+			std::error_code prefixEc;
+			const auto base = fs::weakly_canonical(prefix, prefixEc);
+			const auto root = prefixEc ? prefix : base;
+			const auto rootStr = root.string() + fs::path::preferred_separator;
+			if (subject == root || subject.string().rfind(rootStr, 0) == 0)
+				return true;
+		}
+		return false;
+	}
+
+	// Shared path gate for both file endpoints: absolute-path jail first, then
+	// the daemon's own state.
+	bool rejectFilePath(const std::shared_ptr<HttpRequest> &message, const std::string &file)
+	{
+		if (!Utility::validateFilePath(file, Configuration::instance()->getFileAllowedBaseDir()))
+		{
+			message->reply(web::http::status_codes::Forbidden, Utility::text2json("Invalid file path"));
+			return true;
+		}
+		if (isDaemonProtectedFilePath(file))
+		{
+			message->reply(web::http::status_codes::Forbidden,
+						   Utility::text2json("path belongs to the daemon's own state and is not transferable through the file API"));
+			return true;
+		}
+		return false;
+	}
+
 	// Serialize a permission set as a JSON string array
 	Json::Value toJsonArray(const std::set<std::string> &values)
 	{
@@ -820,6 +871,31 @@ void RestHandler::apiAppDelete(const std::shared_ptr<HttpRequest> &message)
 			permissionCheck(message, PERMISSION_KEY_app_delete);
 		}
 
+		// Deleting a dependency would silently release its dependents (a missing
+		// dependency counts as satisfied); refuse and name them instead.
+		std::string dependents;
+		for (const auto &other : config->getApps())
+		{
+			if (other && other->getName() != appName)
+			{
+				for (const auto &dependency : other->dependsOn())
+				{
+					if (dependency == appName)
+					{
+						if (!dependents.empty())
+							dependents += ", ";
+						dependents += other->getName();
+						break;
+					}
+				}
+			}
+		}
+		if (!dependents.empty())
+		{
+			throw std::invalid_argument("application <" + appName + "> is a depends_on target of: " + dependents +
+										"; remove or update those applications first");
+		}
+
 		checkAppAccessPermission(message, app, true);
 		// The map update inside removeApp is atomic and the expected pointer
 		// makes the snapshot race-safe; a replacement with the same name is not
@@ -846,11 +922,8 @@ void RestHandler::apiFileDownload(const std::shared_ptr<HttpRequest> &message)
 		return;
 	}
 	const auto file = Utility::decodeHeaderFilePath(message->m_headers.find(HTTP_HEADER_KEY_file_path)->second);
-	if (!Utility::validateFilePath(file, Configuration::instance()->getFileAllowedBaseDir()))
-	{
-		message->reply(web::http::status_codes::Forbidden, Utility::text2json("Invalid file path"));
+	if (rejectFilePath(message, file))
 		return;
-	}
 
 	if (!Utility::isFileExist(file))
 	{
@@ -911,11 +984,8 @@ void RestHandler::apiFileUpload(const std::shared_ptr<HttpRequest> &message)
 		return;
 	}
 	const auto file = Utility::decodeHeaderFilePath(message->m_headers.find(HTTP_HEADER_KEY_file_path)->second);
-	if (!Utility::validateFilePath(file, Configuration::instance()->getFileAllowedBaseDir()))
-	{
-		message->reply(web::http::status_codes::Forbidden, Utility::text2json("Invalid file path"));
+	if (rejectFilePath(message, file))
 		return;
-	}
 
 	if (Utility::isFileExist(file))
 	{
@@ -1734,7 +1804,21 @@ void RestHandler::apiAppAdd(const std::shared_ptr<HttpRequest> &message)
 	auto config = Configuration::instance();
 	const auto observed = config->getApp(appName, false);
 	if (observed)
+	{
 		checkAppAccessPermission(message, observed, true);
+		// Overwriting another principal's application is an ownership transfer:
+		// it requires <app-manage-all>, never happens silently through the share
+		// bits, and keeps the current owner unless one is explicitly requested.
+		const bool manageAll =
+			Security::instance()->permissions(tokenUser).count(PERMISSION_KEY_app_manage_all) != 0;
+		if (!observed->getOwnerPrincipalId().empty() && observed->getOwnerPrincipalId() != tokenUser && !manageAll)
+		{
+			throw AuthorizationException(Utility::stringFormat("Principal <%s> is not allowed to EDIT app <%s>: "
+																"overwriting another owner's application requires the %s permission",
+																tokenUser.c_str(), appName.c_str(),
+																PERMISSION_KEY_app_manage_all));
+		}
+	}
 
 	// Case-variant names collide on case-insensitive filesystems. The conflicting
 	// name is logged server-side; the reply stays generic (no name enumeration).
@@ -1774,6 +1858,12 @@ void RestHandler::apiAppAdd(const std::shared_ptr<HttpRequest> &message)
 		ownerPrincipalId = target->id();
 		LOG_INF << fname << "Application <" << appName << "> owner set to <" << ownerPrincipalId << "> by <" << tokenUser
 				<< ">";
+	}
+	else if (observed && requestedOwner.empty() && !observed->getOwnerPrincipalId().empty() &&
+			 observed->getOwnerPrincipalId() != tokenUser)
+	{
+		// A manage-all overwrite without an explicit transfer keeps the owner.
+		ownerPrincipalId = observed->getOwnerPrincipalId();
 	}
 	jsonApp[JSON_KEY_APP_owner_principal_id] = ownerPrincipalId;
 	jsonApp.removeMember(JSON_KEY_APP_execution_user);

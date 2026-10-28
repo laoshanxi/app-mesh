@@ -571,7 +571,7 @@ void AppMeshDaemon::runMainLoop()
 
 			PersistManager::instance()->persistSnapshot();
 			if (healthCheckTick++ % 30 == 0)
-				HealthCheckTask::instance()->doHealthCheck();
+				HealthCheckTask::instance()->runAsync();
 			if (authRefreshTick++ % 1800 == 0)
 				refreshAuthenticationCache();
 			// Follower authorization replication: pulls per interval and right

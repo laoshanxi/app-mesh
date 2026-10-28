@@ -258,8 +258,11 @@ void Application::FromJson(const std::shared_ptr<Application> &app, const Json::
 			throw std::invalid_argument("invalid application startup_phase");
 		app->m_startupPhase = phase->second;
 	}
-	app->m_ownerPermission = GET_JSON_INT_VALUE(jsonObj, JSON_KEY_APP_permission);
-	// Share bits <other><group>: 0 grants all, else the tens digit must be 1-3.
+	// Share bits <other><group>: absent defaults to owner-only (11); 0 (everyone
+	// full access) must be requested explicitly, else the tens digit is 1-3.
+	app->m_ownerPermission = HAS_JSON_FIELD(jsonObj, JSON_KEY_APP_permission)
+								 ? GET_JSON_INT_VALUE(jsonObj, JSON_KEY_APP_permission)
+								 : 11;
 	if (app->m_ownerPermission < 0 || app->m_ownerPermission > 39 ||
 		(app->m_ownerPermission != 0 && app->m_ownerPermission / 10 < 1))
 	{
@@ -453,9 +456,15 @@ void Application::FromJson(const std::shared_ptr<Application> &app, const Json::
 
 	if (app->m_endTime.time_since_epoch().count())
 	{
-		if (app->m_startTime > app->m_endTime)
+		if (app->m_startTime >= app->m_endTime)
 		{
 			throw std::invalid_argument("end_time should greater than the start_time");
+		}
+		// A window that already closed would leave the application enabled but
+		// forever unscheduled, with nothing in its state to explain why.
+		if (!fromRecover && app->m_endTime <= std::chrono::system_clock::now())
+		{
+			throw std::invalid_argument("end_time is already in the past");
 		}
 	}
 
@@ -507,6 +516,12 @@ void Application::FromJson(const std::shared_ptr<Application> &app, const Json::
 		app->m_startInterval = duration.parse(app->m_startIntervalValue);
 		if (app->m_startInterval <= 0)
 		{
+			// A non-positive interval silently re-schedules far in the future;
+			// reject it instead (recovered definitions keep the old fallback).
+			if (!fromRecover)
+			{
+				throw std::invalid_argument("interval must be a positive duration: " + app->m_startIntervalValue);
+			}
 			LOG_WAR << fname << "Invalid start interval <" << app->m_startIntervalValue << "> for application <"
 					<< app->m_name << ">, falling back to default";
 			app->m_startInterval = DEFAULT_TOKEN_EXPIRE_SECONDS;
