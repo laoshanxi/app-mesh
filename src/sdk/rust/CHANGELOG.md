@@ -1,5 +1,18 @@
 # Changelog
 
+## 3.0.15
+
+- `examples/simple.rs`: the async-run application now uses a POSIX shell loop
+  (`echo` + `sleep`) instead of `ping`, which is absent from the packaged image;
+  the loop also keeps emitting output while sleeping so the async stdout
+  streaming has content to observe.
+
+## 3.0.14
+
+- `examples/simple.rs`: the async-run example sets a command on the application;
+  the server rejects a command-less registration with 400 "Should specify command
+  to run application".
+
 ## 3.0.13
 
 - `forward_to`: a bare host is sent as given instead of appending the client's own

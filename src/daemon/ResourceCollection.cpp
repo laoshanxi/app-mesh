@@ -334,6 +334,14 @@ Json::Value ResourceCollection::AsJson()
 	}
 	// FS
 	auto mountPoints = os::getMountPoints();
+	// Containers overlay the root and hide the host block devices, so a healthy
+	// node can end with an empty mount table: report the daemon's own filesystem.
+	if (mountPoints.empty() && Utility::runningInContainer())
+	{
+		const auto workDir = Configuration::instance()->getWorkDir();
+		if (os::df(workDir) != nullptr)
+			mountPoints.emplace(workDir, "overlay");
+	}
 	auto fsArr = Json::Value(Json::arrayValue);
 	bool filesystemError = mountPoints.empty();
 	for (const auto &mount : mountPoints)

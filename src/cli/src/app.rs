@@ -217,7 +217,7 @@ pub struct AddArgs {
     #[arg(short = 'i', long = "interval")]
     pub interval: Option<String>,
 
-    /// Cron expression schedule (e.g., '0 5 * * *')
+    /// Cron expression schedule (e.g., '0 5 * * * *')
     #[arg(short = 'Y', long = "cron-schedule")]
     pub cron_schedule: Option<String>,
 

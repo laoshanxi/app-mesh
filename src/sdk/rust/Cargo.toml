@@ -1,6 +1,6 @@
 [package]
 name = "appmesh"
-version = "3.0.13"
+version = "3.0.15"
 edition = "2021"
 description = "AppMesh SDK for Rust"
 license = "MIT"
