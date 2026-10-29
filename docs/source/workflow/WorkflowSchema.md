@@ -168,11 +168,23 @@ on:
     condition: "exit_code == 0"
 ```
 
-### `on.schedule` — Cron Trigger (External)
+The engine arms its event subscription when the workflow is registered, so an
+event fired after `workflow add` triggers a run; events from before
+registration never do. Registering the trigger requires `workflow-admin`. A
+subscription the engine cannot install is reported in the workflow engine's
+output.
 
-> **Note:** The workflow engine does NOT dispatch cron schedules internally. To schedule a workflow on a cron, register an App Mesh cron App whose command is `appm workflow run <name>`. The `on.schedule` field is parsed for documentation/validation purposes but a warning is emitted at parse time.
+### `on.schedule` — Cron Trigger (Engine-Dispatched)
 
-Declares the intended cron schedule.
+The workflow engine dispatches cron schedules itself: registering a schedule
+trigger requires `workflow-admin`, the expression is validated at registration
+(a typo fails the `workflow_add` instead of silently never firing), and each
+run executes under a short-lived, run-scoped Engine capability — no external
+cron App and no non-expiring credential are involved. The last accounted fire
+time is persisted, so a restart re-bases from the last completed period, and
+periods missed while the engine was down are skipped (no catch-up burst).
+Dispatch is checked on the engine's scan tick, so a fire may land up to one
+scan interval late — never early.
 
 | Field | Type | Required | Default | Description |
 |-------|------|----------|---------|-------------|
@@ -181,8 +193,8 @@ Declares the intended cron schedule.
 ```yaml
 on:
   schedule:
-    - cron: "0 2 * * *"       # daily at 2am
-    - cron: "0 */6 * * *"     # every 6 hours
+    - cron: "0 2 * * * *"      # daily at 02:00:00
+    - cron: "0 */6 * * * *"    # every 6 hours
 ```
 
 ### `on.manual` — Manual/API Trigger
@@ -311,7 +323,7 @@ Each Step has a `name` and exactly one of four type keys: `command`, `app`, `mes
 | Field | Type | Required | Default | Description |
 |-------|------|----------|---------|-------------|
 | `name` | string | yes | — | Unique within the Job. Used in `${{ steps.<name>.* }}` references. Must match `[a-zA-Z0-9_-]+`. |
-| `if` | string | no | — | Expression. Step runs only if true. Default: runs if all prior steps in the job succeeded. |
+| `if` | string | no | — | Expression, bare (`failure()`) or wrapped (`${{ steps.prev.exit_code == 0 }}` — operators allowed inside the braces). Step runs only if true. Default: runs if all prior steps in the job succeeded. |
 | `timeout` | integer | no | 172800 (2 days) for command/app/workflow steps; 300 (5 minutes) for message steps | Maximum execution time in seconds. Step is killed and marked failed if exceeded. `0` falls back to the default — there is no "unlimited" mode. |
 | `retry` | object | no | — | Retry policy on failure. |
 | `continue-on-error` | bool | no | `false` | `true`: mark step as failed but continue to next step. Default: stop the job on failure. A step under `finally` is always `true`: the parser forces it, and the YAML value cannot turn it off. |
@@ -464,6 +476,36 @@ Invokes another workflow that declares `on.workflow_call`. Maximum nesting depth
 
 Expressions are enclosed in `${{ }}` and evaluated at runtime by the workflow engine.
 
+Value fields (`command`, `env`, `with`, ...) accept a plain reference inside `${{ }}`
+(for example `${{ steps.build.stdout }}`). `if:` conditions additionally accept a
+full expression inside the braces — operators, status functions and literals, for
+example `if: "${{ steps.build.exit_code >= 0 }}"` or `if: "${{ !failure() }}"` —
+with the same operator set as the bare form documented under Operators.
+
+### How values reach a shell command
+
+For `command` steps the engine never splices a value into the command text.
+Each expression becomes a `$WF_E<N>` environment reference, and the value is
+delivered as that variable — so a value like `a; rm -rf /` is always a single
+shell argument and can never inject syntax.
+
+```yaml
+- name: show
+  command: "echo v=${{ steps.build.stdout }}"   # runs as: echo v=$WF_E0
+```
+
+The one exception is an expression inside a single-quoted span, because the
+shell does not expand variables there. The engine substitutes those textually
+and escapes embedded single quotes, so the value stays one closed quoted word:
+
+```yaml
+- name: parse
+  command: "echo '${{ steps.ask.response }}' | jq ."   # value inserted literally, safely quoted
+```
+
+Unquoted and double-quoted positions keep the environment-variable form and
+expand normally.
+
 ### Contexts
 
 | Context | Description | Example |
@@ -549,6 +591,17 @@ jobs:
 ---
 
 ## Execution Semantics
+
+### Triggered Runs and the Base Application
+
+Running an application through `run` (the CLI, an SDK, or an `app` step) starts
+a **temporary run app** named `<name>_N` rather than re-using the registered
+application in place. Its events fire and its output is stored under that
+temporary name; the registered app's own `output` reflects its scheduled or
+registration-time starts, and `enable`/`disable`/`restart` (not `run`) are the
+operations that re-execute the registered app itself. To observe triggered-run
+events, subscribe to the run handle's app name (SDKs expose it) or use a
+wildcard subscription.
 
 ### Job Scheduling
 

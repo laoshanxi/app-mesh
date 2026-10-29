@@ -251,8 +251,9 @@ func SubstituteForJobChecked(template string, ctx *Context, jobName string) (str
 // $WF_E<N> environment reference and returns the bindings for those variables.
 // Values then reach the shell only through the environment, so input like
 // "a; rm -rf /" can never inject shell syntax into the command text.
-// Unresolved expressions follow SubstituteForJobChecked semantics (literal in
-// lenient mode, error in strict mode).
+// An expression inside a single-quoted span is the exception — the shell never
+// expands variables there — so it is substituted textually with single quotes
+// escaped (see emitExpr).
 func SubstituteForCommand(template string, ctx *Context, jobName string) (string, map[string]string, error) {
 	// $WF_E<N> is a reserved reference; if the command already uses one, a
 	// generated binding would shadow it. Fall back to direct substitution.
@@ -263,15 +264,7 @@ func SubstituteForCommand(template string, ctx *Context, jobName string) (string
 	bindings := make(map[string]string)
 	byExpr := make(map[string]string)
 	var buildErr error
-	out := exprPattern.ReplaceAllStringFunc(template, func(match string) string {
-		inner := exprPattern.FindStringSubmatch(match)
-		if len(inner) < 2 {
-			return match
-		}
-		exprText := strings.TrimSpace(inner[1])
-		if ref, ok := byExpr[exprText]; ok {
-			return ref
-		}
+	emitExpr := func(match, exprText string, inSingle bool) string {
 		resolved, ok := resolveExpr(exprText, match, ctx, jobName)
 		if !ok {
 			if ctx.Strict {
@@ -283,14 +276,62 @@ func SubstituteForCommand(template string, ctx *Context, jobName string) (string
 			}
 			return match
 		}
+		if inSingle {
+			return strings.ReplaceAll(resolved, "'", `'\''`)
+		}
+		if ref, seen := byExpr[exprText]; seen {
+			return ref
+		}
 		ref := fmt.Sprintf("$WF_E%d", len(byExpr))
 		byExpr[exprText] = ref
 		bindings[ref[1:]] = resolved
 		return ref
-	})
+	}
+	// Expression spans are transparent to the quote state.
+	const exprOpen, exprClose = "${{", "}}"
+	var b strings.Builder
+	inSingle, inDouble := false, false
+	for i := 0; i < len(template); {
+		if strings.HasPrefix(template[i:], exprOpen) {
+			if rel := strings.Index(template[i:], exprClose); rel >= len(exprOpen) {
+				match := template[i : i+rel+len(exprClose)]
+				if exprText := strings.TrimSpace(template[i+len(exprOpen) : i+rel]); exprText != "" {
+					b.WriteString(emitExpr(match, exprText, inSingle))
+					i += len(match)
+					continue
+				}
+			}
+		}
+		switch template[i] {
+		case '\\':
+			b.WriteByte(template[i])
+			if !inSingle && i+1 < len(template) {
+				b.WriteByte(template[i+1])
+				i += 2
+				continue
+			}
+			i++
+		case '\'':
+			if !inDouble {
+				inSingle = !inSingle
+			}
+			b.WriteByte(template[i])
+			i++
+		case '"':
+			if !inSingle {
+				inDouble = !inDouble
+			}
+			b.WriteByte(template[i])
+			i++
+		default:
+			b.WriteByte(template[i])
+			i++
+		}
+	}
 	if buildErr != nil {
 		return "", nil, buildErr
 	}
+	out := b.String()
 	if len(bindings) == 0 {
 		return out, nil, nil
 	}
@@ -344,6 +385,23 @@ func evalCondition(expr string, ctx *Context, jobName string, status *statusFunc
 	expr = strings.TrimSpace(expr)
 	if expr == "" {
 		return true
+	}
+
+	// Unwrap ${{ }} to its inner expression text so operators inside the
+	// braces take effect (GitHub Actions semantics). The braces hold
+	// author-written YAML text, not an interpolated value, so this adds no
+	// operator injection.
+	if strings.Contains(expr, "${{") {
+		expr = exprPattern.ReplaceAllStringFunc(expr, func(match string) string {
+			if inner := exprPattern.FindStringSubmatch(match); len(inner) == 2 {
+				return strings.TrimSpace(inner[1])
+			}
+			return match
+		})
+		expr = strings.TrimSpace(expr)
+		if expr == "" {
+			return true
+		}
 	}
 
 	switch expr {

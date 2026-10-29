@@ -78,7 +78,7 @@ await assertLive('live TCP file transfer guard', async () => {
 
   const plain = liveTCP()
   try {
-    await plain.downloadFile('/opt/appmesh/bin/appmesh', '/tmp/e2e-js-plain')
+    await plain.downloadFile('/etc/hosts', '/tmp/e2e-js-plain')
   } finally {
     plain.close()
   }

@@ -123,7 +123,6 @@ int main(int argc, char *argv[])
 	QuitHandler::instance();
 
 	PRINT_VERSION();
-	std::cout << fname << "App Mesh server starting." << std::endl;
 #if !defined(NDEBUG) && !defined(_WIN32)
 	VALGRIND_ENTRYPOINT_ONE_TIME(argv); // enable valgrind in debug mode
 #endif
@@ -160,10 +159,11 @@ int AppMeshDaemon::run(int argc, char *argv[])
 
 	try
 	{
+		initializeLogging();
+		LOG_INF << fname << "App Mesh server starting.";
+		logStartupEnvironment();
 		initializeEnvironment();
 		initializeResourceLimits();
-		initializeLogging();
-		logStartupEnvironment();
 		initializeConfiguration();
 		LinuxCgroup::initializeApplicationCgroups();
 		initializeServices();
@@ -195,7 +195,7 @@ int AppMeshDaemon::run(int argc, char *argv[])
 
 void AppMeshDaemon::initializeEnvironment()
 {
-	// logging not available yet
+	const static char fname[] = "AppMeshDaemon::initializeEnvironment() ";
 #if defined(_WIN32)
 	// Winsock must be up before any socket call (logging, pid file, listeners).
 	WSADATA wsaData;
@@ -205,6 +205,7 @@ void AppMeshDaemon::initializeEnvironment()
 	}
 #endif
 	fs::current_path(Utility::getHomeDir());
+	LOG_INF << fname << "Entered working directory: " << fs::current_path().string();
 	// The pid lock is the single-instance guarantee; createPidFile() printed the specific cause.
 	if (!Utility::createPidFile())
 	{
@@ -217,6 +218,7 @@ void AppMeshDaemon::initializeEnvironment()
 void AppMeshDaemon::initializeResourceLimits()
 {
 #if !defined(_WIN32)
+	const static char fname[] = "AppMeshDaemon::initializeResourceLimits() ";
 	// Launch services start daemons with a low soft fd limit (macOS: 256), while
 	// every concurrent run opens an output file, a stdin handle and a stdout
 	// pipe. Raise the soft limit to the hard cap before any listener or app runs.
@@ -226,7 +228,7 @@ void AppMeshDaemon::initializeResourceLimits()
 		const rlim_t previous = limits.rlim_cur;
 		limits.rlim_cur = limits.rlim_max;
 		if (::setrlimit(RLIMIT_NOFILE, &limits) == 0)
-			std::cerr << "AppMeshDaemon: RLIMIT_NOFILE raised from " << previous << " to " << limits.rlim_max << std::endl;
+			LOG_INF << fname << "RLIMIT_NOFILE raised from " << previous << " to " << limits.rlim_max;
 	}
 #endif
 }
@@ -255,7 +257,6 @@ void AppMeshDaemon::initializeLogging()
 	Utility::initLogging("server");
 
 	LOG_INF << fname << "Build: " << __MICRO_VAR__(BUILD_TAG);
-	LOG_INF << fname << "Entered working directory: " << fs::current_path().string();
 }
 
 void AppMeshDaemon::initializeConfiguration()
@@ -283,8 +284,8 @@ void AppMeshDaemon::initializeSecurity()
 	const static char fname[] = "AppMeshDaemon::initializeSecurity() ";
 
 	Security::init();
-	// Owner side: publish the cluster replication token; follower pulls are
-	// driven by the schedule loop. No-op without the replication env config.
+	// Owner side: publish the cluster replication token; a follower's resident
+	// worker pulls the owner policy. No-op without the replication env config.
 	AuthReplicator::instance().start();
 
 	LOG_INF << fname << "Security initialized";
@@ -571,12 +572,9 @@ void AppMeshDaemon::runMainLoop()
 
 			PersistManager::instance()->persistSnapshot();
 			if (healthCheckTick++ % 30 == 0)
-				HealthCheckTask::instance()->doHealthCheck();
+				HealthCheckTask::instance()->trigger();
 			if (authRefreshTick++ % 1800 == 0)
 				refreshAuthenticationCache();
-			// Follower authorization replication: pulls per interval and right
-			// after a policy miss; no-op on standalone and owner nodes.
-			AuthReplicator::instance().onScheduleTick(config->getScheduleInterval());
 
 			// Refresh all process metrics once per completed scrape.
 			if (config->prometheusEnabled())

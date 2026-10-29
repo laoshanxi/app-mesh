@@ -67,8 +67,14 @@ func ApplyFileAttributes(filePath string, headers http.Header) error {
 	// 2. Handle Permissions (Chmod) - Done after Chown to ensure bits aren't reset
 	if modeStr != "" {
 		if mode, err := strconv.ParseUint(modeStr, 10, 32); err == nil {
-			// The value comes from a remote peer; keep only the permission bits.
-			return os.Chmod(filePath, os.FileMode(mode&0o777))
+			// Decimal permission bits (493 = 0755), same convention as the
+			// daemon. Out-of-range values (octal digits sent as-is, e.g. "755")
+			// are ignored, never masked: masking would widen access.
+			if mode > 0o777 {
+				logf("file mode %q is not a decimal value in 0..511; leaving permissions unchanged", modeStr)
+				return nil
+			}
+			return os.Chmod(filePath, os.FileMode(mode))
 		}
 	}
 

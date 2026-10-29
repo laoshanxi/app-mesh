@@ -529,3 +529,73 @@ jobs:
 		t.Fatalf("expected workflow env key error, got %v", err)
 	}
 }
+
+// `if:` fields accept full expressions inside ${{ }} (the runtime evaluator
+// supports operators and status functions there); validation must accept them
+// while still rejecting a typo'd operand reference.
+func TestConditionExpressions(t *testing.T) {
+	accepted := []string{
+		`${{ steps.make.exit_code >= 0 }}`,
+		`${{ steps.make.exit_code == 0 }}`,
+		`${{ !failure() }}`,
+		`${{ failure() || steps.make.exit_code == 0 }}`,
+		`${{ jobs.dep.status == "success" && steps.make.stdout != "" }}`,
+		`${{ true }}`,
+	}
+	for _, cond := range accepted {
+		path := writeTmp(t, `
+name: cond-ok
+jobs:
+  dep:
+    steps:
+      - name: s
+        command: "true"
+  main:
+    needs: [dep]
+    steps:
+      - name: make
+        command: "echo 1"
+      - name: gated
+        if: '`+cond+`'
+        command: "echo ok"
+`)
+		if _, err := LoadWorkflow(path); err != nil {
+			t.Errorf("condition %q rejected: %v", cond, err)
+		}
+	}
+	rejected := []string{
+		`${{ steps.typo.exit_code >= 0 }}`,
+		`${{ failure() || jobs.nosuch.status == "success" }}`,
+	}
+	for _, cond := range rejected {
+		path := writeTmp(t, `
+name: cond-bad
+jobs:
+  main:
+    steps:
+      - name: make
+        command: "echo 1"
+      - name: gated
+        if: '`+cond+`'
+        command: "echo ok"
+`)
+		if _, err := LoadWorkflow(path); err == nil {
+			t.Errorf("condition %q accepted with an unresolvable operand", cond)
+		}
+	}
+	// Value fields stay strict: an operator expression in a command is not
+	// supported by substitution and must still fail the load.
+	path := writeTmp(t, `
+name: cmd-bad
+jobs:
+  main:
+    steps:
+      - name: make
+        command: "echo 1"
+      - name: use
+        command: "echo ${{ steps.make.exit_code >= 0 }}"
+`)
+	if _, err := LoadWorkflow(path); err == nil || !strings.Contains(err.Error(), "unresolved expression") {
+		t.Fatalf("expected command expression error, got %v", err)
+	}
+}

@@ -285,7 +285,7 @@ std::shared_ptr<HttpResponse> RestClient::request(const std::string &host, const
 					"appmesh-rest");
 
 				client->setConnectionCallback(
-					[state, loop](const trantor::TcpConnectionPtr &conn)
+					[state](const trantor::TcpConnectionPtr &conn)
 					{
 						if (state->finished)
 							return;

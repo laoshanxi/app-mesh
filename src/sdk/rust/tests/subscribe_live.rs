@@ -135,7 +135,7 @@ async fn test_live_tcp_file_transfer_guard() {
     let plain = tcp_client();
     plain.set_token_provider(Some(static_provider(&bearer())));
     plain
-        .download_file("/opt/appmesh/bin/appmesh", "/tmp/e2e-rust-plain", false)
+        .download_file("/etc/hosts", "/tmp/e2e-rust-plain", false)
         .await
         .expect("a separate client instance must be able to download");
 }

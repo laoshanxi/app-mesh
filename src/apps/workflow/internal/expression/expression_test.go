@@ -365,3 +365,83 @@ func TestSubstitute_ToJSONUnresolved(t *testing.T) {
 		t.Errorf("got %q", got)
 	}
 }
+
+func TestSubstituteForCommand_SingleQuotedExpression(t *testing.T) {
+	ctx := NewContext()
+	ctx.SetStepResult("j", "ask", "", 0, "success", `{"answer": "it's 42"}`, nil)
+	cmd, bindings, err := SubstituteForCommand(`echo '${{ steps.ask.response }}' | jq .`, ctx, "j")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	// The quoted expression is substituted textually: the shell keeps one closed
+	// quote around the value, and no $WF_E binding shadows it.
+	want := `echo '{"answer": "it'\''s 42"}' | jq .`
+	if cmd != want {
+		t.Errorf("command: got %q, want %q", cmd, want)
+	}
+	if len(bindings) != 0 {
+		t.Errorf("quoted expression must not create bindings, got %v", bindings)
+	}
+}
+
+func TestSubstituteForCommand_MixedQuotedAndPlain(t *testing.T) {
+	ctx := NewContext()
+	ctx.SetStepResult("j", "ver", "1.2.3", 0, "success", "", nil)
+	cmd, bindings, err := SubstituteForCommand(`echo 'v=${{ steps.ver.stdout }}' plain=${{ steps.ver.stdout }}`, ctx, "j")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if cmd != `echo 'v=1.2.3' plain=$WF_E0` {
+		t.Errorf("command: got %q", cmd)
+	}
+	if bindings["WF_E0"] != "1.2.3" {
+		t.Errorf("plain expression binding missing: %v", bindings)
+	}
+}
+
+func TestSubstituteForCommand_QuotedStrictUnresolved(t *testing.T) {
+	ctx := NewContext()
+	ctx.Strict = true
+	if _, _, err := SubstituteForCommand(`echo '${{ steps.ghost.stdout }}'`, ctx, "j"); err == nil {
+		t.Error("strict mode must fail on an unresolved quoted expression")
+	}
+}
+
+func TestSubstituteForCommand_QuoteInsideDoubleQuotesUntouched(t *testing.T) {
+	ctx := NewContext()
+	ctx.SetStepResult("j", "x", "VAL", 0, "success", "", nil)
+	// "don't ${{ ... }}" — the apostrophe is inside double quotes, so the
+	// expression is not single-quoted and keeps the environment mechanism.
+	cmd, bindings, err := SubstituteForCommand(`echo "don't ${{ steps.x.stdout }}"`, ctx, "j")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if cmd != `echo "don't $WF_E0"` || bindings["WF_E0"] != "VAL" {
+		t.Errorf("got %q bindings %v", cmd, bindings)
+	}
+}
+
+// A ${{ }}-wrapped condition must evaluate as its inner expression: operators
+// inside the braces take effect instead of the unresolved text turning into a
+// truthy literal.
+func TestEvalCondition_WrappedExpression(t *testing.T) {
+	ctx := NewContext()
+	ctx.SetStepResult("j", "make", "7", 0, "success", "", nil)
+	cases := []struct {
+		cond string
+		want bool
+	}{
+		{`${{ steps.make.exit_code == 0 }}`, true},
+		{`${{ steps.make.exit_code > 3 }}`, false},
+		{`${{ !failure() }}`, true},
+		{`${{ failure() || steps.make.exit_code == 0 }}`, true},
+		{`${{ failure() || steps.make.exit_code > 3 }}`, false},
+		{`steps.make.exit_code == 0`, true}, // bare form unchanged
+		{`failure()`, false},
+	}
+	for _, c := range cases {
+		if got := EvalConditionForJob(c.cond, ctx, "j"); got != c.want {
+			t.Errorf("condition %q: got %v, want %v", c.cond, got, c.want)
+		}
+	}
+}

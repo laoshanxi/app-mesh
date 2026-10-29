@@ -205,7 +205,8 @@ func (c *AppMeshClientWSS) UploadFileContext(ctx context.Context, localFile, rem
 	if err != nil {
 		return fmt.Errorf("upload request failed: %w", err)
 	}
-	if status != http.StatusOK {
+	// The WS upload surface answers 201 Created with a success JSON body.
+	if status != http.StatusOK && status != http.StatusCreated {
 		return newAPIErrorText("upload file", status, string(msg), fmt.Sprintf("failed to upload %q: status=%d msg=%s",
 			localFile, status, msg))
 	}
@@ -245,7 +246,8 @@ func (c *AppMeshClientWSS) UploadFileContext(ctx context.Context, localFile, rem
 	}
 	defer resp.Body.Close()
 
-	if resp.StatusCode != http.StatusOK {
+	// The daemon's streaming upload surface answers 201 Created on success.
+	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusCreated {
 		body, _ := io.ReadAll(resp.Body)
 		return newAPIErrorText("upload file", resp.StatusCode, string(body),
 			fmt.Sprintf("upload failed: status=%d msg=%s", resp.StatusCode, string(body)))

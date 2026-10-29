@@ -6,9 +6,7 @@
 #include "application/Application.h"
 #include "process/AppProcess.h"
 
-HealthCheckTask::HealthCheckTask() {}
-
-HealthCheckTask::~HealthCheckTask() {}
+#include <thread>
 
 void HealthCheckTask::doHealthCheck()
 {
@@ -67,4 +65,60 @@ std::shared_ptr<HealthCheckTask> &HealthCheckTask::instance()
 {
 	static auto singleton = std::make_shared<HealthCheckTask>();
 	return singleton;
+}
+
+HealthCheckTask::HealthCheckTask()
+{
+	m_worker = std::thread(&HealthCheckTask::run, this);
+}
+
+HealthCheckTask::~HealthCheckTask()
+{
+	{
+		std::lock_guard<std::mutex> guard(m_mutex);
+		m_stopped = true;
+	}
+	m_wakeup.notify_all();
+	if (m_worker.joinable())
+		m_worker.join();
+}
+
+void HealthCheckTask::trigger()
+{
+	{
+		std::lock_guard<std::mutex> guard(m_mutex);
+		m_triggered = true;
+	}
+	m_wakeup.notify_all();
+}
+
+void HealthCheckTask::run()
+{
+	const static char fname[] = "HealthCheckTask::run() ";
+	LOG_INF << fname << "health check worker started";
+	while (true)
+	{
+		std::unique_lock<std::mutex> lock(m_mutex);
+		m_wakeup.wait(lock, [this] { return m_stopped || m_triggered; });
+		if (m_stopped)
+			break;
+		m_triggered = false;
+		lock.unlock();
+
+		// doHealthCheck() waits in QuitHandler-aware slices, so a shutdown
+		// request ends a running round promptly and the loop exits above.
+		try
+		{
+			doHealthCheck();
+		}
+		catch (const std::exception &ex)
+		{
+			LOG_WAR << fname << "health check round failed: " << ex.what();
+		}
+		catch (...)
+		{
+			LOG_WAR << fname << "health check round failed with unknown exception";
+		}
+	}
+	LOG_INF << fname << "health check worker exited";
 }

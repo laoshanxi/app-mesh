@@ -1,15 +1,18 @@
 #include "AuthReplicator.h"
 
 #include <algorithm>
+#include <chrono>
 #include <filesystem>
 #include <fstream>
 #include <iomanip>
 #include <random>
 #include <sstream>
 
+#include "../../common/QuitHandler.h"
 #include "../../common/RestClient.h"
 #include "../../common/Utility.h"
 #include "../../common/json.h"
+#include "../../common/os/filesystem.h"
 #include "Security.h"
 
 namespace
@@ -42,7 +45,7 @@ AuthReplicator &AuthReplicator::instance()
 
 void AuthReplicator::start()
 {
-	if (m_enabled.load())
+	if (m_worker.joinable())
 		return;
 	m_tokenFile = Utility::stdStringTrim(Utility::getenv(ENV_TOKEN_FILE));
 	if (m_tokenFile.empty())
@@ -68,10 +71,20 @@ void AuthReplicator::start()
 		}
 	}
 	m_caPath = Utility::stdStringTrim(Utility::getenv(ENV_CA));
-	m_elapsedSeconds = m_intervalSeconds; // pull on the first schedule tick
-	m_enabled.store(true);
 	LOG_INF << "authorization replication enabled: from <" << m_source << "> every <" << m_intervalSeconds
 			<< ">s, token file <" << m_tokenFile << ">";
+	m_worker = std::thread(&AuthReplicator::run, this);
+}
+
+AuthReplicator::~AuthReplicator()
+{
+	{
+		std::lock_guard<std::mutex> guard(m_mutex);
+		m_stopped = true;
+	}
+	m_wakeup.notify_all();
+	if (m_worker.joinable())
+		m_worker.join();
 }
 
 void AuthReplicator::ensureOwnerTokenFile()
@@ -83,37 +96,62 @@ void AuthReplicator::ensureOwnerTokenFile()
 	if (!ec && !Utility::isFileExist(m_tokenFile))
 	{
 		// 256-bit shared secret; readable by the follower identities that mount
-		// the directory read-only inside the cluster network.
+		// the directory read-only inside the cluster network. Owner-only mode,
+		// like the policy file the token authorizes reading.
 		std::random_device device;
 		std::ostringstream hex;
 		hex << std::hex;
 		for (int i = 0; i < 8; ++i)
 			hex << std::setw(8) << std::setfill('0') << device();
-		std::ofstream out(m_tokenFile, std::ios::binary | std::ios::trunc);
-		out << hex.str() << std::endl;
-		if (out.good())
-			LOG_INF << fname << "generated the cluster replication token in <" << m_tokenFile << ">";
-		else
+		const auto tmp = os::createTmpFile(m_tokenFile, hex.str() + "\n", 0600);
+		std::error_code renameError;
+		if (!tmp.empty())
+			fs::rename(tmp, m_tokenFile, renameError);
+		if (tmp.empty() || renameError)
+		{
+			if (!tmp.empty())
+				Utility::removeFile(tmp);
 			LOG_WAR << fname << "could not write the replication token to <" << m_tokenFile << ">";
+			return;
+		}
+		LOG_INF << fname << "generated the cluster replication token in <" << m_tokenFile << ">";
 	}
+	// Tighten a token left group/world-readable by an older build (best effort).
+	fs::permissions(path, fs::perms::owner_read | fs::perms::owner_write, ec);
 }
 
 void AuthReplicator::notifyPolicyMiss()
 {
-	if (m_enabled.load())
-		m_missPending.store(true);
+	{
+		std::lock_guard<std::mutex> guard(m_mutex);
+		m_missPending = true;
+	}
+	m_wakeup.notify_all();
 }
 
-void AuthReplicator::onScheduleTick(int stepSeconds)
+void AuthReplicator::run()
 {
-	if (!m_enabled.load())
-		return;
-	m_elapsedSeconds += stepSeconds;
-	const bool missed = m_missPending.exchange(false);
-	if (!missed && m_elapsedSeconds < m_intervalSeconds)
-		return;
-	m_elapsedSeconds = 0;
-	pullOnce();
+	const static char fname[] = "AuthReplicator::run() ";
+	LOG_INF << fname << "authorization replication worker started";
+	bool firstRound = true;
+	while (true)
+	{
+		if (!firstRound)
+		{
+			std::unique_lock<std::mutex> lock(m_mutex);
+			// An interval tick and a policy miss both end this wait early; misses
+			// arriving during a pull coalesce into the next round.
+			m_wakeup.wait_for(lock, std::chrono::seconds(m_intervalSeconds), [this] { return m_stopped || m_missPending; });
+			if (m_stopped)
+				break;
+			m_missPending = false;
+		}
+		firstRound = false;
+		if (QuitHandler::instance()->shouldExit())
+			break;
+		pullOnce();
+	}
+	LOG_INF << fname << "authorization replication worker exited";
 }
 
 void AuthReplicator::pullOnce()

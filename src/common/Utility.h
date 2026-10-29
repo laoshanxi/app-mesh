@@ -109,6 +109,7 @@ template <typename T> std::shared_ptr<T> make_shared_array(size_t size)
 #define APPMESH_APPLICATION_DIR "apps"
 #define APPMESH_WORK_DIR "work"
 #define APPMESH_WORK_TMP_DIR "tmp"
+#define APPMESH_WORK_UPLOAD_DIR "uploads" // drogon upload cache, lives under work/tmp
 #define APPMESH_WORK_CONFIG_DIR "config"
 #define DEFAULT_PROM_LISTEN_PORT 0
 #define DEFAULT_REST_LISTEN_PORT 6060
@@ -297,6 +298,7 @@ public:
 #define WORKFLOW_APP_NAME "workflow"
 #define WORKFLOW_DEFINITION_PREFIX "workflow-"
 #define WORKFLOW_STEP_PREFIX "wf-cmd-"
+#define WORKFLOW_CONTROLLER_PRINCIPAL_PREFIX "internal:workflow-controller:"
 #define REST_TEXT_MESSAGE_JSON_KEY "message"
 
 #define JSON_KEY_BaseConfig "BaseConfig"

@@ -175,6 +175,13 @@ func (s *Service) dispatchSchedules() {
 // Wdir returns the workdir manager for API access.
 func (s *Service) Wdir() *workdir.Manager { return s.wdir }
 
+// SyncTriggers re-arms app_event subscriptions for the current registry state.
+// Registration and removal call it directly so a trigger is armed at once; the
+// Run loop keeps its periodic call as the safety net.
+func (s *Service) SyncTriggers() {
+	s.events.SyncSubscriptions()
+}
+
 // Checkpoint returns the checkpoint manager for API access.
 func (s *Service) Checkpoint() *Checkpoint { return s.checkpoint }
 

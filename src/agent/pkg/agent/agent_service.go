@@ -601,6 +601,9 @@ func HandleRESTFile(w http.ResponseWriter, r *http.Request, data *Response) erro
 	}
 }
 
+// Rejected upload/download paths that are not plain I/O failures.
+var errInvalidFileName = errors.New("file path is not allowed")
+
 // HandleDownload processes file download requests
 func HandleDownload(w http.ResponseWriter, r *http.Request, data *Response, filePath string) error {
 	if data.TempDownloadFilePath != "" {
@@ -608,10 +611,9 @@ func HandleDownload(w http.ResponseWriter, r *http.Request, data *Response, file
 		defer os.Remove(data.TempDownloadFilePath)
 	}
 
-	// Path already authorized by the daemon; IsValidFileName's system-path blocklist applies
-	// only to uploads (kept in HandleUpload).
+	// The daemon authorizes every transfer path; only transport-level sanity stays here.
 	if filePath == "" || strings.ContainsAny(filePath, "\x00") {
-		return fmt.Errorf("invalid file name")
+		return errInvalidFileName
 	}
 
 	_, fileName := filepath.Split(filePath)
@@ -630,8 +632,10 @@ func HandleUpload(w http.ResponseWriter, r *http.Request, data *Response, filePa
 	}
 	logger.Debugf("Uploading file: %s", filePath)
 
-	if !utils.IsValidFileName(filePath) {
-		return fmt.Errorf("invalid file name")
+	// The daemon authorized the path on the precheck request; a local write beyond
+	// that still fails on file-system permissions, matching the direct transport.
+	if filePath == "" || strings.ContainsAny(filePath, "\x00") {
+		return errInvalidFileName
 	}
 
 	if err := SaveUploadedFile(w, r, filePath); err != nil {

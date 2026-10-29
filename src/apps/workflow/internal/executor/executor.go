@@ -493,10 +493,27 @@ func (e *StepExecutor) runAndWait(app appmesh.Application, timeout int) models.S
 	if ec != 0 {
 		status = models.StatusFailure
 	}
+	// The daemon kills a run at its max time, surfacing as SIGKILL (exit 9)
+	// rather than a client-side error; label it so a timeout is tellable from
+	// an ordinary crash exit.
+	var reason string
+	if !disconnected {
+		switch {
+		case exitCode == nil && e.cancelContext().Err() != nil:
+			reason = "step cancelled before exit"
+		case exitCode == nil && waitErr != nil:
+			reason = fmt.Sprintf("step ended without an exit code: %v", waitErr)
+		case exitCode == nil:
+			reason = fmt.Sprintf("step killed by timeout after %ds", maxTime)
+		case ec == 9 && dur >= float64(maxTime)-0.5:
+			reason = fmt.Sprintf("step killed by timeout after %ds", maxTime)
+		}
+	}
 	return models.StepResult{
 		Status:   status,
 		ExitCode: &ec,
 		Stdout:   truncate(strings.TrimSpace(out), maxStdoutCapture),
+		Response: reason,
 		Duration: dur,
 		// The streamed file (if any) holds the uncapped archive; flag it so the
 		// engine does not overwrite it with this capped Stdout.

@@ -15,17 +15,17 @@ from _support import config
 
 
 def get_test_paths():
+    # None of these paths may live inside the daemon's installation tree: the
+    # file API refuses its own state on every transport.
     local_tmpdir = tempfile.gettempdir()
     if sys.platform == "win32":
         return {
-            "server_log": r"C:\local\appmesh\work\server.log",
-            "remote_tmp": r"C:\local\appmesh\work\2.log",
+            "remote_tmp": r"C:\Windows\Temp\2.log",
             "local_tmp": os.path.join(local_tmpdir, "3.log"),
             "etc_file": r"C:\Windows\System32\drivers\etc\hosts",
-            "etc_copy": r"C:\local\appmesh\work\hosts-copy",
+            "etc_copy": r"C:\Windows\Temp\hosts-copy",
         }
     return {
-        "server_log": "/opt/appmesh/work/server.log",
         "remote_tmp": "/tmp/2.log",
         "local_tmp": os.path.join(local_tmpdir, "3.log"),
         "etc_file": "/etc/hosts",
@@ -450,14 +450,14 @@ class FileTransferMixin:
     """Tests for download_file / upload_file across HTTP / TCP / WSS transports."""
 
     def test_20_file_download(self):
-        """Download server log to local."""
+        """Download a system file to local."""
         paths = get_test_paths()
         config.attach_test_bearer(self.client)
         local = "download_test.log"
         try:
             if os.path.exists(local):
                 os.remove(local)
-            self.assertIsNone(self.client.download_file(paths["server_log"], local))
+            self.assertIsNone(self.client.download_file(paths["etc_file"], local))
             self.assertTrue(os.path.exists(local))
         finally:
             if os.path.exists(local):
@@ -471,7 +471,7 @@ class FileTransferMixin:
         local_dst = "roundtrip_dst.log"
         remote = paths["remote_tmp"]
         try:
-            self.client.download_file(paths["server_log"], local_src)
+            self.client.download_file(paths["etc_file"], local_src)
             self.assertEqual(
                 0,
                 self.client.run_app_sync(

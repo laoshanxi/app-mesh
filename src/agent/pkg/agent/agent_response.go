@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"os"
 	"path"
+	"syscall"
 
 	"github.com/laoshanxi/app-mesh/src/agent/pkg/config"
 	"github.com/laoshanxi/app-mesh/src/agent/pkg/utils"
@@ -136,7 +137,16 @@ func (r *Response) writeToHTTPResponse(w http.ResponseWriter, req *http.Request)
 	// Only an OK answer carries a file; error replies proxy like any REST reply.
 	if r.HTTPStatus == http.StatusOK && (r.RequestURI == RestPathDownload || r.RequestURI == RestPathUpload) {
 		if err := HandleRESTFile(w, req, r); err != nil {
-			utils.HTTPError(w, err.Error(), http.StatusInternalServerError)
+			// Client mistakes (bad destination path) are not server failures; a
+			// permission denial stays a plain I/O error (500), matching the daemon.
+			status := http.StatusInternalServerError
+			switch {
+			case errors.Is(err, errInvalidFileName):
+				status = http.StatusForbidden
+			case errors.Is(err, os.ErrNotExist), errors.Is(err, syscall.EISDIR), errors.Is(err, syscall.ENOTDIR):
+				status = http.StatusBadRequest
+			}
+			utils.HTTPError(w, err.Error(), status)
 		}
 		logger.Debugf("File REST call finished %s", r.UUID)
 	} else {

@@ -287,6 +287,11 @@ void DrogonAdaptor::setupRoutes()
 
 	// QuitHandler owns SIGTERM/SIGINT process-wide; drogon must not replace them.
 	app.disableSigtermHandling();
+	// drogon's run() pre-creates 256 upload cache directories under its upload path
+	// (default "uploads", relative to the working directory); pin it under work/tmp.
+	const auto uploadDir =
+		(fs::path(Configuration::instance()->getWorkDir()) / APPMESH_WORK_TMP_DIR / APPMESH_WORK_UPLOAD_DIR).string();
+	app.setUploadPath(uploadDir);
 	// No framework banner (version leak) and JSON, not drogon's HTML, for errors
 	// the daemon never sees (invalid methods, unmatched framework routes).
 	app.enableServerHeader(false);

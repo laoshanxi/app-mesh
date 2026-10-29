@@ -45,6 +45,7 @@ func getCurrentAbPathByCaller() string {
 	return abPath
 }
 
+// GetParentDir returns the parent directory of the given path.
 func GetParentDir(directory string) string {
 	if directory == "" {
 		return ""
@@ -52,19 +53,6 @@ func GetParentDir(directory string) string {
 
 	// filepath.Dir handles both Windows and Unix path separators correctly
 	return filepath.Dir(filepath.Clean(directory))
-}
-
-func IsValidFileName(fileName string) bool {
-	// Ensure the resulting file path is safe on the Linux file system
-	// Avoid certain unsafe patterns
-	unsafePrefixes := []string{"/etc/", "/var/", "/usr/", "/bin/", "/sbin/", "/lib/", "/lib64/", "/proc/", "/sys/", "/boot/"}
-	for _, prefix := range unsafePrefixes {
-		if strings.HasPrefix(fileName, prefix) {
-			return false
-		}
-	}
-
-	return true
 }
 
 // MaskSecret masks the input secret, keeping `visibleChars` at the beginning and end, replacing the middle with `mask`.

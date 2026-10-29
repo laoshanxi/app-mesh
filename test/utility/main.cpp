@@ -69,6 +69,31 @@ TEST_CASE("Utility Test", "[Utility]")
 		REQUIRE_FALSE(Utility::isDirExist("/abc"));
 	}
 
+	SECTION("file API path gate")
+	{
+		const std::string home = Utility::getHomeDir();
+		// The daemon's own tree is refused even when no jail is configured...
+		REQUIRE_FALSE(Utility::validateFilePath(selfPath, ""));
+		REQUIRE_FALSE(Utility::validateFilePath(home, ""));
+		REQUIRE_FALSE(Utility::validateFilePath(home + "/ssl/server-key.pem", ""));
+		// ...and even when the jail itself points inside it.
+		REQUIRE_FALSE(Utility::validateFilePath(selfPath, home));
+		// work/tmp is the shared scratch area and stays exchangeable.
+		REQUIRE(Utility::validateFilePath(home + "/work/tmp/file", ""));
+		REQUIRE(Utility::validateFilePath(home + "/work/tmp/uploads/tmp/00/f", ""));
+		// The rest of work/ (apps, auth, config) is still refused.
+		REQUIRE_FALSE(Utility::validateFilePath(home + "/work/apps/app.yaml", ""));
+		REQUIRE_FALSE(Utility::validateFilePath(home + "/work/auth/secrets/x", ""));
+		// A sibling directory sharing the prefix is not the daemon tree.
+		REQUIRE(Utility::validateFilePath(home + "2/file", ""));
+		REQUIRE(Utility::validateFilePath("/tmp", ""));
+		REQUIRE(Utility::validateFilePath("/tmp/new/dir/file", ""));
+		REQUIRE_FALSE(Utility::validateFilePath("/tmp/../etc/passwd", ""));
+		REQUIRE_FALSE(Utility::validateFilePath(std::string("/tmp/a\0b", 8), ""));
+		REQUIRE(Utility::validateFilePath("/tmp/file", "/tmp"));
+		REQUIRE_FALSE(Utility::validateFilePath("/etc/hostname", "/tmp"));
+	}
+
 	SECTION("string operation function test")
 	{
 		const std::string testStr = "hello word";

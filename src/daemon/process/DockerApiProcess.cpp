@@ -407,7 +407,7 @@ const std::shared_ptr<HttpResponse> DockerApiProcess::requestDocker(const web::h
 		auto logBody = *body;
 		if (logBody.isMember("Env"))
 			logBody["Env"] = "***";
-		LOG_DBG << fname << path << "\n" << JSON::dump(logBody, 2);
+		LOG_DBG << fname << path << " " << JSON::dump(logBody);
 	}
 
 	auto response = std::make_shared<HttpResponse>();

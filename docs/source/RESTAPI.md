@@ -26,7 +26,7 @@ endpoints, requests use an OAuth access token in the
 | GET | `/appmesh/principal/self` | Current verified principal and App Mesh authorization |
 | GET | `/appmesh/principal/self/permissions` | Current principal effective permissions |
 | GET | `/appmesh/principals` | List App Mesh authorization principals |
-| POST | `/appmesh/principal/{principal_id}` | Update an App Mesh principal policy |
+| POST | `/appmesh/principal/{principal_id}` | Update an App Mesh principal policy; on a tombstoned principal an explicit `"status": "active"` revives it (an update without `status` is rejected) |
 | DELETE | `/appmesh/principal/{principal_id}` | Delete an App Mesh authorization principal |
 | GET | `/appmesh/roles` | List App Mesh roles |
 | POST | `/appmesh/role/{role}` | Create or replace a role |
@@ -44,6 +44,13 @@ endpoints, requests use an OAuth access token in the
 | POST | `/appmesh/app/{name}/enable` | Enable a non-system application |
 | POST | `/appmesh/app/{name}/disable` | Disable a non-system application |
 | GET | `/appmesh/app/{name}/output` | Read application output |
+
+### Application field notes
+
+- `permission` — share bits `<other><group>` (1 deny, 2 read, 3 write; `0` = everyone full access). When the field is omitted the application is registered **owner-only** (`11`); pass `0` explicitly to open it to every principal.
+- `stdout_backup_count` — output files kept per application across restarts (default `0`: each start replaces the previous run's output).
+- `daily_limitation.daily_start` / `daily_end` — seconds since UTC midnight (integers).
+- An application whose `end_time` is in the past, or whose `interval` is not a positive duration, is rejected with `400`.
 | GET | `/appmesh/app/{name}/health` | Get application health |
 
 Applications use `owner_principal_id`; REST input cannot create
@@ -88,6 +95,13 @@ there. The run then continues until it finishes or reaches its timeout.
 |---|---|---|
 | GET | `/appmesh/file/download` | Download a file |
 | POST | `/appmesh/file/upload` | Upload a file |
+
+### File transfer notes
+
+- `X-File-Path` must be absolute; `X-File-Mode` is the **decimal** file mode (for example `493` for `0755`), matching the `st_mode` convention used by the SDKs. A value outside `0..511` (for example the octal digits `"755"`) is ignored on every transport — the file keeps its default mode; it is never masked.
+- Uploads never overwrite: an existing destination returns `409`.
+- The daemon's own installation tree (the directory that holds `bin/`, `ssl/`, `config/`, `script/` and `work/`, for example `/opt/appmesh`) is refused on both directions regardless of `REST.FileAllowedBaseDir`; symbolic links into it are resolved before the check. The `work/tmp` scratch subtree inside it is the one exchangeable exception.
+- An unset `REST.FileAllowedBaseDir` (the packaged default) means no base-directory jail: every absolute path outside the daemon's own tree is transferable in both directions as far as the daemon's OS user allows. Container images run the daemon unprivileged, so host files it cannot read or write stay protected; set the option to confine transfers to one directory tree.
 | GET | `/appmesh/labels` | List host labels |
 | PUT | `/appmesh/label/{label}` | Set a host label |
 | DELETE | `/appmesh/label/{label}` | Delete a host label |

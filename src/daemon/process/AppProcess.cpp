@@ -225,8 +225,8 @@ struct AppProcess::Lifecycle
 // ---------------------------------------------------------------------------
 
 AppProcess::AppProcess(std::weak_ptr<Application> owner)
-	: m_owner(owner), m_timerTerminateId(INVALID_TIMER_ID), m_timerCheckStdoutId(INVALID_TIMER_ID), m_stdOutMaxSize(0),
-	  m_outFileMutex(std::make_shared<std::mutex>()),
+	: m_owner(owner), m_internal(owner.expired()), m_timerTerminateId(INVALID_TIMER_ID),
+	  m_timerCheckStdoutId(INVALID_TIMER_ID), m_stdOutMaxSize(0), m_outFileMutex(std::make_shared<std::mutex>()),
 #if defined(_WIN32)
 	  m_job(nullptr, ::CloseHandle),
 #endif
@@ -432,7 +432,8 @@ void AppProcess::reportPolledExitAsync()
 			}
 			catch (...)
 			{
-				LOG_CRT << "AppProcess::reportPolledExitAsync() FATAL: exit code fetch failed for <" << self->getUuid() << ">";
+				LOG_CRT << "AppProcess::reportPolledExitAsync() FATAL: exit code fetch failed for <" << self->getUuid()
+						<< ">";
 			}
 			self->m_lifecycle->exitPollInFlight.store(false, std::memory_order_release);
 		});
@@ -896,52 +897,49 @@ pid_t AppProcess::startImpl(std::string cmd, std::string user, std::string workD
 	int pipeWriteForChild = -1;
 	int pipeReadForDaemon = -1;
 
-	if (!m_stdoutFileName.empty() || stdinFileContent != EMPTY_STR_JSON)
+	// A child never inherits the daemon's stdio: unnamed runs write to the null device.
+	if (!m_stdoutFileName.empty())
 	{
-			if (!m_stdoutFileName.empty())
-			{
-				m_stdoutHandler.reset(openStdioFile(m_stdoutFileName.c_str(), false));
-				LOG_DBG << fname << "std_out: " << m_stdoutFileName << " m_stdoutHandler: " << m_stdoutHandler.get();
+		m_stdoutHandler.reset(openStdioFile(m_stdoutFileName.c_str(), false));
+		LOG_DBG << fname << "std_out: " << m_stdoutFileName << " m_stdoutHandler: " << m_stdoutHandler.get();
 
 #if !defined(_WIN32)
-				std::tie(pipeReadForDaemon, pipeWriteForChild) = createStdoutPipe();
+		std::tie(pipeReadForDaemon, pipeWriteForChild) = createStdoutPipe();
 #endif
-				if (!m_stdoutHandler.valid())
-				{
-					// Continuing would redirect the child's stdout nowhere: the run
-					// would finish successfully with its output silently lost.
+		if (!m_stdoutHandler.valid())
+		{
+			// Continuing would redirect the child's stdout nowhere: the run
+			// would finish successfully with its output silently lost.
 #if !defined(_WIN32)
-					::close(pipeReadForDaemon);
-					::close(pipeWriteForChild);
+			::close(pipeReadForDaemon);
+			::close(pipeWriteForChild);
 #endif
-					const std::string error =
-						Utility::stringFormat("Failed to open stdout file <%s>: %s", m_stdoutFileName.c_str(), last_error_msg());
-					LOG_ERR << fname << error;
-					setStartError(error);
-					return INVALID_PID;
-				}
-			}
-		else
-		{
-			m_stdoutHandler.reset(openStdioFile(DEV_NULL, false));
+			const std::string error =
+				Utility::stringFormat("Failed to open stdout file <%s>: %s", m_stdoutFileName.c_str(), last_error_msg());
+			LOG_ERR << fname << error;
+			setStartError(error);
+			return INVALID_PID;
 		}
+	}
+	else
+	{
+		m_stdoutHandler.reset(openStdioFile(DEV_NULL, false));
+	}
 
-		if (stdinFileContent != EMPTY_STR_JSON)
-		{
-			// JSON::dump never throws: a throw here would leave the app never started.
-			const std::string content =
-				stdinFileContent.isString() ? stdinFileContent.asString() : JSON::dump(stdinFileContent);
-			m_stdinFileName = os::createTmpFile(m_stdinFileName, content, 0600);
-			m_stdinHandler.reset(openStdioFile(m_stdinFileName.c_str(), true));
+	if (stdinFileContent != EMPTY_STR_JSON)
+	{
+		// JSON::dump never throws: a throw here would leave the app never started.
+		const std::string content = stdinFileContent.isString() ? stdinFileContent.asString() : JSON::dump(stdinFileContent);
+		m_stdinFileName = os::createTmpFile(m_stdinFileName, content, 0600);
+		m_stdinHandler.reset(openStdioFile(m_stdinFileName.c_str(), true));
 
-			if (!m_stdinHandler.valid())
-				setStartError(Utility::stringFormat("Failed to reopen stdin file for reading <%s>", last_error_msg()));
-			LOG_DBG << fname << "std_in <" << m_stdinFileName << "> handler=" << m_stdinHandler.get();
-		}
-		else
-		{
-			m_stdinHandler.reset(openStdioFile(DEV_NULL, true));
-		}
+		if (!m_stdinHandler.valid())
+			setStartError(Utility::stringFormat("Failed to reopen stdin file for reading <%s>", last_error_msg()));
+		LOG_DBG << fname << "std_in <" << m_stdinFileName << "> handler=" << m_stdinHandler.get();
+	}
+	else
+	{
+		m_stdinHandler.reset(openStdioFile(DEV_NULL, true));
 	}
 
 	const bool redirectStdio = m_stdinHandler.valid() && m_stdoutHandler.valid();
@@ -1054,7 +1052,8 @@ pid_t AppProcess::startImpl(std::string cmd, std::string user, std::string workD
 	}
 
 	const pid_t startedPid = static_cast<pid_t>(launched->id());
-	LOG_INF << fname << "Process <" << cmd << "> started with pid <" << startedPid << ">.";
+	LOG_STREAM(m_internal ? spdlog::level::debug : spdlog::level::info)
+		<< fname << "Process <" << cmd << "> started with pid <" << startedPid << ">.";
 
 	m_pid.store(startedPid);
 	m_lastPid = startedPid;
@@ -1108,8 +1107,9 @@ pid_t AppProcess::startImpl(std::string cmd, std::string user, std::string workD
 								<< ">: " << waitEc.message();
 						exitCode = FORCED_TERMINATION_EXIT_CODE;
 					}
-					LOG_INF << "AppProcess::startImpl() Process <" << self->lastPid() << "> exited with code <" << exitCode
-							<< ">";
+					LOG_STREAM(self->m_internal ? spdlog::level::debug : spdlog::level::info)
+						<< "AppProcess::startImpl() Process <" << self->lastPid() << "> exited with code <" << exitCode
+						<< ">";
 					self->onExit(exitCode);
 				});
 		});

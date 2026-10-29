@@ -36,6 +36,14 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-cargo-
 
+      - name: Keep dependent lock files in sync
+        working-directory: ${{ github.workspace }}
+        run: |
+          # src/cli depends on this SDK by path; bumping its version without
+          # refreshing src/cli/Cargo.lock leaves a surprise diff for the next
+          # cargo run anywhere. --locked fails loudly when the lock is stale.
+          cargo metadata --locked --format-version 1 --manifest-path src/cli/Cargo.toml > /dev/null
+
       - name: Build (release)
         run: cargo build --release
         env:
@@ -50,6 +58,14 @@ jobs:
         run: cargo publish --dry-run --allow-dirty
 
       - name: Publish to crates.io
-        run: cargo publish --no-verify --allow-dirty
+        # Re-runs (e.g. after a history rewrite) must not fail on an
+        # already-published version; publishing is idempotent here.
+        run: |
+          VERSION=$(cargo metadata --no-deps --format-version 1 | python3 -c "import json,sys;print(json.load(sys.stdin)['packages'][0]['version'])")
+          if curl -fsSI -A "appmesh-ci" "https://crates.io/api/v1/crates/appmesh/$VERSION" -o /dev/null; then
+            echo "appmesh@$VERSION already published, skipping"
+          else
+            cargo publish --no-verify --allow-dirty
+          fi
         env:
           CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}

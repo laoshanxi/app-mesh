@@ -201,7 +201,7 @@ async fn sdk_14_log_level() {
 async fn sdk_20_file_download() {
     let c = authed().await;
     let tmp = tempfile::NamedTempFile::new().unwrap();
-    c.download_file("/opt/appmesh/work/server.log", tmp.path().to_str().unwrap(), false).await.unwrap();
+    c.download_file("/etc/hosts", tmp.path().to_str().unwrap(), false).await.unwrap();
     assert!(std::fs::metadata(tmp.path()).unwrap().len() > 0);
 }
 

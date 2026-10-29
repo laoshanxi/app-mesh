@@ -65,6 +65,9 @@ REST:
   CsrfAllowedOrigins: []
 
   # Allowed base directory for file upload/download operations.
+  # The daemon's own installation tree is always refused, even inside this directory.
+  # Empty (the default) means no jail: paths outside the daemon's own tree are
+  # transferable as far as the daemon's OS user allows.
   FileAllowedBaseDir:
 
   SSL:

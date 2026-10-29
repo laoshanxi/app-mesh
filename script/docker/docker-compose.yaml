@@ -86,8 +86,25 @@ services:
   appmesh_ui:
     restart: always
     image: laoshanxi/appmesh-ui
+    # network_mode re-attaches the UI to the master's namespace, but a master
+    # container restart leaves a running UI in an orphaned namespace (443 dead,
+    # nothing re-creates it). restart: true makes compose recreate the UI
+    # whenever the master restarts.
     depends_on:
-      - appmesh_master
+      appmesh_master:
+        condition: service_healthy
+        restart: true
+    # A master restart (docker restart, crash, compose) leaves a running UI in
+    # an orphaned network namespace: 443 dies and nothing re-creates the
+    # container. Docker does not restart on unhealthy, so the probe stops nginx
+    # itself; restart: always then re-creates the container into the live
+    # namespace.
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsk https://localhost:443/health >/dev/null 2>&1 || kill -QUIT 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
     # Shares the master's network namespace. The image itself waits for the
     # loopback API upstream before nginx binds 443, and exits after 60s of
     # unreachability so restart: always re-creates the container into the
@@ -139,7 +156,7 @@ services:
 
   # LLM node: same daemon with the llm-agent app preinstalled and enabled
   # (laoshanxi/appmesh:llm). Register an API key before first use, e.g. a
-  # gateway token: appm -F appmesh_llm add -f llm-agent.yaml \
+  # gateway token: appm -F appmesh_llm add -D @/opt/appmesh/apps/llm-agent.yaml \
   #   -z ANTHROPIC_AUTH_TOKEN=<key> -e ANTHROPIC_BASE_URL=<gateway-url> --force
   appmesh_llm:
     hostname: appmesh_llm
@@ -229,6 +246,8 @@ services:
       - APPMESH_AUTH_AUDIENCE=appmesh-api
       # Advertise the published loopback entry to host AI clients.
       - APPMESH_MCP_PUBLIC_URL=http://127.0.0.1:6071
+      # No outbound pypi version probe from the MCP container.
+      - FASTMCP_CHECK_FOR_UPDATES=off
     volumes:
       # The master's TLS material, read-only (the shared appmesh_tls volume);
       # the server uses ca.pem to verify the engine.
