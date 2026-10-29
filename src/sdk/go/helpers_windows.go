@@ -35,7 +35,13 @@ func ApplyFileAttributes(filePath string, headers http.Header) error {
 	if err != nil {
 		return err
 	}
+	// Decimal permission bits (493 = 0755), same convention as the daemon and
+	// the unix implementation. Out-of-range values are ignored, never masked.
+	if modeVal > 0o777 {
+		logf("file mode %q is not a decimal value in 0..511; leaving attributes unchanged", modeStr)
+		return nil
+	}
 
 	// os.Chmod on Windows primarily toggles the read-only attribute
-	return os.Chmod(filePath, os.FileMode(modeVal&0o777))
+	return os.Chmod(filePath, os.FileMode(modeVal))
 }

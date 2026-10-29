@@ -40,7 +40,15 @@ jobs:
 
       - name: Publish to npm (OIDC, no token required)
         working-directory: "src/sdk/javascript/"
-        run: npm publish --access public
+        # Re-runs (e.g. after a history rewrite) must not fail on an
+        # already-published version; publishing is idempotent here.
+        run: |
+          VERSION=$(node -p "require('./package.json').version")
+          if npm view appmesh@$VERSION version >/dev/null 2>&1; then
+            echo "appmesh@$VERSION already published, skipping"
+          else
+            npm publish --access public
+          fi
 
       - name: Clean up old versions (keep latest 5)
         if: success()

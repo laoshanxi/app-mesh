@@ -69,6 +69,25 @@ TEST_CASE("Utility Test", "[Utility]")
 		REQUIRE_FALSE(Utility::isDirExist("/abc"));
 	}
 
+	SECTION("file API path gate")
+	{
+		const std::string home = Utility::getHomeDir();
+		// The daemon's own tree is refused even when no jail is configured...
+		REQUIRE_FALSE(Utility::validateFilePath(selfPath, ""));
+		REQUIRE_FALSE(Utility::validateFilePath(home, ""));
+		REQUIRE_FALSE(Utility::validateFilePath(home + "/ssl/server-key.pem", ""));
+		// ...and even when the jail itself points inside it.
+		REQUIRE_FALSE(Utility::validateFilePath(selfPath, home));
+		// A sibling directory sharing the prefix is not the daemon tree.
+		REQUIRE(Utility::validateFilePath(home + "2/file", ""));
+		REQUIRE(Utility::validateFilePath("/tmp", ""));
+		REQUIRE(Utility::validateFilePath("/tmp/new/dir/file", ""));
+		REQUIRE_FALSE(Utility::validateFilePath("/tmp/../etc/passwd", ""));
+		REQUIRE_FALSE(Utility::validateFilePath(std::string("/tmp/a\0b", 8), ""));
+		REQUIRE(Utility::validateFilePath("/tmp/file", "/tmp"));
+		REQUIRE_FALSE(Utility::validateFilePath("/etc/hostname", "/tmp"));
+	}
+
 	SECTION("string operation function test")
 	{
 		const std::string testStr = "hello word";

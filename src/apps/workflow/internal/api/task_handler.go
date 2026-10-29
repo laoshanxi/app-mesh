@@ -457,6 +457,8 @@ func (h *TaskHandler) handleWorkflowAdd(req Request, callerToken, caller string,
 
 	h.wdir.EnsureWorkflowDir(req.Workflow)
 	h.svc.Registry().Update(req.Workflow, wf, owner)
+	// Arm the app_event subscription now, not at the next scan.
+	h.svc.SyncTriggers()
 	return Response{Status: "ok", Message: "workflow registered"}
 }
 
@@ -536,6 +538,8 @@ func (h *TaskHandler) handleWorkflowRm(req Request, callerToken string) Response
 	}
 	h.svc.CancelByWorkflow(req.Workflow)
 	h.svc.Registry().Remove(req.Workflow)
+	// Drop the removed workflow's event subscription now.
+	h.svc.SyncTriggers()
 	appName := workflowAppPrefix + req.Workflow
 	callerClient, err := h.newCallerClient(callerToken)
 	if err != nil {

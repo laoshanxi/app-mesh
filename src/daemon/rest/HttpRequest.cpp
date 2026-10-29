@@ -352,7 +352,6 @@ HttpRequestAutoCleanup::~HttpRequestAutoCleanup()
 
 void HttpRequestAutoCleanup::onConnectionClosed(const std::string &connectionId)
 {
-	const static char fname[] = "HttpRequestAutoCleanup::onConnectionClosed() ";
 	for (const auto &request : HeldRunRequests::instance().take(connectionId))
 		request->abortDisconnectedRun();
 }

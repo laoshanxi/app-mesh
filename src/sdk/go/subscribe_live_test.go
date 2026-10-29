@@ -122,7 +122,7 @@ func TestLiveTCPFileTransferGuard(t *testing.T) {
 	require.NoError(t, err)
 	plain.SetToken(requireBearerToken(t))
 	defer plain.CloseConnection()
-	require.NoError(t, plain.DownloadFile("/opt/appmesh/bin/appmesh", t.TempDir()+"/separate-client", false))
+	require.NoError(t, plain.DownloadFile("/etc/hosts", t.TempDir()+"/separate-client", false))
 }
 
 // WSS variant of the subscribe-based wait.

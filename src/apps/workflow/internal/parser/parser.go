@@ -181,6 +181,14 @@ var (
 	toJSONRefPattern  = regexp.MustCompile(`^toJSON\((.+)\)$`)
 	stepFieldPattern  = regexp.MustCompile(`^(stdout|exit_code|status|response|outputs)$`)
 	workflowRefFields = map[string]bool{"name": true, "run_id": true}
+
+	// conditionExprPattern matches what the runtime evaluator accepts in an
+	// `if:` block beyond a plain path: status functions, operators, literals.
+	// Value fields (command, env, ...) resolve paths only and stay strict.
+	conditionExprPattern = regexp.MustCompile(`\b(?:always|success|failure)\(\)|\|\||&&|==|[<>!]|^(?:true|false)$|^-?\d+(?:\.\d+)?$`)
+	// conditionRefPattern extracts the resolvable references out of such an
+	// expression, e.g. `steps.build.exit_code` from `steps.build.exit_code >= 0`.
+	conditionRefPattern = regexp.MustCompile(`\b(?:steps|jobs|inputs|env|workflow|job)(?:\.[A-Za-z0-9_-]+)+`)
 )
 
 // validateExpressionRefs fails a workflow whose ${{ }} paths reference names
@@ -218,9 +226,9 @@ func validateExpressionRefs(wf *models.Workflow) error {
 		return names
 	}
 
-	// check validates one ${{ ... }} inner path. jobName scopes `steps.` refs
+	// checkPath validates one ${{ ... }} inner path. jobName scopes `steps.` refs
 	// ("" = cross-job only, used for workflow_call output values).
-	check := func(where, path, jobName string) error {
+	checkPath := func(where, path, jobName string) error {
 		inner := strings.TrimSpace(path)
 		if m := toJSONRefPattern.FindStringSubmatch(inner); m != nil {
 			inner = strings.TrimSpace(m[1])
@@ -287,9 +295,36 @@ func validateExpressionRefs(wf *models.Workflow) error {
 		}
 	}
 
+	// checkCondition validates one `if:` block: the runtime evaluator accepts a
+	// full expression here, so operator-bearing blocks validate each
+	// context-rooted operand instead of the whole text being one path.
+	checkCondition := func(where, path, jobName string) error {
+		inner := strings.TrimSpace(path)
+		if m := toJSONRefPattern.FindStringSubmatch(inner); m != nil {
+			inner = strings.TrimSpace(m[1])
+		}
+		if conditionExprPattern.MatchString(inner) {
+			for _, ref := range conditionRefPattern.FindAllString(inner, -1) {
+				if err := checkPath(where, ref, jobName); err != nil {
+					return err
+				}
+			}
+			return nil
+		}
+		return checkPath(where, inner, jobName)
+	}
+
 	checkString := func(where, s, jobName string) error {
 		for _, m := range exprRefPattern.FindAllStringSubmatch(s, -1) {
-			if err := check(where, m[1], jobName); err != nil {
+			if err := checkPath(where, m[1], jobName); err != nil {
+				return err
+			}
+		}
+		return nil
+	}
+	checkConditionString := func(where, s, jobName string) error {
+		for _, m := range exprRefPattern.FindAllStringSubmatch(s, -1) {
+			if err := checkCondition(where, m[1], jobName); err != nil {
 				return err
 			}
 		}
@@ -306,7 +341,7 @@ func validateExpressionRefs(wf *models.Workflow) error {
 
 	for _, job := range wf.Jobs {
 		jobWhere := fmt.Sprintf("job %q", job.Name)
-		if err := checkString(jobWhere+" if", job.Condition, job.Name); err != nil {
+		if err := checkConditionString(jobWhere+" if", job.Condition, job.Name); err != nil {
 			return err
 		}
 		if err := checkStringMap(jobWhere+" env", job.Env, job.Name); err != nil {
@@ -321,10 +356,13 @@ func validateExpressionRefs(wf *models.Workflow) error {
 		}{{"steps", job.Steps}, {"finally", job.Finally}} {
 			for _, step := range steps.list {
 				stepWhere := fmt.Sprintf("%s %s step %q", jobWhere, steps.label, step.Name)
+				if err := checkConditionString(stepWhere+" if", step.Condition, job.Name); err != nil {
+					return err
+				}
 				for _, field := range []struct {
 					label string
 					value string
-				}{{"command", step.Command}, {"if", step.Condition}, {"workdir", step.Workdir}, {"docker_image", step.DockerImage}} {
+				}{{"command", step.Command}, {"workdir", step.Workdir}, {"docker_image", step.DockerImage}} {
 					if err := checkString(fmt.Sprintf("%s %s", stepWhere, field.label), field.value, job.Name); err != nil {
 						return err
 					}

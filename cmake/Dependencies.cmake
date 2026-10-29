@@ -7,9 +7,10 @@
 ##########################################################################
 # Minimal Boost options
 set(Boost_USE_STATIC_LIBS OFF)   # Use shared libraries
-# Optional: set BOOST_ROOT if installed in non-standard path (macOS Homebrew)
+# Optional: set Boost_ROOT if installed in non-standard path (macOS Homebrew).
+# <PackageName>_ROOT works on every CMake; the upper-case form needs CMP0144.
 if(APPLE)
-    set(BOOST_ROOT /opt/homebrew)
+    set(Boost_ROOT /opt/homebrew)
 endif()
 # 1.86 is the first release with the Boost.Process V2 asio engine the daemon uses.
 find_package(Boost 1.86 REQUIRED COMPONENTS

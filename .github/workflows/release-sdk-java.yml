@@ -38,6 +38,15 @@ jobs:
 
       - name: Publish package
         working-directory: "src/sdk/java/"
-        run: mvn --batch-mode deploy -DskipTests
+        # Re-runs (e.g. after a history rewrite) must not fail on the
+        # already-deployed artifact; deploying is idempotent here.
+        run: |
+          VERSION=$(mvn --batch-mode -q help:evaluate -Dexpression=project.version -DforceEval | tail -n 1)
+          STATUS=$(curl -s -o /dev/null -w "%{http_code}" -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}"             "https://maven.pkg.github.com/laoshanxi/app-mesh/laoshanxi/appmesh/$VERSION/appmesh-$VERSION.pom")
+          if [ "$STATUS" = "200" ]; then
+            echo "laoshanxi:appmesh:$VERSION already deployed, skipping"
+          else
+            mvn --batch-mode deploy -DskipTests
+          fi
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

@@ -120,6 +120,8 @@ private:
 
 	// Ownership and timers
 	const std::weak_ptr<Application> m_owner;
+	// Ownerless runs (health checks, docker CLI helpers) log start/exit at debug.
+	const bool m_internal;
 	std::atomic_long m_timerTerminateId;
 	std::atomic_long m_timerCheckStdoutId;
 	off_t m_stdOutMaxSize;

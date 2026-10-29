@@ -248,6 +248,10 @@ bool Utility::validateFilePath(const std::string &filePath, const std::string &a
 	// Enforce base-directory jail when configured
 	if (!allowedBaseDir.empty() && !isPathTraversalSafe(allowedBaseDir, filePath))
 		return false;
+	// The daemon's own tree (binaries, TLS keys, bootstrap credentials, registry) is never
+	// transferable on either direction, whatever the jail allows.
+	if (isPathTraversalSafe(getHomeDir(), filePath))
+		return false;
 	return true;
 }
 
@@ -1070,17 +1074,17 @@ bool Utility::createPidFile()
 	int fd = open(pidFile.c_str(), O_CREAT | O_RDWR, 0666);
 	if (fd < 0)
 	{
-		std::cerr << fname << "Failed to create PID file [" << pidFile << "]: " << last_error_msg() << std::endl;
+		LOG_ERR << fname << "Failed to create PID file [" << pidFile << "]: " << last_error_msg();
 		return false;
 	}
 
 	if (flock(fd, LOCK_EX | LOCK_NB) == 0)
 	{
-		std::cout << fname << "New process running. PID file locked: " << pidFile << std::endl;
+		LOG_INF << fname << "New process running. PID file locked: " << pidFile;
 		std::string pid = std::to_string(getpid());
 		if (ftruncate(fd, 0) != 0 || lseek(fd, 0, SEEK_SET) != 0 || write(fd, pid.c_str(), pid.length()) <= 0)
 		{
-			std::cerr << fname << "Failed to write PID to file [" << pidFile << "]: " << last_error_msg() << std::endl;
+			LOG_ERR << fname << "Failed to write PID to file [" << pidFile << "]: " << last_error_msg();
 			close(fd);
 			return false;
 		}
@@ -1091,11 +1095,11 @@ bool Utility::createPidFile()
 	{
 		if (errno == EWOULDBLOCK)
 		{
-			std::cerr << fname << "Process already running. PID file locked: " << pidFile << std::endl;
+			LOG_ERR << fname << "Process already running. PID file locked: " << pidFile;
 		}
 		else
 		{
-			std::cerr << fname << "Failed to lock PID file [" << pidFile << "]: " << last_error_msg() << std::endl;
+			LOG_ERR << fname << "Failed to lock PID file [" << pidFile << "]: " << last_error_msg();
 		}
 		close(fd);
 		return false;
@@ -1114,11 +1118,11 @@ bool Utility::createPidFile()
 		DWORD error = GetLastError();
 		if (error == ERROR_SHARING_VIOLATION)
 		{
-			std::cerr << fname << "Process already running. PID file locked: " << pidFile << std::endl;
+			LOG_ERR << fname << "Process already running. PID file locked: " << pidFile;
 		}
 		else
 		{
-			std::cerr << fname << "Failed to create PID file <" << pidFile << "> with error " << error << std::endl;
+			LOG_ERR << fname << "Failed to create PID file <" << pidFile << "> with error " << error;
 		}
 		return false;
 	}
@@ -1127,12 +1131,12 @@ bool Utility::createPidFile()
 	DWORD bytesWritten;
 	if (!WriteFile(hFile, pid.c_str(), static_cast<DWORD>(pid.length()), &bytesWritten, NULL))
 	{
-		std::cerr << fname << "Failed to write PID to file <" << pidFile << "> with error " << GetLastError() << std::endl;
+		LOG_ERR << fname << "Failed to write PID to file <" << pidFile << "> with error " << GetLastError();
 		CloseHandle(hFile);
 		return false;
 	}
 
-	std::cout << fname << "New process running. PID file locked: " << pidFile << std::endl;
+	LOG_INF << fname << "New process running. PID file locked: " << pidFile;
 	// Keep handle open to maintain lock
 	pidFileLockOwned() = true;
 	return true;
@@ -1877,6 +1881,81 @@ namespace
 		output.swap(out);
 		return outcome;
 	}
+
+	// Length of the UTF-8 sequence starting at input[i] (0 for a stray byte or
+	// a truncated tail), and whether its continuation bytes are valid.
+	std::pair<size_t, bool> utf8SequenceAt(const std::string &input, size_t i)
+	{
+		const unsigned char lead = static_cast<unsigned char>(input[i]);
+		size_t len = 0;
+		if (lead < 0x80)
+			len = 1;
+		else if ((lead & 0xE0) == 0xC0)
+			len = 2;
+		else if ((lead & 0xF0) == 0xE0)
+			len = 3;
+		else if ((lead & 0xF8) == 0xF0)
+			len = 4;
+		if (len == 0 || i + len > input.size())
+			return {0, false};
+		for (size_t j = 1; j < len; ++j)
+		{
+			if ((static_cast<unsigned char>(input[i + j]) & 0xC0) != 0x80)
+				return {0, false};
+		}
+		return {len, true};
+	}
+
+	// Count of valid multi-byte sequences and the bytes they cover: evidence
+	// that a buffer is UTF-8 text with stray binary bytes.
+	std::pair<size_t, size_t> utf8MultibyteEvidence(const std::string &input)
+	{
+		size_t count = 0, covered = 0;
+		for (size_t i = 0; i < input.size();)
+		{
+			const auto [len, valid] = utf8SequenceAt(input, i);
+			if (len > 1 && valid)
+			{
+				++count;
+				covered += len;
+			}
+			i += len > 0 ? len : 1;
+		}
+		return {count, covered};
+	}
+
+	// Keep valid UTF-8 and replace each stray byte with U+FFFD.
+	std::string utf8ReplaceInvalid(const std::string &input)
+	{
+		std::string out;
+		out.reserve(input.size());
+		for (size_t i = 0; i < input.size();)
+		{
+			const auto [len, valid] = utf8SequenceAt(input, i);
+			if (valid)
+			{
+				out.append(input, i, len);
+				i += len;
+			}
+			else
+			{
+				out.append("\xEF\xBF\xBD");
+				++i;
+			}
+		}
+		return out;
+	}
+
+	// GBK and the other CJK code pages accept most high-byte pairs, CP1252
+	// almost any byte string: a strict acceptance alone is weak evidence. When
+	// at least two multi-byte UTF-8 sequences cover half the buffer, treat it
+	// as UTF-8 text with stray bytes and replace only those, instead of
+	// re-encoding everything into mojibake.
+	bool utf8EvidenceBeatsCandidate(const std::string &input)
+	{
+		const auto [count, covered] = utf8MultibyteEvidence(input);
+		return count >= 2 && covered * 2 >= input.size();
+	}
 #endif // !defined(_WIN32)
 } // namespace
 
@@ -2010,6 +2089,10 @@ std::string Utility::fileBytesToUtf8(const std::string &input)
 		const IconvOutcome outcome = iconvToUtf8(input, candidate.iconvName, converted, tailBytes);
 		if (outcome == ICONV_ACCEPTED)
 		{
+			if (utf8EvidenceBeatsCandidate(input))
+			{
+				return utf8ReplaceInvalid(input);
+			}
 			return converted;
 		}
 		if (outcome == ICONV_SPLIT_TAIL)

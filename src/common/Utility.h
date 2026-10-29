@@ -297,6 +297,7 @@ public:
 #define WORKFLOW_APP_NAME "workflow"
 #define WORKFLOW_DEFINITION_PREFIX "workflow-"
 #define WORKFLOW_STEP_PREFIX "wf-cmd-"
+#define WORKFLOW_CONTROLLER_PRINCIPAL_PREFIX "internal:workflow-controller:"
 #define REST_TEXT_MESSAGE_JSON_KEY "message"
 
 #define JSON_KEY_BaseConfig "BaseConfig"
