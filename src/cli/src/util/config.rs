@@ -175,6 +175,57 @@ pub fn delete_session(session: &StoredSession) -> Result<()> {
     }
 }
 
+/// Cross-process mutex for one session's initial token preparation. Concurrent
+/// `appm` starts share a single refresh token; without serialization two
+/// refreshes race, the rotation invalidates the loser's grant, and every later
+/// command demands a fresh `appm logon`.
+pub struct SessionLock {
+    path: PathBuf,
+}
+
+const SESSION_LOCK_STALE_AFTER: std::time::Duration = std::time::Duration::from_secs(10);
+const SESSION_LOCK_WAIT_LIMIT: std::time::Duration = std::time::Duration::from_secs(15);
+
+impl SessionLock {
+    /// Blocks until the lock is acquired. A holder that died without releasing
+    /// is recovered once the lock file is older than the stale window.
+    pub fn acquire(session: &StoredSession) -> Result<Self> {
+        let dir = session_dir();
+        ensure_private_directory(&dir)?;
+        let path = session_file(session).with_extension("lock");
+        let deadline = std::time::Instant::now() + SESSION_LOCK_WAIT_LIMIT;
+        loop {
+            match std::fs::OpenOptions::new().write(true).create_new(true).open(&path) {
+                Ok(_) => return Ok(Self { path }),
+                Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {
+                    let stale = std::fs::metadata(&path)
+                        .and_then(|meta| meta.modified())
+                        .ok()
+                        .and_then(|modified| modified.elapsed().ok())
+                        .is_some_and(|age| age > SESSION_LOCK_STALE_AFTER);
+                    if stale {
+                        let _ = std::fs::remove_file(&path);
+                        continue;
+                    }
+                    if std::time::Instant::now() > deadline {
+                        anyhow::bail!("timed out waiting for the OAuth session lock {}", path.display());
+                    }
+                    std::thread::sleep(std::time::Duration::from_millis(50));
+                }
+                Err(error) => {
+                    return Err(error).with_context(|| format!("create OAuth session lock {}", path.display()))
+                }
+            }
+        }
+    }
+}
+
+impl Drop for SessionLock {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_file(&self.path);
+    }
+}
+
 fn read_session_file(path: &Path) -> Result<StoredSession> {
     ensure_private_file(path)?;
     let bytes = std::fs::read(path).with_context(|| format!("read OAuth session {}", path.display()))?;

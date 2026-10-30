@@ -83,6 +83,7 @@ protected:
 
 	void apiFileDownload(const std::shared_ptr<HttpRequest> &message);
 	void apiFileUpload(const std::shared_ptr<HttpRequest> &message);
+	void apiFileDelete(const std::shared_ptr<HttpRequest> &message);
 
 	void apiLabelsView(const std::shared_ptr<HttpRequest> &message);
 	void apiLabelAdd(const std::shared_ptr<HttpRequest> &message);

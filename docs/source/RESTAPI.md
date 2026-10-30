@@ -95,11 +95,13 @@ there. The run then continues until it finishes or reaches its timeout.
 |---|---|---|
 | GET | `/appmesh/file/download` | Download a file |
 | POST | `/appmesh/file/upload` | Upload a file |
+| DELETE | `/appmesh/file/delete` | Delete a file (guarded by the dedicated file-delete permission) |
 
 ### File transfer notes
 
 - `X-File-Path` must be absolute; `X-File-Mode` is the **decimal** file mode (for example `493` for `0755`), matching the `st_mode` convention used by the SDKs. A value outside `0..511` (for example the octal digits `"755"`) is ignored on every transport — the file keeps its default mode; it is never masked.
-- Uploads never overwrite: an existing destination returns `409`.
+- Uploads never overwrite by default: an existing destination returns `409`. Send `X-File-Overwrite: true` to replace it (the new content is published atomically).
+- `DELETE /appmesh/file/delete` removes one regular file named by `X-File-Path` under its own `file-delete` permission (independent of `file-upload`); a missing file returns `404`, a directory or anything else is refused.
 - The daemon's own installation tree (the directory that holds `bin/`, `ssl/`, `config/`, `script/` and `work/`, for example `/opt/appmesh`) is refused on both directions regardless of `REST.FileAllowedBaseDir`; symbolic links into it are resolved before the check. The `work/tmp` scratch subtree inside it is the one exchangeable exception.
 - An unset `REST.FileAllowedBaseDir` (the packaged default) means no base-directory jail: every absolute path outside the daemon's own tree is transferable in both directions as far as the daemon's OS user allows. Container images run the daemon unprivileged, so host files it cannot read or write stay protected; set the option to confine transfers to one directory tree.
 | GET | `/appmesh/labels` | List host labels |

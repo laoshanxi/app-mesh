@@ -1,5 +1,7 @@
 package models
 
+import "fmt"
+
 // StepType identifies what kind of step this is.
 type StepType int
 
@@ -135,4 +137,37 @@ type Workflow struct {
 	// Unresolved ${{ }} fail the step instead of embedding literally.
 	StrictExpressions bool            `yaml:"strict_expressions,omitempty"`
 	Jobs              map[string]*Job `yaml:"jobs"`
+}
+
+// ApplyInputDefaults merges the workflow_call and manual input definitions
+// (manual wins on key collision), applies defaults, and rejects a missing
+// required input (rejected at dispatch for manual runs, at run start otherwise).
+func ApplyInputDefaults(wf *Workflow, inputs map[string]string) (map[string]string, error) {
+	if inputs == nil {
+		inputs = make(map[string]string)
+	}
+	if wf.On == nil {
+		return inputs, nil
+	}
+	inputDefs := make(map[string]InputParam)
+	if wf.On.WorkflowCall != nil {
+		for k, v := range wf.On.WorkflowCall.Inputs {
+			inputDefs[k] = v
+		}
+	}
+	if wf.On.Manual != nil {
+		for k, v := range wf.On.Manual.Inputs {
+			inputDefs[k] = v
+		}
+	}
+	for k, def := range inputDefs {
+		if _, ok := inputs[k]; !ok {
+			if def.Default != nil {
+				inputs[k] = fmt.Sprintf("%v", def.Default)
+			} else if def.Required {
+				return nil, fmt.Errorf("required input %q not provided", k)
+			}
+		}
+	}
+	return inputs, nil
 }

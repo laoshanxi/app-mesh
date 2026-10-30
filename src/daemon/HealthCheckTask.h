@@ -1,8 +1,6 @@
 #pragma once
 
-#include <condition_variable>
 #include <memory>
-#include <mutex>
 #include <thread>
 //////////////////////////////////////////////////////////////////////////
 /// Do health check for applications
@@ -14,17 +12,14 @@ public:
 	virtual ~HealthCheckTask();
 	static std::shared_ptr<HealthCheckTask> &instance();
 	void doHealthCheck();
-	/// Wake the resident worker for one round and return immediately. Health
-	/// checks spawn processes and wait, so they must stay off the scheduler
-	/// loop; triggers arriving while a round is running are coalesced.
-	void trigger();
+	/// Spawn the resident worker: one round, then a fixed sleep, repeated.
+	/// Health checks spawn processes and wait, so they must stay off the
+	/// scheduler loop. Call once, after the startup readiness phases (which
+	/// run doHealthCheck() inline).
+	void start();
 
 private:
 	void run();
 
 	std::thread m_worker;
-	std::mutex m_mutex;
-	std::condition_variable m_wakeup;
-	bool m_triggered = false;
-	bool m_stopped = false;
 };

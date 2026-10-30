@@ -1,6 +1,7 @@
 package expression
 
 import (
+	"encoding/json"
 	"strings"
 	"testing"
 )
@@ -443,5 +444,75 @@ func TestEvalCondition_WrappedExpression(t *testing.T) {
 		if got := EvalConditionForJob(c.cond, ctx, "j"); got != c.want {
 			t.Errorf("condition %q: got %v, want %v", c.cond, got, c.want)
 		}
+	}
+}
+
+// A JSON document payload substitutes with JSON string escaping, so quotes,
+// backslashes, and newlines in a value cannot break the document; any other
+// payload keeps the textual behavior.
+func TestSubstituteMessagePayload_JSONEscaping(t *testing.T) {
+	ctx := NewContext()
+	ctx.Inputs = map[string]string{
+		"code": `x = "hello" ` + "\\\n" + ` y`,
+	}
+	tmpl := `{"action":"send","input":"code: ${{ inputs.code }}","n":123}`
+	out, err := SubstituteMessagePayload(tmpl, ctx, "")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	var doc map[string]any
+	if e := json.Unmarshal([]byte(out), &doc); e != nil {
+		t.Fatalf("output is not valid JSON: %v\n%s", e, out)
+	}
+	if doc["input"] != "code: "+`x = "hello" `+"\\"+"\n"+" y" {
+		t.Errorf("value not preserved: %q", doc["input"])
+	}
+	if doc["n"] != float64(123) {
+		t.Errorf("non-string literal altered: %v", doc["n"])
+	}
+}
+
+// A non-JSON template (plain text or the bare toJSON pattern) substitutes
+// textually, exactly as SubstituteForJobChecked.
+func TestSubstituteMessagePayload_NonJSONFallsBack(t *testing.T) {
+	ctx := NewContext()
+	ctx.Inputs = map[string]string{"q": "what"}
+	out, err := SubstituteMessagePayload(`plain ${{ inputs.q }} text`, ctx, "")
+	if err != nil || out != "plain what text" {
+		t.Errorf("got %q err %v", out, err)
+	}
+}
+
+// Strict mode must fail the substitution instead of embedding an unresolved
+// expression into a JSON payload.
+func TestSubstituteMessagePayload_StrictUnresolved(t *testing.T) {
+	ctx := NewContext()
+	ctx.Strict = true
+	if _, err := SubstituteMessagePayload(`{"a":"${{ steps.nosuch.stdout }}"}`, ctx, ""); err == nil {
+		t.Error("expected strict error for unresolved expression")
+	}
+}
+
+// success()/failure() tolerate a continue-on-error failure (GitHub Actions
+// conclusion semantics) while steps.<name>.status keeps the raw outcome.
+func TestSuccessFailure_ToleratedFailure(t *testing.T) {
+	ctx := NewContext()
+	ctx.SetStepResult("j", "flaky", "", 3, "failure", "", nil)
+	ctx.MarkContinueOnError("j", "flaky")
+	ctx.SetStepResult("j", "real", "", 0, "success", "", nil)
+	if !EvalConditionForJob("success()", ctx, "j") {
+		t.Error("success() must tolerate a continue-on-error failure")
+	}
+	if EvalConditionForJob("failure()", ctx, "j") {
+		t.Error("failure() must not fire for a tolerated failure")
+	}
+	// The raw outcome stays visible to expressions.
+	if !EvalConditionForJob("steps.flaky.status == 'failure'", ctx, "j") {
+		t.Error("steps.flaky.status must keep the raw failure")
+	}
+	// An untolerated failure still fails the job.
+	ctx.SetStepResult("j", "fatal", "", 1, "failure", "", nil)
+	if EvalConditionForJob("success()", ctx, "j") {
+		t.Error("success() must fail on an untolerated failure")
 	}
 }

@@ -185,7 +185,7 @@ func (e *StepExecutor) execMessage(step *models.Step) models.StepResult {
 	if step.Message == nil {
 		return fail(1, "no message config", 0)
 	}
-	payload, err := expression.SubstituteForJobChecked(step.Message.Payload, e.Ctx, e.JobName)
+	payload, err := expression.SubstituteMessagePayload(step.Message.Payload, e.Ctx, e.JobName)
 	if err != nil {
 		return fail(1, err.Error(), 0)
 	}

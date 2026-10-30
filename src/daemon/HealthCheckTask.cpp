@@ -67,46 +67,32 @@ std::shared_ptr<HealthCheckTask> &HealthCheckTask::instance()
 	return singleton;
 }
 
-HealthCheckTask::HealthCheckTask()
-{
-	m_worker = std::thread(&HealthCheckTask::run, this);
-}
+HealthCheckTask::HealthCheckTask() {}
 
 HealthCheckTask::~HealthCheckTask()
 {
-	{
-		std::lock_guard<std::mutex> guard(m_mutex);
-		m_stopped = true;
-	}
-	m_wakeup.notify_all();
+	// A teardown path may skip the exit signal; marking it bounds the join to
+	// the current wait slice instead of hanging on a still-looping worker.
+	QuitHandler::instance()->markExit();
 	if (m_worker.joinable())
 		m_worker.join();
 }
 
-void HealthCheckTask::trigger()
+void HealthCheckTask::start()
 {
-	{
-		std::lock_guard<std::mutex> guard(m_mutex);
-		m_triggered = true;
-	}
-	m_wakeup.notify_all();
+	if (m_worker.joinable())
+		return;
+	m_worker = std::thread(&HealthCheckTask::run, this);
 }
 
 void HealthCheckTask::run()
 {
 	const static char fname[] = "HealthCheckTask::run() ";
 	LOG_INF << fname << "health check worker started";
-	while (true)
+	while (!QuitHandler::instance()->shouldExit())
 	{
-		std::unique_lock<std::mutex> lock(m_mutex);
-		m_wakeup.wait(lock, [this] { return m_stopped || m_triggered; });
-		if (m_stopped)
-			break;
-		m_triggered = false;
-		lock.unlock();
-
 		// doHealthCheck() waits in QuitHandler-aware slices, so a shutdown
-		// request ends a running round promptly and the loop exits above.
+		// request ends a running round promptly.
 		try
 		{
 			doHealthCheck();
@@ -119,6 +105,11 @@ void HealthCheckTask::run()
 		{
 			LOG_WAR << fname << "health check round failed with unknown exception";
 		}
+		// Fixed sleep after each round: a slow round pushes the next one back
+		// instead of shortening the gap. 30 schedule ticks keeps the
+		// process-spawning rounds sparse (60s at the default interval).
+		QuitHandler::instance()->waitForExit(
+			std::chrono::seconds(Configuration::instance()->getScheduleInterval() * 30));
 	}
 	LOG_INF << fname << "health check worker exited";
 }

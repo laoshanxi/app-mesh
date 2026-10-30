@@ -1,5 +1,16 @@
 # Changelog
 
+## 3.0.16
+
+- WSS transport: the WebSocket message/frame size caps are removed (tungstenite
+  defaults are 64 MiB message / 16 MiB frame), so a forwarded file download
+  larger than 16 MiB no longer fails with "Message too long".
+- File API: `upload_file_with(local, remote, preserve_permissions, overwrite)`
+  opts into replacing an existing remote file (header `X-File-Overwrite`, daemon
+  refuses with 409 otherwise); `upload_file` keeps the previous signature and
+  behavior. New `delete_file(remote)` removes a remote file
+  (`DELETE /appmesh/file/delete`). Available on the HTTP, WSS, and TCP clients.
+
 ## 3.0.15
 
 - `examples/simple.rs`: the async-run application now uses a POSIX shell loop

@@ -81,6 +81,9 @@ pub enum Commands {
     /// Upload a local file
     Put(PutArgs),
 
+    /// Remove a remote file
+    Rmfile(RmfileArgs),
+
     /// Manage host labels
     Label(LabelArgs),
 
@@ -497,6 +500,10 @@ pub struct PutArgs {
     #[arg(short = 'l', long = "local", required = true)]
     pub local: String,
 
+    /// Replace the remote file when it already exists
+    #[arg(short = 'f', long = "overwrite")]
+    pub overwrite: bool,
+
     /// Send local POSIX permissions and ownership with the uploaded file
     #[arg(long = "apply-permissions", conflicts_with = "no_attr")]
     pub apply_permissions: bool,
@@ -504,6 +511,13 @@ pub struct PutArgs {
     /// Deprecated compatibility flag; permissions are no longer sent by default
     #[arg(short = 'a', long = "no-attr", hide = true, conflicts_with = "apply_permissions")]
     pub no_attr: bool,
+}
+
+#[derive(Parser)]
+pub struct RmfileArgs {
+    /// Remote file path
+    #[arg(short = 'r', long = "remote", required = true)]
+    pub remote: String,
 }
 
 // ─── System Management ──────────────────────────────────────────────────────

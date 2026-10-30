@@ -52,9 +52,11 @@ void FileTransferHandler::prepareTransfer(Response &resp, int clientId)
 		}
 
 		// Temp file lives in the destination's directory (unique suffix) so the
-		// committing hard link stays on the same filesystem and never replaces a file.
+		// commit stays on the same filesystem and never leaves a partial file.
 		const auto tempName = fileName + "." + Utility::shortID() + ".part";
-		auto uploadInfo = std::make_unique<FileUploadInfo>(fileName, tempName, resp.file_upload_request_headers);
+		const auto overwrite = resp.file_upload_request_headers.count(HTTP_HEADER_KEY_file_overwrite) != 0 &&
+							   resp.file_upload_request_headers.find(HTTP_HEADER_KEY_file_overwrite)->second == "true";
+		auto uploadInfo = std::make_unique<FileUploadInfo>(fileName, tempName, resp.file_upload_request_headers, overwrite);
 		if (!uploadInfo->m_file.is_open())
 		{
 			auto msg = JSON::dump(Utility::text2json("Failed open file"));

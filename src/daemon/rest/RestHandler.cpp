@@ -228,6 +228,7 @@ constexpr auto REST_PATH_APP_TASK = R"(/appmesh/app/([^/\*]+)/task)";
 // 6. File Management
 constexpr auto REST_PATH_FILE_DOWNLOAD = "/appmesh/file/download";
 constexpr auto REST_PATH_FILE_UPLOAD = "/appmesh/file/upload";
+constexpr auto REST_PATH_FILE_DELETE = "/appmesh/file/delete";
 
 // 7. Label Management
 constexpr auto REST_PATH_LABEL_VIEW_ALL = "/appmesh/labels";
@@ -330,6 +331,8 @@ RestHandler::RestHandler() : m_metrics(std::make_shared<PrometheusRest>())
 				   std::bind(&RestHandler::apiFileDownload, this, std::placeholders::_1));
 	bindRestMethod(web::http::methods::POST, REST_PATH_FILE_UPLOAD,
 				   std::bind(&RestHandler::apiFileUpload, this, std::placeholders::_1));
+	bindRestMethod(web::http::methods::DEL, REST_PATH_FILE_DELETE,
+				   std::bind(&RestHandler::apiFileDelete, this, std::placeholders::_1));
 
 	// 7. Label Management
 	bindRestMethod(web::http::methods::GET, REST_PATH_LABEL_VIEW_ALL,
@@ -948,7 +951,16 @@ void RestHandler::apiFileUpload(const std::shared_ptr<HttpRequest> &message)
 	if (rejectFilePath(message, file))
 		return;
 
-	if (Utility::isFileExist(file))
+	std::error_code pathEc;
+	if (std::filesystem::is_directory(file, pathEc))
+	{
+		message->reply(web::http::status_codes::BadRequest, Utility::text2json("destination is a directory"));
+		return;
+	}
+
+	const auto overwrite = message->m_headers.count(HTTP_HEADER_KEY_file_overwrite) != 0 &&
+						   message->m_headers.find(HTTP_HEADER_KEY_file_overwrite)->second == "true";
+	if (!overwrite && Utility::isFileExist(file))
 	{
 		message->reply(web::http::status_codes::Conflict, Utility::text2json("file already exist"));
 		return;
@@ -972,7 +984,7 @@ void RestHandler::apiFileUpload(const std::shared_ptr<HttpRequest> &message)
 		// the socket arm above is the agent/TCP-SDK streaming path.
 		if (message->m_body->size() > MAX_UPLOAD_SIZE)
 			throw std::invalid_argument("upload exceeds the size limit");
-		FileUploadInfo upload(file, file + "." + Utility::shortID() + ".part", message->m_headers);
+		FileUploadInfo upload(file, file + "." + Utility::shortID() + ".part", message->m_headers, overwrite);
 		if (!upload.m_file.is_open())
 			throw std::runtime_error("failed to create the upload file");
 		upload.m_file.write(reinterpret_cast<const char *>(message->m_body->data()),
@@ -994,6 +1006,39 @@ void RestHandler::apiFileUpload(const std::shared_ptr<HttpRequest> &message)
 	}
 	// set permission
 	Utility::applyFilePermission(file, message->m_headers);
+}
+
+void RestHandler::apiFileDelete(const std::shared_ptr<HttpRequest> &message)
+{
+	const static char fname[] = "RestHandler::apiFileDelete() ";
+	permissionCheck(message, PERMISSION_KEY_file_delete);
+	if (0 == message->m_headers.count(HTTP_HEADER_KEY_file_path))
+	{
+		message->reply(web::http::status_codes::BadRequest, Utility::text2json("header 'X-File-Path' not found"));
+		return;
+	}
+	const auto file = Utility::decodeHeaderFilePath(message->m_headers.find(HTTP_HEADER_KEY_file_path)->second);
+	if (rejectFilePath(message, file))
+		return;
+
+	std::error_code ec;
+	if (std::filesystem::is_symlink(file, ec))
+	{
+		message->reply(web::http::status_codes::BadRequest, Utility::text2json("symlinks not allowed"));
+		return;
+	}
+	if (!std::filesystem::is_regular_file(file, ec))
+	{
+		message->reply(web::http::status_codes::NotFound, Utility::text2json("file not found"));
+		return;
+	}
+	if (!std::filesystem::remove(file, ec))
+	{
+		message->reply(web::http::status_codes::InternalError, Utility::text2json("failed to remove the file"));
+		return;
+	}
+	LOG_INF << fname << "File deleted: " << file;
+	message->reply(web::http::status_codes::OK, Utility::text2json("success"));
 }
 
 void RestHandler::apiLabelsView(const std::shared_ptr<HttpRequest> &message)

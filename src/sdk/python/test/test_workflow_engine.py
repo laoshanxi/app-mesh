@@ -468,7 +468,7 @@ jobs:
             self.cleanup(name)
 
     def test_12_input_required_enforced(self):
-        """A required input is enforced: missing -> failure, provided -> success."""
+        """A required input is enforced: missing -> rejected at dispatch, provided -> success."""
         name = "ut-reqinput"
         yaml = """
 name: ut-reqinput
@@ -486,9 +486,11 @@ jobs:
 """
         try:
             self.assertEqual(self.add(name, yaml).get("status"), "ok")
-            rid_missing, _ = self.trigger(name, inputs={})
-            st_missing, _ = self.wait(name, rid_missing, timeout=15)
-            self.assertEqual(st_missing, "failure")
+            # A missing required input is rejected at dispatch (the run never
+            # starts), like a GitHub Actions workflow_dispatch.
+            resp_missing = self.call("run", workflow=name, inputs={})
+            self.assertNotEqual(resp_missing.get("status"), "ok")
+            self.assertIn("required input", resp_missing.get("message") or "")
             rid_ok, _ = self.trigger(name, inputs={"must": "ok"})
             st_ok, _ = self.wait(name, rid_ok, timeout=15)
             self.assertEqual(st_ok, "success")

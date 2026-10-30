@@ -48,6 +48,17 @@ func (c *Context) MarkFinallyStep(jobName, stepName string) {
 	c.finallySteps[jobName+"."+stepName] = true
 }
 
+// MarkContinueOnError flags a failure tolerated by continue-on-error:
+// steps.<name>.status keeps the raw outcome, but success()/failure() treat
+// the step as non-failed (GitHub Actions conclusion semantics).
+func (c *Context) MarkContinueOnError(jobName, stepName string) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if s, ok := c.Steps[jobName+"."+stepName]; ok {
+		s["continue_on_error"] = true
+	}
+}
+
 // SetStepResult stores a step result scoped by job name.
 // Within YAML expressions, `steps.<name>` resolves against the caller-supplied jobName.
 // Cross-job references use `jobs.<job>.steps.<step>`.
@@ -338,6 +349,80 @@ func SubstituteForCommand(template string, ctx *Context, jobName string) (string
 	return out, bindings, nil
 }
 
+// SubstituteMessagePayload substitutes ${{ expr }} into a message-step payload.
+// A payload that is a JSON document substitutes with values JSON-escaped inside
+// string literals, so quotes or backslashes in an input cannot break the
+// document; any other payload substitutes textually (SubstituteForJobChecked).
+func SubstituteMessagePayload(template string, ctx *Context, jobName string) (string, error) {
+	if !json.Valid([]byte(template)) {
+		return SubstituteForJobChecked(template, ctx, jobName)
+	}
+
+	var strictErr error
+	const exprOpen, exprClose = "${{", "}}"
+	var b strings.Builder
+	inString := false
+	for i := 0; i < len(template); {
+		if strings.HasPrefix(template[i:], exprOpen) {
+			if rel := strings.Index(template[i:], exprClose); rel >= len(exprOpen) {
+				match := template[i : i+rel+len(exprClose)]
+				if exprText := strings.TrimSpace(template[i+len(exprOpen) : i+rel]); exprText != "" {
+					resolved, ok := resolveExpr(exprText, match, ctx, jobName)
+					if !ok {
+						if ctx.Strict {
+							if strictErr == nil {
+								strictErr = fmt.Errorf("unresolved expression %s", match)
+							}
+						} else {
+							logger.Warn("expression: unresolved " + match + " embedded literally")
+						}
+						b.WriteString(match)
+					} else if inString {
+						b.WriteString(jsonEscapeStringContent(resolved))
+					} else {
+						b.WriteString(resolved)
+					}
+					i += len(match)
+					continue
+				}
+			}
+		}
+		switch template[i] {
+		case '\\':
+			b.WriteByte(template[i])
+			if inString && i+1 < len(template) {
+				b.WriteByte(template[i+1])
+				i += 2
+				continue
+			}
+			i++
+		case '"':
+			inString = !inString
+			b.WriteByte(template[i])
+			i++
+		default:
+			b.WriteByte(template[i])
+			i++
+		}
+	}
+	if strictErr != nil {
+		return "", strictErr
+	}
+	return b.String(), nil
+}
+
+// jsonEscapeStringContent renders s as the body of a JSON string literal.
+func jsonEscapeStringContent(s string) string {
+	var b strings.Builder
+	enc := json.NewEncoder(&b)
+	enc.SetEscapeHTML(false)
+	if err := enc.Encode(s); err != nil {
+		return s
+	}
+	out := strings.TrimSuffix(b.String(), "\n")
+	return out[1 : len(out)-1]
+}
+
 // resolveExpr renders one expression; ok is false when its path is unresolved.
 // toJSON(path) emits a quoted JSON literal so values cannot break the document.
 func resolveExpr(expr, orig string, ctx *Context, jobName string) (string, bool) {
@@ -466,7 +551,7 @@ func allStepsSucceeded(ctx *Context, jobName string) bool {
 		if ctx.finallySteps[key] {
 			continue // finally steps don't count toward job success/failure
 		}
-		if s["status"] == "failure" {
+		if s["status"] == "failure" && s["continue_on_error"] != true {
 			return false
 		}
 	}

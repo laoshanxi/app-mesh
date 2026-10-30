@@ -8,7 +8,7 @@ use bytes::Bytes;
 use futures_util::{SinkExt, StreamExt};
 use std::sync::Arc;
 use tokio::sync::Mutex;
-use tokio_tungstenite::tungstenite::{client::IntoClientRequest, protocol::Message};
+use tokio_tungstenite::tungstenite::{client::IntoClientRequest, protocol::Message, protocol::WebSocketConfig};
 use tokio_tungstenite::{connect_async_tls_with_config, Connector};
 use url::Url;
 
@@ -50,7 +50,11 @@ impl WSSTransport {
 
         let connector = build_rustls_connector(&self.ssl_verify, self.ssl_client_cert.as_ref())?;
 
-        let (ws_stream, _) = connect_async_tls_with_config(request, None, false, Some(connector))
+        // File transfer relays the whole payload as one message/frame; the tungstenite
+        // defaults (64 MiB message / 16 MiB frame) reject large forwarded downloads.
+        let config =
+            WebSocketConfig::default().max_message_size(None).max_frame_size(None);
+        let (ws_stream, _) = connect_async_tls_with_config(request, Some(config), false, Some(connector))
             .await
             .map_err(map_connect_error)?;
 

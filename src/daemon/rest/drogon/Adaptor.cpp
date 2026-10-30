@@ -358,6 +358,9 @@ void DrogonAdaptor::setupRoutes()
 		"/appmesh/file/upload",
 		[this](const drogon::HttpRequestPtr &req, drogon::RequestStreamPtr &&stream, drogon::AdviceCallback &&callback)
 		{ handleUpload(req, std::move(stream), std::move(callback)); }, {drogon::Post});
+	app.registerHandler("/appmesh/file/delete",
+						[this](const drogon::HttpRequestPtr &req, drogon::AdviceCallback &&callback)
+						{ handleFileDelete(req, std::move(callback)); }, {drogon::Delete});
 	app.registerHandler("/appmesh/file/download/ws",
 						[this](const drogon::HttpRequestPtr &req, drogon::AdviceCallback &&callback)
 						{ handleDownload(req, std::move(callback)); }, {drogon::Get});
@@ -373,7 +376,8 @@ void DrogonAdaptor::setupRoutes()
 		callback(resp);
 	};
 	for (const char *path :
-		 {"/appmesh/file/download", "/appmesh/file/upload", "/appmesh/file/download/ws", "/appmesh/file/upload/ws"})
+		 {"/appmesh/file/download", "/appmesh/file/upload", "/appmesh/file/delete", "/appmesh/file/download/ws",
+		  "/appmesh/file/upload/ws"})
 	{
 		app.registerHandler(path, corsPreflight, {drogon::Options});
 	}
@@ -389,6 +393,7 @@ void DrogonAdaptor::setupRoutes()
 	};
 	app.registerHandler("/appmesh/file/download", routeNotFound, {drogon::Post, drogon::Put, drogon::Delete, drogon::Patch});
 	app.registerHandler("/appmesh/file/upload", routeNotFound, {drogon::Get, drogon::Put, drogon::Delete, drogon::Patch});
+	app.registerHandler("/appmesh/file/delete", routeNotFound, {drogon::Get, drogon::Post, drogon::Put, drogon::Patch});
 	app.registerHandler("/appmesh/file/download/ws", routeNotFound,
 						{drogon::Post, drogon::Put, drogon::Delete, drogon::Patch});
 	app.registerHandler("/appmesh/file/upload/ws", routeNotFound, {drogon::Get, drogon::Put, drogon::Delete, drogon::Patch});
@@ -743,7 +748,14 @@ void DrogonAdaptor::handleUpload(const drogon::HttpRequestPtr &req, drogon::Requ
 			callback(plainResponse(drogon::k400BadRequest, "Symlinks not allowed"));
 			return;
 		}
+		if (std::filesystem::is_directory(filePath, ec))
+		{
+			callback(plainResponse(drogon::k400BadRequest, "Destination is a directory"));
+			return;
+		}
 	}
+	const bool overwrite = req->getHeader(HTTP_HEADER_KEY_file_overwrite) == "true";
+	if (!overwrite)
 	{
 		std::error_code ec;
 		if (std::filesystem::exists(filePath, ec))
@@ -778,9 +790,9 @@ void DrogonAdaptor::handleUpload(const drogon::HttpRequestPtr &req, drogon::Requ
 	captureAttr("x-file-group", HTTP_HEADER_KEY_file_group);
 
 	// Stream into a temp file beside the destination and publish it on success
-	// without replacing an existing destination; the parser enforces the body cap.
+	// (atomically; an overwrite replaces, otherwise an existing destination stays).
 	const std::string tempPath = fullPath + ".appmesh-upload-" + Utility::uuid();
-	auto upload = std::make_shared<FileUploadInfo>(fullPath, tempPath, attrHeaders);
+	auto upload = std::make_shared<FileUploadInfo>(fullPath, tempPath, attrHeaders, overwrite);
 	if (!upload->m_file.is_open())
 	{
 		LOG_ERR << fname << "Failed to open file for writing: " << tempPath;
@@ -849,6 +861,72 @@ void DrogonAdaptor::handleUpload(const drogon::HttpRequestPtr &req, drogon::Requ
 			resp->setBody(JSON::dump(respJson));
 			callback(resp);
 		}));
+}
+
+void DrogonAdaptor::handleFileDelete(const drogon::HttpRequestPtr &req, drogon::AdviceCallback &&callback)
+{
+	const static char fname[] = "DrogonAdaptor::handleFileDelete() ";
+
+	// A forwarded delete belongs to the target node: hand it to the shared
+	// worker pipeline under the canonical path.
+	if (!req->getHeader(HTTP_HEADER_KEY_Forwarding_Host).empty())
+	{
+		handleWorkerRequest(req, nullptr, std::move(callback), "/appmesh/file/delete");
+		return;
+	}
+
+	try
+	{
+		authorize(req->getHeader(web::http::header_names::authorization), PERMISSION_KEY_file_delete);
+	}
+	catch (const AuthorizationException &)
+	{
+		callback(plainResponse(drogon::k403Forbidden, "Permission denied"));
+		return;
+	}
+	catch (...)
+	{
+		auto resp = plainResponse(drogon::k401Unauthorized, "Authentication failed");
+		resp->addHeader(web::http::header_names::www_authenticate, "Bearer realm=\"appmesh\"");
+		callback(resp);
+		return;
+	}
+
+	const auto &filePathHeader = req->getHeader(HTTP_HEADER_KEY_file_path);
+	if (filePathHeader.empty())
+	{
+		callback(plainResponse(drogon::k400BadRequest, "Missing X-File-Path header"));
+		return;
+	}
+
+	std::string fullPath = Utility::decodeHeaderFilePath(filePathHeader);
+	if (!Utility::validateFilePath(fullPath, Configuration::instance()->getFileAllowedBaseDir()))
+	{
+		callback(plainResponse(drogon::k403Forbidden, "Invalid file path"));
+		return;
+	}
+
+	std::filesystem::path filePath(fullPath);
+	std::error_code ec;
+	if (std::filesystem::is_symlink(filePath, ec))
+	{
+		callback(plainResponse(drogon::k400BadRequest, "Symlinks not allowed"));
+		return;
+	}
+	if (!std::filesystem::is_regular_file(filePath, ec))
+	{
+		callback(plainResponse(drogon::k404NotFound, "File not found"));
+		return;
+	}
+	if (!std::filesystem::remove(filePath, ec))
+	{
+		callback(plainResponse(drogon::k500InternalServerError, "File remove failed"));
+		return;
+	}
+	LOG_INF << fname << "File deleted: " << fullPath;
+	auto resp = plainResponse(drogon::k200OK, "success");
+	addCors(resp);
+	callback(resp);
 }
 
 void DrogonAdaptor::onWsOpen(const drogon::HttpRequestPtr &req, const drogon::WebSocketConnectionPtr &conn)

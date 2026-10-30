@@ -80,6 +80,7 @@ private:
 	void handleDownload(const drogon::HttpRequestPtr &req, drogon::AdviceCallback &&callback);
 	void handleUpload(const drogon::HttpRequestPtr &req, drogon::RequestStreamPtr &&stream,
 					  drogon::AdviceCallback &&callback);
+	void handleFileDelete(const drogon::HttpRequestPtr &req, drogon::AdviceCallback &&callback);
 
 	std::shared_ptr<WSS::ReplyContext> createHttpReplyContext(drogon::AdviceCallback &&callback);
 	std::shared_ptr<WSS::ReplyContext> createWebSocketReplyContext(const drogon::WebSocketConnectionPtr &conn,

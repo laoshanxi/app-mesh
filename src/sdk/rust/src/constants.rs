@@ -8,6 +8,7 @@ pub const HTTP_HEADER_KEY_OUTPUT_POS: &str = "X-Output-Position";
 pub const HTTP_HEADER_KEY_EXIT_CODE: &str = "X-Exit-Code";
 pub const HTTP_HEADER_KEY_USER_AGENT: &str = "User-Agent";
 pub const HTTP_HEADER_KEY_X_FILE_PATH: &str = "X-File-Path";
+pub const HTTP_HEADER_KEY_X_FILE_OVERWRITE: &str = "X-File-Overwrite";
 #[cfg(unix)]
 pub const HTTP_HEADER_KEY_X_FILE_MODE: &str = "X-File-Mode";
 #[cfg(unix)]

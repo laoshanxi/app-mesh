@@ -870,6 +870,13 @@ func (s *Service) TriggerManual(wfName string, inputs map[string]string, token, 
 	if wf == nil {
 		return "", "", fmt.Errorf("workflow '%s' not found", wfName)
 	}
+	// Reject a missing required input at trigger time (the run never starts),
+	// like a GitHub Actions dispatch; defaults are applied here so the run
+	// record shows the effective inputs.
+	inputs, err := models.ApplyInputDefaults(wf, inputs)
+	if err != nil {
+		return "", "", err
+	}
 	return s.triggerRunToken(wf, "manual", inputs, token, actor)
 }
 

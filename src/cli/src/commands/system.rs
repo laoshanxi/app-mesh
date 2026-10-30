@@ -9,14 +9,18 @@ pub async fn label(cli: &Cli, args: &LabelArgs) -> Result<i32> {
 
     if args.add {
         for lbl in &args.label {
-            // C++ silently skips entries that are not exactly key=value.
-            if let Some((key, value)) = lbl.split_once('=') {
-                client.add_label(key, value).await.context("Failed to add label")?;
-            }
+            let (key, value) = lbl
+                .split_once('=')
+                .filter(|(key, _)| !key.is_empty())
+                .with_context(|| format!("Invalid label '{lbl}': expected <key>=<value> with a non-empty key"))?;
+            client.add_label(key, value).await.context("Failed to add label")?;
         }
     } else if args.delete {
         for lbl in &args.label {
             let key = lbl.split('=').next().unwrap_or(lbl);
+            if key.is_empty() {
+                bail!("Invalid label '{lbl}': expected a non-empty key");
+            }
             client.delete_label(key).await.context("Failed to delete label")?;
         }
     }

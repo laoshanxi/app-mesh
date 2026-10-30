@@ -97,7 +97,9 @@ pub async fn run(cli: &Cli, args: &RunArgs) -> Result<i32> {
     }
 
     if timeout < 0 {
-        let (exit_code, output) = client.run_app_sync(&app, timeout.abs(), lifecycle).await.context("Sync run failed")?;
+        // "<0: wait until exit" — the daemon treats timeout 0 as no forced termination;
+        // abs() would instead kill the run after |timeout| seconds.
+        let (exit_code, output) = client.run_app_sync(&app, 0, lifecycle).await.context("Sync run failed")?;
         if !output.is_empty() {
             print!("{}", output);
         }

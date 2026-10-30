@@ -159,10 +159,12 @@ appm shell
 
 appm get --remote /opt/appmesh/work/server.log --local ./server.log
 appm put --local ./input.txt --remote /tmp/input.txt
+appm put --local ./input.txt --remote /tmp/input.txt --overwrite
+appm rmfile --remote /tmp/input.txt
 appm resource
 appm metric
 ```
 
-`get` and `put` transfer the file content only. Add `--apply-permissions` to apply the remote POSIX permissions and ownership on download, or to send the local permissions and ownership on upload.
+`get` and `put` transfer the file content only. Add `--apply-permissions` to apply the remote POSIX permissions and ownership on download, or to send the local permissions and ownership on upload. `put` refuses an existing remote file with `409`; add `--overwrite` to replace it. `rmfile` removes one remote file.
 
 See [Deployment](Install.md) for installation procedures. See [Security](Security.md) for the security model. See [SDK Behavioral Contract](SDKContract.md) for SDK behavior.

@@ -80,6 +80,7 @@ Authorization:
       - config-view
       - file-download
       - file-upload
+      - file-delete
       - host-resource-view
       - label-delete
       - label-set

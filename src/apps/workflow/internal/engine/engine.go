@@ -193,36 +193,12 @@ func RunWithContext(cancelCtx context.Context, wf *models.Workflow, client *appm
 	opts.ActiveSteps.SetForwardToken(opts.CallerToken)
 	opts.CancelCtx = cancelCtx
 
-	// Apply input defaults and validate required inputs.
-	if inputs == nil {
-		inputs = make(map[string]string)
-	}
-	if wf.On != nil {
-		// Merge workflow_call + manual inputs. On key collision, manual wins
-		// (the user-facing trigger), so a workflow exposed both ways has a single
-		// coherent input surface.
-		inputDefs := make(map[string]models.InputParam)
-		if wf.On.WorkflowCall != nil {
-			for k, v := range wf.On.WorkflowCall.Inputs {
-				inputDefs[k] = v
-			}
-		}
-		if wf.On.Manual != nil {
-			for k, v := range wf.On.Manual.Inputs {
-				inputDefs[k] = v
-			}
-		}
-		for k, def := range inputDefs {
-			if _, ok := inputs[k]; !ok {
-				if def.Default != nil {
-					inputs[k] = fmt.Sprintf("%v", def.Default)
-				} else if def.Required {
-					log.Error(fmt.Sprintf("required input %q not provided", k))
-					log.WorkflowCompleted(wf.Name, runID, "failure", 0)
-					return 1, nil
-				}
-			}
-		}
+	// Apply input defaults; required inputs are also rejected at dispatch.
+	inputs, inputErr := models.ApplyInputDefaults(wf, inputs)
+	if inputErr != nil {
+		log.Error(inputErr.Error())
+		log.WorkflowCompleted(wf.Name, runID, "failure", 0)
+		return 1, nil
 	}
 
 	ectx := expression.NewContext()
@@ -447,6 +423,7 @@ func runJob(job *models.Job, exec *executor.StepExecutor, ectx *expression.Conte
 			jobFailed = true
 			if job.Steps[i].ContinueOnError {
 				jobFailed = false
+				ectx.MarkContinueOnError(job.Name, job.Steps[i].Name)
 				continue
 			}
 			markStepsSkipped(job.Steps[i+1:], ectx, job.Name, "previous step failed", log)

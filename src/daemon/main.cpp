@@ -553,8 +553,9 @@ void AppMeshDaemon::runMainLoop()
 	fs::current_path(tmpDir);
 	LOG_INF << fname << "Entered working directory: " << fs::current_path().string();
 
-	// Health checks every 30 schedule ticks: each check spawns a process.
-	int healthCheckTick = 0;
+	// Health checks run on a resident worker that sleeps a fixed time between
+	// rounds; each check spawns a process and must stay off this loop.
+	HealthCheckTask::instance()->start();
 	// JWKS refresh every 1800 ticks (~30 min): half the cache TTL, off the request threads.
 	int authRefreshTick = 0;
 	LOG_INF << fname << "Entering main application monitoring loop";
@@ -571,8 +572,6 @@ void AppMeshDaemon::runMainLoop()
 				break;
 
 			PersistManager::instance()->persistSnapshot();
-			if (healthCheckTick++ % 30 == 0)
-				HealthCheckTask::instance()->trigger();
 			if (authRefreshTick++ % 1800 == 0)
 				refreshAuthenticationCache();
 

@@ -118,7 +118,16 @@ pub async fn build_client_with_auth(cli: &Cli) -> Result<Arc<AppMeshClientWSS>> 
     // remain inside this OAuth/session callback and are never sent to the Engine.
     let oauth =
         Arc::new(OAuthClient::discover(session.oauth.clone()).await.context("Authentication service discovery failed")?);
-    oauth.restore(session.tokens.clone())?;
+    // Serialize the initial token preparation across processes and adopt whatever
+    // a parallel CLI already rotated into the session file, so two `appm` starts
+    // never race their refresh grants against each other.
+    let _session_guard = config::SessionLock::acquire(&session)?;
+    let latest_tokens = config::load_session(&endpoint)
+        .ok()
+        .flatten()
+        .map(|latest| latest.tokens)
+        .unwrap_or_else(|| session.tokens.clone());
+    oauth.restore(latest_tokens)?;
     let engine_endpoint = session.engine_endpoint.clone();
     let oauth_config = session.oauth.clone();
     oauth.set_token_update_callback(move |tokens| {

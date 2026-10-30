@@ -232,6 +232,8 @@ Trigger via CLI:
 appm workflow run data-pipeline --input environment=prod --input dry_run=false
 ```
 
+A manual/API trigger missing a `required` input is rejected at trigger time (the run never starts); automatic sources (schedule, app_event, recovery) fail the run at start with the same message.
+
 ### `on.workflow_call` — Callable by Other Workflows
 
 Declares this workflow as callable from another workflow's `workflow` step type. A workflow with only `on.workflow_call` is intended as a reusable sub-workflow. Note: the engine does not currently enforce trigger eligibility, so such a workflow can still be started via `appm workflow run`.
@@ -326,7 +328,7 @@ Each Step has a `name` and exactly one of four type keys: `command`, `app`, `mes
 | `if` | string | no | — | Expression, bare (`failure()`) or wrapped (`${{ steps.prev.exit_code == 0 }}` — operators allowed inside the braces). Step runs only if true. Default: runs if all prior steps in the job succeeded. |
 | `timeout` | integer | no | 172800 (2 days) for command/app/workflow steps; 300 (5 minutes) for message steps | Maximum execution time in seconds. Step is killed and marked failed if exceeded. `0` falls back to the default — there is no "unlimited" mode. |
 | `retry` | object | no | — | Retry policy on failure. |
-| `continue-on-error` | bool | no | `false` | `true`: mark step as failed but continue to next step. Default: stop the job on failure. A step under `finally` is always `true`: the parser forces it, and the YAML value cannot turn it off. |
+| `continue-on-error` | bool | no | `false` | `true`: mark step as failed but continue to next step. Default: stop the job on failure. A step under `finally` is always `true`: the parser forces it, and the YAML value cannot turn it off. A tolerated failure keeps `steps.<name>.status` = `"failure"` (the raw outcome) but does not count for `success()`/`failure()` — GitHub Actions `conclusion` semantics. |
 | `env` | object | no | — | Step-level environment variables. Merged with job and global `env` (step wins). |
 | `secret_env` | object | no | — | Step-level encrypted environment variables. |
 
@@ -444,6 +446,12 @@ becomes the failure reason) rather than a swallowed success — so `if:`/`needs`
 `continue-on-error`, and retry behave correctly. The full body is still available as
 `${{ steps.<name>.response }}`. Responses that are not a JSON object with `status:"error"`
 (other JSON, plain text) are unaffected and remain successes on a received reply.
+
+**A payload that is a JSON document substitutes safely.** When the `payload` template is
+itself valid JSON (the common task shape), every `${{ }}` sits inside a string literal and
+its value is JSON-escaped — quotes, backslashes, or newlines in an input cannot break the
+document. Non-JSON payloads (plain text, or the bare `${{ toJSON(...) }}` composition
+pattern) substitute textually as before.
 
 ---
 
@@ -614,7 +622,7 @@ wildcard subscription.
 
 1. Steps within a job execute serially in declaration order.
 2. If a step fails (default), remaining steps in the job are skipped. `finally` steps still run.
-3. If a step has `continue-on-error: true`, the step is marked failed but the next step proceeds.
+3. If a step has `continue-on-error: true`, the step is marked failed but the next step proceeds. The tolerated failure does not count for `success()`/`failure()`.
 4. A step with `if: false` is skipped (status: `skipped`). Skipped steps do not count as failure.
 5. Retry attempts happen before evaluating `continue-on-error`. A step that succeeds on retry is marked `success`.
 

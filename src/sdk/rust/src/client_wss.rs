@@ -467,6 +467,15 @@ impl AppMeshClientWSS {
         Ok(())
     }
 
+    /// Delete a remote file. The same path validation as upload/download applies
+    /// on the daemon; a missing file fails with 404.
+    pub async fn delete_file(&self, remote_file: &str) -> Result<(), AppMeshError> {
+        let mut headers = HashMap::new();
+        headers.insert(HTTP_HEADER_KEY_X_FILE_PATH.into(), encode_file_path(remote_file));
+        self.client.raw_request(Method::DELETE, "/appmesh/file/delete", None, Some(headers), None, true).await?;
+        Ok(())
+    }
+
     /// Upload a file using WSS control messages plus an HTTPS data side channel.
     ///
     /// When `preserve_permissions` is true, local POSIX metadata is sent so the server can
@@ -478,6 +487,18 @@ impl AppMeshClientWSS {
         local_file: &str,
         remote_file: &str,
         preserve_permissions: bool,
+    ) -> Result<(), AppMeshError> {
+        self.upload_file_with(local_file, remote_file, preserve_permissions, false).await
+    }
+
+    /// [`Self::upload_file`] with `overwrite`: the daemon refuses an existing
+    /// remote file with 409 unless the caller opts into replacing it.
+    pub async fn upload_file_with(
+        &self,
+        local_file: &str,
+        remote_file: &str,
+        preserve_permissions: bool,
+        overwrite: bool,
     ) -> Result<(), AppMeshError> {
         let remote_file = if remote_file.is_empty() {
             Path::new(local_file).file_name().and_then(|n| n.to_str()).unwrap_or(local_file)
@@ -491,6 +512,9 @@ impl AppMeshClientWSS {
 
         let mut headers = HashMap::new();
         headers.insert(HTTP_HEADER_KEY_X_FILE_PATH.into(), encode_file_path(remote_file));
+        if overwrite {
+            headers.insert(HTTP_HEADER_KEY_X_FILE_OVERWRITE.into(), "true".into());
+        }
 
         self.client.raw_request(Method::POST, "/appmesh/file/upload", None, Some(headers), None, true).await?;
 
@@ -511,6 +535,12 @@ impl AppMeshClientWSS {
             reqwest::header::HeaderValue::from_str(&encode_file_path(remote_file))
                 .map_err(|e| AppMeshError::ConfigurationError(format!("Invalid remote file path header value: {}", e)))?,
         );
+        if overwrite {
+            upload_headers.insert(
+                reqwest::header::HeaderName::from_bytes(HTTP_HEADER_KEY_X_FILE_OVERWRITE.as_bytes()).unwrap(),
+                reqwest::header::HeaderValue::from_static("true"),
+            );
+        }
         // The data channel is a separate HTTPS hop: without the forwarding header
         // of the WSS control request the bytes land on the gateway.
         if let Some(target) = self.client.get_forward_to() {

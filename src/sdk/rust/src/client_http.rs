@@ -1343,10 +1343,32 @@ impl AppMeshClient {
         Ok(())
     }
 
+    /// Delete a remote file. The same path validation as upload/download
+    /// applies on the daemon; a missing file fails with 404.
+    pub async fn delete_file(&self, remote_file: &str) -> Result<()> {
+        let remote_path = encode_file_path(remote_file);
+        let headers = hmap! {HTTP_HEADER_KEY_X_FILE_PATH => remote_path.as_str()};
+        self.prepare_bearer().await?;
+        self.send(Method::DELETE, "/appmesh/file/delete", None, Some(headers), None, true).await?;
+        Ok(())
+    }
+
     /// Upload a local file (`preserve_permissions` sends local POSIX metadata;
     /// empty `remote_file` defaults to the local basename). Plain-HTTP transport:
     /// POST streams the raw file bytes as the body.
     pub async fn upload_file(&self, local_file: &str, remote_file: &str, preserve_permissions: bool) -> Result<()> {
+        self.upload_file_with(local_file, remote_file, preserve_permissions, false).await
+    }
+
+    /// [`Self::upload_file`] with `overwrite`: the daemon refuses an existing
+    /// remote file with 409 unless the caller opts into replacing it.
+    pub async fn upload_file_with(
+        &self,
+        local_file: &str,
+        remote_file: &str,
+        preserve_permissions: bool,
+        overwrite: bool,
+    ) -> Result<()> {
         let remote_file = if remote_file.is_empty() {
             Path::new(local_file).file_name().and_then(|n| n.to_str()).unwrap_or(local_file)
         } else {
@@ -1363,6 +1385,9 @@ impl AppMeshClient {
         };
         if preserve_permissions {
             Self::get_file_attributes(local_path, &mut headers);
+        }
+        if overwrite {
+            headers.insert(HTTP_HEADER_KEY_X_FILE_OVERWRITE.to_string(), "true".to_string());
         }
         let fallback_headers = headers.clone();
 

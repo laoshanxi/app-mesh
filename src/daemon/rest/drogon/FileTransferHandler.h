@@ -28,8 +28,10 @@ struct FileUploadInfo
 
 	// Stream bytes into a temp file in the SAME directory as the destination, then
 	// publish it in one step. The destination only ever appears as a complete file.
-	FileUploadInfo(const std::string &uploadFilePath, const std::string &tempFilePath, const HttpHeaderMap &requestHeaders)
-		: m_filePath(uploadFilePath), m_tempPath(tempFilePath), m_requestHeaders(requestHeaders)
+	// overwrite=true publishes by rename, atomically replacing an existing file.
+	FileUploadInfo(const std::string &uploadFilePath, const std::string &tempFilePath,
+				   const HttpHeaderMap &requestHeaders, bool overwrite = false)
+		: m_filePath(uploadFilePath), m_tempPath(tempFilePath), m_requestHeaders(requestHeaders), m_overwrite(overwrite)
 	{
 		// Missing parent directories are created for every transport surface.
 		std::error_code ec;
@@ -54,6 +56,22 @@ struct FileUploadInfo
 		m_file.flush();
 		m_file.close();
 		std::error_code ec;
+		if (m_overwrite)
+		{
+			// rename() replaces atomically on POSIX; Windows refuses an existing
+			// destination, so clear it there and retry (no concurrent winner to lose).
+			std::filesystem::rename(m_tempPath, m_filePath, ec);
+			if (ec == std::errc::file_exists || ec == std::errc::permission_denied)
+			{
+				std::error_code removeEc;
+				std::filesystem::remove(m_filePath, removeEc);
+				std::filesystem::rename(m_tempPath, m_filePath, ec);
+			}
+			if (ec)
+				return CommitResult::Failed;
+			m_committed = true;
+			return CommitResult::Committed;
+		}
 		std::filesystem::create_hard_link(m_tempPath, m_filePath, ec);
 		if (ec == std::errc::file_exists)
 			return CommitResult::AlreadyExists;
@@ -81,6 +99,7 @@ struct FileUploadInfo
 	std::ofstream m_file;
 	std::size_t m_bytesWritten = 0;
 	bool m_committed = false;
+	bool m_overwrite = false;
 };
 
 // Manages socket file upload/download state for a single TCP connection.

@@ -363,6 +363,16 @@ impl AppMeshClientTCP {
         Ok(())
     }
 
+    /// Delete a remote file. The same path validation as upload/download applies
+    /// on the daemon; a missing file fails with 404.
+    pub async fn delete_file(&self, remote_file: &str) -> Result<()> {
+        self.ensure_no_active_demuxer()?;
+        let mut headers = HashMap::new();
+        headers.insert(HTTP_HEADER_KEY_X_FILE_PATH.into(), remote_file.to_string());
+        self.client.raw_request(Method::DELETE, "/appmesh/file/delete", None, Some(headers), None, true).await?;
+        Ok(())
+    }
+
     /// Upload a file using the TCP file-socket side channel.
     ///
     /// When `preserve_permissions` is true, local POSIX metadata is sent so the server can
@@ -370,6 +380,18 @@ impl AppMeshClientTCP {
     ///
     /// An empty `remote_file` defaults to the local file's basename.
     pub async fn upload_file(&self, local_file: &str, remote_file: &str, preserve_permissions: bool) -> Result<()> {
+        self.upload_file_with(local_file, remote_file, preserve_permissions, false).await
+    }
+
+    /// [`Self::upload_file`] with `overwrite`: the daemon refuses an existing
+    /// remote file with 409 unless the caller opts into replacing it.
+    pub async fn upload_file_with(
+        &self,
+        local_file: &str,
+        remote_file: &str,
+        preserve_permissions: bool,
+        overwrite: bool,
+    ) -> Result<()> {
         self.ensure_no_active_demuxer()?;
         let remote_file = if remote_file.is_empty() {
             Path::new(local_file).file_name().and_then(|n| n.to_str()).unwrap_or(local_file)
@@ -385,6 +407,9 @@ impl AppMeshClientTCP {
         headers.insert(HTTP_HEADER_KEY_X_FILE_PATH.into(), remote_file.to_string());
         headers.insert(HTTP_HEADER_CONTENT_TYPE.into(), "application/octet-stream".into());
         headers.insert(HTTP_HEADER_KEY_X_SEND_FILE_SOCKET.into(), "true".into());
+        if overwrite {
+            headers.insert(HTTP_HEADER_KEY_X_FILE_OVERWRITE.into(), "true".into());
+        }
         if preserve_permissions {
             AppMeshClient::get_file_attributes(local_path, &mut headers);
         }

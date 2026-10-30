@@ -64,6 +64,7 @@ async fn run(cli: &Cli) -> Result<i32> {
         Commands::Shell(args) => commands::run::shell(cli, args).await,
         Commands::Get(args) => commands::file::get(cli, args).await,
         Commands::Put(args) => commands::file::put(cli, args).await,
+        Commands::Rmfile(args) => commands::file::rmfile(cli, args).await,
         Commands::Label(args) => commands::system::label(cli, args).await,
         Commands::Log(args) => commands::system::log_level(cli, args).await,
         Commands::Config(_) => commands::system::config(cli).await,
