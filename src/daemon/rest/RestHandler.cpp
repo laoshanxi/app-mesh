@@ -232,8 +232,10 @@ constexpr auto REST_PATH_FILE_DELETE = "/appmesh/file/delete";
 
 // 7. Label Management
 constexpr auto REST_PATH_LABEL_VIEW_ALL = "/appmesh/labels";
-constexpr auto REST_PATH_LABEL_ADD = R"(/appmesh/label/([^/\*]+))";
-constexpr auto REST_PATH_LABEL_DELETE = R"(/appmesh/label/([^/\*]+))";
+// Anchored: a key holding a decoded '/' or '*' must fail the route instead of
+// silently truncating to the segment before it.
+constexpr auto REST_PATH_LABEL_ADD = R"(/appmesh/label/([^/\*]+)$)";
+constexpr auto REST_PATH_LABEL_DELETE = R"(/appmesh/label/([^/\*]+)$)";
 
 // 8. Config
 constexpr auto REST_PATH_CONFIG_VIEW = "/appmesh/config";

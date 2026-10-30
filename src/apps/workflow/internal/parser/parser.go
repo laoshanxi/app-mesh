@@ -49,7 +49,17 @@ func LoadWorkflow(path string) (*models.Workflow, error) {
 	dec := yaml.NewDecoder(bytes.NewReader(fixed))
 	dec.KnownFields(true)
 	if err := dec.Decode(&wf); err != nil {
-		return nil, fmt.Errorf("parse workflow: %w", err)
+		return nil, fmt.Errorf("parse workflow: %s", rewriteYamlFieldErrors(err.Error()))
+	}
+
+	// GA compatibility: `workflow_dispatch` is GitHub Actions' name for the
+	// manual trigger; normalize it to `manual` (an explicit `manual` wins) and
+	// clear the alias so downstream code only ever looks at `manual`.
+	if wf.On != nil && wf.On.WorkflowDispatch != nil {
+		if wf.On.Manual == nil {
+			wf.On.Manual = wf.On.WorkflowDispatch
+		}
+		wf.On.WorkflowDispatch = nil
 	}
 
 	if wf.Name == "" {
@@ -225,6 +235,27 @@ func validateExpressionRefs(wf *models.Workflow) error {
 		}
 		return names
 	}
+	jobStep := func(job *models.Job, name string) *models.Step {
+		for _, steps := range [][]models.Step{job.Steps, job.Finally} {
+			for i := range steps {
+				if steps[i].Name == name {
+					return &steps[i]
+				}
+			}
+		}
+		return nil
+	}
+	// outputs is produced by sub-workflow steps only; a reference through any
+	// other step can never resolve and must fail the load, not pass the literal.
+	checkOutputsRef := func(name string, step *models.Step, hasKey bool) error {
+		if !hasKey {
+			return fmt.Errorf("outputs requires a key: outputs.<key>")
+		}
+		if step == nil || step.Type != models.StepWorkflow {
+			return fmt.Errorf("step %q has no outputs: only workflow steps produce outputs", name)
+		}
+		return nil
+	}
 
 	// checkPath validates one ${{ ... }} inner path. jobName scopes `steps.` refs
 	// ("" = cross-job only, used for workflow_call output values).
@@ -260,11 +291,17 @@ func validateExpressionRefs(wf *models.Workflow) error {
 				return fail("steps.<name> is job-local; reference jobs.<job>.steps.<name> instead")
 			}
 			if len(parts) >= 3 {
-				if !jobStepNames(wf.Jobs[jobName])[parts[1]] {
+				job := wf.Jobs[jobName]
+				if !jobStepNames(job)[parts[1]] {
 					return fail(fmt.Sprintf("step %q is not defined in job %q", parts[1], jobName))
 				}
 				if !stepFieldPattern.MatchString(parts[2]) {
 					return fail("step fields are stdout, exit_code, status, response, outputs")
+				}
+				if parts[2] == "outputs" {
+					if err := checkOutputsRef(parts[1], jobStep(job, parts[1]), len(parts) >= 4); err != nil {
+						return fail(err.Error())
+					}
 				}
 				return nil
 			}
@@ -284,6 +321,11 @@ func validateExpressionRefs(wf *models.Workflow) error {
 					}
 					if !stepFieldPattern.MatchString(parts[4]) {
 						return fail("step fields are stdout, exit_code, status, response, outputs")
+					}
+					if parts[4] == "outputs" {
+						if err := checkOutputsRef(parts[3], jobStep(job, parts[3]), len(parts) >= 6); err != nil {
+							return fail(err.Error())
+						}
 					}
 					return nil
 				}
@@ -464,4 +506,21 @@ func resolveStepTypes(steps []models.Step, defaultContinueOnError bool, jobName,
 		}
 	}
 	return nil
+}
+
+// yamlFieldErrRe matches gopkg.in/yaml.v3 strict-decode errors such as
+// `line 17: field workflow_dispatch not found in type models.TriggerConfig`.
+var yamlFieldErrRe = regexp.MustCompile(`line (\d+): field ([^ ]+) not found in type ([^ ]+)`)
+
+// rewriteYamlFieldErrors turns strict-decode internals into user-facing wording;
+// unknown types fall through to a generic phrasing.
+func rewriteYamlFieldErrors(msg string) string {
+	return yamlFieldErrRe.ReplaceAllStringFunc(msg, func(s string) string {
+		m := yamlFieldErrRe.FindStringSubmatch(s)
+		line, field, typ := m[1], m[2], m[3]
+		if typ == "models.TriggerConfig" {
+			return fmt.Sprintf("line %s: unsupported trigger %q (triggers: manual, workflow_dispatch, schedule, workflow_call, app_event)", line, field)
+		}
+		return fmt.Sprintf("line %s: unsupported field %q — check the workflow schema", line, field)
+	})
 }

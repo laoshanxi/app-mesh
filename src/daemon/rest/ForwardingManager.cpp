@@ -79,8 +79,10 @@ namespace
 	}
 }
 
-// Bounds the blocking connect + TLS handshake to a forwarding peer.
-constexpr int FORWARD_CONNECT_TIMEOUT_SECONDS = 10;
+// Bounds the blocking connect + TLS handshake to a forwarding peer. A healthy
+// peer completes it in well under a second, so this mostly sets how long a
+// dead peer holds requests; connections are pooled, so only new connects pay.
+constexpr int FORWARD_CONNECT_TIMEOUT_SECONDS = 3;
 
 // A silent peer keeps its pooled connection open forever; drop it on reuse once
 // a request waited this long without a single inbound byte.

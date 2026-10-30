@@ -550,7 +550,9 @@ Semantics:
 
 Execute jobs on remote App Mesh nodes using label selectors.
 
-By node label (configure labels on each daemon via `appm label -a -l role=test-server`):
+By node label (configure labels on each daemon via `appm label -a -l role=test-server`).
+Remote label probing needs the workflow engine to run with `-cluster-nodes <node list>`;
+without it only the Engine's own node matches:
 
 ```yaml
 # remote-label-demo.yaml
@@ -624,6 +626,11 @@ appm workflow add -f trigger-on-event.yaml
 appm workflow runs trigger-on-event           # check accumulated runs
 appm workflow rm trigger-on-event
 ```
+
+> Events are published under the registered App name. Runs the Engine starts
+> itself (enable, restart, restart-on-exit) match. An ad-hoc `appm run
+> data-collector` creates an instance named `data-collector_<N>` whose events
+> carry that instance name and do not feed the subscription.
 
 > **Automatic triggers require `workflow-admin` at registration.** Event-triggered and
 > recovered runs use a short-lived Engine-local capability bound to the registered owner,

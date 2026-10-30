@@ -2,6 +2,7 @@ package executor
 
 import (
 	"encoding/json"
+	"strings"
 	"testing"
 
 	"github.com/laoshanxi/app-mesh/src/apps/workflow/internal/expression"
@@ -81,5 +82,25 @@ func TestStepAppMetadata(t *testing.T) {
 	}
 	if m["workflow_id"] != "sub-workflow" || m["run_id"] != "sub-sub-workflow-c4t9" {
 		t.Fatalf("empty capability identity must fall back to the context identity, got: %v", m)
+	}
+}
+
+func TestResolveTargetNodeNoClusterNodes(t *testing.T) {
+	// Without -cluster-nodes the error must name the missing configuration,
+	// and the host key must still route directly.
+	_, err := ResolveTargetNode(nil, "https://127.0.0.1:6058", map[string]string{"role": "test"}, nil, "bearer")
+	if err == nil {
+		t.Fatal("expected an error for a remote selector without cluster nodes")
+	}
+	for _, want := range []string{"-cluster-nodes", "no node matches label selector role=test"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("error %q does not mention %q", err.Error(), want)
+		}
+	}
+
+	// The direct host key routes without any cluster configuration.
+	node, err := ResolveTargetNode(nil, "https://127.0.0.1:6058", map[string]string{"host": "node-a"}, nil, "bearer")
+	if err != nil || node != "node-a" {
+		t.Errorf("host key must route directly, got node=%q err=%v", node, err)
 	}
 }

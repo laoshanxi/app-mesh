@@ -172,7 +172,9 @@ The engine arms its event subscription when the workflow is registered, so an
 event fired after `workflow add` triggers a run; events from before
 registration never do. Registering the trigger requires `workflow-admin`. A
 subscription the engine cannot install is reported in the workflow engine's
-output.
+output. Events publish under the registered App name: runs the Engine starts
+itself (enable, restart, restart-on-exit) match, while an ad-hoc
+`appm run <app>` instance (`<app>_<N>`) does not.
 
 ### `on.schedule` — Cron Trigger (Engine-Dispatched)
 
@@ -290,7 +292,7 @@ Map of job name → Job definition. Job names must match `[a-zA-Z0-9_-]+`.
 |-------|------|----------|---------|-------------|
 | `needs` | list[string] | no | — | Job names that must complete before this job starts. Forms the DAG. |
 | `if` | string | no | — | Expression. Job runs only if true. Available functions: `success()`, `failure()`, `always()`. Default behavior: job runs only if all `needs` jobs succeeded. |
-| `node_label` | object | no | — | Target node selector. A `host` key routes directly; other keys are matched against node labels. Remote execution requires a manual caller bearer valid on the cluster's shared issuer. |
+| `node_label` | object | no | — | Target node selector. A `host` key routes directly; other keys are matched against node labels, which requires the workflow engine to run with `-cluster-nodes <node list>`. Remote execution requires a manual caller bearer valid on the cluster's shared issuer. |
 | `env` | object | no | — | Job-level environment variables. Merged with global `env` (job wins on conflict). |
 | `secret_env` | object | no | — | Job-level encrypted environment variables. Merged with global `secret_env`. |
 | `steps` | list[Step] | yes | — | Ordered list of Steps to execute serially. At least one step required. |
@@ -522,7 +524,7 @@ expand normally.
 | `steps.<name>.exit_code` | Integer exit code | `${{ steps.build.exit_code }}` |
 | `steps.<name>.status` | `"success"`, `"failure"`, or `"skipped"` | `${{ steps.build.status }}` |
 | `steps.<name>.response` | Response body from a message step | `${{ steps.query.response }}` |
-| `steps.<name>.outputs.<key>` | Output from a workflow step | `${{ steps.sub.outputs.url }}` |
+| `steps.<name>.outputs.<key>` | Output from a sub-workflow step (`workflow:` steps only; rejected at load elsewhere) | `${{ steps.sub.outputs.url }}` |
 | `job.status` | Current job aggregate status | `${{ job.status }}` |
 | `jobs.<name>.steps.<name>.*` | Cross-job step reference | `${{ jobs.build.steps.compile.stdout }}` |
 | `workflow.name` | Workflow name | `${{ workflow.name }}` |

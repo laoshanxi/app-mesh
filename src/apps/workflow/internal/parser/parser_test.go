@@ -599,3 +599,163 @@ jobs:
 		t.Fatalf("expected command expression error, got %v", err)
 	}
 }
+
+func TestWorkflowDispatchAlias(t *testing.T) {
+	path := writeTmp(t, `
+name: dispatch-alias
+on:
+  workflow_dispatch:
+    inputs:
+      greet:
+        type: string
+        required: true
+        default: world
+jobs:
+  build:
+    steps:
+      - name: greet
+        command: echo hello
+`)
+	wf, err := LoadWorkflow(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if wf.On == nil || wf.On.Manual == nil {
+		t.Fatalf("workflow_dispatch not normalized to manual: %+v", wf.On)
+	}
+	p, ok := wf.On.Manual.Inputs["greet"]
+	if !ok || !p.Required {
+		t.Fatalf("manual inputs not carried over: %+v", wf.On.Manual.Inputs)
+	}
+}
+
+func TestManualWinsOverDispatchAlias(t *testing.T) {
+	path := writeTmp(t, `
+name: dispatch-conflict
+on:
+  manual:
+    inputs:
+      a:
+        type: string
+  workflow_dispatch:
+    inputs:
+      b:
+        type: string
+jobs:
+  build:
+    steps:
+      - name: greet
+        command: echo hello
+`)
+	wf, err := LoadWorkflow(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := wf.On.Manual.Inputs["a"]; !ok {
+		t.Fatalf("explicit manual inputs lost: %+v", wf.On.Manual)
+	}
+	if _, ok := wf.On.Manual.Inputs["b"]; ok {
+		t.Fatalf("workflow_dispatch inputs should not merge into explicit manual: %+v", wf.On.Manual)
+	}
+}
+
+func TestUnknownTriggerFriendlyError(t *testing.T) {
+	path := writeTmp(t, `
+name: bad-trigger
+on:
+  workflow_dipatch:
+jobs:
+  build:
+    steps:
+      - name: greet
+        command: echo hello
+`)
+	_, err := LoadWorkflow(path)
+	if err == nil {
+		t.Fatal("expected unknown trigger to fail")
+	}
+	msg := err.Error()
+	if !strings.Contains(msg, "unsupported trigger") || strings.Contains(msg, "models.") {
+		t.Fatalf("error not user-friendly: %v", msg)
+	}
+}
+
+func TestOutputsRefOnlyOnWorkflowSteps(t *testing.T) {
+	// outputs exists only on sub-workflow steps; any other reference cannot
+	// resolve and must fail the load instead of substituting the literal.
+	bad := []string{
+		// command step
+		`name: out-cmd
+jobs:
+  main:
+    steps:
+      - name: make
+        command: "echo 1"
+      - name: use
+        command: "echo ${{ steps.make.outputs.tag }}"
+`,
+		// message step
+		`name: out-msg
+jobs:
+  main:
+    steps:
+      - name: ask
+        message:
+          app: py-task
+          payload: "print(1)"
+      - name: use
+        command: "echo ${{ steps.ask.outputs.answer }}"
+`,
+		// bare outputs without a key, on a workflow step
+		`name: out-bare
+jobs:
+  main:
+    steps:
+      - name: call
+        workflow: callee
+        with: {}
+      - name: use
+        command: "echo ${{ steps.call.outputs }}"
+`,
+		// cross-job reference to a command step
+		`name: out-cross
+jobs:
+  build:
+    steps:
+      - name: make
+        command: "echo 1"
+  use:
+    needs: [build]
+    steps:
+      - name: use
+        command: "echo ${{ jobs.build.steps.make.outputs.tag }}"
+`,
+	}
+	for i, yaml := range bad {
+		path := writeTmp(t, yaml)
+		_, err := LoadWorkflow(path)
+		if err == nil {
+			t.Errorf("case %d: outputs reference accepted", i)
+			continue
+		}
+		if !strings.Contains(err.Error(), "no outputs") && !strings.Contains(err.Error(), "requires a key") {
+			t.Errorf("case %d: unexpected error: %v", i, err)
+		}
+	}
+
+	// A sub-workflow step with a key stays valid.
+	path := writeTmp(t, `
+name: out-ok
+jobs:
+  main:
+    steps:
+      - name: call
+        workflow: callee
+        with: {}
+      - name: use
+        command: "echo ${{ steps.call.outputs.tag }}"
+`)
+	if _, err := LoadWorkflow(path); err != nil {
+		t.Fatalf("workflow-step outputs reference must load: %v", err)
+	}
+}

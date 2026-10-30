@@ -57,6 +57,11 @@ func ResolveTargetNode(localClient *appmesh.AppMeshClient, serverURI string, nod
 		}
 	}
 
+	if len(clusterNodes) == 0 {
+		return "", fmt.Errorf("no node matches label selector %s: the workflow engine was started without "+
+			"-cluster-nodes, so remote nodes cannot be probed (use node_label {host: <node>} for direct routing)",
+			formatLabels(nodeLabel))
+	}
 	return "", fmt.Errorf("no node matches label selector: %s", formatLabels(nodeLabel))
 }
 

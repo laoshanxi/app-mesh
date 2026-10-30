@@ -106,10 +106,13 @@ type OutputParam struct {
 }
 
 type TriggerConfig struct {
-	AppEvent     *TriggerAppEvent     `yaml:"app_event,omitempty"`
-	Schedule     []ScheduleTrigger    `yaml:"schedule,omitempty"`
-	Manual       *ManualTrigger       `yaml:"manual,omitempty"`
-	WorkflowCall *WorkflowCallTrigger `yaml:"workflow_call,omitempty"`
+	AppEvent *TriggerAppEvent  `yaml:"app_event,omitempty"`
+	Schedule []ScheduleTrigger `yaml:"schedule,omitempty"`
+	Manual   *ManualTrigger    `yaml:"manual,omitempty"`
+	// WorkflowDispatch is GitHub Actions' spelling of a manual trigger; the
+	// parser normalizes it to Manual so GA-style definitions register as-is.
+	WorkflowDispatch *ManualTrigger       `yaml:"workflow_dispatch,omitempty"`
+	WorkflowCall     *WorkflowCallTrigger `yaml:"workflow_call,omitempty"`
 }
 
 type ManualTrigger struct {
