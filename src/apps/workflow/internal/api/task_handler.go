@@ -24,6 +24,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"strings"
 	"time"
 
@@ -526,6 +527,8 @@ func (h *TaskHandler) handleWorkflowList(req Request, caller string, admin bool)
 		}
 		workflows = append(workflows, info)
 	}
+	// deterministic order for CLI and UI (registry apps arrive in daemon map order)
+	sort.Slice(workflows, func(i, j int) bool { return workflows[i].Name < workflows[j].Name })
 	return Response{Status: "ok", Data: workflows}
 }
 
