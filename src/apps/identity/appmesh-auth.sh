@@ -45,13 +45,15 @@ readonly DEX_AUTOMATION_ROLE="appmesh-maintenance"
 # not an Engine role binding; first-admin enrollment binds the verified tuple.
 readonly DEX_INITIAL_ADMIN_USER_ID="2d1c8c38-3898-4c89-a78b-3caa42f203c1"
 # Packaged read-only viewer identity. Bootstrap seeds its Principal for the
-# configured issuer (the packaged authorization.yaml already covers the factory
-# default). Its password is generated once; rotate/forget remain administrator-
-# only operations.
+# configured issuer and retires the factory-default-issuer binding left by
+# older templates. Its password is generated once; rotate/forget remain
+# administrator-only operations.
 readonly DEX_INITIAL_GUEST_EMAIL="guest@appmesh.local"
 readonly DEX_INITIAL_GUEST_USERNAME="guest"
 readonly DEX_INITIAL_GUEST_USER_ID="93ad39b4-eb6f-4945-97a1-3366451867fb"
 readonly DEX_INITIAL_GUEST_SUBJECT="CiQ5M2FkMzliNC1lYjZmLTQ5NDUtOTdhMS0zMzY2NDUxODY3ZmISBWxvY2Fs"
+# Issuer the packaged template historically hardcoded for the guest binding.
+readonly DEX_FACTORY_DEFAULT_ISSUER="http://127.0.0.1:6062/auth"
 
 AUTH_MODE=${APPMESH_AUTH_MODE:-builtin}
 case "${AUTH_MODE}" in
@@ -264,6 +266,7 @@ seed_builtin_principals() {
     }
 
     local issuer issuer_yaml automation_id guest_id guest_name_yaml guest_email_yaml source temporary
+    local retired_id="" stripped=""
     local add_automation=1 add_guest=1 add_role=1
     issuer=${APPMESH_AUTH_ISSUER:-$(oidc_value issuer http://127.0.0.1:6062/auth)}
     issuer_yaml=$(yaml_quote "${issuer}") || return 1
@@ -290,9 +293,41 @@ seed_builtin_principals() {
     grep -Fqx "    ${automation_id}:" "${source}" && add_automation=0
     grep -Fqx "    ${guest_id}:" "${source}" && add_guest=0
     grep -Fqx "    ${DEX_AUTOMATION_ROLE}:" "${source}" && add_role=0
+    # A policy from an older template can carry the guest bound to the factory
+    # default issuer. With a different configured issuer that binding can never
+    # authenticate and only duplicates the identity in the principal list.
+    if [[ "${issuer}" != "${DEX_FACTORY_DEFAULT_ISSUER}" ]]; then
+        retired_id=$(stable_principal_id "${DEX_FACTORY_DEFAULT_ISSUER}" "${DEX_INITIAL_GUEST_SUBJECT}") || return 1
+        grep -Fqx "    ${retired_id}:" "${source}" || retired_id=""
+    fi
     if [[ "${source}" == "${AUTHORIZATION_RUNTIME}" &&
-        ${add_automation} -eq 0 && ${add_guest} -eq 0 && ${add_role} -eq 0 ]]; then
+        ${add_automation} -eq 0 && ${add_guest} -eq 0 && ${add_role} -eq 0 && -z "${retired_id}" ]]; then
         return 0
+    fi
+
+    if [[ -n "${retired_id}" ]]; then
+        stripped=$(mktemp "${AUTHORIZATION_RUNTIME}.XXXXXX") || return 1
+        chmod 600 "${stripped}"
+        # Drop the retired entry and the comment lines describing it.
+        if ! awk -v retired_id="${retired_id}" '
+            $0 == "    " retired_id ":" { dropping = 1; n = 0; next }
+            dropping {
+                if ($0 ~ /^      / || $0 == "") next
+                dropping = 0
+            }
+            /^    #/ { comments[n++] = $0; next }
+            {
+                for (i = 0; i < n; i++) print comments[i]
+                n = 0
+                print
+            }
+            END { for (i = 0; i < n; i++) print comments[i] }
+        ' "${source}" >"${stripped}"; then
+            rm -f "${stripped}"
+            echo "failed to retire the factory-default guest binding" >&2
+            return 1
+        fi
+        source=${stripped}
     fi
 
     temporary=$(mktemp "${AUTHORIZATION_RUNTIME}.XXXXXX") || return 1
@@ -353,12 +388,13 @@ seed_builtin_principals() {
                     exit 42
             }
         ' "${source}" >"${temporary}"; then
-        rm -f "${temporary}"
+        rm -f "${temporary}" "${stripped}"
         echo "authorization policy has no mergeable principals/roles sections; preserving it unchanged" >&2
         return 1
     fi
     mv "${temporary}" "${AUTHORIZATION_RUNTIME}"
     chmod 600 "${AUTHORIZATION_RUNTIME}"
+    rm -f "${stripped}"
     echo "Seeded missing built-in authorization bindings for issuer ${issuer}" >&2
 }
 

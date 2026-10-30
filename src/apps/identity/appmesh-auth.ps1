@@ -312,6 +312,20 @@ function Seed-BuiltinPrincipals {
     Assert-PlainFile $source "authorization policy"
     $lines = [System.Collections.Generic.List[string]]::new()
     $lines.AddRange([System.IO.File]::ReadAllLines($source))
+    # A policy from an older template can carry the guest bound to the factory
+    # default issuer. With a different configured issuer that binding can never
+    # authenticate and only duplicates the identity in the principal list.
+    if ($issuer -ne "http://127.0.0.1:6062/auth") {
+        $retiredId = Get-StablePrincipalId "http://127.0.0.1:6062/auth" $GuestSubject
+        $retiredIndex = $lines.IndexOf("    ${retiredId}:")
+        if ($retiredIndex -ge 0) {
+            $end = $retiredIndex + 1
+            while ($end -lt $lines.Count -and ($lines[$end] -match '^ {6}' -or $lines[$end] -eq '')) { $end++ }
+            $start = $retiredIndex
+            while ($start -gt 0 -and $lines[$start - 1] -match '^ {4}#') { $start-- }
+            $lines.RemoveRange($start, $end - $start)
+        }
+    }
     $text = $lines -join "`n"
     $issuerYaml = ConvertTo-YamlSingleQuotedScalar $issuer
 

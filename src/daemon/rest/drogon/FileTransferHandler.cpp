@@ -44,7 +44,7 @@ void FileTransferHandler::prepareTransfer(Response &resp, int clientId)
 		const auto fileName = Utility::decode64(resp.headers.find(HTTP_HEADER_KEY_X_Send_File_Socket)->second);
 		if (!Utility::validateFilePath(fileName, Configuration::instance()->getFileAllowedBaseDir()))
 		{
-			auto msg = JSON::dump(Utility::text2json("Invalid file path"));
+			auto msg = JSON::dump(Utility::text2json("File path is not allowed"));
 			resp.http_status = web::http::status_codes::Forbidden;
 			resp.body = std::vector<std::uint8_t>(msg.begin(), msg.end());
 			LOG_ERR << fname << "Path traversal detected in upload | ClientID=" << clientId << " | FilePath=" << fileName;
@@ -76,7 +76,7 @@ void FileTransferHandler::prepareTransfer(Response &resp, int clientId)
 		const auto fileName = Utility::decode64(resp.headers.find(HTTP_HEADER_KEY_X_Recv_File_Socket)->second);
 		if (!Utility::validateFilePath(fileName, Configuration::instance()->getFileAllowedBaseDir()))
 		{
-			auto msg = JSON::dump(Utility::text2json("Invalid file path"));
+			auto msg = JSON::dump(Utility::text2json("File path is not allowed"));
 			resp.http_status = web::http::status_codes::Forbidden;
 			resp.body = std::vector<std::uint8_t>(msg.begin(), msg.end());
 			LOG_ERR << fname << "Path traversal detected in download | ClientID=" << clientId << " | FilePath=" << fileName;

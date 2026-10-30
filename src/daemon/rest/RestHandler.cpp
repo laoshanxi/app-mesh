@@ -42,7 +42,7 @@ namespace
 	{
 		if (!Utility::validateFilePath(file, Configuration::instance()->getFileAllowedBaseDir()))
 		{
-			message->reply(web::http::status_codes::Forbidden, Utility::text2json("Invalid file path"));
+			message->reply(web::http::status_codes::Forbidden, Utility::text2json("File path is not allowed"));
 			return true;
 		}
 		return false;

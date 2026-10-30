@@ -645,7 +645,7 @@ void DrogonAdaptor::handleDownload(const drogon::HttpRequestPtr &req, drogon::Ad
 	std::string filePathStr = Utility::decodeHeaderFilePath(filePathHeader);
 	if (!Utility::validateFilePath(filePathStr, Configuration::instance()->getFileAllowedBaseDir()))
 	{
-		callback(plainResponse(drogon::k403Forbidden, "Invalid file path"));
+		callback(plainResponse(drogon::k403Forbidden, "File path is not allowed"));
 		return;
 	}
 
@@ -736,7 +736,7 @@ void DrogonAdaptor::handleUpload(const drogon::HttpRequestPtr &req, drogon::Requ
 	std::string fullPath = Utility::decodeHeaderFilePath(filePathHeader);
 	if (!Utility::validateFilePath(fullPath, Configuration::instance()->getFileAllowedBaseDir()))
 	{
-		callback(plainResponse(drogon::k403Forbidden, "Invalid file path"));
+		callback(plainResponse(drogon::k403Forbidden, "File path is not allowed"));
 		return;
 	}
 
@@ -902,7 +902,7 @@ void DrogonAdaptor::handleFileDelete(const drogon::HttpRequestPtr &req, drogon::
 	std::string fullPath = Utility::decodeHeaderFilePath(filePathHeader);
 	if (!Utility::validateFilePath(fullPath, Configuration::instance()->getFileAllowedBaseDir()))
 	{
-		callback(plainResponse(drogon::k403Forbidden, "Invalid file path"));
+		callback(plainResponse(drogon::k403Forbidden, "File path is not allowed"));
 		return;
 	}
 

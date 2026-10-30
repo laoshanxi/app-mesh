@@ -22,24 +22,16 @@ Authorization:
       execution_user: ""
       roles: []
 
-    # Pre-seeded read-only binding for the packaged guest login
-    # (`guest@appmesh.local`, user ID 93ad39b4-eb6f-4945-97a1-3366451867fb).
-    # The key is the deterministic stable identifier for the factory-default
-    # issuer: "oidc:" + SHA-256 hex of issuer + NUL + subject. The static-password
-    # subject is base64url(protobuf{field1: userID, field2: "local"}).
-    # With a custom built-in issuer this entry stays inert; bootstrap adds the
-    # equivalent binding for the configured issuer without rewriting this file.
+    # The packaged guest login (`guest@appmesh.local`, user ID
+    # 93ad39b4-eb6f-4945-97a1-3366451867fb) gets its read-only binding from the
+    # authentication bootstrap, which derives the principal ID from the
+    # configured issuer: "oidc:" + SHA-256 hex of issuer + NUL + subject. The
+    # static-password subject is base64url(protobuf{field1: userID,
+    # field2: "local"}). Seeding — not this template — owns the entry so exactly
+    # one guest binding exists per deployment; bootstrap also retires the
+    # factory-default-issuer binding from policies written by older versions.
     # display_name and email are pre-filled so the principal list names this
     # identity before its first sign-in; a sign-in refreshes them from the token.
-    oidc:eaa48d4270588186389c55543f43ff103c67a26f13b21a447d0da5e16dd8083f:
-      kind: user
-      issuer: http://127.0.0.1:6062/auth
-      subject: CiQ5M2FkMzliNC1lYjZmLTQ5NDUtOTdhMS0zMzY2NDUxODY3ZmISBWxvY2Fs
-      display_name: guest
-      email: guest@appmesh.local
-      status: active
-      execution_user: ""
-      roles: [appmesh-viewer]
 
   roles:
     # Package lifecycle automation may enumerate and stop non-system Apps. It
