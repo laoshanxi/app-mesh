@@ -680,8 +680,9 @@ jobs:
 	}
 }
 
-func TestOutputsRefOnlyOnWorkflowSteps(t *testing.T) {
-	// outputs exists only on sub-workflow steps; any other reference cannot
+func TestOutputsRefValidation(t *testing.T) {
+	// outputs exists on sub-workflow steps (any author-defined key) and on
+	// message steps (exactly the answer field); any other reference cannot
 	// resolve and must fail the load instead of substituting the literal.
 	bad := []string{
 		// command step
@@ -694,7 +695,7 @@ jobs:
       - name: use
         command: "echo ${{ steps.make.outputs.tag }}"
 `,
-		// message step
+		// message step, key other than answer
 		`name: out-msg
 jobs:
   main:
@@ -704,7 +705,7 @@ jobs:
           app: py-task
           payload: "print(1)"
       - name: use
-        command: "echo ${{ steps.ask.outputs.answer }}"
+        command: "echo ${{ steps.ask.outputs.tag }}"
 `,
 		// bare outputs without a key, on a workflow step
 		`name: out-bare
@@ -738,7 +739,8 @@ jobs:
 			t.Errorf("case %d: outputs reference accepted", i)
 			continue
 		}
-		if !strings.Contains(err.Error(), "no outputs") && !strings.Contains(err.Error(), "requires a key") {
+		if !strings.Contains(err.Error(), "no outputs") && !strings.Contains(err.Error(), "requires a key") &&
+			!strings.Contains(err.Error(), "only produces outputs.answer") {
 			t.Errorf("case %d: unexpected error: %v", i, err)
 		}
 	}
@@ -757,5 +759,38 @@ jobs:
 `)
 	if _, err := LoadWorkflow(path); err != nil {
 		t.Fatalf("workflow-step outputs reference must load: %v", err)
+	}
+
+	// A message step's answer output loads, same-job and cross-job.
+	for i, yaml := range []string{`
+name: out-msg-ok
+jobs:
+  main:
+    steps:
+      - name: ask
+        message:
+          app: py-task
+          payload: "print(1)"
+      - name: use
+        command: "echo ${{ steps.ask.outputs.answer }}"
+`, `
+name: out-msg-cross
+jobs:
+  ask-job:
+    steps:
+      - name: ask
+        message:
+          app: py-task
+          payload: "print(1)"
+  use:
+    needs: [ask-job]
+    steps:
+      - name: use
+        command: "echo ${{ jobs.ask-job.steps.ask.outputs.answer }}"
+`} {
+		path := writeTmp(t, yaml)
+		if _, err := LoadWorkflow(path); err != nil {
+			t.Errorf("case %d: message-step outputs.answer reference must load: %v", i, err)
+		}
 	}
 }

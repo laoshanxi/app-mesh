@@ -439,6 +439,10 @@ Sends a payload to a running long-lived App via the App Mesh Task API (`POST /ap
 
 **Outputs available:**
 - `${{ steps.<name>.response }}` — response body from the App
+- `${{ steps.<name>.outputs.answer }}` — the `data.answer` field when the App answers the
+  platform task convention `{"status":"ok","data":{"answer":...}}` (llm-agent does); the
+  clean way to chain LLM turns, and the only one safe for long products (see the 2048
+  note under Contexts)
 - `${{ steps.<name>.exit_code }}` — 0 if response received, non-zero on timeout/error
 - `${{ steps.<name>.status }}` — `"success"`, `"failure"`, or `"skipped"`
 
@@ -510,8 +514,15 @@ and escapes embedded single quotes, so the value stays one closed quoted word:
 
 ```yaml
 - name: parse
-  command: "echo '${{ steps.ask.response }}' | jq ."   # value inserted literally, safely quoted
+  command: "echo '${{ steps.ask.response }}' | python3 -c \"import sys, json; print(json.load(sys.stdin)['data']['answer'])\""
 ```
+
+Keep such a command step small: the engine runs it as an App command line,
+which the daemon caps at 2048 characters. A full LLM response (JSON-escaped
+CJK triples in size) overflows the cap, so for long products reference
+`${{ steps.<name>.outputs.answer }}` in another `message` step instead — that
+value passes engine-side and never touches a command line. `jq` is not
+installed in the shipped images; use `python3` (present everywhere).
 
 Unquoted and double-quoted positions keep the environment-variable form and
 expand normally.
@@ -524,7 +535,7 @@ expand normally.
 | `steps.<name>.exit_code` | Integer exit code | `${{ steps.build.exit_code }}` |
 | `steps.<name>.status` | `"success"`, `"failure"`, or `"skipped"` | `${{ steps.build.status }}` |
 | `steps.<name>.response` | Response body from a message step | `${{ steps.query.response }}` |
-| `steps.<name>.outputs.<key>` | Output from a sub-workflow step (`workflow:` steps only; rejected at load elsewhere) | `${{ steps.sub.outputs.url }}` |
+| `steps.<name>.outputs.<key>` | Output from a sub-workflow step (any key) or the `answer` field from a message step (`outputs.answer`); rejected at load elsewhere | `${{ steps.sub.outputs.url }}` / `${{ steps.ask.outputs.answer }}` |
 | `job.status` | Current job aggregate status | `${{ job.status }}` |
 | `jobs.<name>.steps.<name>.*` | Cross-job step reference | `${{ jobs.build.steps.compile.stdout }}` |
 | `workflow.name` | Workflow name | `${{ workflow.name }}` |

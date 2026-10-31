@@ -245,14 +245,18 @@ func validateExpressionRefs(wf *models.Workflow) error {
 		}
 		return nil
 	}
-	// outputs is produced by sub-workflow steps only; a reference through any
-	// other step can never resolve and must fail the load, not pass the literal.
-	checkOutputsRef := func(name string, step *models.Step, hasKey bool) error {
-		if !hasKey {
+	// outputs is produced by sub-workflow steps (author-defined keys) and by
+	// message steps (the platform answer field); a reference through any other
+	// step can never resolve and must fail the load, not pass the literal.
+	checkOutputsRef := func(name string, step *models.Step, key string) error {
+		if key == "" {
 			return fmt.Errorf("outputs requires a key: outputs.<key>")
 		}
-		if step == nil || step.Type != models.StepWorkflow {
-			return fmt.Errorf("step %q has no outputs: only workflow steps produce outputs", name)
+		switch {
+		case step == nil || step.Type == models.StepCommand || step.Type == models.StepApp:
+			return fmt.Errorf("step %q has no outputs: only workflow and message steps produce outputs", name)
+		case step.Type == models.StepMessage && key != "answer":
+			return fmt.Errorf("message step %q only produces outputs.answer", name)
 		}
 		return nil
 	}
@@ -299,7 +303,11 @@ func validateExpressionRefs(wf *models.Workflow) error {
 					return fail("step fields are stdout, exit_code, status, response, outputs")
 				}
 				if parts[2] == "outputs" {
-					if err := checkOutputsRef(parts[1], jobStep(job, parts[1]), len(parts) >= 4); err != nil {
+					key := ""
+					if len(parts) >= 4 {
+						key = parts[3]
+					}
+					if err := checkOutputsRef(parts[1], jobStep(job, parts[1]), key); err != nil {
 						return fail(err.Error())
 					}
 				}
@@ -323,7 +331,11 @@ func validateExpressionRefs(wf *models.Workflow) error {
 						return fail("step fields are stdout, exit_code, status, response, outputs")
 					}
 					if parts[4] == "outputs" {
-						if err := checkOutputsRef(parts[3], jobStep(job, parts[3]), len(parts) >= 6); err != nil {
+						key := ""
+						if len(parts) >= 6 {
+							key = parts[5]
+						}
+						if err := checkOutputsRef(parts[3], jobStep(job, parts[3]), key); err != nil {
 							return fail(err.Error())
 						}
 					}
