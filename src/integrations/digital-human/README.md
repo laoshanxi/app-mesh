@@ -66,6 +66,12 @@ bash setup.sh --team demo
 
 部署同时创建运行时账号（`dh-bot@<team>.local`，角色 `digital-human`，仅三项权限）。root 安装下创建账号需要 sudo。启用命令见 DESIGN.md 第 9 节。账号未启用时，运行时回退管理员 token（仅限开发）。
 
+**多节点 / 容器化部署注意**（用户视角实测结论）：
+
+- 用户与角色只能在 **authentication owner 节点**创建（follower 节点的 `add-user` 会被拒绝）；角色写入授权策略后有短暂落盘延迟，`add-user` 报"角色未定义"时稍候重试。
+- Dex 路由不在回环时（如 follower 容器内、`DH_TOKEN_URL` 指向内部网络的明文端点），需设置 `APPMESH_AUTH_ALLOW_HTTP=1` 放行受信内网明文，或把 `DH_TOKEN_URL` 指向回环转发（如 `127.0.0.1:6062 → <owner>:6062`）。
+- **大脑 App 的 env 必须带 `DH_TOKEN_URL` 与 `APPMESH_AUTH_ALLOW_HTTP`**：agent 的 Bash 子进程调技能时继承 App env，缺了技能侧密码流会被 SDK fail-closed 拒绝（部署模板 `apps/agent.yaml` 可按需加这两行 env）。
+
 ## 5. 使用
 
 ```bash

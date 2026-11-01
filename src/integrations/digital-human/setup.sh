@@ -73,9 +73,15 @@ fi
 BOT_PW_FILE="$TEAM_RT/dh-bot.password"
 printf '%s' "$DH_BOT_PASSWORD" > "$BOT_PW_FILE"
 chmod 600 "$BOT_PW_FILE"
-curl -s --cacert "$APPMESH_CA" -X POST -H "Authorization: Bearer $APPMESH_BEARER_TOKEN" -H "Content-Type: application/json" \
-	-d '["app-run-task","app-view","app-output-view"]' "${APPMESH_URL}/appmesh/role/digital-human" >/dev/null || true
-printf '%s' "$DH_BOT_PASSWORD" | bash "$AUTH_SCRIPT" add-user "$DH_BOT_USER" digital-human >/dev/null 2>&1 || true
+role_code=$(curl -s --cacert "$APPMESH_CA" -X POST -H "Authorization: Bearer $APPMESH_BEARER_TOKEN" -H "Content-Type: application/json" \
+	-d '["app-run-task","app-view","app-output-view"]' -o /dev/null -w '%{http_code}' "${APPMESH_URL}/appmesh/role/digital-human")
+case "$role_code" in 200|201|204) ;; *) echo "警告: 角色 digital-human 创建失败 (HTTP $role_code) — dh-bot 将无法通过密码流认证" >&2 ;; esac
+if ! add_out=$(printf '%s' "$DH_BOT_PASSWORD" | bash "$AUTH_SCRIPT" add-user "$DH_BOT_USER" digital-human 2>&1); then
+	echo "警告: dh-bot 用户创建失败: $add_out" >&2
+	echo "      （多节点部署需在 authentication owner 节点执行；角色落盘若有延迟可稍候重试）" >&2
+else
+	echo "$add_out" | grep -m1 . || true
+fi
 # 探测 dh-bot 密码流是否可用（--data-urlencode 防特殊字符）
 if curl -s -u 'appmesh-cli:' -X POST "$TOKEN_URL/auth/token" \
 	-d 'grant_type=password' --data-urlencode "username=$DH_BOT_USER" \

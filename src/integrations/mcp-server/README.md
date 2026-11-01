@@ -2,6 +2,9 @@
 
 The MCP server exposes App Mesh operations over Streamable HTTP. It is an OAuth 2.1 protected resource.
 
+> This is the full-featured server (31 tools, remote clients over HTTP). For a STDIO
+> bridge launched as a subprocess by a local LLM runtime, see [`../mcp-bridge`](../mcp-bridge/README.md).
+
 The MCP server validates the caller access token. It forwards the same token to the Engine. The Engine validates the token again and makes the App Mesh authorization decision.
 
 The MCP server does not receive a password. It does not issue or exchange a token.

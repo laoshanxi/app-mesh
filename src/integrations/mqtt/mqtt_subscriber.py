@@ -10,7 +10,21 @@ from config import BROKER, PORT, TOPIC
 
 CLIENT_ID = "iot-data-processor"
 
-appmesh_client = AppMeshClient(bearer_token=os.environ["APPMESH_BEARER_TOKEN"])
+
+def _ssl_verify():
+    """TLS setting for the App Mesh client: APPMESH_CA path, or APPMESH_SSL_VERIFY=false.
+
+    Needed off daemon hosts, where the daemon's self-signed cert is not in the system CAs.
+    """
+    ca = os.environ.get("APPMESH_CA")
+    if ca:
+        return ca
+    if os.environ.get("APPMESH_SSL_VERIFY", "").lower() in ("false", "0", "no"):
+        return False
+    return None
+
+
+appmesh_client = AppMeshClient(bearer_token=os.environ["APPMESH_BEARER_TOKEN"], ssl_verify=_ssl_verify())
 
 
 def process_device_data(data):
