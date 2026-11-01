@@ -516,3 +516,79 @@ func TestSuccessFailure_ToleratedFailure(t *testing.T) {
 		t.Error("success() must fail on an untolerated failure")
 	}
 }
+
+// plainMessageCtx builds a message step that completed with a plain-text reply (no outputs).
+func plainMessageCtx(job, step string) *Context {
+	ctx := NewContext()
+	ctx.SetStepResult(job, step, "answer-from-py", 0, "success", "answer-from-py", nil)
+	ctx.MarkMessageStep(job, step)
+	return ctx
+}
+
+// An outputs.answer reference at a plain-text message step fails substitution clearly.
+func TestSubstituteForCommand_MessageOutputsPlainTextFails(t *testing.T) {
+	_, _, err := SubstituteForCommand(`echo got: ${{ steps.qa.outputs.answer }}`, plainMessageCtx("j", "qa"), "j")
+	if err == nil || !strings.Contains(err.Error(), `unresolved expression ${{ steps.qa.outputs.answer }}`) ||
+		!strings.Contains(err.Error(), `message step "qa" produced no answer`) ||
+		!strings.Contains(err.Error(), "plain-text responders expose stdout") {
+		t.Fatalf("err = %v, want the plain-text no-answer engine error", err)
+	}
+	// The cross-job shape fails the same way.
+	_, _, err = SubstituteForCommand(`echo ${{ jobs.other.steps.qa.outputs.answer }}`, plainMessageCtx("other", "qa"), "j")
+	if err == nil || !strings.Contains(err.Error(), `message step "qa" produced no answer`) {
+		t.Fatalf("cross-job err = %v, want the plain-text no-answer engine error", err)
+	}
+	// toJSON(...) of the same reference too.
+	_, _, err = SubstituteForCommand(`echo ${{ toJSON(steps.qa.outputs.answer) }}`, plainMessageCtx("j", "qa"), "j")
+	if err == nil || !strings.Contains(err.Error(), `message step "qa" produced no answer`) {
+		t.Fatalf("toJSON err = %v, want the plain-text no-answer engine error", err)
+	}
+	// The shell=false path goes through the same detection.
+	if _, err := SubstituteCommandText(`echo got: ${{ steps.qa.outputs.answer }}`, plainMessageCtx("j", "qa"), "j"); err == nil {
+		t.Fatal("SubstituteCommandText must fail on the same reference")
+	}
+}
+
+// Envelope responders still substitute outputs.answer as before.
+func TestSubstituteForCommand_MessageOutputsEnvelopeSubstitutes(t *testing.T) {
+	ctx := NewContext()
+	ctx.SetStepResult("j", "qa", "", 0, "success", `{"status":"ok","data":{"answer":"42"}}`,
+		map[string]string{"answer": "42"})
+	ctx.MarkMessageStep("j", "qa")
+	cmd, bindings, err := SubstituteForCommand(`echo got: ${{ steps.qa.outputs.answer }}`, ctx, "j")
+	if err != nil || cmd != "echo got: $WF_E0" || bindings["WF_E0"] != "42" {
+		t.Fatalf("got %q bindings %v err %v, want the answer substituted", cmd, bindings, err)
+	}
+}
+
+// Other unresolved references keep the lenient literal-kept behavior.
+func TestSubstituteForCommand_OtherUnresolvedRefsStayLiteral(t *testing.T) {
+	ctx := plainMessageCtx("j", "qa")
+	ctx.SetStepResult("j", "sub", "", 0, "success", "", nil) // workflow sub-step, no outputs
+	for _, cmd := range []string{
+		`echo ${{ steps.ghost.outputs.answer }}`,
+		`echo '${{ nosuchroot.x }}'`,
+		`echo ${{ steps.qa.outputs.answer.here }}`,
+		`echo ${{ steps.sub.outputs.missing }}`,
+	} {
+		got, _, err := SubstituteForCommand(cmd, ctx, "j")
+		if err != nil || got != cmd {
+			t.Errorf("%q: got %q err %v, want literal kept", cmd, got, err)
+		}
+	}
+}
+
+// The miss fires only for a completed message step; plain text stays reachable via stdout.
+func TestSubstituteForCommand_MissOnlyForCompletedMessageSteps(t *testing.T) {
+	failed := NewContext()
+	failed.SetStepResult("j", "qa", "", 1, "failure", "boom", nil)
+	failed.MarkMessageStep("j", "qa")
+	got, _, err := SubstituteForCommand(`echo ${{ steps.qa.outputs.answer }}`, failed, "j")
+	if err != nil || got != `echo ${{ steps.qa.outputs.answer }}` {
+		t.Errorf("failed message step: got %q err %v, want literal kept", got, err)
+	}
+	if got, bindings, err := SubstituteForCommand(`echo ${{ steps.qa.stdout }}`, plainMessageCtx("j", "qa"), "j"); err != nil ||
+		got != "echo $WF_E0" || bindings["WF_E0"] != "answer-from-py" {
+		t.Errorf("plain-text stdout: got %q bindings %v err %v, want it substituted", got, bindings, err)
+	}
+}

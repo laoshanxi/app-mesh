@@ -338,6 +338,15 @@ func skipJob(job *models.Job, ectx *expression.Context, statusMu *sync.RWMutex, 
 
 func runJob(job *models.Job, exec *executor.StepExecutor, ectx *expression.Context, wf *models.Workflow,
 	statusMu *sync.RWMutex, opts *Options, log logger.Log) bool {
+	// Mark message steps upfront so substitution can report a plain-text outputs miss.
+	for _, steps := range [][]models.Step{job.Steps, job.Finally} {
+		for i := range steps {
+			if steps[i].Type == models.StepMessage {
+				ectx.MarkMessageStep(job.Name, steps[i].Name)
+			}
+		}
+	}
+
 	// Skip jobs already completed in a previous run (checkpoint recovery).
 	if prev, ok := opts.CompletedJobs[job.Name]; ok {
 		statusMu.Lock()

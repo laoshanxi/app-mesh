@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/laoshanxi/app-mesh/src/apps/workflow/internal/expression"
+	"github.com/laoshanxi/app-mesh/src/apps/workflow/internal/models"
 )
 
 func TestInjectToken(t *testing.T) {
@@ -102,5 +103,22 @@ func TestResolveTargetNodeNoClusterNodes(t *testing.T) {
 	node, err := ResolveTargetNode(nil, "https://127.0.0.1:6058", map[string]string{"host": "node-a"}, nil, "bearer")
 	if err != nil || node != "node-a" {
 		t.Errorf("host key must route directly, got node=%q err=%v", node, err)
+	}
+}
+
+// The outputs.answer miss fails at substitution, before any App runs.
+func TestExecCommandMessageOutputsMissFailsBeforeShell(t *testing.T) {
+	ectx := expression.NewContext()
+	ectx.SetStepResult("j", "qa", "answer-from-py", 0, "success", "answer-from-py", nil)
+	ectx.MarkMessageStep("j", "qa")
+	e := &StepExecutor{Ctx: ectx, JobName: "j"}
+	res := e.Execute(&models.Step{Name: "use", Type: models.StepCommand,
+		Command: "echo got: ${{ steps.qa.outputs.answer }}"}, nil, nil)
+	if res.Status != models.StatusFailure || res.ExitCode == nil || *res.ExitCode != 1 {
+		t.Fatalf("result = %+v, want failure with exit 1", res)
+	}
+	if !strings.Contains(res.Response, `unresolved expression ${{ steps.qa.outputs.answer }}`) ||
+		!strings.Contains(res.Response, `message step "qa" produced no answer`) {
+		t.Fatalf("response = %q, want the plain-text no-answer engine error", res.Response)
 	}
 }

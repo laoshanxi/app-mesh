@@ -552,14 +552,13 @@ mod tests {
         let mut server = Server::new_async().await;
         let client = create_test_client(&server);
 
-        // forward_to without a port is expanded with the client's own port.
-        let port = server.url().rsplit(':').next().unwrap().to_string();
-        let expected_host = format!("127.0.0.1:{}", port);
+        // forward_to is sent as given; the server resolves a bare host to its own port.
+        let expected_host = "127.0.0.1";
 
         let run_mock = server
             .mock("POST", "/appmesh/app/run")
             .match_query(Matcher::Any)
-            .match_header("x-target-host", expected_host.as_str())
+            .match_header("x-target-host", expected_host)
             .with_status(200)
             .with_body(r#"{"name":"fwd-app","process_uuid":"fwd-uuid"}"#)
             .create_async()
@@ -569,7 +568,7 @@ mod tests {
         let output_mock = server
             .mock("GET", "/appmesh/app/fwd-app/output")
             .match_query(Matcher::Any)
-            .match_header("x-target-host", expected_host.as_str())
+            .match_header("x-target-host", expected_host)
             .with_status(200)
             .with_header("x-exit-code", "0")
             .with_body("")

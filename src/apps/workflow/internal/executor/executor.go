@@ -134,7 +134,7 @@ func (e *StepExecutor) execCommand(step *models.Step, env, secretEnv map[string]
 		command, exprEnv, err = expression.SubstituteForCommand(step.Command, e.Ctx, e.JobName)
 	} else {
 		// No shell expands the variable, so keep direct substitution.
-		command, err = expression.SubstituteForJobChecked(step.Command, e.Ctx, e.JobName)
+		command, err = expression.SubstituteCommandText(step.Command, e.Ctx, e.JobName)
 	}
 	if err != nil {
 		return fail(1, err.Error(), 0)

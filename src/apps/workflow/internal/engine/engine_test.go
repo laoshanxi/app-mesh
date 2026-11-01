@@ -192,3 +192,37 @@ func TestStrictExpressionsFailStep(t *testing.T) {
 		t.Fatalf("step stdout = %q, want unresolved-expression message", stdout)
 	}
 }
+
+// A plain-text message step's missing outputs must fail the referencing step
+// with the clear engine error, not reach the shell as a literal.
+func TestMessageOutputsPlainTextFailsStepClearly(t *testing.T) {
+	wf := &models.Workflow{
+		Name: "ask",
+		Jobs: map[string]*models.Job{
+			"j": {Name: "j", Steps: []models.Step{
+				{Name: "qa", Type: models.StepMessage,
+					Message: &models.MessageConfig{App: "py-task", Payload: "{}"}, Timeout: 30},
+				{Name: "use", Type: models.StepCommand, Command: "echo got: ${{ steps.qa.outputs.answer }}"},
+			}},
+		},
+	}
+	var snap map[string]map[string]any
+	code, _ := RunWithContext(context.Background(), wf, nil, nil, "run5", 0, Options{
+		CompletedSteps: map[string]map[string]bool{"j": {"qa": true}},
+		RecoveredSteps: map[string]map[string]map[string]any{
+			"j": {"qa": {"stdout": "answer-from-py", "exit_code": 0, "status": "success",
+				"response": "answer-from-py", "outputs": nil}},
+		},
+		OnJobDone: func(_, _ string, _ string, steps map[string]map[string]any) { snap = steps },
+	})
+	if code == 0 {
+		t.Fatalf("exit 0, want 1 (unresolved outputs.answer must fail the step)")
+	}
+	s := snap["use"]
+	if s == nil || s["status"] != models.StatusFailure {
+		t.Fatalf("step result = %v, want failure", s)
+	}
+	if stdout, _ := s["stdout"].(string); !strings.Contains(stdout, `message step "qa" produced no answer`) {
+		t.Fatalf("step stdout = %q, want the plain-text no-answer engine error", stdout)
+	}
+}

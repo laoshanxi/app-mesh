@@ -2,6 +2,7 @@ package expression
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"regexp"
 	"strconv"
@@ -9,6 +10,7 @@ import (
 	"sync"
 
 	"github.com/laoshanxi/app-mesh/src/apps/workflow/internal/logger"
+	"github.com/laoshanxi/app-mesh/src/apps/workflow/internal/models"
 )
 
 var exprPattern = regexp.MustCompile(`\$\{\{\s*(.+?)\s*\}\}`)
@@ -21,6 +23,7 @@ type Context struct {
 	Jobs         map[string]map[string]any
 	JobStatuses  map[string]string
 	finallySteps map[string]bool // steps in finally section (excluded from success()/failure())
+	messageSteps map[string]bool // message steps, for the plain-text outputs miss check
 	WfName       string
 	WfRunID      string
 	Inputs       map[string]string
@@ -35,6 +38,7 @@ func NewContext() *Context {
 		Jobs:         make(map[string]map[string]any),
 		JobStatuses:  make(map[string]string),
 		finallySteps: make(map[string]bool),
+		messageSteps: make(map[string]bool),
 		Inputs:       make(map[string]string),
 		Env:          make(map[string]string),
 	}
@@ -46,6 +50,14 @@ func (c *Context) MarkFinallyStep(jobName, stepName string) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.finallySteps[jobName+"."+stepName] = true
+}
+
+// MarkMessageStep records a message step, so a later outputs.<key> reference to
+// one that completed without outputs (plain-text reply) fails with a clear error.
+func (c *Context) MarkMessageStep(jobName, stepName string) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.messageSteps[jobName+"."+stepName] = true
 }
 
 // MarkContinueOnError flags a failure tolerated by continue-on-error:
@@ -233,17 +245,29 @@ func SubstituteForJob(template string, ctx *Context, jobName string) string {
 // SubstituteForJobChecked returns an error on the first unresolved expression
 // when ctx.Strict; condition (if:) operands always stay lenient.
 func SubstituteForJobChecked(template string, ctx *Context, jobName string) (string, error) {
+	s, _, err := substituteChecked(template, ctx, jobName)
+	return s, err
+}
+
+// substituteChecked is SubstituteForJobChecked plus the first message-outputs miss (empty when none).
+func substituteChecked(template string, ctx *Context, jobName string) (string, string, error) {
 	var strictErr error
+	miss := ""
 	out := exprPattern.ReplaceAllStringFunc(template, func(match string) string {
 		inner := exprPattern.FindStringSubmatch(match)
 		if len(inner) < 2 {
 			return match
 		}
-		resolved, ok := resolveExpr(strings.TrimSpace(inner[1]), match, ctx, jobName)
+		expr := strings.TrimSpace(inner[1])
+		resolved, ok := resolveExpr(expr, match, ctx, jobName)
 		if !ok {
 			if ctx.Strict {
 				if strictErr == nil {
 					strictErr = fmt.Errorf("unresolved expression %s", match)
+				}
+			} else if msg := messageOutputMiss(match, expr, ctx, jobName); msg != "" {
+				if miss == "" {
+					miss = msg
 				}
 			} else {
 				logger.Warn("expression: unresolved " + match + " embedded literally")
@@ -253,9 +277,19 @@ func SubstituteForJobChecked(template string, ctx *Context, jobName string) (str
 		return resolved
 	})
 	if strictErr != nil {
-		return "", strictErr
+		return "", "", strictErr
 	}
-	return out, nil
+	return out, miss, nil
+}
+
+// SubstituteCommandText substitutes shell=false command text; like
+// SubstituteForCommand it fails on a message-outputs miss.
+func SubstituteCommandText(template string, ctx *Context, jobName string) (string, error) {
+	s, miss, err := substituteChecked(template, ctx, jobName)
+	if err == nil && miss != "" {
+		return "", errors.New(miss)
+	}
+	return s, err
 }
 
 // SubstituteForCommand rewrites every ${{ expr }} in a shell command into a
@@ -269,7 +303,10 @@ func SubstituteForCommand(template string, ctx *Context, jobName string) (string
 	// $WF_E<N> is a reserved reference; if the command already uses one, a
 	// generated binding would shadow it. Fall back to direct substitution.
 	if strings.Contains(template, "$WF_E") {
-		s, err := SubstituteForJobChecked(template, ctx, jobName)
+		s, miss, err := substituteChecked(template, ctx, jobName)
+		if err == nil && miss != "" {
+			return "", nil, errors.New(miss)
+		}
 		return s, nil, err
 	}
 	bindings := make(map[string]string)
@@ -281,6 +318,11 @@ func SubstituteForCommand(template string, ctx *Context, jobName string) (string
 			if ctx.Strict {
 				if buildErr == nil {
 					buildErr = fmt.Errorf("unresolved expression %s", match)
+				}
+			} else if msg := messageOutputMiss(match, exprText, ctx, jobName); msg != "" {
+				// Always an author mistake: fail the step, not the shell.
+				if buildErr == nil {
+					buildErr = errors.New(msg)
 				}
 			} else {
 				logger.Warn("expression: unresolved " + match + " embedded literally")
@@ -421,6 +463,40 @@ func jsonEscapeStringContent(s string) string {
 	}
 	out := strings.TrimSuffix(b.String(), "\n")
 	return out[1 : len(out)-1]
+}
+
+// messageOutputMiss reports an outputs reference at a completed message step
+// with no outputs (its App replied in plain text). Empty for anything else.
+func messageOutputMiss(match, expr string, ctx *Context, jobName string) string {
+	path := expr
+	if m := toJSONPattern.FindStringSubmatch(expr); m != nil {
+		path = strings.TrimSpace(m[1])
+	}
+	parts := strings.Split(path, ".")
+	var stepKey, stepID string
+	switch {
+	case parts[0] == "steps" && len(parts) == 4 && parts[2] == "outputs":
+		stepKey, stepID = jobName+"."+parts[1], parts[1]
+	case parts[0] == "jobs" && len(parts) == 6 && parts[2] == "steps" && parts[4] == "outputs":
+		stepKey, stepID = parts[1]+"."+parts[3], parts[3]
+	default:
+		return ""
+	}
+	ctx.mu.RLock()
+	defer ctx.mu.RUnlock()
+	if !ctx.messageSteps[stepKey] {
+		return ""
+	}
+	s, ok := ctx.Steps[stepKey]
+	// Only a completed step qualifies; a skipped or failed one is already reported.
+	if !ok || s["status"] != models.StatusSuccess {
+		return ""
+	}
+	if outs, ok := s["outputs"].(map[string]string); ok && len(outs) > 0 {
+		return ""
+	}
+	return fmt.Sprintf("unresolved expression %s: message step %q produced no answer "+
+		"(plain-text responders expose stdout)", match, stepID)
 }
 
 // resolveExpr renders one expression; ok is false when its path is unresolved.

@@ -64,11 +64,6 @@ class TestHTTP(ProtocolTestMixin, AppOutputMixin, PrincipalManagementMixin, Task
     def _create_client(self):
         return AppMeshClient()
 
-    @unittest.skip("Go agent IsValidFileName blocks /etc/* on download (fixed in source, awaiting release); TCP/WSS still "
-        "cover it.")
-    def test_22_download_readonly_file(self):
-        pass
-
     def test_16_config_set(self):
         """HTTP-specific: set config (VerifyServer flag for SSL)."""
         config.attach_test_bearer(self.client)
