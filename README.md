@@ -218,6 +218,7 @@ Agents are just managed Apps: the same RBAC, scheduling, secrets, health checks,
 ## 📚 Documentation
 
 - [Read the Docs](https://app-mesh.readthedocs.io/) — full documentation
+- [Product Guide (中文)](docs/source/PRODUCT-GUIDE.md) / [Product Guide (EN)](docs/source/PRODUCT-GUIDE-EN.md) — features, business scenarios, and AI agent patterns, with runnable examples
 - [Feature Overview](docs/source/FeatureOverview.md) — the full capability map behind Hosting and Computing
 - [Installation Guide](https://app-mesh.readthedocs.io/en/latest/Install.html)
 - [Security](https://app-mesh.readthedocs.io/en/latest/Security.html)

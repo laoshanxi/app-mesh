@@ -13,6 +13,8 @@ Welcome to AppMesh's documentation!
 
    README.md
    FeatureOverview.md
+   PRODUCT-GUIDE.md
+   PRODUCT-GUIDE-EN.md
    Build.md
    CLI.md
    RESTAPI.md
