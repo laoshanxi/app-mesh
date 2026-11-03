@@ -833,12 +833,22 @@ pid_t AppProcess::startImpl(std::string cmd, std::string user, std::string workD
 			m_stdoutHandler.reset(ACE_OS::open(m_stdoutFileName.c_str(), O_CREAT | O_WRONLY | O_TRUNC));
 			LOG_DBG << fname << "std_out: " << m_stdoutFileName << " m_stdoutHandler: " << m_stdoutHandler.get();
 
-			if (!m_stdoutHandler.valid())
-				LOG_ERR << fname << "Failed to open stdout file <" << m_stdoutFileName << ">: " << last_error_msg();
-
 			auto pipeFds = createStdoutPipe();
 			pipeReadForDaemon = pipeFds.first;
 			pipeWriteForChild = pipeFds.second;
+
+			if (!m_stdoutHandler.valid())
+			{
+				// Continuing would redirect the child's stdout nowhere: the run
+				// would finish successfully with its output silently lost.
+				ACE_OS::close(pipeReadForDaemon);
+				ACE_OS::close(pipeWriteForChild);
+				const std::string error =
+					Utility::stringFormat("Failed to open stdout file <%s>: %s", m_stdoutFileName.c_str(), last_error_msg());
+				LOG_ERR << fname << error;
+				setStartError(error);
+				return ACE_INVALID_PID;
+			}
 		}
 		else
 		{
