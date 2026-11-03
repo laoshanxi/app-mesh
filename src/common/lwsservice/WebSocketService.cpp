@@ -226,6 +226,7 @@ std::shared_ptr<WSSessionInfo> WebSocketService::getSessionInfo(struct lws *wsi)
     ssnInfo->ext_x_file_mode = grabCustom("X-File-Mode");
     ssnInfo->ext_x_file_user = grabCustom("X-File-User");
     ssnInfo->ext_x_file_group = grabCustom("X-File-Group");
+    ssnInfo->ext_x_file_overwrite = grabCustom("X-File-Overwrite");
     // Forwarding target of the shared worker pipeline; a /ws transfer with a
     // target host belongs to that node, not this one.
     ssnInfo->ext_target_host = grabCustom("X-Target-Host");
@@ -560,11 +561,24 @@ int WebSocketService::handleHttpCallback(struct lws *wsi, enum lws_callback_reas
         {
             // A forwarded transfer belongs to the target node: hand it to the
             // shared worker pipeline under the canonical path; the body arrives
-            // through the generic HTTP_BODY path and is enqueued on completion.
+            // through the generic HTTP_BODY path and is enqueued on completion
+            // (a bodyless POST enqueues immediately, like the generic path).
             if (!ssnInfo->ext_target_host.empty() && pss)
             {
                 pss->http_request = buildHttpRequest(wsi);
                 pss->http_request->request_uri = "/appmesh/file/upload";
+                if (!pss->http_request->contain_body())
+                {
+                    auto serialized = pss->http_request->serialize();
+                    WSRequest ws_req;
+                    ws_req.m_type = WSRequest::Type::HttpMessage;
+                    ws_req.m_session_ref = wsi;
+                    ws_req.m_payload.assign(serialized.begin(), serialized.end());
+                    ws_req.m_req_id = m_next_request_id.fetch_add(1);
+                    ws_req.m_session_id = ws_req.m_req_id;
+                    pss->req_id = ws_req.m_req_id;
+                    enqueueIncomingRequest(std::move(ws_req));
+                }
                 pss->http_pending = true;
                 return 0;
             }
@@ -586,9 +600,26 @@ int WebSocketService::handleHttpCallback(struct lws *wsi, enum lws_callback_reas
             {
                 return lws_return_http_status(wsi, HTTP_STATUS_FORBIDDEN, "File path is not allowed");
             }
+            // Same destination gates as the canonical REST surface: symlinks and
+            // directories never qualify, and an existing file needs the
+            // overwrite flag.
+            boost::system::error_code pathEc;
+            if (fs::is_symlink(ssnInfo->ext_x_file_path, pathEc))
+            {
+                return lws_return_http_status(wsi, HTTP_STATUS_BAD_REQUEST, "symlinks not allowed");
+            }
+            if (fs::is_directory(ssnInfo->ext_x_file_path, pathEc))
+            {
+                return lws_return_http_status(wsi, HTTP_STATUS_BAD_REQUEST, "destination is a directory");
+            }
+            const auto overwrite = ssnInfo->ext_x_file_overwrite == "true";
+            if (!overwrite && Utility::isFileExist(ssnInfo->ext_x_file_path))
+            {
+                return lws_return_http_status(wsi, HTTP_STATUS_CONFLICT, "file already exist");
+            }
             if (pss)
             {
-                pss->upload_stream = std::make_unique<std::ofstream>(ssnInfo->ext_x_file_path, std::ios::binary);
+                pss->upload_stream = std::make_unique<std::ofstream>(ssnInfo->ext_x_file_path, std::ios::binary | std::ios::trunc);
                 if (!pss->upload_stream->is_open())
                 {
                     pss->cleanup();

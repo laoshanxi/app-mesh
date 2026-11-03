@@ -15,8 +15,9 @@ HealthCheckTask::HealthCheckTask()
 
 HealthCheckTask::~HealthCheckTask()
 {
-	// The worker sleeps in exit-checked slices, so the join is bounded even
-	// when a teardown path skips the exit signal.
+	// The daemon's normal shutdown ends with ACE_OS::_exit(), so this dtor
+	// rarely runs; when it does, the worker exits once the exit flag is set
+	// (each round and each sleep slice checks it).
 	if (m_worker.joinable())
 		m_worker.join();
 }

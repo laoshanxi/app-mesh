@@ -2,6 +2,7 @@
 #pragma once
 
 #include "../../common/HttpHeaderMap.h"
+#include "../../common/Utility.h"
 
 #include <cstdint>
 #include <cstdio>
@@ -22,9 +23,12 @@ struct FileUploadInfo
 	// overwrite=true publishes by rename, replacing an existing destination.
 	FileUploadInfo(const std::string &uploadFilePath, const std::string &tempFilePath,
 				   const HttpHeaderMap &requestHeaders, bool overwrite = false)
-		: m_filePath(uploadFilePath), m_tempPath(tempFilePath), m_requestHeaders(requestHeaders), m_overwrite(overwrite),
-		  m_file(tempFilePath, std::ios::binary | std::ios::out | std::ios::trunc)
+		: m_filePath(uploadFilePath), m_tempPath(tempFilePath), m_requestHeaders(requestHeaders), m_overwrite(overwrite)
 	{
+		// Missing parent directories are created for every transport surface.
+		boost::system::error_code ec;
+		fs::create_directories(fs::path(tempFilePath).parent_path(), ec);
+		m_file.open(tempFilePath, std::ios::binary | std::ios::out | std::ios::trunc);
 	}
 
 	// Unless the upload committed (was renamed into place), drop the partial temp file.
@@ -43,6 +47,7 @@ struct FileUploadInfo
 	HttpHeaderMap m_requestHeaders;
 	bool m_overwrite = false;
 	std::ofstream m_file;
+	std::size_t m_bytesWritten = 0;
 	bool m_committed = false;
 };
 

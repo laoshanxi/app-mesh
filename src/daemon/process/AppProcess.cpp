@@ -145,9 +145,12 @@ public:
 		const ACE_exitcode rawStatus = process->exit_code();
 		if (WIFSIGNALED(rawStatus))
 			code = WTERMSIG(rawStatus);
-		LOG_INF << fname << "Process <" << pid << "> exited with code <" << code << ">";
-
 		auto target = m_target.lock();
+		// Internal runs (health checks, workflow helpers) log at debug so
+		// application exit logs stay readable.
+		LOG_STREAM(target && target->m_internal ? spdlog::level::debug : spdlog::level::info)
+			<< fname << "Process <" << pid << "> exited with code <" << code << ">";
+
 		if (target)
 			target->onExit(code);
 		return 0;

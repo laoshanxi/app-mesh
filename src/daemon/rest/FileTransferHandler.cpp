@@ -136,6 +136,13 @@ void FileTransferHandler::recvNextUploadChunk(std::vector<std::uint8_t> &data, i
 
 	if (!data.empty())
 	{
+		if (m_pendingUpload->m_bytesWritten + data.size() > MAX_UPLOAD_SIZE)
+		{
+			LOG_ERR << fname << "Upload exceeds size limit | ClientID=" << clientId << " | FilePath=" << m_pendingUpload->m_filePath;
+			m_pendingUpload.reset(); // same as a write error: temp file is dropped, nothing is committed
+			return;
+		}
+		m_pendingUpload->m_bytesWritten += data.size();
 		m_pendingUpload->m_file.write(reinterpret_cast<const char *>(data.data()), data.size());
 		if (!m_pendingUpload->m_file.good())
 		{
