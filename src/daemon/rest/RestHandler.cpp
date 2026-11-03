@@ -719,7 +719,7 @@ void RestHandler::apiFileDownload(const std::shared_ptr<HttpRequest> &message)
 	const auto file = Utility::decodeHeaderFilePath(message->m_headers.find(HTTP_HEADER_KEY_file_path)->second);
 	if (!Utility::validateFilePath(file, Configuration::instance()->getFileAllowedBaseDir()))
 	{
-		message->reply(web::http::status_codes::Forbidden, Utility::text2json("Invalid file path"));
+		message->reply(web::http::status_codes::Forbidden, Utility::text2json("File path is not allowed"));
 		return;
 	}
 
@@ -762,7 +762,7 @@ void RestHandler::apiFileUpload(const std::shared_ptr<HttpRequest> &message)
 	const auto file = Utility::decodeHeaderFilePath(message->m_headers.find(HTTP_HEADER_KEY_file_path)->second);
 	if (!Utility::validateFilePath(file, Configuration::instance()->getFileAllowedBaseDir()))
 	{
-		message->reply(web::http::status_codes::Forbidden, Utility::text2json("Invalid file path"));
+		message->reply(web::http::status_codes::Forbidden, Utility::text2json("File path is not allowed"));
 		return;
 	}
 

@@ -528,7 +528,7 @@ int WebSocketService::handleHttpCallback(struct lws *wsi, enum lws_callback_reas
             // Validate file path (rejects "..", null bytes, base-dir jail)
             if (!Utility::validateFilePath(ssnInfo->ext_x_file_path, Configuration::instance()->getFileAllowedBaseDir()))
             {
-                return lws_return_http_status(wsi, HTTP_STATUS_FORBIDDEN, "Invalid file path");
+                return lws_return_http_status(wsi, HTTP_STATUS_FORBIDDEN, "File path is not allowed");
             }
             return lws_serve_http_file(wsi, ssnInfo->ext_x_file_path.c_str(), "application/octet-stream", nullptr, 0);
         }
@@ -552,7 +552,7 @@ int WebSocketService::handleHttpCallback(struct lws *wsi, enum lws_callback_reas
             // Validate file path (rejects "..", null bytes, base-dir jail)
             if (!Utility::validateFilePath(ssnInfo->ext_x_file_path, Configuration::instance()->getFileAllowedBaseDir()))
             {
-                return lws_return_http_status(wsi, HTTP_STATUS_FORBIDDEN, "Invalid file path");
+                return lws_return_http_status(wsi, HTTP_STATUS_FORBIDDEN, "File path is not allowed");
             }
             if (pss)
             {
