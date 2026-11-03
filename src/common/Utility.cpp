@@ -192,6 +192,13 @@ bool Utility::validateFilePath(const std::string &filePath, const std::string &a
 	// Enforce base-directory jail when configured
 	if (!allowedBaseDir.empty() && !isPathTraversalSafe(allowedBaseDir, filePath))
 		return false;
+	// The daemon's own tree (binaries, TLS keys, bootstrap credentials, registry) is never
+	// transferable on either direction, whatever the jail allows. work/tmp is the shared
+	// scratch area (agent staging) and stays exchangeable.
+	const auto scratchDir = (fs::path(getHomeDir()) / APPMESH_WORK_DIR / APPMESH_WORK_TMP_DIR).string();
+	Utility::createDirectory(scratchDir); // the exemption must hold before the daemon first creates it
+	if (isPathTraversalSafe(getHomeDir(), filePath) && !isPathTraversalSafe(scratchDir, filePath))
+		return false;
 	return true;
 }
 
@@ -1592,6 +1599,81 @@ namespace
 		output.swap(out);
 		return outcome;
 	}
+
+	// Length of the UTF-8 sequence starting at input[i] (0 for a stray byte or
+	// a truncated tail), and whether its continuation bytes are valid.
+	std::pair<size_t, bool> utf8SequenceAt(const std::string &input, size_t i)
+	{
+		const unsigned char lead = static_cast<unsigned char>(input[i]);
+		size_t len = 0;
+		if (lead < 0x80)
+			len = 1;
+		else if ((lead & 0xE0) == 0xC0)
+			len = 2;
+		else if ((lead & 0xF0) == 0xE0)
+			len = 3;
+		else if ((lead & 0xF8) == 0xF0)
+			len = 4;
+		if (len == 0 || i + len > input.size())
+			return std::make_pair(size_t(0), false);
+		for (size_t j = 1; j < len; ++j)
+		{
+			if ((static_cast<unsigned char>(input[i + j]) & 0xC0) != 0x80)
+				return std::make_pair(size_t(0), false);
+		}
+		return std::make_pair(len, true);
+	}
+
+	// Count of valid multi-byte sequences and the bytes they cover: evidence
+	// that a buffer is UTF-8 text with stray binary bytes.
+	std::pair<size_t, size_t> utf8MultibyteEvidence(const std::string &input)
+	{
+		size_t count = 0, covered = 0;
+		for (size_t i = 0; i < input.size();)
+		{
+			const auto sequence = utf8SequenceAt(input, i);
+			if (sequence.first > 1 && sequence.second)
+			{
+				++count;
+				covered += sequence.first;
+			}
+			i += sequence.first > 0 ? sequence.first : 1;
+		}
+		return std::make_pair(count, covered);
+	}
+
+	// Keep valid UTF-8 and replace each stray byte with U+FFFD.
+	std::string utf8ReplaceInvalid(const std::string &input)
+	{
+		std::string out;
+		out.reserve(input.size());
+		for (size_t i = 0; i < input.size();)
+		{
+			const auto sequence = utf8SequenceAt(input, i);
+			if (sequence.second)
+			{
+				out.append(input, i, sequence.first);
+				i += sequence.first;
+			}
+			else
+			{
+				out.append("\xEF\xBF\xBD");
+				++i;
+			}
+		}
+		return out;
+	}
+
+	// GBK and the other CJK code pages accept most high-byte pairs, CP1252
+	// almost any byte string: a strict acceptance alone is weak evidence. When
+	// at least two multi-byte UTF-8 sequences cover half the buffer, treat it
+	// as UTF-8 text with stray bytes and replace only those, instead of
+	// re-encoding everything into mojibake.
+	bool utf8EvidenceBeatsCandidate(const std::string &input)
+	{
+		const auto evidence = utf8MultibyteEvidence(input);
+		return evidence.first >= 2 && evidence.second * 2 >= input.size();
+	}
 } // namespace
 
 std::string Utility::fileBytesToUtf8(const std::string &input)
@@ -1657,6 +1739,10 @@ std::string Utility::fileBytesToUtf8(const std::string &input)
 		const IconvOutcome outcome = iconvToUtf8(input, candidate.iconvName, converted, tailBytes);
 		if (outcome == ICONV_ACCEPTED)
 		{
+			if (utf8EvidenceBeatsCandidate(input))
+			{
+				return utf8ReplaceInvalid(input);
+			}
 			return converted;
 		}
 		if (outcome == ICONV_SPLIT_TAIL)

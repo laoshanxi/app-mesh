@@ -116,6 +116,9 @@ private:
 
 	// Ownership and timers
 	const std::weak_ptr<Application> m_owner;
+	// Internal runs (health checks, workflow helpers) have no owner application;
+	// their lifecycle logs drop to debug so application logs stay readable.
+	const bool m_internal;
 	std::atomic_long m_timerTerminateId;
 	std::atomic_long m_timerCheckStdoutId;
 	off_t m_stdOutMaxSize;

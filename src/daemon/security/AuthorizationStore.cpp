@@ -8,6 +8,8 @@
 
 #include <ace/OS.h>
 
+#include <algorithm>
+#include <cctype>
 #include <cstdlib>
 #include <stdexcept>
 
@@ -24,6 +26,49 @@ namespace
 	// a credential. It is used only to restrict the one-time local bootstrap claim.
 	const char *DEFAULT_FIRST_ADMIN_SUBJECT =
 		"CiQyZDFjOGMzOC0zODk4LTRjODktYTc4Yi0zY2FhNDJmMjAzYzESBWxvY2Fs";
+
+	// Every permission identifier the policy accepts; role updates are checked
+	// against this set so typos cannot silently grant nothing.
+	const std::set<std::string> &knownPermissions()
+	{
+		static const std::set<std::string> permissions{
+			PERMISSION_KEY_view_app,
+			PERMISSION_KEY_view_app_output,
+			PERMISSION_KEY_view_all_app,
+			PERMISSION_KEY_view_host_resource,
+			PERMISSION_KEY_app_reg,
+			PERMISSION_KEY_app_control,
+			PERMISSION_KEY_app_delete,
+			PERMISSION_KEY_app_manage_all,
+			PERMISSION_KEY_run_app_async,
+			PERMISSION_KEY_run_app_sync,
+			PERMISSION_KEY_run_app_async_output,
+			PERMISSION_KEY_run_task,
+			PERMISSION_KEY_file_download,
+			PERMISSION_KEY_file_upload,
+			PERMISSION_KEY_label_view,
+			PERMISSION_KEY_label_set,
+			PERMISSION_KEY_label_delete,
+			PERMISSION_KEY_config_view,
+			PERMISSION_KEY_config_set,
+			PERMISSION_KEY_principal_update,
+			PERMISSION_KEY_principal_delete,
+			PERMISSION_KEY_principal_list,
+			PERMISSION_KEY_role_update,
+			PERMISSION_KEY_role_delete,
+			PERMISSION_KEY_role_view,
+			PERMISSION_KEY_permission_list,
+			PERMISSION_KEY_app_subscribe,
+		};
+		return permissions;
+	}
+
+	bool validRoleName(const std::string &role)
+	{
+		return !role.empty() && role.size() <= 128 &&
+			   std::all_of(role.begin(), role.end(),
+						   [](unsigned char c) { return std::isalnum(c) || c == '-' || c == '_'; });
+	}
 
 	std::string resolveAuthRole()
 	{
@@ -412,11 +457,25 @@ void AuthorizationStore::updatePrincipal(const std::string &principalId, const n
 		if (definition.contains("subject") &&
 			GET_JSON_STR_VALUE(definition, "subject") != candidate->subject())
 			throw std::invalid_argument("principal subject is immutable");
+		// Without an explicit status an update to a tombstoned principal would
+		// answer success while it stays unusable; reviving is a deliberate act.
+		if (found->second->status() == "tombstoned" && !definition.contains("status"))
+			throw std::invalid_argument(
+				"principal is tombstoned; set \"status\": \"active\" to restore it (\"disabled\" keeps it inert)");
 	}
 	candidate->updatePolicy(definition);
 	validateRoles(candidate->roles());
 
 	const auto previous = found == m_principals.end() ? nullptr : found->second;
+	// The last active first-administrator binding must not be removed or
+	// deactivated: without it the policy can no longer be repaired through the
+	// API at all.
+	if (previous && previous->active() && previous->roles().count(m_firstAdminRole) != 0 &&
+		!(candidate->active() && candidate->roles().count(m_firstAdminRole) != 0) && activeFirstAdminCountLocked() <= 1)
+	{
+		throw AuthorizationException("cannot remove the last active first-administrator binding; assign the role to "
+									 "another active principal first");
+	}
 	const bool previouslyEnrolled = m_firstAdminEnrolled;
 	if (candidate->roles().count(m_firstAdminRole) != 0)
 		m_firstAdminEnrolled = true;
@@ -455,6 +514,11 @@ void AuthorizationStore::deletePrincipal(const std::string &principalId)
 		throw NotFoundException("principal not found");
 	if (found->second->status() == "tombstoned")
 		throw NotFoundException("active principal not found");
+	if (found->second->active() && found->second->roles().count(m_firstAdminRole) != 0 && activeFirstAdminCountLocked() <= 1)
+	{
+		throw AuthorizationException("cannot delete the last active first-administrator; assign the role to another "
+									 "active principal first");
+	}
 
 	if (config)
 	{
@@ -495,13 +559,30 @@ void AuthorizationStore::deletePrincipal(const std::string &principalId)
 void AuthorizationStore::updateRole(const std::string &role, const nlohmann::json &permissions)
 {
 	const static char fname[] = "AuthorizationStore::updateRole() ";
-	if (role.empty())
-		throw std::invalid_argument("role name cannot be empty");
+	if (!validRoleName(role))
+		throw std::invalid_argument("role name must be 1-128 characters using only letters, digits, '_' or '-'");
 	const auto parsed = readStringSet(permissions, "role permissions");
+	for (const auto &permission : parsed)
+	{
+		if (knownPermissions().count(permission) == 0)
+			throw std::invalid_argument("unknown permission identifier: " + permission);
+	}
 	std::lock_guard<std::recursive_mutex> guard(m_mutex);
 	mergeDiskPolicyLocked();
 	auto found = m_roles.find(role);
 	const bool existed = found != m_roles.end();
+	if (existed && role == m_firstAdminRole)
+	{
+		// Emptying or stripping the first-administrator role below the ability to
+		// repair the policy itself locks every administrator out of the cluster;
+		// the delete path already refuses this role for the same reason.
+		for (const char *permission : {PERMISSION_KEY_role_update, PERMISSION_KEY_principal_update})
+		{
+			if (parsed.count(permission) == 0)
+				throw AuthorizationException(std::string("the first-administrator role must keep the <") + permission +
+											 "> permission; assign another administrator before reducing it");
+		}
+	}
 	const auto previous = existed ? std::move(found->second) : std::set<std::string>();
 	m_roles[role] = parsed;
 	try
@@ -683,6 +764,17 @@ void AuthorizationStore::validateRoles(const std::set<std::string> &roles) const
 	for (const auto &role : roles)
 		if (m_roles.count(role) == 0)
 			throw std::invalid_argument("principal references an undefined role: " + role);
+}
+
+std::size_t AuthorizationStore::activeFirstAdminCountLocked() const
+{
+	std::size_t count = 0;
+	for (const auto &entry : m_principals)
+	{
+		if (entry.first != SYSTEM_PRINCIPAL_ID && entry.second->active() && entry.second->roles().count(m_firstAdminRole) != 0)
+			++count;
+	}
+	return count;
 }
 
 Principal::Kind AuthorizationStore::parseKind(const std::string &kind)

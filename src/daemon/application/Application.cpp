@@ -301,7 +301,22 @@ void Application::FromJson(const std::shared_ptr<Application> &app, const nlohma
 			throw std::invalid_argument("invalid application startup_phase");
 		app->m_startupPhase = phase->second;
 	}
-	app->m_ownerPermission = GET_JSON_INT_VALUE(jsonObj, JSON_KEY_APP_permission);
+	// Share bits <other><group>: absent defaults to owner-only (11); 0 (everyone
+	// full access) must be requested explicitly, else the tens digit is 1-3.
+	app->m_ownerPermission =
+		HAS_JSON_FIELD(jsonObj, JSON_KEY_APP_permission) ? GET_JSON_INT_VALUE(jsonObj, JSON_KEY_APP_permission) : 11;
+	if (app->m_ownerPermission < 0 || app->m_ownerPermission > 39 ||
+		(app->m_ownerPermission != 0 && app->m_ownerPermission / 10 < 1))
+	{
+		// Older releases never range-checked persisted values; refusing them would block
+		// recovery, and checkOwnerPermission() already denies non-owners for such values.
+		if (!HAS_JSON_FIELD(jsonObj, JSON_KEY_APP_from_recover))
+		{
+			throw std::invalid_argument("permission must be 0 or a two-digit value whose first digit is 1, 2 or 3");
+		}
+		LOG_WAR << fname << "Application <" << app->m_name << "> keeps legacy out-of-range permission <"
+				<< app->m_ownerPermission << ">; non-owner access is denied until it is updated";
+	}
 	app->m_shellApp = GET_JSON_BOOL_VALUE(jsonObj, JSON_KEY_APP_shell);
 	app->m_sessionLogin = GET_JSON_BOOL_VALUE(jsonObj, JSON_KEY_APP_session_login);
 
@@ -485,9 +500,15 @@ void Application::FromJson(const std::shared_ptr<Application> &app, const nlohma
 
 	if (app->m_endTime.time_since_epoch().count())
 	{
-		if (app->m_startTime > app->m_endTime)
+		if (app->m_startTime >= app->m_endTime)
 		{
 			throw std::invalid_argument("end_time should greater than the start_time");
+		}
+		// A window that already closed would leave the application enabled but
+		// forever unscheduled, with nothing in its state to explain why.
+		if (!HAS_JSON_FIELD(jsonObj, JSON_KEY_APP_from_recover) && app->m_endTime <= std::chrono::system_clock::now())
+		{
+			throw std::invalid_argument("end_time is already in the past");
 		}
 	}
 
@@ -537,6 +558,12 @@ void Application::FromJson(const std::shared_ptr<Application> &app, const nlohma
 		app->m_startInterval = duration.parse(app->m_startIntervalValue);
 		if (app->m_startInterval <= 0)
 		{
+			// A non-positive interval silently re-schedules far in the future;
+			// reject it instead (recovered definitions keep the old fallback).
+			if (!HAS_JSON_FIELD(jsonObj, JSON_KEY_APP_from_recover))
+			{
+				throw std::invalid_argument("interval must be a positive duration: " + app->m_startIntervalValue);
+			}
 			LOG_WAR << fname << "Invalid start interval <" << app->m_startIntervalValue << "> for application <" << app->m_name << ">, falling back to default";
 			app->m_startInterval = DEFAULT_TOKEN_EXPIRE_SECONDS;
 		}

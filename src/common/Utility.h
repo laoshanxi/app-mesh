@@ -140,6 +140,8 @@ std::shared_ptr<T> make_shared_array(size_t size)
 #define APPMESH_WORK_DIR "work"
 #define APPMESH_WORK_TMP_DIR "tmp"
 #define APPMESH_WORK_CONFIG_DIR "config"
+// Synthetic principal the daemon issues to the workflow engine's control calls.
+#define WORKFLOW_CONTROLLER_PRINCIPAL_PREFIX "internal:workflow-controller:"
 #define DEFAULT_PROM_LISTEN_PORT 0
 #define DEFAULT_REST_LISTEN_PORT 6060
 #define DEFAULT_TCP_REST_LISTEN_PORT 6059

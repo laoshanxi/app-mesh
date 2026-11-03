@@ -197,6 +197,7 @@ struct AppProcess::Lifecycle
 
 AppProcess::AppProcess(std::weak_ptr<Application> owner)
 	: m_owner(owner),
+	  m_internal(owner.expired()),
 	  m_timerTerminateId(INVALID_TIMER_ID),
 	  m_timerCheckStdoutId(INVALID_TIMER_ID),
 	  m_stdOutMaxSize(0),
@@ -826,56 +827,54 @@ pid_t AppProcess::startImpl(std::string cmd, std::string user, std::string workD
 	ACE_HANDLE pipeWriteForChild = ACE_INVALID_HANDLE;
 	ACE_HANDLE pipeReadForDaemon = ACE_INVALID_HANDLE;
 
-	if (!m_stdoutFileName.empty() || stdinFileContent != EMPTY_STR_JSON)
+	// A child never inherits the daemon's stdio: unnamed runs write to the null device.
+	if (!m_stdoutFileName.empty())
 	{
-		if (!m_stdoutFileName.empty())
+		m_stdoutHandler.reset(ACE_OS::open(m_stdoutFileName.c_str(), O_CREAT | O_WRONLY | O_TRUNC));
+		LOG_DBG << fname << "std_out: " << m_stdoutFileName << " m_stdoutHandler: " << m_stdoutHandler.get();
+
+		auto pipeFds = createStdoutPipe();
+		pipeReadForDaemon = pipeFds.first;
+		pipeWriteForChild = pipeFds.second;
+
+		if (!m_stdoutHandler.valid())
 		{
-			m_stdoutHandler.reset(ACE_OS::open(m_stdoutFileName.c_str(), O_CREAT | O_WRONLY | O_TRUNC));
-			LOG_DBG << fname << "std_out: " << m_stdoutFileName << " m_stdoutHandler: " << m_stdoutHandler.get();
-
-			auto pipeFds = createStdoutPipe();
-			pipeReadForDaemon = pipeFds.first;
-			pipeWriteForChild = pipeFds.second;
-
-			if (!m_stdoutHandler.valid())
-			{
-				// Continuing would redirect the child's stdout nowhere: the run
-				// would finish successfully with its output silently lost.
-				ACE_OS::close(pipeReadForDaemon);
-				ACE_OS::close(pipeWriteForChild);
-				const std::string error =
-					Utility::stringFormat("Failed to open stdout file <%s>: %s", m_stdoutFileName.c_str(), last_error_msg());
-				LOG_ERR << fname << error;
-				setStartError(error);
-				return ACE_INVALID_PID;
-			}
+			// Continuing would redirect the child's stdout nowhere: the run
+			// would finish successfully with its output silently lost.
+			ACE_OS::close(pipeReadForDaemon);
+			ACE_OS::close(pipeWriteForChild);
+			const std::string error =
+				Utility::stringFormat("Failed to open stdout file <%s>: %s", m_stdoutFileName.c_str(), last_error_msg());
+			LOG_ERR << fname << error;
+			setStartError(error);
+			return ACE_INVALID_PID;
 		}
-		else
-		{
-			m_stdoutHandler.reset(ACE_OS::open(DEV_NULL, O_RDWR));
-		}
-
-		if (stdinFileContent != EMPTY_STR_JSON)
-		{
-			// JSON::dump never throws: a throw here would leave the app never started.
-			const std::string content = stdinFileContent.is_string()
-											? stdinFileContent.get<std::string>()
-											: JSON::dump(stdinFileContent);
-			m_stdinFileName = os::createTmpFile(m_stdinFileName, content, 0600);
-			m_stdinHandler.reset(ACE_OS::open(m_stdinFileName.c_str(), O_RDONLY));
-
-			if (!m_stdinHandler.valid())
-				setStartError(Utility::stringFormat("Failed to reopen stdin file for reading <%s>", last_error_msg()));
-			LOG_DBG << fname << "std_in <" << m_stdinFileName << "> handler=" << m_stdinHandler.get();
-		}
-		else
-		{
-			m_stdinHandler.reset(ACE_OS::open(DEV_NULL, O_RDONLY));
-		}
-
-		const ACE_HANDLE childOutHandle = (pipeWriteForChild != ACE_INVALID_HANDLE) ? pipeWriteForChild : m_stdoutHandler.get();
-		option.set_handles(m_stdinHandler.get(), childOutHandle, childOutHandle);
 	}
+	else
+	{
+		m_stdoutHandler.reset(ACE_OS::open(DEV_NULL, O_RDWR));
+	}
+
+	if (stdinFileContent != EMPTY_STR_JSON)
+	{
+		// JSON::dump never throws: a throw here would leave the app never started.
+		const std::string content = stdinFileContent.is_string()
+										? stdinFileContent.get<std::string>()
+										: JSON::dump(stdinFileContent);
+		m_stdinFileName = os::createTmpFile(m_stdinFileName, content, 0600);
+		m_stdinHandler.reset(ACE_OS::open(m_stdinFileName.c_str(), O_RDONLY));
+
+		if (!m_stdinHandler.valid())
+			setStartError(Utility::stringFormat("Failed to reopen stdin file for reading <%s>", last_error_msg()));
+		LOG_DBG << fname << "std_in <" << m_stdinFileName << "> handler=" << m_stdinHandler.get();
+	}
+	else
+	{
+		m_stdinHandler.reset(ACE_OS::open(DEV_NULL, O_RDONLY));
+	}
+
+	const ACE_HANDLE childOutHandle = (pipeWriteForChild != ACE_INVALID_HANDLE) ? pipeWriteForChild : m_stdoutHandler.get();
+	option.set_handles(m_stdinHandler.get(), childOutHandle, childOutHandle);
 
 	const pid_t startedPid = spawn(option, limit);
 	const bool spawnOk = startedPid > 1;
@@ -885,7 +884,8 @@ pid_t AppProcess::startImpl(std::string cmd, std::string user, std::string workD
 
 	if (spawnOk)
 	{
-		LOG_INF << fname << "Process <" << cmd << "> started with pid <" << startedPid << ">.";
+		LOG_STREAM(m_internal ? spdlog::level::debug : spdlog::level::info)
+			<< fname << "Process <" << cmd << "> started with pid <" << startedPid << ">.";
 
 		if (m_stdoutHandler.valid() && maxStdoutSize)
 			m_stdOutMaxSize = maxStdoutSize;

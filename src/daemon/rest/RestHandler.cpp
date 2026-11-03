@@ -692,6 +692,31 @@ void RestHandler::apiAppDelete(const std::shared_ptr<HttpRequest> &message)
 			permissionCheck(message, PERMISSION_KEY_app_delete);
 		}
 
+		// Deleting a dependency would silently release its dependents (a missing
+		// dependency counts as satisfied); refuse and name them instead.
+		std::string dependents;
+		for (const auto &other : config->getApps())
+		{
+			if (other && other->getName() != appName)
+			{
+				for (const auto &dependency : other->dependsOn())
+				{
+					if (dependency == appName)
+					{
+						if (!dependents.empty())
+							dependents += ", ";
+						dependents += other->getName();
+						break;
+					}
+				}
+			}
+		}
+		if (!dependents.empty())
+		{
+			throw std::invalid_argument("application <" + appName + "> is a depends_on target of: " + dependents +
+										"; remove or update those applications first");
+		}
+
 		checkAppAccessPermission(message, app, true);
 		// The map update inside removeApp is atomic and the expected pointer
 		// makes the snapshot race-safe; a replacement with the same name is not
@@ -929,7 +954,7 @@ void RestHandler::apiWorkflowCapability(const std::shared_ptr<HttpRequest> &mess
 		capabilityAudience = InternalCapability::Audience::WorkflowControl;
 		workflowId = "__control__";
 		runId = processUuid;
-		ownerPrincipalId = "internal:workflow-controller:" + processUuid;
+		ownerPrincipalId = WORKFLOW_CONTROLLER_PRINCIPAL_PREFIX + processUuid;
 		allowedOperations = {PERMISSION_KEY_view_all_app, PERMISSION_KEY_app_subscribe};
 	}
 	else if (audience == InternalCapability::audienceName(InternalCapability::Audience::WorkflowRun))
@@ -1062,8 +1087,8 @@ void RestHandler::apiWorkflowRegistry(const std::shared_ptr<HttpRequest> &messag
 	// deliberately does not expose arbitrary applications or bypass their owner
 	// permissions through the synthetic Workflow controller principal.
 	const auto principalId = permissionCheck(message, PERMISSION_KEY_view_all_app);
-	if (principalId.compare(0, std::char_traits<char>::length("internal:workflow-controller:"),
-			"internal:workflow-controller:") != 0)
+	if (principalId.compare(0, std::char_traits<char>::length(WORKFLOW_CONTROLLER_PRINCIPAL_PREFIX),
+			WORKFLOW_CONTROLLER_PRINCIPAL_PREFIX) != 0)
 	{
 		throw AuthorizationException("workflow registry is available only to the managed Workflow controller");
 	}
@@ -1509,7 +1534,20 @@ void RestHandler::apiAppAdd(const std::shared_ptr<HttpRequest> &message)
 	auto config = Configuration::instance();
 	const auto observed = config->getApp(appName, false);
 	if (observed)
+	{
 		checkAppAccessPermission(message, observed, true);
+		// Overwriting another principal's application is an ownership transfer:
+		// it requires <app-manage-all>, never happens silently through the share
+		// bits, and keeps the current owner unless one is explicitly requested.
+		const bool manageAll = Security::instance()->permissions(tokenUser).count(PERMISSION_KEY_app_manage_all) != 0;
+		if (!observed->getOwnerPrincipalId().empty() && observed->getOwnerPrincipalId() != tokenUser && !manageAll)
+		{
+			throw AuthorizationException(
+				Utility::stringFormat("Principal <%s> is not allowed to EDIT app <%s>: "
+									  "overwriting another owner's application requires the %s permission",
+									  tokenUser.c_str(), appName.c_str(), PERMISSION_KEY_app_manage_all));
+		}
+	}
 
 	auto subscribeEvents = getHttpQueryString(*message, "subscribe_events");
 	uint32_t eventMask = 0;
@@ -1540,6 +1578,12 @@ void RestHandler::apiAppAdd(const std::shared_ptr<HttpRequest> &message)
 		ownerPrincipalId = target->id();
 		LOG_INF << fname << "Application <" << appName << "> owner set to <" << ownerPrincipalId
 				<< "> by <" << tokenUser << ">";
+	}
+	else if (observed && requestedOwner.empty() && !observed->getOwnerPrincipalId().empty() &&
+			 observed->getOwnerPrincipalId() != tokenUser)
+	{
+		// A manage-all overwrite without an explicit transfer keeps the owner.
+		ownerPrincipalId = observed->getOwnerPrincipalId();
 	}
 	jsonApp[JSON_KEY_APP_owner_principal_id] = ownerPrincipalId;
 	jsonApp.erase(JSON_KEY_APP_execution_user);

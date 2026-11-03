@@ -6,12 +6,57 @@
 #include "application/Application.h"
 #include "process/AppProcess.h"
 
+#include <chrono>
+#include <thread>
+
 HealthCheckTask::HealthCheckTask()
 {
 }
 
 HealthCheckTask::~HealthCheckTask()
 {
+	// The worker sleeps in exit-checked slices, so the join is bounded even
+	// when a teardown path skips the exit signal.
+	if (m_worker.joinable())
+		m_worker.join();
+}
+
+void HealthCheckTask::start()
+{
+	if (m_worker.joinable())
+		return;
+	m_worker = std::thread(&HealthCheckTask::run, this);
+}
+
+void HealthCheckTask::run()
+{
+	const static char fname[] = "HealthCheckTask::run() ";
+	LOG_INF << fname << "health check worker started";
+	while (!QuitHandler::instance()->shouldExit())
+	{
+		// doHealthCheck() waits in exit-checked slices, so a shutdown request
+		// ends a running round promptly.
+		try
+		{
+			doHealthCheck();
+		}
+		catch (const std::exception &ex)
+		{
+			LOG_WAR << fname << "health check round failed: " << ex.what();
+		}
+		catch (...)
+		{
+			LOG_WAR << fname << "health check round failed with unknown exception";
+		}
+		// Fixed sleep after each round: a slow round pushes the next one back
+		// instead of shortening the gap. 30 schedule ticks keeps the
+		// process-spawning rounds sparse (60s at the default interval).
+		const auto deadline = std::chrono::steady_clock::now() +
+							  std::chrono::seconds(Configuration::instance()->getScheduleInterval() * 30);
+		while (!QuitHandler::instance()->shouldExit() && std::chrono::steady_clock::now() < deadline)
+			std::this_thread::sleep_for(std::chrono::milliseconds(200));
+	}
+	LOG_INF << fname << "health check worker exited";
 }
 
 void HealthCheckTask::doHealthCheck()

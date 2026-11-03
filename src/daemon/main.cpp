@@ -607,8 +607,9 @@ void AppMeshDaemon::runMainLoop()
 	LOG_INF << fname << "Entered working directory: " << fs::current_path().string();
 
 	int tcpErrorCounter = 0;
-	// Health checks every 30 schedule ticks: each check spawns a process.
-	int healthCheckTick = 0;
+	// Health checks run on a resident worker that sleeps a fixed time between
+	// rounds; each check spawns a process and must stay off this loop.
+	HealthCheckTask::instance()->start();
 	LOG_INF << fname << "Entering main application monitoring loop";
 
 	while (!QuitHandler::instance()->shouldExit())
@@ -624,8 +625,6 @@ void AppMeshDaemon::runMainLoop()
 				break;
 
 			PersistManager::instance()->persistSnapshot();
-			if (healthCheckTick++ % 30 == 0)
-				HealthCheckTask::instance()->doHealthCheck();
 
 			// Refresh all process metrics once per completed scrape.
 			if (config->prometheusEnabled())

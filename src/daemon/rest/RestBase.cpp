@@ -188,7 +188,7 @@ namespace
 			// A distinct non-RBAC principal is returned only for the two control
 			// operations issued by the Engine.  It is never a general system/admin
 			// principal and cannot pass any operation outside the capability.
-			return "internal:workflow-controller:" + claims.processUuid;
+			return WORKFLOW_CONTROLLER_PRINCIPAL_PREFIX + claims.processUuid;
 		}
 
 		// Re-check the Engine-owned workflow registration on every operation so
