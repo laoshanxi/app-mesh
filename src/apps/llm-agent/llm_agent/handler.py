@@ -22,11 +22,11 @@ from . import claude_sdk, session
 log = logging.getLogger("llm_agent.handler")
 
 
-def _ok(data=None):
+def _ok(data: Optional[dict] = None) -> dict:
     return {"status": "ok", "data": data} if data is not None else {"status": "ok"}
 
 
-def _err(message):
+def _err(message: str) -> dict:
     return {"status": "error", "message": message}
 
 
@@ -40,11 +40,12 @@ def _as_int(v) -> int:
 
 
 class Handler:
-    def __init__(self, *, workspace: str, max_iterations: int = 0,
-                 worker_session_id: str = "", engine=None):
+    def __init__(self, *, workspace: str, max_iterations: int = 0, worker_session_id: str = "", engine=None,
+                 history_root: str = ""):
         self.workspace = workspace
         self.max_iterations = max_iterations  # 0 = no ceiling (SDK default)
         self.worker_session_id = worker_session_id
+        self.history_root = history_root  # CLI projects dir; session_close also drops the transcript
         self._engine = engine or claude_sdk.run_turn  # seam: tests inject a fake
         # worker lifecycle
         self._mu = threading.Lock()
@@ -58,13 +59,15 @@ class Handler:
         try:
             req = json.loads(payload)
         except Exception as e:
-            return _err("invalid request JSON: %s" % e)
+            return _err(f"invalid request JSON: {e}")
+        if not isinstance(req, dict):
+            return _err("request must be a JSON object")
         action = req.get("action")
         if action == "session_send":
             return self._send(req)
         if action == "session_close":
             return self._close(req)
-        return _err("unknown action: %s" % action)
+        return _err(f"unknown action: {action}")
 
     def _send(self, req) -> dict:
         sid = req.get("session_id", "")
@@ -86,7 +89,8 @@ class Handler:
                 log.warning("session workdir %s: %s (running without a fixed cwd)", cwd, e)
                 cwd, resume = "", False
 
-        stream = (lambda c: (sys.stdout.write(c), sys.stdout.flush())) if (stream_requested and self.worker_session_id) else None
+        stream = ((lambda c: (sys.stdout.write(c), sys.stdout.flush()))
+                  if (stream_requested and self.worker_session_id) else None)
         user_input = req.get("input") or ""
         try:
             res = self._engine(user_input, cwd=cwd, continue_conversation=resume,
@@ -102,7 +106,7 @@ class Handler:
             return _err("session_id required")
         if self.worker_session_id and sid != self.worker_session_id:
             return _err("this worker serves a different session")
-        session.remove(self.workspace, sid)
+        session.remove(self.workspace, sid, history_root=self.history_root)
         if self.worker_session_id:
             self.cleanup_and_exit_after_ack()
         return _ok()

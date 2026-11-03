@@ -1,5 +1,7 @@
 # Pre-installed App definition for llm-agent — the shared handler (Scenario A, batch/DAG).
-# Stopped by default; enable after you register a key. The llm image starts it on boot.
+# Default installs ship this stopped (`enabled: false`); register a key, then enable it.
+# The llm docker image flips `enabled` to true at build time, so the agent starts on
+# boot there; its requests fail only until a key is registered.
 #
 # It runs the Claude Agent SDK; the SDK inherits this App's env and passes it to the
 # bundled Claude Code CLI, so the model/provider is chosen purely via env (CLI uses no

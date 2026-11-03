@@ -1,6 +1,10 @@
-# AppMesh MCP Server
+# AppMesh MCP Server (STDIO bridge)
 
 An MCP (Model Context Protocol) server for querying and managing AppMesh applications with LLM.
+
+> This bridge runs over STDIO for a local LLM runtime (3 read-only tools). For the
+> full-featured remote server (Streamable HTTP, OAuth 2.1, 31 management tools), see
+> [`../mcp-server`](../mcp-server/README.md).
 
 ## Features of integrate AppMesh MCP to LLM client with prompt
 

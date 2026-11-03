@@ -30,7 +30,6 @@ import json
 from typing import Tuple, Dict, Optional
 
 import websockets
-from websockets.exceptions import ConnectionClosed
 from dotenv import load_dotenv
 
 # Load env if .env exists
@@ -53,7 +52,7 @@ async def connect_with_retry(uri: str, target: str) -> None:
 
     while True:
         if attempt:
-            logger.info(f"[{target}] Reconnecting in {backoff}s (attempt {attempt})...")
+            logger.info("[%s] Reconnecting in %ss (attempt %s)...", target, backoff, attempt)
             await asyncio.sleep(backoff)
 
         attempt += 1
@@ -62,7 +61,7 @@ async def connect_with_retry(uri: str, target: str) -> None:
             await connect_to_server(uri, target)
             backoff = INITIAL_BACKOFF  # reset after success
         except Exception as exc:
-            logger.warning(f"[{target}] Connection lost: {exc}")
+            logger.warning("[%s] Connection lost: %s", target, exc)
             backoff = min(backoff * 2, MAX_BACKOFF)
 
 
@@ -70,15 +69,15 @@ async def connect_to_server(uri: str, target: str) -> None:
     """
     Connect to WebSocket server and bridge IO to a local subprocess.
     """
-    logger.info(f"[{target}] Connecting to WebSocket...")
+    logger.info("[%s] Connecting to WebSocket...", target)
     async with websockets.connect(uri) as websocket:
-        logger.info(f"[{target}] Connected")
+        logger.info("[%s] Connected", target)
 
         cmd, env = build_server_command(target)
         process = subprocess.Popen(
             cmd, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, env=env
         )
-        logger.info(f"[{target}] Started: {' '.join(cmd)}")
+        logger.info("[%s] Started: %s", target, ' '.join(cmd))
 
         try:
             await asyncio.gather(
@@ -86,15 +85,13 @@ async def connect_to_server(uri: str, target: str) -> None:
                 pipe_process_to_websocket(process, websocket, target),
                 pipe_process_stderr_to_terminal(process, target),
             )
-        except Exception:
-            raise
         finally:
             terminate_process(process, target)
 
 
 def terminate_process(process: subprocess.Popen, target: str) -> None:
     """Safely terminate a child process."""
-    logger.info(f"[{target}] Terminating subprocess...")
+    logger.info("[%s] Terminating subprocess...", target)
 
     try:
         process.terminate()
@@ -102,7 +99,7 @@ def terminate_process(process: subprocess.Popen, target: str) -> None:
     except subprocess.TimeoutExpired:
         process.kill()
 
-    logger.info(f"[{target}] Subprocess terminated")
+    logger.info("[%s] Subprocess terminated", target)
 
 
 async def pipe_websocket_to_process(websocket, process, target: str) -> None:
@@ -113,12 +110,12 @@ async def pipe_websocket_to_process(websocket, process, target: str) -> None:
                 # Binary frames cannot be concatenated onto the text-mode stdin;
                 # decode (replacing invalid sequences) instead of crashing the pipe.
                 message = message.decode("utf-8", errors="replace")
-            logger.debug(f"[{target}] << {message[:120]}")
+            logger.debug("[%s] << %s", target, message[:120])
             if process.stdin:
                 process.stdin.write(message + "\n")
                 process.stdin.flush()
     except Exception as exc:
-        logger.error(f"[{target}] WS→Process pipe error: {exc}")
+        logger.error("[%s] WS→Process pipe error: %s", target, exc)
         raise
     finally:
         if process.stdin and not process.stdin.closed:
@@ -131,12 +128,12 @@ async def pipe_process_to_websocket(process, websocket, target: str) -> None:
         while True:
             line = await asyncio.to_thread(process.stdout.readline)
             if not line:
-                logger.info(f"[{target}] Process stdout ended")
+                logger.info("[%s] Process stdout ended", target)
                 break
-            logger.debug(f"[{target}] >> {line[:120]}")
+            logger.debug("[%s] >> %s", target, line[:120])
             await websocket.send(line)
     except Exception as exc:
-        logger.error(f"[{target}] Process→WS pipe error: {exc}")
+        logger.error("[%s] Process→WS pipe error: %s", target, exc)
         raise
 
 
@@ -146,11 +143,11 @@ async def pipe_process_stderr_to_terminal(process, target: str) -> None:
         while True:
             line = await asyncio.to_thread(process.stderr.readline)
             if not line:
-                logger.info(f"[{target}] Process stderr ended")
+                logger.info("[%s] Process stderr ended", target)
                 break
             sys.stderr.write(line)
     except Exception as exc:
-        logger.error(f"[{target}] STDERR pipe error: {exc}")
+        logger.error("[%s] STDERR pipe error: %s", target, exc)
         raise
 
 
@@ -167,7 +164,7 @@ def load_config() -> Dict:
     except FileNotFoundError:
         return {}
     except Exception as exc:
-        logger.error(f"Failed to load config file {path}: {exc}")
+        logger.error("Failed to load config file %s: %s", path, exc)
         sys.exit(1)
 
 
@@ -240,7 +237,7 @@ if __name__ == "__main__":
             enabled = [k for k, v in cfg.items() if not (v or {}).get("disabled")]
             if not enabled:
                 raise RuntimeError("No enabled servers in config")
-            logger.info(f"Starting servers: {', '.join(enabled)}")
+            logger.info("Starting servers: %s", ', '.join(enabled))
             await asyncio.gather(*(connect_with_retry(endpoint, t) for t in enabled))
         else:
             await connect_with_retry(endpoint, target)

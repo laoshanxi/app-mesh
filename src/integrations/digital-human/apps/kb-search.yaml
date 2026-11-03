@@ -1,0 +1,17 @@
+# App 定义模板 —— setup.sh 渲染 @PLACEHOLDER@ 后注册，勿手工注册未渲染版本
+name: @TEAM@-kb-search
+description: 知识库检索（@TEAM@ team 数字人技能，Phase 0 关键词 / Phase 1 向量 RAG）
+command: @VENV_PY@ @PKG@/skills/kb_search.py
+working_dir: @PKG@
+behavior:
+  exit: keepalive
+env:
+  APPMESH_URL: "@APPMESH_URL@"
+  APPMESH_CA: "@APPMESH_CA@"
+  APPMESH_TCP: "@TCP_API@"
+  KB_DIR: "@KB_DIR@"
+metadata:
+  tool:
+    name: kb-search
+    description: '检索团队知识库文档（制度、流程、指南），入参 {"query": "...", "top_k": 3}'
+enabled: true

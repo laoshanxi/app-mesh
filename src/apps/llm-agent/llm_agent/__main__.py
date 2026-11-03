@@ -14,11 +14,13 @@ daemon-injected APP_MESH_PROCESS_KEY and authorized by the daemon's RBAC.
 Env (defaults in parens):
   LLMAGENT_MODEL  LLMAGENT_SYSTEM_PROMPT  LLMAGENT_ALLOWED_TOOLS  LLMAGENT_PERMISSION_MODE(bypassPermissions)
   LLMAGENT_WORKSPACE_DIR(./llm-agent-workspace)  LLMAGENT_MAX_ITERATIONS(0=no ceiling)
-  LLMAGENT_SESSION_TTL_HOURS(168, shared)  LLMAGENT_SESSION_IDLE_MINUTES(30, worker)  LLMAGENT_SESSION_MAX_HOURS(8, worker)
+  LLMAGENT_SESSION_TTL_HOURS(168, shared)  LLMAGENT_SESSION_IDLE_MINUTES(30, worker)
+  LLMAGENT_SESSION_MAX_HOURS(8, worker)
 """
 from __future__ import annotations
 
 import argparse
+import json
 import logging
 import os
 import sys
@@ -43,7 +45,6 @@ def _env_int(key, default):
 
 
 def main(argv=None):
-    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s")
     p = argparse.ArgumentParser(prog="llm-agent")
     p.add_argument("--server", default="127.0.0.1:6059", help="App Mesh TCP server host:port")
     p.add_argument("--session-worker", action="store_true", help="run as a single-session worker (Scenario B)")
@@ -66,10 +67,39 @@ def main(argv=None):
         os.makedirs(cfg_dir, exist_ok=True)
     except OSError as e:
         log.warning("CLAUDE_CONFIG_DIR %s not writable: %s — session history may fail", cfg_dir, e)
-    common = dict(workspace=workspace, max_iterations=_env_int("LLMAGENT_MAX_ITERATIONS", 0))
+    _setup_logging(args, workspace)
+    _warn_if_no_credential()
+    common = dict(workspace=workspace, max_iterations=_env_int("LLMAGENT_MAX_ITERATIONS", 0),
+                  history_root=os.path.join(cfg_dir, "projects"))
     if args.session_worker:
         return _run_worker(args, common)
     return _run_shared(common)
+
+
+def _setup_logging(args, workspace: str):
+    """Shared App: logs go to stderr (the daemon's output view). Session worker: the
+    App's STDOUT is the answer stream a client subscribes to, so its own log lines must
+    not mix into it — default to a file unless the operator asks for stderr."""
+    target = _env("LLMAGENT_LOG_FILE", "" if not args.session_worker else
+                  os.path.join(workspace, ".llmagent", f"worker-{_env('APP_MESH_APPLICATION_NAME', 'sess')}.log"))
+    if target:
+        os.makedirs(os.path.dirname(target), exist_ok=True)
+        logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s",
+                            filename=target)
+        log.info("llm-agent logging to %s", target)
+    else:
+        logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s")
+
+
+def _warn_if_no_credential():
+    """A missing model credential surfaces only later as a CLI 'Not logged in' error
+    that points at the wrong cause. Say it plainly at startup."""
+    present = [k for k in ("ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN",
+                           "CLAUDE_CODE_USE_BEDROCK", "CLAUDE_CODE_USE_VERTEX") if os.environ.get(k)]
+    if not present:
+        log.warning("no model credential env (ANTHROPIC_API_KEY / ANTHROPIC_AUTH_TOKEN / "
+                    "CLAUDE_CODE_USE_BEDROCK / CLAUDE_CODE_USE_VERTEX) — every turn will fail; "
+                    "register one as a secured env var (-z)")
 
 
 def _run_shared(common):
@@ -90,8 +120,7 @@ def _run_worker(args, common):
     idle = _env_int("LLMAGENT_SESSION_IDLE_MINUTES", 30) * 60
     max_life = _env_int("LLMAGENT_SESSION_MAX_HOURS", 8) * 3600
     if idle > 0 or max_life > 0:
-        threading.Thread(target=_worker_reaper,
-                         args=(handler, args.session_id, common["workspace"], idle, max_life),
+        threading.Thread(target=_worker_reaper, args=(handler, args.session_id, common["workspace"], idle, max_life),
                          daemon=True).start()
     log.info("llm-agent session worker started (Claude Agent SDK) — serving session %s", args.session_id)
     _serve(handler)
@@ -101,7 +130,6 @@ def _run_worker(args, common):
 def _serve(handler: Handler):
     """fetch_task → dispatch → send_task_result loop (serial). The request is bracketed
     in-flight so a worker reaper never exits mid-request."""
-    import json
     from appmesh import AppMeshProcessSupersededError, AppMeshWorkerRejectedError, AppMeshWorkerTCP
     ctx = AppMeshWorkerTCP()
     backoff = 1.0
@@ -127,6 +155,12 @@ def _serve(handler: Handler):
             ctx.send_task_result(json.dumps(resp))
         except Exception as e:
             log.error("unhandled error in request cycle: %s", e, exc_info=True)
+            # Always answer: an unhandled exception must not leave the caller
+            # waiting out the task timeout.
+            try:
+                ctx.send_task_result(json.dumps({"status": "error", "message": f"internal error: {e}"}))
+            except Exception:
+                log.error("failed to deliver internal-error task result")
         finally:
             handler.end_request()
         if handler.exit_requested:
@@ -152,7 +186,7 @@ def _worker_reaper(handler: Handler, sid: str, workspace: str, idle: float, max_
             log.warning("worker reaper error", exc_info=True)
             continue
         if reason:
-            session.remove(workspace, sid)  # drop the session's workdir before exit
+            session.remove(workspace, sid, history_root=handler.history_root)
             log.info("session worker %s reaping (%s) — exiting; daemon removes the App", sid, reason)
             logging.shutdown()
             os._exit(0)

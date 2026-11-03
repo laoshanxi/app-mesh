@@ -34,6 +34,13 @@ Set the App Mesh bearer token before you run `mqtt_subscriber.py`:
 export APPMESH_BEARER_TOKEN=<access-token>
 ```
 
+If you run the subscriber off the daemon host (the daemon's self-signed certificate is
+not in the system CAs there), point the client at the daemon CA:
+
+```bash
+export APPMESH_CA=/path/to/ca.pem    # or APPMESH_SSL_VERIFY=false to skip verification
+```
+
 ## Usage Examples
 
 Send test IoT messages:

@@ -1,0 +1,17 @@
+# App 定义模板 —— setup.sh 渲染 @PLACEHOLDER@ 后注册
+name: @TEAM@-jira-query
+description: 工单查询 connector（@TEAM@ team 数字人技能，Phase 0 mock 数据）
+command: @VENV_PY@ @PKG@/skills/jira_query.py
+working_dir: @PKG@
+behavior:
+  exit: keepalive
+env:
+  APPMESH_URL: "@APPMESH_URL@"
+  APPMESH_CA: "@APPMESH_CA@"
+  APPMESH_TCP: "@TCP_API@"
+  JIRA_MOCK_FILE: "@PKG@/data/mock/jira.json"
+metadata:
+  tool:
+    name: jira-query
+    description: '查询工单，入参 {"action":"search","assignee":"...","status":"..."} 或 {"action":"get","key":"OPS-101"}'
+enabled: true
