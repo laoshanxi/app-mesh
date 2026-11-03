@@ -721,7 +721,10 @@ std::shared_ptr<Application> Configuration::addApp(const nlohmann::json &jsonApp
 	// one slow application must not stall every other application management.
 	if (oldApp)
 	{
+		// The replacement writes the same stdout files; release ownership after
+		// destroy() so destruction spares them and no late spawn sees the cleared path.
 		oldApp->destroy();
+		oldApp->releaseStdoutFiles();
 		app->initMetrics(oldApp);
 	}
 	else

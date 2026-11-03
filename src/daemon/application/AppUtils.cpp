@@ -46,7 +46,16 @@ ShellAppFileGen::ShellAppFileGen(const std::string &name, const std::string &cmd
 	shellFile << "#!/bin/bash" << std::endl;
 	shellFile << "# App Mesh app: <" << name << ">" << std::endl;
 	shellFile << "set -e" << std::endl;
-	shellFile << "cd " << (workingDir.empty() ? defaultWorkDir : workingDir) << std::endl;
+	auto effectiveWorkingDir = workingDir;
+	if (!workingDir.empty() && !Utility::isDirExist(workingDir))
+	{
+		// The client cwd may not exist on this host (a macOS physical path against
+		// a container); fall back instead of failing the whole script at the cd.
+		LOG_WAR << fname << "Working directory <" << workingDir << "> of app <" << name
+				<< "> does not exist, falling back to <" << defaultWorkDir << ">";
+		effectiveWorkingDir = defaultWorkDir;
+	}
+	shellFile << "cd " << (effectiveWorkingDir.empty() ? defaultWorkDir : effectiveWorkingDir) << std::endl;
 	shellFile << cmd << std::endl;
 	shellFile.close();
 
@@ -101,8 +110,11 @@ AppLogFile::AppLogFile(const std::string &appName, int index)
 
 AppLogFile::~AppLogFile()
 {
-	Utility::removeFile(getFileName());
+	if (m_ownsFile)
+		Utility::removeFile(getFileName());
 }
+
+void AppLogFile::detachFile() { m_ownsFile = false; }
 
 void AppLogFile::increaseIndex()
 {
@@ -147,11 +159,21 @@ LogFileQueue::LogFileQueue(const std::string &baseFileName, int queueSize)
 
 LogFileQueue::~LogFileQueue()
 {
+	if (!m_sweepFiles)
+		return;
 	// double check and remove file
 	for (int i = 0; i < m_queueSize; i++)
 	{
 		AppLogFile autoDeleteFile(baseFileName, i);
 	}
+}
+
+void LogFileQueue::detachFiles()
+{
+	std::lock_guard<std::mutex> guard(m_mutex);
+	for (auto &file : m_fileQueue)
+		file->detachFile();
+	m_sweepFiles = false;
 }
 
 void LogFileQueue::enqueue()
