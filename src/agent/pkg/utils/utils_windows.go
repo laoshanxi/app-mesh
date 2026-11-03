@@ -6,7 +6,7 @@ import (
 	"golang.org/x/sys/windows"
 )
 
-const STILL_ACTIVE = 259
+const stillActive = 259
 
 func IsProcessRunning(pid int) bool {
 	handle, err := windows.OpenProcess(windows.PROCESS_QUERY_LIMITED_INFORMATION, false, uint32(pid))
@@ -20,5 +20,5 @@ func IsProcessRunning(pid int) bool {
 	if err != nil {
 		return false
 	}
-	return code == STILL_ACTIVE
+	return code == stillActive
 }

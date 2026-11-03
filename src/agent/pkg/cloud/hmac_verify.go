@@ -6,9 +6,9 @@ import (
 	"encoding/hex"
 )
 
-const HTTP_HEADER_HMAC = "X-Request-HMAC"
+const HeaderHMAC = "X-Request-HMAC"
 
-var HMAC_AgentToCPP *HMACVerify // HMAC key for agent-to-C++-service communication; inherited from parent C++ process
+var AgentToCPPHMAC *HMACVerify // HMAC key for agent-to-C++-service communication; inherited from parent C++ process
 
 // Hash-based Message Authentication Code
 // HMACVerify handles HMAC operations using a pre-shared key (PSK).

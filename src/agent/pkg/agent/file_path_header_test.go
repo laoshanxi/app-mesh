@@ -73,10 +73,10 @@ func TestHandleRESTFileUploadDecodesPath(t *testing.T) {
 	// A failing run is exactly when the pre-fix behavior writes this name, so clean it too.
 	defer os.Remove(encodedPath)
 
-	req := httptest.NewRequest(http.MethodPost, REST_PATH_UPLOAD, &body)
+	req := httptest.NewRequest(http.MethodPost, RestPathUpload, &body)
 	req.Header.Set("Content-Type", writer.FormDataContentType())
-	req.Header.Set(HTTP_HEADER_KEY_File_Path, encodedPath)
-	response := &Response{Response: appmesh.Response{RequestUri: REST_PATH_UPLOAD, HttpStatus: http.StatusOK}}
+	req.Header.Set(HTTPHeaderKeyFilePath, encodedPath)
+	response := &Response{Response: appmesh.Response{RequestURI: RestPathUpload, HTTPStatus: http.StatusOK}}
 
 	if err := HandleRESTFile(httptest.NewRecorder(), req, response); err != nil {
 		t.Fatalf("HandleRESTFile: %v", err)

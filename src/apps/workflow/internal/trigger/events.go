@@ -6,9 +6,9 @@ import (
 	"strconv"
 	"sync"
 
-	appmesh "github.com/laoshanxi/app-mesh/src/sdk/go"
 	"github.com/laoshanxi/app-mesh/src/apps/workflow/internal/logger"
 	"github.com/laoshanxi/app-mesh/src/apps/workflow/internal/models"
+	appmesh "github.com/laoshanxi/app-mesh/src/sdk/go"
 )
 
 // EventListener subscribes to App Mesh events and dispatches to matching workflows.
@@ -20,6 +20,9 @@ type EventListener struct {
 	mu            sync.Mutex
 	subscriptions map[string]string // app name → subscription ID
 	generation    uint64            // incremented on disconnect; subscribes from old generations are discarded
+	// passMu serializes whole SyncSubscriptions passes: two concurrent passes
+	// would subscribe the same app twice and fire its workflows twice per event.
+	passMu sync.Mutex
 }
 
 func NewEventListener(client *appmesh.AppMeshClient, registry *Registry,
@@ -34,6 +37,9 @@ func NewEventListener(client *appmesh.AppMeshClient, registry *Registry,
 
 // SyncSubscriptions updates subscriptions to match current workflow triggers.
 func (el *EventListener) SyncSubscriptions() {
+	el.passMu.Lock()
+	defer el.passMu.Unlock()
+
 	needed := make(map[string]bool)
 	for _, wf := range el.registry.All() {
 		if wf.On != nil && wf.On.AppEvent != nil {

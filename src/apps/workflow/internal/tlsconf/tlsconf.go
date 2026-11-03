@@ -39,6 +39,6 @@ func Apply(opt *appmesh.Option) {
 		return
 	}
 	if caPath := os.Getenv(EnvCA); caPath != "" {
-		opt.SslTrustedCA = &caPath
+		opt.SSLTrustedCA = &caPath
 	}
 }

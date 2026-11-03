@@ -3,7 +3,6 @@ package utils
 import (
 	"fmt"
 	"net/http"
-	"net/url"
 	"os"
 	"path"
 	"path/filepath"
@@ -46,6 +45,7 @@ func getCurrentAbPathByCaller() string {
 	return abPath
 }
 
+// GetParentDir returns the parent directory of the given path.
 func GetParentDir(directory string) string {
 	if directory == "" {
 		return ""
@@ -53,36 +53,6 @@ func GetParentDir(directory string) string {
 
 	// filepath.Dir handles both Windows and Unix path separators correctly
 	return filepath.Dir(filepath.Clean(directory))
-}
-
-// DecodeURIComponent decodes a URI component string by replacing each escaped sequence
-// with its actual character. It's compatible with JavaScript's decodeURIComponent.
-func DecodeURIComponent(encoded string) string {
-	decoded, err := url.QueryUnescape(encoded)
-	if err != nil {
-		fmt.Printf("decode URI component failed: %v", err)
-		return encoded
-	}
-	return decoded
-}
-
-// EncodeURIComponent encodes a string as a URI component by escaping all characters
-// that could interfere with URI syntax. It's compatible with JavaScript's encodeURIComponent.
-func EncodeURIComponent(str string) string {
-	return url.QueryEscape(str)
-}
-
-func IsValidFileName(fileName string) bool {
-	// Ensure the resulting file path is safe on the Linux file system
-	// Avoid certain unsafe patterns
-	unsafePrefixes := []string{"/etc/", "/var/", "/usr/", "/bin/", "/sbin/", "/lib/", "/lib64/", "/proc/", "/sys/", "/boot/"}
-	for _, prefix := range unsafePrefixes {
-		if strings.HasPrefix(fileName, prefix) {
-			return false
-		}
-	}
-
-	return true
 }
 
 // MaskSecret masks the input secret, keeping `visibleChars` at the beginning and end, replacing the middle with `mask`.
@@ -107,9 +77,9 @@ func MaskSecret(secret string, visibleChars int, mask string) string {
 	return string(result)
 }
 
-// HttpError replies to the request with the specified error message and HTTP code.
+// HTTPError replies to the request with the specified error message and HTTP code.
 // Unlike http.Error, this does NOT append a newline to the error message.
-func HttpError(w http.ResponseWriter, error string, code int) {
+func HTTPError(w http.ResponseWriter, msg string, code int) {
 	h := w.Header()
 
 	// Delete the Content-Length header, which might be for some other content.
@@ -122,5 +92,5 @@ func HttpError(w http.ResponseWriter, error string, code int) {
 	w.WriteHeader(code)
 
 	// Use Fprint instead of Fprintln to avoid appending a newline
-	fmt.Fprint(w, error)
+	fmt.Fprint(w, msg)
 }

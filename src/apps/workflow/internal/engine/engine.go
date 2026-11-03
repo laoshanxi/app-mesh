@@ -8,7 +8,8 @@ import (
 	"sync"
 	"time"
 
-	appmesh "github.com/laoshanxi/app-mesh/src/sdk/go"
+	"github.com/rs/xid"
+
 	"github.com/laoshanxi/app-mesh/src/apps/workflow/internal/dag"
 	"github.com/laoshanxi/app-mesh/src/apps/workflow/internal/executor"
 	"github.com/laoshanxi/app-mesh/src/apps/workflow/internal/expression"
@@ -16,7 +17,7 @@ import (
 	"github.com/laoshanxi/app-mesh/src/apps/workflow/internal/models"
 	"github.com/laoshanxi/app-mesh/src/apps/workflow/internal/parser"
 	"github.com/laoshanxi/app-mesh/src/apps/workflow/internal/tlsconf"
-	"github.com/rs/xid"
+	appmesh "github.com/laoshanxi/app-mesh/src/sdk/go"
 )
 
 // JobCallback is called after each job completes for checkpoint updates.
@@ -30,6 +31,7 @@ type StepCallback func(jobName, stepName, stdout string)
 type activeApp struct {
 	appName    string
 	targetHost string // empty = local node
+	finally    bool   // cleanup steps survive cancel (KillAll)
 }
 
 // ActiveSteps tracks currently running step app names for cancel propagation.
@@ -49,9 +51,9 @@ func NewActiveSteps(client *appmesh.AppMeshClient, serverURI string) *ActiveStep
 	}
 }
 
-func (a *ActiveSteps) Set(jobName, stepName, appName, targetHost string) {
+func (a *ActiveSteps) Set(jobName, stepName, appName, targetHost string, finally bool) {
 	a.mu.Lock()
-	a.apps[jobName+"."+stepName] = activeApp{appName: appName, targetHost: targetHost}
+	a.apps[jobName+"."+stepName] = activeApp{appName: appName, targetHost: targetHost, finally: finally}
 	a.mu.Unlock()
 }
 
@@ -77,16 +79,21 @@ func (a *ActiveSteps) SetForwardToken(token string) {
 	a.mu.Unlock()
 }
 
-// KillAll deletes all tracked local and remote step apps. Remote calls carry
-// only the caller's shared-Dex bearer; the node-local run capability never
-// crosses the forwarding boundary.
+// KillAll deletes all tracked step apps except finally steps (cleanup must run
+// to completion). Remote calls carry only the caller's shared-Dex bearer; the
+// node-local run capability never crosses the forwarding boundary.
 func (a *ActiveSteps) KillAll() {
 	a.mu.Lock()
-	apps := make(map[string]activeApp, len(a.apps))
+	retained := make(map[string]activeApp, len(a.apps))
+	killed := make(map[string]activeApp, len(a.apps))
 	for k, v := range a.apps {
-		apps[k] = v
+		if v.finally {
+			retained[k] = v
+		} else {
+			killed[k] = v
+		}
 	}
-	a.apps = make(map[string]activeApp)
+	a.apps = retained
 	client := a.client
 	serverURI := a.serverURI
 	forwardToken := a.forwardToken
@@ -96,7 +103,7 @@ func (a *ActiveSteps) KillAll() {
 	}
 
 	var wg sync.WaitGroup
-	for _, app := range apps {
+	for _, app := range killed {
 		if app.appName == "" {
 			continue
 		}
@@ -111,9 +118,9 @@ func (a *ActiveSteps) KillAll() {
 		go func(aa activeApp) {
 			defer wg.Done()
 			option := appmesh.Option{
-				AppMeshUri: serverURI,
+				AppMeshURI: serverURI,
 				ForwardTo:  aa.targetHost,
-				JwtToken:   forwardToken,
+				JWTToken:   forwardToken,
 			}
 			tlsconf.Apply(&option)
 			if c, err := appmesh.NewTCPClient(option); err == nil {
@@ -127,22 +134,39 @@ func (a *ActiveSteps) KillAll() {
 
 // Options configures workflow execution.
 type Options struct {
-	ClusterNodes         []string                              // known cluster node addresses
-	ServerURI            string                                // TCP server address for forwarding clients
-	DefaultTargetHost    string                                // inherited target from parent job (sub-workflows)
-	CompletedJobs        map[string]string                     // jobs to skip on recovery
-	RecoveredSteps       map[string]map[string]map[string]any  // job → step → {stdout, exit_code, status, response}
-	OnJobDone            JobCallback                           // checkpoint update
-	OnStepDone           StepCallback                          // stdout archival (called after step, with full stdout)
-	StepLogPathFn        func(jobName, stepName string) string // returns file path for streaming step log
-	Log                  logger.Log                            // per-run logger (nil = global stdout)
-	ActiveSteps          *ActiveSteps                          // cancel tracking (nil = no tracking)
-	CancelCtx            context.Context                       // workflow cancel context (passed to executors)
-	WorkflowBaseDir      string                                // base directory for workflow YAML files
-	CallerToken          string                                // human caller Dex bearer only; internal capabilities never enter message payloads
-	WorkflowProcessUUID  string                                // managed Workflow process that owns temporary command-step Apps
-	CapabilityWorkflowID string                                // workflow identity bound to the run capability; sub-workflows inherit the top-level value
-	CapabilityRunID      string                                // run identity bound to the run capability; sub-workflows inherit the top-level value
+	ClusterNodes      []string          // known cluster node addresses
+	ServerURI         string            // TCP server address for forwarding clients
+	DefaultTargetHost string            // inherited target from parent job (sub-workflows)
+	CompletedJobs     map[string]string // jobs to skip on recovery
+	// steps already completed inside not-yet-finished jobs (job → step set). On
+	// recovery those steps are not re-executed — an LLM message step that already
+	// ran must not be charged (or side-effected) twice. Steps that never finished
+	// stay at-least-once.
+	CompletedSteps map[string]map[string]bool
+	RecoveredSteps map[string]map[string]map[string]any // job → step → {stdout, exit_code, status, response}
+	OnJobDone      JobCallback                          // checkpoint update
+	OnStepDone     StepCallback                         // stdout archival (called after step, with full stdout)
+	// OnStepPersist records one step's terminal result (success/skipped) as it
+	// happens, for step-granular crash recovery (see CompletedSteps).
+	OnStepPersist   func(jobName, stepName string, data map[string]any)
+	StepLogPathFn   func(jobName, stepName string) string // returns file path for streaming step log
+	Log             logger.Log                            // per-run logger (nil = global stdout)
+	ActiveSteps     *ActiveSteps                          // cancel tracking (nil = no tracking)
+	CancelCtx       context.Context                       // workflow cancel context (passed to executors)
+	WorkflowBaseDir string                                // base directory for workflow YAML files
+	// human caller Dex bearer only; internal capabilities never enter message payloads
+	CallerToken string
+	// managed Workflow process that owns temporary command-step Apps
+	WorkflowProcessUUID string
+	// workflow identity bound to the run capability; sub-workflows inherit the top-level value
+	CapabilityWorkflowID string
+	// run identity bound to the run capability; sub-workflows inherit the top-level value
+	CapabilityRunID string
+	// OwnerPrincipal the run capability is bound to (the workflow's registered
+	// owner). Together with WorkflowOwner it confines sub-workflow calls to
+	// same-owner targets; nil WorkflowOwner disables the check (tests).
+	OwnerPrincipal string
+	WorkflowOwner  func(workflowName string) string
 }
 
 func (o *Options) log() logger.Log {
@@ -154,7 +178,8 @@ func (o *Options) log() logger.Log {
 
 // RunWithContext executes a workflow with cancellation support and options.
 // Returns exit code and the expression context (for output evaluation).
-func RunWithContext(cancelCtx context.Context, wf *models.Workflow, client *appmesh.AppMeshClient, inputs map[string]string, runID string, depth int, opts Options) (int, *expression.Context) {
+func RunWithContext(cancelCtx context.Context, wf *models.Workflow, client *appmesh.AppMeshClient,
+	inputs map[string]string, runID string, depth int, opts Options) (int, *expression.Context) {
 	log := opts.log()
 
 	// Deep-copy Jobs so concurrent runs of the same workflow don't share
@@ -168,42 +193,19 @@ func RunWithContext(cancelCtx context.Context, wf *models.Workflow, client *appm
 	opts.ActiveSteps.SetForwardToken(opts.CallerToken)
 	opts.CancelCtx = cancelCtx
 
-	// Apply input defaults and validate required inputs.
-	if inputs == nil {
-		inputs = make(map[string]string)
-	}
-	if wf.On != nil {
-		// Merge workflow_call + manual inputs. On key collision, manual wins
-		// (the user-facing trigger), so a workflow exposed both ways has a single
-		// coherent input surface.
-		inputDefs := make(map[string]models.InputParam)
-		if wf.On.WorkflowCall != nil {
-			for k, v := range wf.On.WorkflowCall.Inputs {
-				inputDefs[k] = v
-			}
-		}
-		if wf.On.Manual != nil {
-			for k, v := range wf.On.Manual.Inputs {
-				inputDefs[k] = v
-			}
-		}
-		for k, def := range inputDefs {
-			if _, ok := inputs[k]; !ok {
-				if def.Default != nil {
-					inputs[k] = fmt.Sprintf("%v", def.Default)
-				} else if def.Required {
-					log.Error(fmt.Sprintf("required input %q not provided", k))
-					log.WorkflowCompleted(wf.Name, runID, "failure", 0)
-					return 1, nil
-				}
-			}
-		}
+	// Apply input defaults; required inputs are also rejected at dispatch.
+	inputs, inputErr := models.ApplyInputDefaults(wf, inputs)
+	if inputErr != nil {
+		log.Error(inputErr.Error())
+		log.WorkflowCompleted(wf.Name, runID, "failure", 0)
+		return 1, nil
 	}
 
 	ectx := expression.NewContext()
 	ectx.WfName = wf.Name
 	ectx.WfRunID = runID
 	ectx.Inputs = inputs
+	ectx.Strict = wf.StrictExpressions
 	if wf.Env != nil {
 		ectx.Env = wf.Env
 	}
@@ -283,7 +285,8 @@ func RunWithContext(cancelCtx context.Context, wf *models.Workflow, client *appm
 	return 0, ectx
 }
 
-func newExec(client *appmesh.AppMeshClient, ectx *expression.Context, depth int, opts Options, job *models.Job) (*executor.StepExecutor, error) {
+func newExec(client *appmesh.AppMeshClient, ectx *expression.Context, depth int, opts Options,
+	job *models.Job) (*executor.StepExecutor, error) {
 	exec := &executor.StepExecutor{
 		Client:               client,
 		Ctx:                  ectx,
@@ -297,16 +300,15 @@ func newExec(client *appmesh.AppMeshClient, ectx *expression.Context, depth int,
 		CapabilityWorkflowID: opts.CapabilityWorkflowID,
 		CapabilityRunID:      opts.CapabilityRunID,
 	}
-	exec.RunSubWorkflow = func(ctx context.Context, wfName string, inputs map[string]string, subDepth int) (int, map[string]string) {
+	exec.RunSubWorkflow = func(ctx context.Context, wfName string, inputs map[string]string, subDepth int) (int,
+		map[string]string, string, string) {
 		subOpts := opts
 		subOpts.DefaultTargetHost = exec.TargetHost
 		subOpts.CancelCtx = ctx
 		return runSubWorkflow(ctx, client, wfName, inputs, subDepth, subOpts)
 	}
 	if len(job.NodeLabel) > 0 {
-		target, err := executor.ResolveTargetNode(
-			client, opts.ServerURI, job.NodeLabel, opts.ClusterNodes, opts.CallerToken,
-		)
+		target, err := executor.ResolveTargetNode(client, opts.ServerURI, job.NodeLabel, opts.ClusterNodes, opts.CallerToken)
 		if err != nil {
 			return nil, fmt.Errorf("node resolution failed for job '%s': %w", job.Name, err)
 		}
@@ -320,7 +322,8 @@ func newExec(client *appmesh.AppMeshClient, ectx *expression.Context, depth int,
 	return exec, nil
 }
 
-func skipJob(job *models.Job, ectx *expression.Context, statusMu *sync.RWMutex, opts *Options, log logger.Log, reason string) bool {
+func skipJob(job *models.Job, ectx *expression.Context, statusMu *sync.RWMutex, opts *Options, log logger.Log,
+	reason string) bool {
 	statusMu.Lock()
 	job.Status = models.StatusSkipped
 	statusMu.Unlock()
@@ -333,7 +336,17 @@ func skipJob(job *models.Job, ectx *expression.Context, statusMu *sync.RWMutex, 
 	return true
 }
 
-func runJob(job *models.Job, exec *executor.StepExecutor, ectx *expression.Context, wf *models.Workflow, statusMu *sync.RWMutex, opts *Options, log logger.Log) bool {
+func runJob(job *models.Job, exec *executor.StepExecutor, ectx *expression.Context, wf *models.Workflow,
+	statusMu *sync.RWMutex, opts *Options, log logger.Log) bool {
+	// Mark message steps upfront so substitution can report a plain-text outputs miss.
+	for _, steps := range [][]models.Step{job.Steps, job.Finally} {
+		for i := range steps {
+			if steps[i].Type == models.StepMessage {
+				ectx.MarkMessageStep(job.Name, steps[i].Name)
+			}
+		}
+	}
+
 	// Skip jobs already completed in a previous run (checkpoint recovery).
 	if prev, ok := opts.CompletedJobs[job.Name]; ok {
 		statusMu.Lock()
@@ -364,15 +377,34 @@ func runJob(job *models.Job, exec *executor.StepExecutor, ectx *expression.Conte
 		if !needsSucceeded && !expression.HasStatusFunction(job.Condition) {
 			return skipJob(job, ectx, statusMu, opts, log, depReason)
 		}
-		if !expression.EvalConditionForJobWithStatus(
-			job.Condition, ectx, job.Name,
-			func() bool { return needsSucceeded },
+		if !expression.EvalConditionForJobWithStatus(job.Condition, ectx, job.Name, func() bool { return needsSucceeded },
 			func() bool { return needsFailed },
 		) {
 			return skipJob(job, ectx, statusMu, opts, log, "condition: "+job.Condition)
 		}
 	} else if !needsSucceeded {
 		return skipJob(job, ectx, statusMu, opts, log, depReason)
+	}
+
+	// Steps that already completed in a previous (crashed) attempt are restored from
+	// the checkpoint and skipped, so an expensive step (e.g. an LLM message step) is
+	// not charged twice. Their results feed downstream expressions as usual.
+	completedSteps := opts.CompletedSteps[job.Name]
+	if len(completedSteps) > 0 && opts.RecoveredSteps != nil {
+		if jobSteps, ok := opts.RecoveredSteps[job.Name]; ok {
+			for stepName, data := range jobSteps {
+				if !completedSteps[stepName] {
+					continue
+				}
+				exitCode := toIntFromAny(data["exit_code"])
+				stdout, _ := data["stdout"].(string)
+				status, _ := data["status"].(string)
+				response, _ := data["response"].(string)
+				outputs, _ := data["outputs"].(map[string]string)
+				ectx.SetStepResult(job.Name, stepName, stdout, exitCode, status, response, outputs)
+				log.StepSkipped(stepName, "recovered from checkpoint: "+status)
+			}
+		}
 	}
 
 	statusMu.Lock()
@@ -392,10 +424,15 @@ func runJob(job *models.Job, exec *executor.StepExecutor, ectx *expression.Conte
 			markStepsSkipped(job.Steps[i:], ectx, job.Name, "cancelled", log)
 			break
 		}
+		if completedSteps[job.Steps[i].Name] {
+			job.Steps[i].Result.Status = models.StatusSkipped
+			continue // already restored above; do not re-run (crash recovery)
+		}
 		if !runStep(&job.Steps[i], exec, ectx, mergedEnv, mergedSecretEnv, job.Name, opts, log) {
 			jobFailed = true
 			if job.Steps[i].ContinueOnError {
 				jobFailed = false
+				ectx.MarkContinueOnError(job.Name, job.Steps[i].Name)
 				continue
 			}
 			markStepsSkipped(job.Steps[i+1:], ectx, job.Name, "previous step failed", log)
@@ -413,9 +450,17 @@ func runJob(job *models.Job, exec *executor.StepExecutor, ectx *expression.Conte
 		// was cancelled. Detach this (per-job) executor from the cancel context;
 		// each finally step is still bounded by its own timeout.
 		exec.CancelCtx = context.Background()
+		exec.Finally = true
 		log.JobFinallyStarted(job.Name)
 		for i := range job.Finally {
 			ectx.MarkFinallyStep(job.Name, job.Finally[i].Name)
+			// A finally step that already completed before the crash is skipped like
+			// a main step — its result was restored above; re-running it would repeat
+			// its side effects (an LLM message step in finally charges twice).
+			if completedSteps[job.Finally[i].Name] {
+				job.Finally[i].Result.Status = models.StatusSkipped
+				continue
+			}
 			runStep(&job.Finally[i], exec, ectx, mergedEnv, mergedSecretEnv, job.Name, opts, log)
 		}
 		log.JobFinallyCompleted(job.Name)
@@ -454,13 +499,15 @@ func markStepsSkipped(steps []models.Step, ectx *expression.Context, jobName, re
 	}
 }
 
-func runStep(step *models.Step, exec *executor.StepExecutor, ectx *expression.Context, env, secretEnv map[string]string, jobName string, opts *Options, log logger.Log) bool {
+func runStep(step *models.Step, exec *executor.StepExecutor, ectx *expression.Context, env, secretEnv map[string]string,
+	jobName string, opts *Options, log logger.Log) bool {
 	if step.Condition != "" {
 		if !expression.EvalConditionForJob(step.Condition, ectx, jobName) {
 			step.Result.Status = models.StatusSkipped
 			exitCode := 0
 			step.Result.ExitCode = &exitCode
 			ectx.SetStepResult(jobName, step.Name, "", exitCode, models.StatusSkipped, "", nil)
+			persistStep(opts, jobName, step.Name, "", exitCode, models.StatusSkipped, "", nil)
 			log.StepSkipped(step.Name, "condition: "+step.Condition)
 			return true
 		}
@@ -519,7 +566,8 @@ func runStep(step *models.Step, exec *executor.StepExecutor, ectx *expression.Co
 		if opts.ActiveSteps != nil {
 			targetHost := exec.TargetHost
 			stepName := step.Name
-			exec.OnAppStart = func(appName string) { opts.ActiveSteps.Set(jobName, stepName, appName, targetHost) }
+			finally := exec.Finally
+			exec.OnAppStart = func(appName string) { opts.ActiveSteps.Set(jobName, stepName, appName, targetHost, finally) }
 			exec.OnAppEnd = func(appName string) { opts.ActiveSteps.Remove(jobName, stepName) }
 		}
 
@@ -541,12 +589,18 @@ func runStep(step *models.Step, exec *executor.StepExecutor, ectx *expression.Co
 
 		if result.Status == models.StatusSuccess {
 			log.StepCompleted(step.Name, exitCode, result.Duration)
-			if opts.OnStepDone != nil {
+			persistStep(opts, jobName, step.Name, result.Stdout, exitCode, result.Status, result.Response, result.Outputs)
+			// Streamed steps archived their uncapped log already; writing the
+			// capped Stdout over it would truncate the archive.
+			if opts.OnStepDone != nil && !result.StreamedLog {
 				opts.OnStepDone(jobName, step.Name, result.Stdout)
 			}
 			return true
 		}
 		log.StepFailed(step.Name, exitCode, result.Duration)
+		if result.Response != "" {
+			log.Error(fmt.Sprintf("STEP %s FAILED: %s", step.Name, result.Response))
+		}
 		// Don't burn through remaining retry attempts after cancel (finally
 		// steps use a detached executor context, so their retries proceed).
 		if exec.CancelCtx != nil && exec.CancelCtx.Err() != nil {
@@ -554,11 +608,27 @@ func runStep(step *models.Step, exec *executor.StepExecutor, ectx *expression.Co
 		}
 	}
 
-	// Archive stdout even on final failure.
-	if opts.OnStepDone != nil {
+	// Archive stdout even on final failure (streamed archives are already complete).
+	if opts.OnStepDone != nil && !step.Result.StreamedLog {
 		opts.OnStepDone(jobName, step.Name, step.Result.Stdout)
 	}
 	return false
+}
+
+// persistStep forwards one terminal step result to the OnStepPersist callback in the
+// engine's generic step-data shape (same fields OnJobDone delivers).
+func persistStep(opts *Options, jobName, stepName, stdout string, exitCode int, status, response string,
+	outputs map[string]string) {
+	if opts.OnStepPersist == nil {
+		return
+	}
+	opts.OnStepPersist(jobName, stepName, map[string]any{
+		"stdout":    stdout,
+		"exit_code": exitCode,
+		"status":    status,
+		"response":  response,
+		"outputs":   outputs,
+	})
 }
 
 func mergeEnv(base, overlay map[string]string) map[string]string {
@@ -612,8 +682,22 @@ func evaluateNeeds(job *models.Job, wf *models.Workflow, statusMu *sync.RWMutex)
 	return succeeded, failed, reason
 }
 
-// runSubWorkflow executes a sub-workflow in-process and returns exit code + outputs.
-func runSubWorkflow(ctx context.Context, client *appmesh.AppMeshClient, wfName string, inputs map[string]string, depth int, opts Options) (int, map[string]string) {
+// runSubWorkflow executes a sub-workflow in-place, returning exit code, outputs,
+// the sub run id, and the failure reason (empty when none was recorded).
+func runSubWorkflow(ctx context.Context, client *appmesh.AppMeshClient, wfName string, inputs map[string]string,
+	depth int, opts Options) (int, map[string]string, string, string) {
+	// A parent must not feed its inputs into another owner's workflow: the
+	// child's step commands run under the child owner's execution identity, so
+	// a cross-owner call would execute commands as that owner.
+	if opts.WorkflowOwner != nil {
+		childOwner := opts.WorkflowOwner(wfName)
+		if childOwner == "" || opts.OwnerPrincipal == "" || childOwner != opts.OwnerPrincipal {
+			logger.Error(fmt.Sprintf("sub-workflow %q is not callable by this run: owned by %q, run owner %q",
+				wfName, childOwner, opts.OwnerPrincipal))
+			return 1, nil, "",
+				fmt.Sprintf("sub-workflow %q is not owned by the calling workflow's owner", wfName)
+		}
+	}
 	baseDir := opts.WorkflowBaseDir
 	if baseDir == "" {
 		baseDir, _ = os.Getwd()
@@ -622,11 +706,11 @@ func runSubWorkflow(ctx context.Context, client *appmesh.AppMeshClient, wfName s
 	wf, err := parser.LoadWorkflow(yamlPath)
 	if err != nil {
 		logger.Error(fmt.Sprintf("sub-workflow %q: load failed: %v", wfName, err))
-		return 1, nil
+		return 1, nil, "", fmt.Sprintf("sub-workflow %q: load failed: %v", wfName, err)
 	}
 	if wf.On == nil || wf.On.WorkflowCall == nil {
 		logger.Error(fmt.Sprintf("sub-workflow %q: not callable (missing on.workflow_call)", wfName))
-		return 1, nil
+		return 1, nil, "", fmt.Sprintf("sub-workflow %q: not callable (missing on.workflow_call)", wfName)
 	}
 
 	runID := fmt.Sprintf("sub-%s-%s", wfName, xid.New().String())
@@ -654,20 +738,62 @@ func runSubWorkflow(ctx context.Context, client *appmesh.AppMeshClient, wfName s
 		WorkflowProcessUUID:  opts.WorkflowProcessUUID,
 		CapabilityWorkflowID: opts.CapabilityWorkflowID,
 		CapabilityRunID:      opts.CapabilityRunID,
+		// Sub-workflow calls keep the owner confinement of the top-level run.
+		OwnerPrincipal: opts.OwnerPrincipal,
+		WorkflowOwner:  opts.WorkflowOwner,
 	}
 
 	exitCode, subCtx := RunWithContext(ctx, wf, client, inputs, runID, depth, subOpts)
 
 	// Evaluate workflow_call outputs from the sub-workflow's expression context.
 	var outputs map[string]string
+	var outputErr error
 	if subCtx != nil && wf.On.WorkflowCall != nil && len(wf.On.WorkflowCall.Outputs) > 0 {
 		outputs = make(map[string]string)
 		for name, out := range wf.On.WorkflowCall.Outputs {
-			outputs[name] = expression.SubstituteForJob(out.Value, subCtx, "")
+			val, err := expression.SubstituteForJobChecked(out.Value, subCtx, "")
+			if err != nil {
+				// One unresolved output fails the sub-workflow call.
+				outputErr = err
+				break
+			}
+			outputs[name] = val
 		}
 	}
 
-	return exitCode, outputs
+	reason := ""
+	if outputErr != nil {
+		exitCode = 1
+		reason = outputErr.Error()
+	} else if exitCode != 0 {
+		reason = subFailureReason(subCtx)
+	}
+	return exitCode, outputs, runID, reason
+}
+
+// subFailureReason returns the deepest recorded failure text from a finished sub-workflow.
+func subFailureReason(ectx *expression.Context) string {
+	if ectx == nil {
+		return ""
+	}
+	for _, job := range ectx.Jobs {
+		if job["status"] != models.StatusFailure {
+			continue
+		}
+		steps, _ := job["steps"].(map[string]map[string]any)
+		for _, s := range steps {
+			if s["status"] != models.StatusFailure {
+				continue
+			}
+			if r, _ := s["response"].(string); r != "" {
+				return r
+			}
+			if o, _ := s["stdout"].(string); o != "" {
+				return o
+			}
+		}
+	}
+	return ""
 }
 
 func toIntFromAny(v any) int {

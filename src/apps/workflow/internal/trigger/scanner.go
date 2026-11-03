@@ -6,9 +6,9 @@ import (
 	"os"
 	"strings"
 
-	appmesh "github.com/laoshanxi/app-mesh/src/sdk/go"
 	"github.com/laoshanxi/app-mesh/src/apps/workflow/internal/logger"
 	"github.com/laoshanxi/app-mesh/src/apps/workflow/internal/parser"
+	appmesh "github.com/laoshanxi/app-mesh/src/sdk/go"
 )
 
 const WorkflowAppPrefix = "workflow-"

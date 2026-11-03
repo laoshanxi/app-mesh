@@ -65,7 +65,7 @@ func TestPrometheusHandlerRoutesMetricsOnlyToBackend(t *testing.T) {
 
 	forwardRecorder := httptest.NewRecorder()
 	forwardRequest := httptest.NewRequest(http.MethodGet, "/metrics", nil)
-	forwardRequest.Header.Set(HTTP_HEADER_KEY_X_TARGET_HOST, "https://example.invalid")
+	forwardRequest.Header.Set(HTTPHeaderKeyXTargetHost, "https://example.invalid")
 	server.handler().ServeHTTP(forwardRecorder, forwardRequest)
 	if forwardRecorder.Code != http.StatusBadRequest {
 		t.Fatalf("expected forwarding rejection status %d, got %d", http.StatusBadRequest, forwardRecorder.Code)

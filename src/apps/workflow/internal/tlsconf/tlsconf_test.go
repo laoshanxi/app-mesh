@@ -49,11 +49,11 @@ func TestApplyDefaultsToVerify(t *testing.T) {
 			if opt.InsecureSkipVerify != tc.skipVerify {
 				t.Fatalf("InsecureSkipVerify = %v, want %v", opt.InsecureSkipVerify, tc.skipVerify)
 			}
-			if tc.caPinned && (opt.SslTrustedCA == nil || *opt.SslTrustedCA != tc.caEnv) {
-				t.Fatalf("SslTrustedCA = %v, want %q", opt.SslTrustedCA, tc.caEnv)
+			if tc.caPinned && (opt.SSLTrustedCA == nil || *opt.SSLTrustedCA != tc.caEnv) {
+				t.Fatalf("SSLTrustedCA = %v, want %q", opt.SSLTrustedCA, tc.caEnv)
 			}
-			if !tc.caPinned && opt.SslTrustedCA != nil {
-				t.Fatalf("SslTrustedCA = %q, want nil", *opt.SslTrustedCA)
+			if !tc.caPinned && opt.SSLTrustedCA != nil {
+				t.Fatalf("SSLTrustedCA = %q, want nil", *opt.SSLTrustedCA)
 			}
 		})
 	}
@@ -71,7 +71,7 @@ func TestApplyVerifiesDaemonCertificate(t *testing.T) {
 
 	t.Setenv(EnvVerify, "")
 	t.Setenv(EnvCA, goodCA)
-	opt := appmesh.Option{AppMeshUri: addr}
+	opt := appmesh.Option{AppMeshURI: addr}
 	Apply(&opt)
 	if opt.InsecureSkipVerify {
 		t.Fatal("pinned-CA client must not skip verification")
@@ -84,7 +84,7 @@ func TestApplyVerifiesDaemonCertificate(t *testing.T) {
 
 	// A mismatched CA must fail closed instead of silently connecting.
 	t.Setenv(EnvCA, badCA)
-	opt = appmesh.Option{AppMeshUri: addr}
+	opt = appmesh.Option{AppMeshURI: addr}
 	Apply(&opt)
 	if client, err := appmesh.NewTCPClient(opt); err == nil {
 		client.CloseConnection()

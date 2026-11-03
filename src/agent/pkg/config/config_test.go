@@ -15,12 +15,12 @@ func TestConfig(t *testing.T) {
 	os.Setenv("APPMESH_REST_RestListenPort", "999")
 	os.Setenv("APPMESH_REST_SSL_SSLCaPath", "DEF")
 	readConfig()
-	require.Equal(t, ConfigData.REST.RestListenAddress, "ABC")
-	require.Equal(t, ConfigData.REST.RestEnabled, false)
-	require.Equal(t, ConfigData.REST.RestListenPort, 999)
-	require.Equal(t, ConfigData.REST.SSL.SSLCaPath, "DEF")
+	require.Equal(t, ConfigData.REST.RESTListenAddress, "ABC")
+	require.Equal(t, ConfigData.REST.RESTEnabled, false)
+	require.Equal(t, ConfigData.REST.RESTListenPort, 999)
+	require.Equal(t, ConfigData.REST.SSL.SSLCAPath, "DEF")
 
 	os.Setenv("APPMESH_REST_TcpApiPort", "777")
 	readConfig()
-	require.Equal(t, ConfigData.REST.TcpApiPort, 777)
+	require.Equal(t, ConfigData.REST.TCPAPIPort, 777)
 }

@@ -16,8 +16,10 @@ type pendingRun struct {
 	wfName string
 	source string
 	inputs map[string]string
-	token  string // caller Dex bearer (in-memory only; never persisted; forward_token payload identity, not the execution credential), empty for automatic triggers
-	actor  string // triggering Principal ID for audit, empty for automatic triggers
+	// caller Dex bearer (in-memory only; never persisted; forward_token payload identity, not the execution
+	// credential), empty for automatic triggers
+	token string
+	actor string // triggering Principal ID for audit, empty for automatic triggers
 }
 
 func NewRunManager() *RunManager {
@@ -62,7 +64,8 @@ func (rm *RunManager) TryStart(group, runID string, cancelInProgress bool) (ok b
 func (rm *RunManager) Enqueue(group, runID, wfName, source string, inputs map[string]string, token, actor string) {
 	rm.mu.Lock()
 	defer rm.mu.Unlock()
-	rm.queued[group] = append(rm.queued[group], pendingRun{runID: runID, wfName: wfName, source: source, inputs: inputs, token: token, actor: actor})
+	rm.queued[group] = append(rm.queued[group], pendingRun{runID: runID, wfName: wfName, source: source, inputs: inputs,
+		token: token, actor: actor})
 }
 
 // Complete marks a run as finished and returns the next queued run if any.

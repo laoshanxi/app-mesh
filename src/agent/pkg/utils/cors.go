@@ -60,10 +60,11 @@ type CORSConfig struct {
 
 // DefaultCORSConfig provides a default configuration for CORS
 var DefaultCORSConfig = CORSConfig{
-	AllowedOrigins:   []string{"*"},
-	AllowedMethods:   []string{"GET", "POST", "PUT", "DELETE", "OPTIONS", "HEAD"},
-	AllowedHeaders:   allowedHeaders,
-	ExposedHeaders:   []string{"X-Exit-Code", "X-Output-Position", "X-File-Mode", "X-File-User", "X-File-Group", "Content-Type"},
+	AllowedOrigins: []string{"*"},
+	AllowedMethods: []string{"GET", "POST", "PUT", "DELETE", "OPTIONS", "HEAD"},
+	AllowedHeaders: allowedHeaders,
+	ExposedHeaders: []string{"X-Exit-Code", "X-Output-Position", "X-File-Mode", "X-File-User", "X-File-Group",
+		"Content-Type"},
 	MaxAge:           86400, // 24 hours
 	AllowCredentials: false,
 }

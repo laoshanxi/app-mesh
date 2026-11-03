@@ -7,7 +7,8 @@ import (
 	"github.com/laoshanxi/app-mesh/src/apps/workflow/internal/workdir"
 )
 
-func wf(name string, appEvent *models.TriggerAppEvent, schedules []models.ScheduleTrigger, conc *models.ConcurrencyConfig) *models.Workflow {
+func wf(name string, appEvent *models.TriggerAppEvent, schedules []models.ScheduleTrigger,
+	conc *models.ConcurrencyConfig) *models.Workflow {
 	return &models.Workflow{
 		Name:        name,
 		Owner:       "admin",
@@ -183,7 +184,8 @@ func newTestCheckpoint(t *testing.T) (*Checkpoint, *workdir.Manager, string) {
 
 func TestCheckpoint_SaveAndRecover(t *testing.T) {
 	cp, _, baseDir := newTestCheckpoint(t)
-	cp.SaveRunning("deploy", "run-1", "cron:* * * * *", "", map[string]string{"env": "prod"}, []string{"build", "test", "deploy"})
+	cp.SaveRunning("deploy", "run-1", "cron:* * * * *", "", map[string]string{"env": "prod"}, []string{"build", "test",
+		"deploy"})
 
 	stale := cp.RecoverStale(baseDir)
 	if len(stale) != 1 {
@@ -319,5 +321,31 @@ func TestEvalEventCondition_ReturnCodeAlias(t *testing.T) {
 	}
 	if !evalEventCondition("exit_code == 0", data) {
 		t.Error("exit_code should read return_code fallback value")
+	}
+}
+
+// --- Capability rejection escalation ---
+
+// A zero-value Service suffices: the escalation logic touches only its own fields.
+func TestAuthRejectionEscalationFiresFatal(t *testing.T) {
+	s := &Service{}
+	var reasons []string
+	s.SetFatalHandler(func(reason string) { reasons = append(reasons, reason) })
+
+	s.noteAuthRejectionAfterRefresh()
+	s.noteAuthRejectionAfterRefresh()
+	if len(reasons) != 0 {
+		t.Fatalf("escalated after %d rejections, want %d", len(reasons), authRejectionEscalation)
+	}
+	s.noteAuthRejectionAfterRefresh()
+	if len(reasons) != 1 || reasons[0] == "" {
+		t.Fatalf("fatal handler calls = %v, want exactly one with a reason", reasons)
+	}
+	// The counter re-arms instead of firing on every later rejection.
+	s.noteAuthRejectionAfterRefresh()
+	s.noteAuthRejectionAfterRefresh()
+	s.noteAuthRejectionAfterRefresh()
+	if len(reasons) != 2 {
+		t.Fatalf("fatal handler calls = %d, want 2 after a full second cycle", len(reasons))
 	}
 }

@@ -37,6 +37,7 @@ type RunRecord struct {
 	Source    string              `json:"source"`
 	Actor     string              `json:"actor,omitempty"` // caller Principal or internal:workflow-trigger audit marker
 	Status    string              `json:"status"`
+	Error     string              `json:"error,omitempty"` // why a run died before any step ran (e.g. capability issuance)
 	StartedAt string              `json:"started_at"`
 	Inputs    map[string]string   `json:"inputs,omitempty"`
 	Jobs      map[string]JobState `json:"jobs"`
@@ -73,7 +74,8 @@ func (c *Checkpoint) SaveRunning(wfName, runID, source, actor string, inputs map
 
 // SaveRunningWithCompleted atomically writes a checkpoint that includes both
 // pending jobs and already-completed jobs from a previous run (for crash recovery).
-func (c *Checkpoint) SaveRunningWithCompleted(wfName, runID, source, actor string, inputs map[string]string, allJobs map[string]*models.Job, completedJobs map[string]string, savedSteps map[string]map[string]StepState) {
+func (c *Checkpoint) SaveRunningWithCompleted(wfName, runID, source, actor string, inputs map[string]string,
+	allJobs map[string]*models.Job, completedJobs map[string]string, savedSteps map[string]map[string]StepState) {
 	jobs := make(map[string]JobState, len(allJobs))
 	for name := range allJobs {
 		if status, ok := completedJobs[name]; ok {
@@ -117,6 +119,57 @@ func (c *Checkpoint) UpdateJob(wfName, runID, jobName, status, node string, step
 	c.writeUnsafe(wfName, runID, rec)
 }
 
+// UpdateStep persists one step's terminal result inside a not-yet-finished job, so a
+// crash mid-job resumes without re-running already-completed steps (an LLM message
+// step must not be charged twice). The job's own status is left untouched.
+func (c *Checkpoint) UpdateStep(wfName, runID, jobName, stepName string, state StepState) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	rec := c.read(wfName, runID)
+	if rec == nil {
+		return
+	}
+	job, ok := rec.Jobs[jobName]
+	if !ok {
+		return // unknown job (e.g. renamed between attempts): nothing to resume into
+	}
+	if job.Steps == nil {
+		job.Steps = make(map[string]StepState)
+	}
+	job.Steps[stepName] = state
+	rec.Jobs[jobName] = job
+	c.writeUnsafe(wfName, runID, rec)
+}
+
+// CompletedSteps returns, per job, the step names that reached a terminal-completed
+// state (success/skipped) while the job itself was still unfinished at crash time.
+// Completed jobs are NOT included — they are resumed whole via CompletedJobs.
+func (c *Checkpoint) CompletedSteps(wfName, runID string) map[string]map[string]bool {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	rec := c.read(wfName, runID)
+	if rec == nil {
+		return nil
+	}
+	out := make(map[string]map[string]bool)
+	for jobName, js := range rec.Jobs {
+		if js.Status == "success" || js.Status == "skipped" || js.Status == "failure" {
+			continue // terminal job: recovered via CompletedJobs
+		}
+		for stepName, ss := range js.Steps {
+			if ss.Status == "success" || ss.Status == "skipped" {
+				if out[jobName] == nil {
+					out[jobName] = make(map[string]bool)
+				}
+				out[jobName][stepName] = true
+			}
+		}
+	}
+	return out
+}
+
 // GetJobSteps returns saved step results for a completed job (for recovery).
 func (c *Checkpoint) GetJobSteps(wfName, runID, jobName string) map[string]StepState {
 	c.mu.Lock()
@@ -148,6 +201,18 @@ func (c *Checkpoint) MarkComplete(wfName, runID, finalStatus string) {
 		return
 	}
 	rec.Status = finalStatus
+	c.writeUnsafe(wfName, runID, rec)
+}
+
+// MarkCompleteError records why a run died before any step ran.
+func (c *Checkpoint) MarkCompleteError(wfName, runID, reason string) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	rec := c.read(wfName, runID)
+	if rec == nil {
+		return
+	}
+	rec.Error = reason
 	c.writeUnsafe(wfName, runID, rec)
 }
 

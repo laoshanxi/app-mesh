@@ -440,14 +440,16 @@ func TestE2E_ConcurrencyModel(t *testing.T) {
 			cancelIP: false,
 		},
 		{
-			name:     "queue mode",
-			yaml:     "name: queue\nconcurrency:\n  group: deploy\njobs:\n  a:\n    steps:\n      - name: s\n        command: echo",
+			name: "queue mode",
+			yaml: "name: queue\nconcurrency:\n  group: deploy\n" +
+				"jobs:\n  a:\n    steps:\n      - name: s\n        command: echo",
 			group:    "deploy",
 			cancelIP: false,
 		},
 		{
-			name:     "cancel in progress",
-			yaml:     "name: cancel\nconcurrency:\n  group: deploy\n  cancel-in-progress: true\njobs:\n  a:\n    steps:\n      - name: s\n        command: echo",
+			name: "cancel in progress",
+			yaml: "name: cancel\nconcurrency:\n  group: deploy\n  cancel-in-progress: true\n" +
+				"jobs:\n  a:\n    steps:\n      - name: s\n        command: echo",
 			group:    "deploy",
 			cancelIP: true,
 		},
@@ -522,8 +524,10 @@ jobs:
 
 	// Command step.
 	s := steps[0]
-	if s.Type != models.StepCommand || s.Command != "echo hello" || s.Workdir != "/tmp" || s.Timeout != 30 || s.DockerImage != "alpine:3.19" {
-		t.Errorf("cmd step: type=%v cmd=%q workdir=%q timeout=%d docker=%q", s.Type, s.Command, s.Workdir, s.Timeout, s.DockerImage)
+	if s.Type != models.StepCommand || s.Command != "echo hello" || s.Workdir != "/tmp" || s.Timeout != 30 ||
+		s.DockerImage != "alpine:3.19" {
+		t.Errorf("cmd step: type=%v cmd=%q workdir=%q timeout=%d docker=%q", s.Type, s.Command, s.Workdir, s.Timeout,
+			s.DockerImage)
 	}
 
 	// App step.
@@ -540,7 +544,8 @@ jobs:
 
 	// Workflow step.
 	s = steps[3]
-	if s.Type != models.StepWorkflow || s.WorkflowRef != "sub-pipeline" || s.With["region"] != "us" || s.With["count"] != "5" {
+	if s.Type != models.StepWorkflow || s.WorkflowRef != "sub-pipeline" || s.With["region"] != "us" ||
+		s.With["count"] != "5" {
 		t.Errorf("wf step: type=%v ref=%q with=%v", s.Type, s.WorkflowRef, s.With)
 	}
 }

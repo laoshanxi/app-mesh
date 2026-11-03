@@ -27,7 +27,7 @@ func (s *PrometheusServer) handleMetrics(w http.ResponseWriter, r *http.Request)
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
-	if r.Header.Get(HTTP_HEADER_KEY_X_TARGET_HOST) != "" {
+	if r.Header.Get(HTTPHeaderKeyXTargetHost) != "" {
 		http.Error(w, "metrics forwarding is not allowed", http.StatusBadRequest)
 		return
 	}

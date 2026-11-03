@@ -24,15 +24,16 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"strings"
 	"time"
 
-	appmesh "github.com/laoshanxi/app-mesh/src/sdk/go"
 	"github.com/laoshanxi/app-mesh/src/apps/workflow/internal/dag"
 	"github.com/laoshanxi/app-mesh/src/apps/workflow/internal/logger"
 	"github.com/laoshanxi/app-mesh/src/apps/workflow/internal/parser"
 	"github.com/laoshanxi/app-mesh/src/apps/workflow/internal/trigger"
 	"github.com/laoshanxi/app-mesh/src/apps/workflow/internal/workdir"
+	appmesh "github.com/laoshanxi/app-mesh/src/sdk/go"
 )
 
 const workflowAppPrefix = trigger.WorkflowAppPrefix
@@ -54,6 +55,11 @@ type Request struct {
 	// a renewed Engine capability). It is stripped immediately after authentication
 	// and is never persisted or logged.
 	Token string `json:"token,omitempty"`
+	// step_log pagination: position starts at 0; tail > 0 reads the last tail
+	// bytes; limit <= 0 reads to the end.
+	Position int64 `json:"position,omitempty"`
+	Limit    int64 `json:"limit,omitempty"`
+	Tail     int64 `json:"tail,omitempty"`
 }
 
 // Response is the JSON returned via send_task_result.
@@ -61,6 +67,9 @@ type Response struct {
 	Status  string      `json:"status"` // "ok" or "error"
 	Message string      `json:"message,omitempty"`
 	Data    interface{} `json:"data,omitempty"`
+	// step_log pagination: next unread byte offset and the total log size.
+	Position int64 `json:"position,omitempty"`
+	Total    int64 `json:"total,omitempty"`
 }
 
 // TaskHandler runs the fetch_task/send_task_result loop.
@@ -80,7 +89,8 @@ type callerPrincipal struct {
 }
 
 // NewTaskHandler creates a Task RPC handler.
-func NewTaskHandler(svc *trigger.Service, wdir *workdir.Manager, client *appmesh.AppMeshClient, opts appmesh.Option) (*TaskHandler, error) {
+func NewTaskHandler(svc *trigger.Service, wdir *workdir.Manager, client *appmesh.AppMeshClient,
+	opts appmesh.Option) (*TaskHandler, error) {
 	server, err := appmesh.NewTCPContext(opts)
 	if err != nil {
 		return nil, fmt.Errorf("create task context: %w", err)
@@ -90,7 +100,8 @@ func NewTaskHandler(svc *trigger.Service, wdir *workdir.Manager, client *appmesh
 		server.CloseConnection()
 		return nil, err
 	}
-	return &TaskHandler{svc: svc, wdir: wdir, client: client, server: server, principalHTTP: principalHTTP, engineURL: engineURL, engineOption: opts}, nil
+	return &TaskHandler{svc: svc, wdir: wdir, client: client, server: server, principalHTTP: principalHTTP,
+		engineURL: engineURL, engineOption: opts}, nil
 }
 
 func newPrincipalHTTPClient() (*http.Client, string, error) {
@@ -102,7 +113,8 @@ func newPrincipalHTTPClient() (*http.Client, string, error) {
 	if err != nil || (parsed.Scheme != "http" && parsed.Scheme != "https") || parsed.Host == "" {
 		return nil, "", fmt.Errorf("APPMESH_ENGINE_URL must be an absolute HTTP(S) URL")
 	}
-	verify := !strings.EqualFold(os.Getenv("APPMESH_ENGINE_TLS_VERIFY"), "false") && os.Getenv("APPMESH_ENGINE_TLS_VERIFY") != "0"
+	verify := !strings.EqualFold(os.Getenv("APPMESH_ENGINE_TLS_VERIFY"), "false") &&
+		os.Getenv("APPMESH_ENGINE_TLS_VERIFY") != "0"
 	tlsConfig := &tls.Config{MinVersion: tls.VersionTLS12, InsecureSkipVerify: !verify}
 	if caPath := os.Getenv("APPMESH_CA"); caPath != "" {
 		pem, err := os.ReadFile(caPath)
@@ -373,7 +385,8 @@ func (h *TaskHandler) handleWorkflowAdd(req Request, callerToken, caller string,
 		return Response{Status: "error", Message: "invalid workflow YAML: " + err.Error()}
 	}
 	if req.Workflow != wf.Name {
-		return Response{Status: "error", Message: fmt.Sprintf("request name %q does not match YAML name %q", req.Workflow, wf.Name)}
+		return Response{Status: "error", Message: fmt.Sprintf("request name %q does not match YAML name %q",
+			req.Workflow, wf.Name)}
 	}
 	// Reject cycles / unknown `needs` references at registration instead of
 	// letting the workflow fail only when it is first run.
@@ -424,11 +437,12 @@ func (h *TaskHandler) handleWorkflowAdd(req Request, callerToken, caller string,
 
 	// Roll back the App registration if YAML write fails so we don't leave an orphan.
 	writeYaml := func() error {
-		if err := os.MkdirAll(filepath.Dir(yamlPath), 0755); err != nil {
+		// secret_env is stored verbatim in this file, so it must not be world-readable.
+		if err := os.MkdirAll(filepath.Dir(yamlPath), 0700); err != nil {
 			return fmt.Errorf("failed to create workflow dir: %w", err)
 		}
 		tmp := yamlPath + ".tmp"
-		if err := os.WriteFile(tmp, []byte(req.Content), 0644); err != nil {
+		if err := os.WriteFile(tmp, []byte(req.Content), 0600); err != nil {
 			return fmt.Errorf("failed to save YAML: %w", err)
 		}
 		if err := os.Rename(tmp, yamlPath); err != nil {
@@ -444,6 +458,8 @@ func (h *TaskHandler) handleWorkflowAdd(req Request, callerToken, caller string,
 
 	h.wdir.EnsureWorkflowDir(req.Workflow)
 	h.svc.Registry().Update(req.Workflow, wf, owner)
+	// Arm the app_event subscription now, not at the next scan.
+	h.svc.SyncTriggers()
 	return Response{Status: "ok", Message: "workflow registered"}
 }
 
@@ -511,6 +527,8 @@ func (h *TaskHandler) handleWorkflowList(req Request, caller string, admin bool)
 		}
 		workflows = append(workflows, info)
 	}
+	// deterministic order for CLI and UI (registry apps arrive in daemon map order)
+	sort.Slice(workflows, func(i, j int) bool { return workflows[i].Name < workflows[j].Name })
 	return Response{Status: "ok", Data: workflows}
 }
 
@@ -523,6 +541,8 @@ func (h *TaskHandler) handleWorkflowRm(req Request, callerToken string) Response
 	}
 	h.svc.CancelByWorkflow(req.Workflow)
 	h.svc.Registry().Remove(req.Workflow)
+	// Drop the removed workflow's event subscription now.
+	h.svc.SyncTriggers()
 	appName := workflowAppPrefix + req.Workflow
 	callerClient, err := h.newCallerClient(callerToken)
 	if err != nil {
@@ -579,7 +599,8 @@ func (h *TaskHandler) handleCancel(req Request) Response {
 	// If the client also names a workflow (CLI -w), verify it matches the run_id.
 	if req.Workflow != "" {
 		if actual := h.workflowOfRun(req.RunID); actual != "" && actual != req.Workflow {
-			return Response{Status: "error", Message: fmt.Sprintf("run '%s' belongs to workflow '%s', not '%s'", req.RunID, actual, req.Workflow)}
+			return Response{Status: "error", Message: fmt.Sprintf("run '%s' belongs to workflow '%s', not '%s'",
+				req.RunID, actual, req.Workflow)}
 		}
 	}
 	if err := h.svc.CancelByRunID(req.RunID); err != nil {
@@ -669,11 +690,11 @@ func (h *TaskHandler) handleStepLog(req Request) Response {
 	if req.Workflow == "" || req.RunID == "" || req.Job == "" || req.Step == "" {
 		return Response{Status: "error", Message: "workflow, run_id, job, step required"}
 	}
-	content := h.wdir.ReadStepLog(req.Workflow, req.RunID, req.Job, req.Step)
-	if content == "" {
+	content, next, total, err := h.wdir.ReadStepLogRange(req.Workflow, req.RunID, req.Job, req.Step, req.Position, req.Limit, req.Tail)
+	if err != nil {
 		return Response{Status: "error", Message: "step log not found"}
 	}
-	return Response{Status: "ok", Data: content}
+	return Response{Status: "ok", Data: content, Position: next, Total: total}
 }
 
 // newCallerClient keeps workflow-definition mutations under the authenticated
@@ -684,7 +705,7 @@ func (h *TaskHandler) newCallerClient(token string) (*appmesh.AppMeshClientTCP, 
 		return nil, fmt.Errorf("caller Dex bearer is required")
 	}
 	option := h.engineOption
-	option.JwtToken = token
+	option.JWTToken = token
 	return appmesh.NewTCPClient(option)
 }
 

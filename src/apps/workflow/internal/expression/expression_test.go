@@ -1,6 +1,8 @@
 package expression
 
 import (
+	"encoding/json"
+	"strings"
 	"testing"
 )
 
@@ -55,8 +57,49 @@ func TestSubstitute_Env(t *testing.T) {
 
 func TestSubstitute_Missing(t *testing.T) {
 	ctx := NewContext()
-	if got := SubstituteForJob("${{ steps.nope.stdout }}", ctx, "test"); got != "" {
-		t.Errorf("missing step: got %q, want empty", got)
+	// Unknown references stay literal (with a warning) so the corruption is
+	// visible instead of silently substituting empty; strict mode errors.
+	if got := SubstituteForJob("${{ steps.nope.stdout }}", ctx, "test"); got != "${{ steps.nope.stdout }}" {
+		t.Errorf("missing step: got %q, want the literal reference kept", got)
+	}
+	ctx.Strict = true
+	if _, err := SubstituteForJobChecked("${{ steps.nope.stdout }}", ctx, "test"); err == nil {
+		t.Errorf("missing step in strict mode: want unresolved-expression error")
+	}
+}
+
+func TestSubstituteChecked_StrictFails(t *testing.T) {
+	ctx := NewContext()
+	ctx.Strict = true
+	got, err := SubstituteForJobChecked("echo ${{ inputz.name }}", ctx, "build")
+	if err == nil || !strings.Contains(err.Error(), "${{ inputz.name }}") {
+		t.Fatalf("err = %v, want unresolved-expression error", err)
+	}
+	if got != "" {
+		t.Errorf("got %q, want empty on error", got)
+	}
+}
+
+func TestSubstituteChecked_StrictResolvesNormally(t *testing.T) {
+	ctx := NewContext()
+	ctx.Strict = true
+	ctx.Inputs["env"] = "staging"
+	got, err := SubstituteForJobChecked("deploy ${{ inputs.env }}", ctx, "build")
+	if err != nil {
+		t.Fatalf("unexpected err: %v", err)
+	}
+	if got != "deploy staging" {
+		t.Errorf("got %q", got)
+	}
+}
+
+func TestSubstituteChecked_LenientKeepsLiteral(t *testing.T) {
+	ctx := NewContext()
+	if got := SubstituteForJob("echo ${{ inputz.name }}", ctx, "build"); got != "echo ${{ inputz.name }}" {
+		t.Errorf("got %q, want the literal expression embedded", got)
+	}
+	if _, err := SubstituteForJobChecked("echo ${{ inputz.name }}", ctx, "build"); err != nil {
+		t.Errorf("lenient checked form must not error: %v", err)
 	}
 }
 
@@ -242,10 +285,12 @@ func TestEvalConditionForJob_IsolatesParallelJobs(t *testing.T) {
 
 func TestEvalConditionForJobWithStatus_UsesJobStatusFunctions(t *testing.T) {
 	ctx := NewContext()
-	if EvalConditionForJobWithStatus("success()", ctx, "deploy", func() bool { return false }, func() bool { return true }) {
+	if EvalConditionForJobWithStatus("success()", ctx, "deploy", func() bool { return false },
+		func() bool { return true }) {
 		t.Error("success() should use supplied job status function")
 	}
-	if !EvalConditionForJobWithStatus("failure()", ctx, "deploy", func() bool { return false }, func() bool { return true }) {
+	if !EvalConditionForJobWithStatus("failure()", ctx, "deploy", func() bool { return false },
+		func() bool { return true }) {
 		t.Error("failure() should use supplied job status function")
 	}
 }
@@ -294,5 +339,256 @@ func TestHasStatusFunction(t *testing.T) {
 	}
 	if HasStatusFunction("steps.x.stdout == 'ok'") {
 		t.Error("no status function present")
+	}
+}
+
+func TestSubstitute_ToJSON(t *testing.T) {
+	ctx := NewContext()
+	ctx.Inputs["question"] = `He said "hi" \ and ${{ inputs.other }}`
+	if got := Substitute(`{"input":${{ toJSON(inputs.question) }}}`, ctx); got != `{"input":"He said \"hi\" \\ and ${{ inputs.other }}"}` {
+		t.Errorf("got %q", got)
+	}
+	// CJK and control characters stay valid JSON
+	ctx.Inputs["q2"] = "报销\n流程"
+	if got := Substitute(`{"input":${{ toJSON(inputs.q2) }}}`, ctx); got != "{\"input\":\"报销\\n流程\"}" {
+		t.Errorf("got %q", got)
+	}
+}
+
+func TestSubstitute_ToJSONUnresolved(t *testing.T) {
+	ctx := NewContext()
+	// Missing inputs resolve to "" by existing convention; toJSON must still emit valid JSON.
+	if got := Substitute(`{"input":${{ toJSON(inputs.missing) }}}`, ctx); got != `{"input":""}` {
+		t.Errorf("got %q", got)
+	}
+	// An unresolvable root keeps the literal text, matching plain substitution.
+	if got := Substitute(`{"input":${{ toJSON(nosuchroot.x) }}}`, ctx); got != `{"input":${{ toJSON(nosuchroot.x) }}}` {
+		t.Errorf("got %q", got)
+	}
+}
+
+func TestSubstituteForCommand_SingleQuotedExpression(t *testing.T) {
+	ctx := NewContext()
+	ctx.SetStepResult("j", "ask", "", 0, "success", `{"answer": "it's 42"}`, nil)
+	cmd, bindings, err := SubstituteForCommand(`echo '${{ steps.ask.response }}' | jq .`, ctx, "j")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	// The quoted expression is substituted textually: the shell keeps one closed
+	// quote around the value, and no $WF_E binding shadows it.
+	want := `echo '{"answer": "it'\''s 42"}' | jq .`
+	if cmd != want {
+		t.Errorf("command: got %q, want %q", cmd, want)
+	}
+	if len(bindings) != 0 {
+		t.Errorf("quoted expression must not create bindings, got %v", bindings)
+	}
+}
+
+func TestSubstituteForCommand_MixedQuotedAndPlain(t *testing.T) {
+	ctx := NewContext()
+	ctx.SetStepResult("j", "ver", "1.2.3", 0, "success", "", nil)
+	cmd, bindings, err := SubstituteForCommand(`echo 'v=${{ steps.ver.stdout }}' plain=${{ steps.ver.stdout }}`, ctx, "j")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if cmd != `echo 'v=1.2.3' plain=$WF_E0` {
+		t.Errorf("command: got %q", cmd)
+	}
+	if bindings["WF_E0"] != "1.2.3" {
+		t.Errorf("plain expression binding missing: %v", bindings)
+	}
+}
+
+func TestSubstituteForCommand_QuotedStrictUnresolved(t *testing.T) {
+	ctx := NewContext()
+	ctx.Strict = true
+	if _, _, err := SubstituteForCommand(`echo '${{ steps.ghost.stdout }}'`, ctx, "j"); err == nil {
+		t.Error("strict mode must fail on an unresolved quoted expression")
+	}
+}
+
+func TestSubstituteForCommand_QuoteInsideDoubleQuotesUntouched(t *testing.T) {
+	ctx := NewContext()
+	ctx.SetStepResult("j", "x", "VAL", 0, "success", "", nil)
+	// "don't ${{ ... }}" — the apostrophe is inside double quotes, so the
+	// expression is not single-quoted and keeps the environment mechanism.
+	cmd, bindings, err := SubstituteForCommand(`echo "don't ${{ steps.x.stdout }}"`, ctx, "j")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if cmd != `echo "don't $WF_E0"` || bindings["WF_E0"] != "VAL" {
+		t.Errorf("got %q bindings %v", cmd, bindings)
+	}
+}
+
+// A ${{ }}-wrapped condition must evaluate as its inner expression: operators
+// inside the braces take effect instead of the unresolved text turning into a
+// truthy literal.
+func TestEvalCondition_WrappedExpression(t *testing.T) {
+	ctx := NewContext()
+	ctx.SetStepResult("j", "make", "7", 0, "success", "", nil)
+	cases := []struct {
+		cond string
+		want bool
+	}{
+		{`${{ steps.make.exit_code == 0 }}`, true},
+		{`${{ steps.make.exit_code > 3 }}`, false},
+		{`${{ !failure() }}`, true},
+		{`${{ failure() || steps.make.exit_code == 0 }}`, true},
+		{`${{ failure() || steps.make.exit_code > 3 }}`, false},
+		{`steps.make.exit_code == 0`, true}, // bare form unchanged
+		{`failure()`, false},
+	}
+	for _, c := range cases {
+		if got := EvalConditionForJob(c.cond, ctx, "j"); got != c.want {
+			t.Errorf("condition %q: got %v, want %v", c.cond, got, c.want)
+		}
+	}
+}
+
+// A JSON document payload substitutes with JSON string escaping, so quotes,
+// backslashes, and newlines in a value cannot break the document; any other
+// payload keeps the textual behavior.
+func TestSubstituteMessagePayload_JSONEscaping(t *testing.T) {
+	ctx := NewContext()
+	ctx.Inputs = map[string]string{
+		"code": `x = "hello" ` + "\\\n" + ` y`,
+	}
+	tmpl := `{"action":"send","input":"code: ${{ inputs.code }}","n":123}`
+	out, err := SubstituteMessagePayload(tmpl, ctx, "")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	var doc map[string]any
+	if e := json.Unmarshal([]byte(out), &doc); e != nil {
+		t.Fatalf("output is not valid JSON: %v\n%s", e, out)
+	}
+	if doc["input"] != "code: "+`x = "hello" `+"\\"+"\n"+" y" {
+		t.Errorf("value not preserved: %q", doc["input"])
+	}
+	if doc["n"] != float64(123) {
+		t.Errorf("non-string literal altered: %v", doc["n"])
+	}
+}
+
+// A non-JSON template (plain text or the bare toJSON pattern) substitutes
+// textually, exactly as SubstituteForJobChecked.
+func TestSubstituteMessagePayload_NonJSONFallsBack(t *testing.T) {
+	ctx := NewContext()
+	ctx.Inputs = map[string]string{"q": "what"}
+	out, err := SubstituteMessagePayload(`plain ${{ inputs.q }} text`, ctx, "")
+	if err != nil || out != "plain what text" {
+		t.Errorf("got %q err %v", out, err)
+	}
+}
+
+// Strict mode must fail the substitution instead of embedding an unresolved
+// expression into a JSON payload.
+func TestSubstituteMessagePayload_StrictUnresolved(t *testing.T) {
+	ctx := NewContext()
+	ctx.Strict = true
+	if _, err := SubstituteMessagePayload(`{"a":"${{ steps.nosuch.stdout }}"}`, ctx, ""); err == nil {
+		t.Error("expected strict error for unresolved expression")
+	}
+}
+
+// success()/failure() tolerate a continue-on-error failure (GitHub Actions
+// conclusion semantics) while steps.<name>.status keeps the raw outcome.
+func TestSuccessFailure_ToleratedFailure(t *testing.T) {
+	ctx := NewContext()
+	ctx.SetStepResult("j", "flaky", "", 3, "failure", "", nil)
+	ctx.MarkContinueOnError("j", "flaky")
+	ctx.SetStepResult("j", "real", "", 0, "success", "", nil)
+	if !EvalConditionForJob("success()", ctx, "j") {
+		t.Error("success() must tolerate a continue-on-error failure")
+	}
+	if EvalConditionForJob("failure()", ctx, "j") {
+		t.Error("failure() must not fire for a tolerated failure")
+	}
+	// The raw outcome stays visible to expressions.
+	if !EvalConditionForJob("steps.flaky.status == 'failure'", ctx, "j") {
+		t.Error("steps.flaky.status must keep the raw failure")
+	}
+	// An untolerated failure still fails the job.
+	ctx.SetStepResult("j", "fatal", "", 1, "failure", "", nil)
+	if EvalConditionForJob("success()", ctx, "j") {
+		t.Error("success() must fail on an untolerated failure")
+	}
+}
+
+// plainMessageCtx builds a message step that completed with a plain-text reply (no outputs).
+func plainMessageCtx(job, step string) *Context {
+	ctx := NewContext()
+	ctx.SetStepResult(job, step, "answer-from-py", 0, "success", "answer-from-py", nil)
+	ctx.MarkMessageStep(job, step)
+	return ctx
+}
+
+// An outputs.answer reference at a plain-text message step fails substitution clearly.
+func TestSubstituteForCommand_MessageOutputsPlainTextFails(t *testing.T) {
+	_, _, err := SubstituteForCommand(`echo got: ${{ steps.qa.outputs.answer }}`, plainMessageCtx("j", "qa"), "j")
+	if err == nil || !strings.Contains(err.Error(), `unresolved expression ${{ steps.qa.outputs.answer }}`) ||
+		!strings.Contains(err.Error(), `message step "qa" produced no answer`) ||
+		!strings.Contains(err.Error(), "plain-text responders expose stdout") {
+		t.Fatalf("err = %v, want the plain-text no-answer engine error", err)
+	}
+	// The cross-job shape fails the same way.
+	_, _, err = SubstituteForCommand(`echo ${{ jobs.other.steps.qa.outputs.answer }}`, plainMessageCtx("other", "qa"), "j")
+	if err == nil || !strings.Contains(err.Error(), `message step "qa" produced no answer`) {
+		t.Fatalf("cross-job err = %v, want the plain-text no-answer engine error", err)
+	}
+	// toJSON(...) of the same reference too.
+	_, _, err = SubstituteForCommand(`echo ${{ toJSON(steps.qa.outputs.answer) }}`, plainMessageCtx("j", "qa"), "j")
+	if err == nil || !strings.Contains(err.Error(), `message step "qa" produced no answer`) {
+		t.Fatalf("toJSON err = %v, want the plain-text no-answer engine error", err)
+	}
+	// The shell=false path goes through the same detection.
+	if _, err := SubstituteCommandText(`echo got: ${{ steps.qa.outputs.answer }}`, plainMessageCtx("j", "qa"), "j"); err == nil {
+		t.Fatal("SubstituteCommandText must fail on the same reference")
+	}
+}
+
+// Envelope responders still substitute outputs.answer as before.
+func TestSubstituteForCommand_MessageOutputsEnvelopeSubstitutes(t *testing.T) {
+	ctx := NewContext()
+	ctx.SetStepResult("j", "qa", "", 0, "success", `{"status":"ok","data":{"answer":"42"}}`,
+		map[string]string{"answer": "42"})
+	ctx.MarkMessageStep("j", "qa")
+	cmd, bindings, err := SubstituteForCommand(`echo got: ${{ steps.qa.outputs.answer }}`, ctx, "j")
+	if err != nil || cmd != "echo got: $WF_E0" || bindings["WF_E0"] != "42" {
+		t.Fatalf("got %q bindings %v err %v, want the answer substituted", cmd, bindings, err)
+	}
+}
+
+// Other unresolved references keep the lenient literal-kept behavior.
+func TestSubstituteForCommand_OtherUnresolvedRefsStayLiteral(t *testing.T) {
+	ctx := plainMessageCtx("j", "qa")
+	ctx.SetStepResult("j", "sub", "", 0, "success", "", nil) // workflow sub-step, no outputs
+	for _, cmd := range []string{
+		`echo ${{ steps.ghost.outputs.answer }}`,
+		`echo '${{ nosuchroot.x }}'`,
+		`echo ${{ steps.qa.outputs.answer.here }}`,
+		`echo ${{ steps.sub.outputs.missing }}`,
+	} {
+		got, _, err := SubstituteForCommand(cmd, ctx, "j")
+		if err != nil || got != cmd {
+			t.Errorf("%q: got %q err %v, want literal kept", cmd, got, err)
+		}
+	}
+}
+
+// The miss fires only for a completed message step; plain text stays reachable via stdout.
+func TestSubstituteForCommand_MissOnlyForCompletedMessageSteps(t *testing.T) {
+	failed := NewContext()
+	failed.SetStepResult("j", "qa", "", 1, "failure", "boom", nil)
+	failed.MarkMessageStep("j", "qa")
+	got, _, err := SubstituteForCommand(`echo ${{ steps.qa.outputs.answer }}`, failed, "j")
+	if err != nil || got != `echo ${{ steps.qa.outputs.answer }}` {
+		t.Errorf("failed message step: got %q err %v, want literal kept", got, err)
+	}
+	if got, bindings, err := SubstituteForCommand(`echo ${{ steps.qa.stdout }}`, plainMessageCtx("j", "qa"), "j"); err != nil ||
+		got != "echo $WF_E0" || bindings["WF_E0"] != "answer-from-py" {
+		t.Errorf("plain-text stdout: got %q bindings %v err %v, want it substituted", got, bindings, err)
 	}
 }

@@ -7,8 +7,11 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"net/url"
 	"os"
 	"sync"
+	"sync/atomic"
+	"time"
 
 	"github.com/laoshanxi/app-mesh/src/agent/pkg/config"
 	appmesh "github.com/laoshanxi/app-mesh/src/sdk/go"
@@ -17,11 +20,14 @@ import (
 var (
 	remoteConnections      sync.Map
 	remoteConnectionsMutex sync.Mutex
+
+	// Unix-nano time of the last warned TCP dial failure (throttles the WSS fallback log).
+	lastTCPDialWarnNs atomic.Int64
 )
 
 type Connection struct {
-	addr net.Addr
-	*appmesh.TCPConnection
+	key string // pool key, also identifies the transport ("tcp://..." or "wss://...")
+	messageConnection
 
 	pending      map[string]chan *Response
 	pendingMu    sync.Mutex // Protects pending map
@@ -31,9 +37,19 @@ type Connection struct {
 	closeOnce sync.Once
 }
 
+// messageConnection abstracts the msgpack frame transport to the daemon.
+// *appmesh.TCPConnection (length-prefixed TCP/TLS frames) and
+// *appmesh.WSSConnection (binary WebSocket frames) both satisfy it.
+type messageConnection interface {
+	ReadMessage() ([]byte, error)
+	SendMessage(ctx context.Context, buffer []byte) error
+	Close()
+	ClientAddress() string
+}
+
 // getOrCreateConnection returns an existing connection or creates a new one.
 func getOrCreateConnection(tcpAddress net.Addr, verifyServer, allowError bool) (*Connection, error) {
-	key := tcpAddress.String()
+	key := "tcp://" + tcpAddress.String()
 
 	// Check if connection already exists (without holding lock during creation)
 	if conn, ok := remoteConnections.Load(key); ok {
@@ -49,21 +65,22 @@ func getOrCreateConnection(tcpAddress net.Addr, verifyServer, allowError bool) (
 	}
 
 	sConn := &Connection{
-		addr:          tcpAddress,
-		TCPConnection: appmesh.NewTCPConnection(),
-		pending:       make(map[string]chan *Response),
-		closed:        make(chan struct{}),
+		key:               key,
+		messageConnection: appmesh.NewTCPConnection(),
+		pending:           make(map[string]chan *Response),
+		closed:            make(chan struct{}),
 	}
 
 	clientCert := config.ConfigData.REST.SSL.SSLClientCertificateFile
 	clientCertKey := config.ConfigData.REST.SSL.SSLClientCertificateKeyFile
-	caPath := config.ConfigData.REST.SSL.SSLCaPath
+	caPath := config.ConfigData.REST.SSL.SSLCAPath
 	if !verifyServer {
 		caPath = ""
 	}
 
 	logger.Infof("Connecting to %s (CA: %q, Cert: %q, Key: %q)", tcpAddress, caPath, clientCert, clientCertKey)
-	if err := sConn.Connect(tcpAddress, clientCert, clientCertKey, caPath); err != nil {
+	if err := sConn.messageConnection.(*appmesh.TCPConnection).Connect(tcpAddress, clientCert, clientCertKey,
+		caPath); err != nil {
 		logger.Errorf("Failed to connect to %s: %v", tcpAddress, err)
 		return nil, fmt.Errorf("connect to %s: %w", tcpAddress, err)
 	}
@@ -78,8 +95,124 @@ func getOrCreateConnection(tcpAddress net.Addr, verifyServer, allowError bool) (
 	return sConn, nil
 }
 
+// wssPoolKey is the pool key of the WSS fallback entry for a host:port.
+func wssPoolKey(wssHostPort string) string {
+	return "wss://" + wssHostPort
+}
+
+// wssPingInterval is the WSS keepalive period; a variable so tests can shorten it.
+var wssPingInterval = 60 * time.Second
+
+// keepWSSAlive pings conn until it closes, so a long-poll request is not dropped by the server's idle timeout.
+// A failed ping evicts the pooled connection: nobody keeps it alive any more, and the
+// server would drop it after its idle timeout.
+func keepWSSAlive(conn *Connection, wssURL *url.URL, poolKey string, interval time.Duration, ping func() error) {
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-conn.closed:
+			return
+		case <-ticker.C:
+			if err := ping(); err != nil {
+				logger.Warnf("WSS ping to %s failed, dropping the connection: %v", wssURL, err)
+				deleteConnectionByKey(poolKey)
+				return
+			}
+		}
+	}
+}
+
+// reclaimGracePeriod bounds how long a reclaimed connection waits for its
+// in-flight requests before it is closed anyway.
+const reclaimGracePeriod = 30 * time.Second
+
+// reclaimWSSFallback retires the pooled WSS fallback once TCP works again.
+// The entry leaves the pool at once, but the socket stays usable until its
+// in-flight requests finish, so the recovery itself does not fail them.
+func reclaimWSSFallback(wssHostPort string) {
+	quiesceConnection(wssPoolKey(wssHostPort))
+}
+
+// quiesceConnection removes the pooled connection and closes it once the last
+// in-flight request finishes, bounded by reclaimGracePeriod.
+func quiesceConnection(key string) {
+	value, ok := remoteConnections.LoadAndDelete(key)
+	if !ok {
+		return
+	}
+	conn, ok := value.(*Connection)
+	if !ok {
+		return
+	}
+	go func() {
+		deadline := time.Now().Add(reclaimGracePeriod)
+		for time.Now().Before(deadline) {
+			conn.pendingMu.Lock()
+			pending := len(conn.pending)
+			conn.pendingMu.Unlock()
+			if pending == 0 {
+				break
+			}
+			time.Sleep(10 * time.Millisecond)
+		}
+		conn.close()
+	}()
+}
+
+// getOrCreateWSSConnection returns a pooled WSS connection to the daemon. It is
+// used when the daemon is not reachable on the TCP API port.
+func getOrCreateWSSConnection(wssHostPort string, verifyServer bool) (*Connection, error) {
+	key := wssPoolKey(wssHostPort)
+
+	if conn, ok := remoteConnections.Load(key); ok {
+		return conn.(*Connection), nil
+	}
+
+	remoteConnectionsMutex.Lock()
+	defer remoteConnectionsMutex.Unlock()
+
+	if conn, ok := remoteConnections.Load(key); ok {
+		return conn.(*Connection), nil
+	}
+
+	sConn := &Connection{
+		key:               key,
+		messageConnection: appmesh.NewWSSConnection(),
+		pending:           make(map[string]chan *Response),
+		closed:            make(chan struct{}),
+	}
+
+	clientCert := config.ConfigData.REST.SSL.SSLClientCertificateFile
+	clientCertKey := config.ConfigData.REST.SSL.SSLClientCertificateKeyFile
+	caPath := config.ConfigData.REST.SSL.SSLCAPath
+	if !verifyServer {
+		caPath = ""
+	}
+
+	wssURL := &url.URL{Scheme: "wss", Host: wssHostPort, Path: "/"}
+	logger.Infof("Connecting to %s (CA: %q, Cert: %q, Key: %q)", wssURL, caPath, clientCert, clientCertKey)
+	if err := sConn.messageConnection.(*appmesh.WSSConnection).Connect(wssURL, clientCert, clientCertKey, caPath,
+		""); err != nil {
+		logger.Errorf("Failed to connect to %s: %v", wssURL, err)
+		return nil, fmt.Errorf("connect to %s: %w", wssURL, err)
+	}
+
+	remoteConnections.Store(key, sConn)
+
+	go func() {
+		logger.Infof("Monitoring response from: %s", wssURL)
+		MonitorConnectionResponse(sConn, false)
+	}()
+
+	wss := sConn.messageConnection.(*appmesh.WSSConnection)
+	go keepWSSAlive(sConn, wssURL, key, wssPingInterval, wss.Ping)
+
+	return sConn, nil
+}
+
 func (c *Connection) String() string {
-	return c.addr.String()
+	return c.key
 }
 
 // sendRequestDataWithContext serializes and sends request data.
@@ -100,7 +233,8 @@ func (c *Connection) sendRequestDataWithContext(ctx context.Context, request *Re
 		return nil, fmt.Errorf("serialize request %s: %w", request.UUID, err)
 	}
 
-	logger.Debugf("Sending request: %s %s %s %s", request.ClientAddress, request.HttpMethod, request.RequestUri, request.UUID)
+	logger.Debugf("Sending request: %s %s %s %s", request.ClientAddress, request.HTTPMethod, request.RequestURI,
+		request.UUID)
 
 	respCh := c.registerPendingResp(request.UUID)
 	defer c.unregisterPendingResp(request.UUID)
@@ -199,8 +333,8 @@ func (c *Connection) sendFileDataWithContext(ctx context.Context, localFile stri
 
 	defer file.Close()
 
-	reader := bufio.NewReaderSize(file, TCP_CHUNK_BLOCK_SIZE)
-	buf := make([]byte, TCP_CHUNK_BLOCK_SIZE)
+	reader := bufio.NewReaderSize(file, TCPChunkBlockSize)
+	buf := make([]byte, TCPChunkBlockSize)
 
 	c.atomicSendMu.Lock()
 	defer c.atomicSendMu.Unlock()
@@ -228,10 +362,15 @@ func (c *Connection) sendFileDataWithContext(ctx context.Context, localFile stri
 
 // deleteConnection closes and removes a connection from the pool.
 func deleteConnection(target *Connection) {
-	if value, ok := remoteConnections.LoadAndDelete(target.addr.String()); ok {
+	deleteConnectionByKey(target.key)
+}
+
+// deleteConnectionByKey closes and removes the pooled connection stored under key.
+func deleteConnectionByKey(key string) {
+	if value, ok := remoteConnections.LoadAndDelete(key); ok {
 		if conn, ok := value.(*Connection); ok {
 			conn.close()
-			logger.Infof("Removed connection: %s", target)
+			logger.Infof("Removed connection: %s", conn)
 		}
 	}
 }
@@ -241,8 +380,8 @@ func (c *Connection) close() {
 	c.closeOnce.Do(func() {
 		close(c.closed) // Signal that connection is closing
 
-		if c.TCPConnection != nil {
-			c.TCPConnection.Close() // Close underlying TCP connection
+		if c.messageConnection != nil {
+			c.messageConnection.Close() // Close underlying transport connection
 		}
 
 		c.pendingMu.Lock()
@@ -255,6 +394,6 @@ func (c *Connection) close() {
 			logger.Debugf("Closed pending response channel for UUID: %s", uuid)
 		}
 
-		logger.Debugf("Connection closed and cleaned up: %s", c.addr)
+		logger.Debugf("Connection closed and cleaned up: %s", c.key)
 	})
 }

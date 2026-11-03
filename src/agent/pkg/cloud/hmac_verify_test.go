@@ -6,7 +6,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestVeriry(t *testing.T) {
+func TestVerify(t *testing.T) {
 	msg := "Message-For-Generate-HMAC"
 	psk := "PRE_SHARED_KEY"
 	hmacVerify := &HMACVerify{psk: []byte(psk)}

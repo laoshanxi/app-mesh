@@ -19,11 +19,11 @@ import (
 	"syscall"
 	"time"
 
-	appmesh "github.com/laoshanxi/app-mesh/src/sdk/go"
 	"github.com/laoshanxi/app-mesh/src/apps/workflow/internal/api"
 	"github.com/laoshanxi/app-mesh/src/apps/workflow/internal/logger"
 	"github.com/laoshanxi/app-mesh/src/apps/workflow/internal/tlsconf"
 	"github.com/laoshanxi/app-mesh/src/apps/workflow/internal/trigger"
+	appmesh "github.com/laoshanxi/app-mesh/src/sdk/go"
 )
 
 var controlOperations = []string{"app-view-all", "app-subscribe"}
@@ -76,7 +76,7 @@ func main() {
 		os.Exit(1)
 	}
 	tcpClient.SetToken(controlCapability.Capability)
-	engineOption.JwtToken = controlCapability.Capability
+	engineOption.JWTToken = controlCapability.Capability
 
 	workflowDir, err := filepath.Abs(filepath.Join("..", "workflow"))
 	if err != nil {
@@ -94,7 +94,8 @@ func main() {
 
 	svc := trigger.NewService(tcpClient.AppMeshClient, server, parseCSV(clusterNodes), workflowDir)
 	svc.SetProcessUUID(controlCapability.ProcessUUID)
-	svc.SetCapabilityIssuer(func(ctx context.Context, workflowID, runID string, operations []string) (appmesh.WorkflowCapability, error) {
+	svc.SetCapabilityIssuer(func(ctx context.Context, workflowID, runID string,
+		operations []string) (appmesh.WorkflowCapability, error) {
 		return requestCapability(ctx, tcpClient.AppMeshClient,
 			appmesh.WorkflowRunCapabilityAudience, workflowID, runID, operations)
 	})
@@ -112,6 +113,11 @@ func main() {
 		return nil
 	}
 	svc.SetControlRefresh(controlRefresh)
+	// A superseded Engine cannot heal by refreshing; exit so the daemon restarts it.
+	svc.SetFatalHandler(func(reason string) {
+		logger.Error("Engine exiting for restart: " + reason)
+		os.Exit(1)
+	})
 
 	taskHandler, taskErr := api.NewTaskHandler(svc, svc.Wdir(), tcpClient.AppMeshClient, engineOption)
 	if taskErr != nil {
@@ -152,7 +158,8 @@ func main() {
 	svc.Run(ctx)
 }
 
-func requestCapability(ctx context.Context, client *appmesh.AppMeshClient, audience, workflowID, runID string, operations []string) (appmesh.WorkflowCapability, error) {
+func requestCapability(ctx context.Context, client *appmesh.AppMeshClient, audience, workflowID, runID string,
+	operations []string) (appmesh.WorkflowCapability, error) {
 	capability, err := client.RequestWorkflowCapabilityContext(ctx, appmesh.WorkflowCapabilityRequest{
 		Audience:   audience,
 		Workflow:   workflowID,
@@ -172,8 +179,8 @@ func requestCapability(ctx context.Context, client *appmesh.AppMeshClient, audie
 
 func newEngineOption(server, token string) appmesh.Option {
 	option := appmesh.Option{
-		AppMeshUri: server,
-		JwtToken:   token,
+		AppMeshURI: server,
+		JWTToken:   token,
 	}
 	tlsconf.Apply(&option)
 	return option

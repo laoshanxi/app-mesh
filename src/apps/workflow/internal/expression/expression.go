@@ -1,14 +1,20 @@
 package expression
 
 import (
+	"encoding/json"
+	"errors"
 	"fmt"
 	"regexp"
 	"strconv"
 	"strings"
 	"sync"
+
+	"github.com/laoshanxi/app-mesh/src/apps/workflow/internal/logger"
+	"github.com/laoshanxi/app-mesh/src/apps/workflow/internal/models"
 )
 
 var exprPattern = regexp.MustCompile(`\$\{\{\s*(.+?)\s*\}\}`)
+var toJSONPattern = regexp.MustCompile(`^toJSON\((.+)\)$`)
 
 // Context holds runtime state for expression evaluation. Thread-safe.
 type Context struct {
@@ -17,10 +23,13 @@ type Context struct {
 	Jobs         map[string]map[string]any
 	JobStatuses  map[string]string
 	finallySteps map[string]bool // steps in finally section (excluded from success()/failure())
+	messageSteps map[string]bool // message steps, for the plain-text outputs miss check
 	WfName       string
 	WfRunID      string
 	Inputs       map[string]string
 	Env          map[string]string
+	// Strict fails unresolved value substitution instead of embedding it; set before the run starts.
+	Strict bool
 }
 
 func NewContext() *Context {
@@ -29,6 +38,7 @@ func NewContext() *Context {
 		Jobs:         make(map[string]map[string]any),
 		JobStatuses:  make(map[string]string),
 		finallySteps: make(map[string]bool),
+		messageSteps: make(map[string]bool),
 		Inputs:       make(map[string]string),
 		Env:          make(map[string]string),
 	}
@@ -42,10 +52,30 @@ func (c *Context) MarkFinallyStep(jobName, stepName string) {
 	c.finallySteps[jobName+"."+stepName] = true
 }
 
+// MarkMessageStep records a message step, so a later outputs.<key> reference to
+// one that completed without outputs (plain-text reply) fails with a clear error.
+func (c *Context) MarkMessageStep(jobName, stepName string) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.messageSteps[jobName+"."+stepName] = true
+}
+
+// MarkContinueOnError flags a failure tolerated by continue-on-error:
+// steps.<name>.status keeps the raw outcome, but success()/failure() treat
+// the step as non-failed (GitHub Actions conclusion semantics).
+func (c *Context) MarkContinueOnError(jobName, stepName string) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if s, ok := c.Steps[jobName+"."+stepName]; ok {
+		s["continue_on_error"] = true
+	}
+}
+
 // SetStepResult stores a step result scoped by job name.
 // Within YAML expressions, `steps.<name>` resolves against the caller-supplied jobName.
 // Cross-job references use `jobs.<job>.steps.<step>`.
-func (c *Context) SetStepResult(jobName, stepName, stdout string, exitCode int, status, response string, outputs map[string]string) {
+func (c *Context) SetStepResult(jobName, stepName, stdout string, exitCode int, status, response string,
+	outputs map[string]string) {
 	key := jobName + "." + stepName
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -89,17 +119,21 @@ func (c *Context) resolveUnsafe(path, jobName string) (any, bool) {
 			key := jobName + "." + parts[1]
 			s, ok := c.Steps[key]
 			if !ok {
-				return "", true
+				// An unknown step name must surface (literal kept / strict error),
+				// never silently substitute empty.
+				return nil, false
 			}
 			if parts[2] == "outputs" && len(parts) >= 4 {
 				if outs, ok := s["outputs"].(map[string]string); ok {
-					return outs[parts[3]], true
+					if v, ok := outs[parts[3]]; ok {
+						return v, true
+					}
 				}
-				return "", true
+				return nil, false
 			}
 			v, ok := s[parts[2]]
 			if !ok {
-				return "", true
+				return nil, false
 			}
 			return v, true
 		}
@@ -107,7 +141,7 @@ func (c *Context) resolveUnsafe(path, jobName string) (any, bool) {
 		if len(parts) >= 3 {
 			j, ok := c.Jobs[parts[1]]
 			if !ok {
-				return "", true
+				return nil, false
 			}
 			if parts[2] == "status" {
 				return j["status"], true
@@ -115,21 +149,28 @@ func (c *Context) resolveUnsafe(path, jobName string) (any, bool) {
 			if parts[2] == "steps" && len(parts) >= 5 {
 				stepsMap, ok := j["steps"].(map[string]map[string]any)
 				if !ok {
-					return "", true
+					return nil, false
 				}
 				step, ok := stepsMap[parts[3]]
 				if !ok {
-					return "", true
+					return nil, false
 				}
 				// Handle jobs.X.steps.Y.outputs.Z — drill into outputs map.
 				if parts[4] == "outputs" && len(parts) >= 6 {
 					if outs, ok := step["outputs"].(map[string]string); ok {
-						return outs[parts[5]], true
+						if v, ok := outs[parts[5]]; ok {
+							return v, true
+						}
 					}
-					return "", true
+					return nil, false
 				}
-				return step[parts[4]], true
+				v, ok := step[parts[4]]
+				if !ok {
+					return nil, false
+				}
+				return v, true
 			}
+			return nil, false
 		}
 	case "job":
 		if len(parts) == 2 && parts[1] == "status" {
@@ -189,24 +230,303 @@ func (c *Context) SnapshotJobSteps(jobName string) map[string]map[string]any {
 	return out
 }
 
-// Substitute replaces all ${{ expr }} in a string with resolved values.
+// Substitute replaces each ${{ expr }} with its value; unresolved ones warn
+// and stay literal (see SubstituteForJobChecked).
 func Substitute(template string, ctx *Context) string {
-	return SubstituteForJob(template, ctx, "")
+	s, _ := SubstituteForJobChecked(template, ctx, "")
+	return s
 }
 
 func SubstituteForJob(template string, ctx *Context, jobName string) string {
-	return exprPattern.ReplaceAllStringFunc(template, func(match string) string {
+	s, _ := SubstituteForJobChecked(template, ctx, jobName)
+	return s
+}
+
+// SubstituteForJobChecked returns an error on the first unresolved expression
+// when ctx.Strict; condition (if:) operands always stay lenient.
+func SubstituteForJobChecked(template string, ctx *Context, jobName string) (string, error) {
+	s, _, err := substituteChecked(template, ctx, jobName)
+	return s, err
+}
+
+// substituteChecked is SubstituteForJobChecked plus the first message-outputs miss (empty when none).
+func substituteChecked(template string, ctx *Context, jobName string) (string, string, error) {
+	var strictErr error
+	miss := ""
+	out := exprPattern.ReplaceAllStringFunc(template, func(match string) string {
 		inner := exprPattern.FindStringSubmatch(match)
 		if len(inner) < 2 {
 			return match
 		}
 		expr := strings.TrimSpace(inner[1])
-		val, ok := ctx.resolveForJob(expr, jobName)
+		resolved, ok := resolveExpr(expr, match, ctx, jobName)
 		if !ok {
+			if ctx.Strict {
+				if strictErr == nil {
+					strictErr = fmt.Errorf("unresolved expression %s", match)
+				}
+			} else if msg := messageOutputMiss(match, expr, ctx, jobName); msg != "" {
+				if miss == "" {
+					miss = msg
+				}
+			} else {
+				logger.Warn("expression: unresolved " + match + " embedded literally")
+			}
 			return match
 		}
-		return fmt.Sprintf("%v", val)
+		return resolved
 	})
+	if strictErr != nil {
+		return "", "", strictErr
+	}
+	return out, miss, nil
+}
+
+// SubstituteCommandText substitutes shell=false command text; like
+// SubstituteForCommand it fails on a message-outputs miss.
+func SubstituteCommandText(template string, ctx *Context, jobName string) (string, error) {
+	s, miss, err := substituteChecked(template, ctx, jobName)
+	if err == nil && miss != "" {
+		return "", errors.New(miss)
+	}
+	return s, err
+}
+
+// SubstituteForCommand rewrites every ${{ expr }} in a shell command into a
+// $WF_E<N> environment reference and returns the bindings for those variables.
+// Values then reach the shell only through the environment, so input like
+// "a; rm -rf /" can never inject shell syntax into the command text.
+// An expression inside a single-quoted span is the exception — the shell never
+// expands variables there — so it is substituted textually with single quotes
+// escaped (see emitExpr).
+func SubstituteForCommand(template string, ctx *Context, jobName string) (string, map[string]string, error) {
+	// $WF_E<N> is a reserved reference; if the command already uses one, a
+	// generated binding would shadow it. Fall back to direct substitution.
+	if strings.Contains(template, "$WF_E") {
+		s, miss, err := substituteChecked(template, ctx, jobName)
+		if err == nil && miss != "" {
+			return "", nil, errors.New(miss)
+		}
+		return s, nil, err
+	}
+	bindings := make(map[string]string)
+	byExpr := make(map[string]string)
+	var buildErr error
+	emitExpr := func(match, exprText string, inSingle bool) string {
+		resolved, ok := resolveExpr(exprText, match, ctx, jobName)
+		if !ok {
+			if ctx.Strict {
+				if buildErr == nil {
+					buildErr = fmt.Errorf("unresolved expression %s", match)
+				}
+			} else if msg := messageOutputMiss(match, exprText, ctx, jobName); msg != "" {
+				// Always an author mistake: fail the step, not the shell.
+				if buildErr == nil {
+					buildErr = errors.New(msg)
+				}
+			} else {
+				logger.Warn("expression: unresolved " + match + " embedded literally")
+			}
+			return match
+		}
+		if inSingle {
+			return strings.ReplaceAll(resolved, "'", `'\''`)
+		}
+		if ref, seen := byExpr[exprText]; seen {
+			return ref
+		}
+		ref := fmt.Sprintf("$WF_E%d", len(byExpr))
+		byExpr[exprText] = ref
+		bindings[ref[1:]] = resolved
+		return ref
+	}
+	// Expression spans are transparent to the quote state.
+	const exprOpen, exprClose = "${{", "}}"
+	var b strings.Builder
+	inSingle, inDouble := false, false
+	for i := 0; i < len(template); {
+		if strings.HasPrefix(template[i:], exprOpen) {
+			if rel := strings.Index(template[i:], exprClose); rel >= len(exprOpen) {
+				match := template[i : i+rel+len(exprClose)]
+				if exprText := strings.TrimSpace(template[i+len(exprOpen) : i+rel]); exprText != "" {
+					b.WriteString(emitExpr(match, exprText, inSingle))
+					i += len(match)
+					continue
+				}
+			}
+		}
+		switch template[i] {
+		case '\\':
+			b.WriteByte(template[i])
+			if !inSingle && i+1 < len(template) {
+				b.WriteByte(template[i+1])
+				i += 2
+				continue
+			}
+			i++
+		case '\'':
+			if !inDouble {
+				inSingle = !inSingle
+			}
+			b.WriteByte(template[i])
+			i++
+		case '"':
+			if !inSingle {
+				inDouble = !inDouble
+			}
+			b.WriteByte(template[i])
+			i++
+		default:
+			b.WriteByte(template[i])
+			i++
+		}
+	}
+	if buildErr != nil {
+		return "", nil, buildErr
+	}
+	out := b.String()
+	if len(bindings) == 0 {
+		return out, nil, nil
+	}
+	return out, bindings, nil
+}
+
+// SubstituteMessagePayload substitutes ${{ expr }} into a message-step payload.
+// A payload that is a JSON document substitutes with values JSON-escaped inside
+// string literals, so quotes or backslashes in an input cannot break the
+// document; any other payload substitutes textually (SubstituteForJobChecked).
+func SubstituteMessagePayload(template string, ctx *Context, jobName string) (string, error) {
+	if !json.Valid([]byte(template)) {
+		return SubstituteForJobChecked(template, ctx, jobName)
+	}
+
+	var strictErr error
+	const exprOpen, exprClose = "${{", "}}"
+	var b strings.Builder
+	inString := false
+	for i := 0; i < len(template); {
+		if strings.HasPrefix(template[i:], exprOpen) {
+			if rel := strings.Index(template[i:], exprClose); rel >= len(exprOpen) {
+				match := template[i : i+rel+len(exprClose)]
+				if exprText := strings.TrimSpace(template[i+len(exprOpen) : i+rel]); exprText != "" {
+					resolved, ok := resolveExpr(exprText, match, ctx, jobName)
+					if !ok {
+						if ctx.Strict {
+							if strictErr == nil {
+								strictErr = fmt.Errorf("unresolved expression %s", match)
+							}
+						} else {
+							logger.Warn("expression: unresolved " + match + " embedded literally")
+						}
+						b.WriteString(match)
+					} else if inString {
+						b.WriteString(jsonEscapeStringContent(resolved))
+					} else {
+						b.WriteString(resolved)
+					}
+					i += len(match)
+					continue
+				}
+			}
+		}
+		switch template[i] {
+		case '\\':
+			b.WriteByte(template[i])
+			if inString && i+1 < len(template) {
+				b.WriteByte(template[i+1])
+				i += 2
+				continue
+			}
+			i++
+		case '"':
+			inString = !inString
+			b.WriteByte(template[i])
+			i++
+		default:
+			b.WriteByte(template[i])
+			i++
+		}
+	}
+	if strictErr != nil {
+		return "", strictErr
+	}
+	return b.String(), nil
+}
+
+// jsonEscapeStringContent renders s as the body of a JSON string literal.
+func jsonEscapeStringContent(s string) string {
+	var b strings.Builder
+	enc := json.NewEncoder(&b)
+	enc.SetEscapeHTML(false)
+	if err := enc.Encode(s); err != nil {
+		return s
+	}
+	out := strings.TrimSuffix(b.String(), "\n")
+	return out[1 : len(out)-1]
+}
+
+// messageOutputMiss reports an outputs reference at a completed message step
+// with no outputs (its App replied in plain text). Empty for anything else.
+func messageOutputMiss(match, expr string, ctx *Context, jobName string) string {
+	path := expr
+	if m := toJSONPattern.FindStringSubmatch(expr); m != nil {
+		path = strings.TrimSpace(m[1])
+	}
+	parts := strings.Split(path, ".")
+	var stepKey, stepID string
+	switch {
+	case parts[0] == "steps" && len(parts) == 4 && parts[2] == "outputs":
+		stepKey, stepID = jobName+"."+parts[1], parts[1]
+	case parts[0] == "jobs" && len(parts) == 6 && parts[2] == "steps" && parts[4] == "outputs":
+		stepKey, stepID = parts[1]+"."+parts[3], parts[3]
+	default:
+		return ""
+	}
+	ctx.mu.RLock()
+	defer ctx.mu.RUnlock()
+	if !ctx.messageSteps[stepKey] {
+		return ""
+	}
+	s, ok := ctx.Steps[stepKey]
+	// Only a completed step qualifies; a skipped or failed one is already reported.
+	if !ok || s["status"] != models.StatusSuccess {
+		return ""
+	}
+	if outs, ok := s["outputs"].(map[string]string); ok && len(outs) > 0 {
+		return ""
+	}
+	return fmt.Sprintf("unresolved expression %s: message step %q produced no answer "+
+		"(plain-text responders expose stdout)", match, stepID)
+}
+
+// resolveExpr renders one expression; ok is false when its path is unresolved.
+// toJSON(path) emits a quoted JSON literal so values cannot break the document.
+func resolveExpr(expr, orig string, ctx *Context, jobName string) (string, bool) {
+	if m := toJSONPattern.FindStringSubmatch(expr); m != nil {
+		val, ok := ctx.resolveForJob(strings.TrimSpace(m[1]), jobName)
+		if !ok {
+			return "", false
+		}
+		if enc, err := json.Marshal(val); err == nil {
+			return string(enc), true
+		}
+		return orig, true
+	}
+	val, ok := ctx.resolveForJob(expr, jobName)
+	if !ok {
+		return "", false
+	}
+	return fmt.Sprintf("%v", val), true
+}
+
+// substituteExpr renders one condition operand; unresolved ones warn and stay literal.
+func substituteExpr(expr string, ctx *Context, jobName, orig string) string {
+	resolved, ok := resolveExpr(expr, orig, ctx, jobName)
+	if !ok {
+		logger.Warn("expression: unresolved " + orig + " embedded literally")
+		return orig
+	}
+	return resolved
 }
 
 func EvalConditionForJob(expr string, ctx *Context, jobName string) bool {
@@ -226,6 +546,23 @@ func evalCondition(expr string, ctx *Context, jobName string, status *statusFunc
 	expr = strings.TrimSpace(expr)
 	if expr == "" {
 		return true
+	}
+
+	// Unwrap ${{ }} to its inner expression text so operators inside the
+	// braces take effect (GitHub Actions semantics). The braces hold
+	// author-written YAML text, not an interpolated value, so this adds no
+	// operator injection.
+	if strings.Contains(expr, "${{") {
+		expr = exprPattern.ReplaceAllStringFunc(expr, func(match string) string {
+			if inner := exprPattern.FindStringSubmatch(match); len(inner) == 2 {
+				return strings.TrimSpace(inner[1])
+			}
+			return match
+		})
+		expr = strings.TrimSpace(expr)
+		if expr == "" {
+			return true
+		}
 	}
 
 	switch expr {
@@ -275,11 +612,7 @@ func substituteInline(expr string, ctx *Context, jobName string) string {
 		if len(inner) < 2 {
 			return match
 		}
-		val, ok := ctx.resolveForJob(strings.TrimSpace(inner[1]), jobName)
-		if !ok {
-			return match
-		}
-		return fmt.Sprintf("%v", val)
+		return substituteExpr(strings.TrimSpace(inner[1]), ctx, jobName, match)
 	})
 }
 
@@ -294,7 +627,7 @@ func allStepsSucceeded(ctx *Context, jobName string) bool {
 		if ctx.finallySteps[key] {
 			continue // finally steps don't count toward job success/failure
 		}
-		if s["status"] == "failure" {
+		if s["status"] == "failure" && s["continue_on_error"] != true {
 			return false
 		}
 	}

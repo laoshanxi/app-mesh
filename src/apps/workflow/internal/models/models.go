@@ -1,5 +1,7 @@
 package models
 
+import "fmt"
+
 // StepType identifies what kind of step this is.
 type StepType int
 
@@ -42,6 +44,10 @@ type StepResult struct {
 	Response string
 	Outputs  map[string]string
 	Duration float64
+	// StreamedLog marks a step whose full stdout was already streamed to the
+	// step log file; the Stdout field is capped for expression contexts and
+	// must not overwrite that archive.
+	StreamedLog bool
 }
 
 type Step struct {
@@ -89,10 +95,10 @@ type ScheduleTrigger struct {
 }
 
 type InputParam struct {
-	Type        string      `yaml:"type"`
-	Required    bool        `yaml:"required,omitempty"`
-	Default     interface{} `yaml:"default,omitempty"`
-	Description string      `yaml:"description,omitempty"`
+	Type        string      `yaml:"type" json:"type"`
+	Required    bool        `yaml:"required,omitempty" json:"required"`
+	Default     interface{} `yaml:"default,omitempty" json:"default"`
+	Description string      `yaml:"description,omitempty" json:"description"`
 }
 
 type OutputParam struct {
@@ -100,10 +106,13 @@ type OutputParam struct {
 }
 
 type TriggerConfig struct {
-	AppEvent     *TriggerAppEvent     `yaml:"app_event,omitempty"`
-	Schedule     []ScheduleTrigger    `yaml:"schedule,omitempty"`
-	Manual       *ManualTrigger       `yaml:"manual,omitempty"`
-	WorkflowCall *WorkflowCallTrigger `yaml:"workflow_call,omitempty"`
+	AppEvent *TriggerAppEvent  `yaml:"app_event,omitempty"`
+	Schedule []ScheduleTrigger `yaml:"schedule,omitempty"`
+	Manual   *ManualTrigger    `yaml:"manual,omitempty"`
+	// WorkflowDispatch is GitHub Actions' spelling of a manual trigger; the
+	// parser normalizes it to Manual so GA-style definitions register as-is.
+	WorkflowDispatch *ManualTrigger       `yaml:"workflow_dispatch,omitempty"`
+	WorkflowCall     *WorkflowCallTrigger `yaml:"workflow_call,omitempty"`
 }
 
 type ManualTrigger struct {
@@ -128,5 +137,40 @@ type Workflow struct {
 	Concurrency *ConcurrencyConfig `yaml:"concurrency,omitempty"`
 	Env         map[string]string  `yaml:"env,omitempty"`
 	SecretEnv   map[string]string  `yaml:"secret_env,omitempty"`
-	Jobs        map[string]*Job    `yaml:"jobs"`
+	// Unresolved ${{ }} fail the step instead of embedding literally.
+	StrictExpressions bool            `yaml:"strict_expressions,omitempty"`
+	Jobs              map[string]*Job `yaml:"jobs"`
+}
+
+// ApplyInputDefaults merges the workflow_call and manual input definitions
+// (manual wins on key collision), applies defaults, and rejects a missing
+// required input (rejected at dispatch for manual runs, at run start otherwise).
+func ApplyInputDefaults(wf *Workflow, inputs map[string]string) (map[string]string, error) {
+	if inputs == nil {
+		inputs = make(map[string]string)
+	}
+	if wf.On == nil {
+		return inputs, nil
+	}
+	inputDefs := make(map[string]InputParam)
+	if wf.On.WorkflowCall != nil {
+		for k, v := range wf.On.WorkflowCall.Inputs {
+			inputDefs[k] = v
+		}
+	}
+	if wf.On.Manual != nil {
+		for k, v := range wf.On.Manual.Inputs {
+			inputDefs[k] = v
+		}
+	}
+	for k, def := range inputDefs {
+		if _, ok := inputs[k]; !ok {
+			if def.Default != nil {
+				inputs[k] = fmt.Sprintf("%v", def.Default)
+			} else if def.Required {
+				return nil, fmt.Errorf("required input %q not provided", k)
+			}
+		}
+	}
+	return inputs, nil
 }
