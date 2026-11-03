@@ -226,6 +226,9 @@ std::shared_ptr<WSSessionInfo> WebSocketService::getSessionInfo(struct lws *wsi)
     ssnInfo->ext_x_file_mode = grabCustom("X-File-Mode");
     ssnInfo->ext_x_file_user = grabCustom("X-File-User");
     ssnInfo->ext_x_file_group = grabCustom("X-File-Group");
+    // Forwarding target of the shared worker pipeline; a /ws transfer with a
+    // target host belongs to that node, not this one.
+    ssnInfo->ext_target_host = grabCustom("X-Target-Host");
 
     return ssnInfo;
 }
@@ -512,6 +515,25 @@ int WebSocketService::handleHttpCallback(struct lws *wsi, enum lws_callback_reas
         // 1. File download
         if (ssnInfo->method == "GET" && ssnInfo->path == "/appmesh/file/download/ws" && !ssnInfo->ext_x_file_path.empty())
         {
+            // A forwarded transfer belongs to the target node: hand it to the
+            // shared worker pipeline under the canonical path (the target REST
+            // layer knows no /ws route), so this node never serves the file itself.
+            if (!ssnInfo->ext_target_host.empty() && pss)
+            {
+                pss->http_request = buildHttpRequest(wsi);
+                pss->http_request->request_uri = "/appmesh/file/download";
+                auto serialized = pss->http_request->serialize();
+                WSRequest ws_req;
+                ws_req.m_type = WSRequest::Type::HttpMessage;
+                ws_req.m_session_ref = wsi;
+                ws_req.m_payload.assign(serialized.begin(), serialized.end());
+                ws_req.m_req_id = m_next_request_id.fetch_add(1);
+                ws_req.m_session_id = ws_req.m_req_id;
+                pss->req_id = ws_req.m_req_id;
+                enqueueIncomingRequest(std::move(ws_req));
+                pss->http_pending = true;
+                return 0;
+            }
             try
             {
                 const auto principal = Security::authenticateBearerAuthorization(ssnInfo->authorization);
@@ -536,6 +558,16 @@ int WebSocketService::handleHttpCallback(struct lws *wsi, enum lws_callback_reas
         // 2. File upload setup
         if (ssnInfo->method == "POST" && ssnInfo->path == "/appmesh/file/upload/ws" && !ssnInfo->ext_x_file_path.empty())
         {
+            // A forwarded transfer belongs to the target node: hand it to the
+            // shared worker pipeline under the canonical path; the body arrives
+            // through the generic HTTP_BODY path and is enqueued on completion.
+            if (!ssnInfo->ext_target_host.empty() && pss)
+            {
+                pss->http_request = buildHttpRequest(wsi);
+                pss->http_request->request_uri = "/appmesh/file/upload";
+                pss->http_pending = true;
+                return 0;
+            }
             try
             {
                 const auto principal = Security::authenticateBearerAuthorization(ssnInfo->authorization);

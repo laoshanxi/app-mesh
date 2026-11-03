@@ -164,6 +164,8 @@ constexpr size_t TCP_CHUNK_BLOCK_SIZE = 16 * 1024 - 256; // Chunk block size 16K
 constexpr size_t TCP_MAX_BLOCK_SIZE = 2UL * 1024 * 1024 * 1024; // Maximum allowed block size: 2 GB (file transfer)
 constexpr size_t TCP_MAX_RECV_MSG_SIZE = 200 * 1024 * 1024;    // Maximum single non-file TCP message: 200 MB (DoS protection)
 constexpr size_t MAX_HTTP_BODY_SIZE = 128 * 1024 * 1024;       // Maximum HTTP body size: 128 MB
+constexpr size_t MAX_UPLOAD_SIZE =
+	2ULL * 1024 * 1024 * 1024; // Largest file transfer (HTTPS streaming and TCP socket upload)
 constexpr auto TCP_SSL_VERSION_LIST = "tlsv1.2,tlsv1.3";
 
 #define DEFAULT_LABEL_HOST_NAME "HOST_NAME"
@@ -413,6 +415,7 @@ public:
 #define HTTP_HEADER_KEY_file_mode "X-File-Mode"
 #define HTTP_HEADER_KEY_file_user "X-File-User"
 #define HTTP_HEADER_KEY_file_group "X-File-Group"
+#define HTTP_HEADER_KEY_file_overwrite "X-File-Overwrite"
 #define HTTP_HEADER_KEY_X_Send_File_Socket "X-Send-File-Socket"
 #define HTTP_HEADER_KEY_X_Recv_File_Socket "X-Recv-File-Socket"
 #define HTTP_HEADER_KEY_Forwarding_Host "X-Target-Host"
@@ -452,6 +455,7 @@ public:
 #define PERMISSION_KEY_run_task "app-run-task"
 #define PERMISSION_KEY_file_download "file-download"
 #define PERMISSION_KEY_file_upload "file-upload"
+#define PERMISSION_KEY_file_delete "file-delete"
 #define PERMISSION_KEY_label_view "label-view"
 #define PERMISSION_KEY_label_set "label-set"
 #define PERMISSION_KEY_label_delete "label-delete"

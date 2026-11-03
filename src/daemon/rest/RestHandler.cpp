@@ -3,6 +3,7 @@
 #include <cctype>
 #include <chrono>
 #include <cstdio>
+#include <fstream>
 #include <set>
 
 #include <boost/algorithm/string_regex.hpp>
@@ -21,6 +22,7 @@
 #include "../security/Security.h"
 #include "../../common/lwsservice/WebSocketService.h"
 #include "EventDispatcher.h"
+#include "FileTransferHandler.h"
 #include "HttpRequest.h"
 #include "PrometheusRest.h"
 #include "RestHandler.h"
@@ -149,6 +151,7 @@ constexpr auto REST_PATH_APP_TASK = R"(/appmesh/app/([^/\*]+)/task)";
 // 6. File Management
 constexpr auto REST_PATH_FILE_DOWNLOAD = "/appmesh/file/download";
 constexpr auto REST_PATH_FILE_UPLOAD = "/appmesh/file/upload";
+constexpr auto REST_PATH_FILE_DELETE = "/appmesh/file/delete";
 
 // 7. Label Management
 constexpr auto REST_PATH_LABEL_VIEW_ALL = "/appmesh/labels";
@@ -222,6 +225,7 @@ RestHandler::RestHandler() : m_metrics(std::make_shared<PrometheusRest>())
 	// 6. File Management
 	bindRestMethod(web::http::methods::GET, REST_PATH_FILE_DOWNLOAD, std::bind(&RestHandler::apiFileDownload, this, std::placeholders::_1));
 	bindRestMethod(web::http::methods::POST, REST_PATH_FILE_UPLOAD, std::bind(&RestHandler::apiFileUpload, this, std::placeholders::_1));
+	bindRestMethod(web::http::methods::DEL, REST_PATH_FILE_DELETE, std::bind(&RestHandler::apiFileDelete, this, std::placeholders::_1));
 
 	// 7. Label Management
 	bindRestMethod(web::http::methods::GET, REST_PATH_LABEL_VIEW_ALL, std::bind(&RestHandler::apiLabelsView, this, std::placeholders::_1));
@@ -767,12 +771,37 @@ void RestHandler::apiFileDownload(const std::shared_ptr<HttpRequest> &message)
 		LOG_DBG << fname << "Download file from socket";
 		headers[HTTP_HEADER_KEY_X_Recv_File_Socket] = Utility::encode64(file);
 		body = Utility::text2json("Please recieve file from socket");
+		message->reply(web::http::status_codes::OK, body, headers);
+		return;
 	}
-	else
+	if (0 == message->m_headers.count(HTTP_HEADER_KEY_APPMESH_FORWARDED))
 	{
 		// WebSocket clients reuse their original Dex bearer; never echo it in a response.
+		message->reply(web::http::status_codes::OK, body, headers);
+		return;
 	}
-	message->reply(web::http::status_codes::OK, body, headers);
+
+	// A forwarded request has no socket to stream on: the file content is the
+	// response body (bounded; larger files need a streaming surface).
+	boost::system::error_code ec;
+	const auto fileSize = fs::file_size(file, ec);
+	if (ec || fileSize > MAX_HTTP_BODY_SIZE)
+	{
+		message->reply(web::http::status_codes::RequestEntityTooLarge,
+					   Utility::text2json("file is too large for the buffered download surface"));
+		return;
+	}
+	std::vector<std::uint8_t> content(fileSize);
+	{
+		std::ifstream input(file, std::ios::binary);
+		if (!input.is_open() || !input.read(reinterpret_cast<char *>(content.data()), static_cast<std::streamsize>(fileSize)))
+		{
+			message->reply(web::http::status_codes::InternalError, Utility::text2json("failed to read file"));
+			return;
+		}
+	}
+	message->reply(message->m_relative_uri, message->m_uuid, content, headers, web::http::status_codes::OK,
+				   web::http::mime_types::application_octetstream);
 }
 
 void RestHandler::apiFileUpload(const std::shared_ptr<HttpRequest> &message)
@@ -791,9 +820,18 @@ void RestHandler::apiFileUpload(const std::shared_ptr<HttpRequest> &message)
 		return;
 	}
 
-	if (Utility::isFileExist(file))
+	boost::system::error_code pathEc;
+	if (fs::is_directory(file, pathEc))
 	{
-		message->reply(web::http::status_codes::Forbidden, Utility::text2json("file already exist"));
+		message->reply(web::http::status_codes::BadRequest, Utility::text2json("destination is a directory"));
+		return;
+	}
+
+	const auto overwrite = message->m_headers.count(HTTP_HEADER_KEY_file_overwrite) != 0 &&
+						   message->m_headers.find(HTTP_HEADER_KEY_file_overwrite)->second == "true";
+	if (!overwrite && Utility::isFileExist(file))
+	{
+		message->reply(web::http::status_codes::Conflict, Utility::text2json("file already exist"));
 		return;
 	}
 
@@ -806,14 +844,84 @@ void RestHandler::apiFileUpload(const std::shared_ptr<HttpRequest> &message)
 		LOG_DBG << fname << "Upload file from socket";
 		headers[HTTP_HEADER_KEY_X_Send_File_Socket] = Utility::encode64(file);
 		body = Utility::text2json("Please send file from socket");
+		message->reply(web::http::status_codes::OK, body, headers);
+	}
+	else if (message->m_body && !message->m_body->empty())
+	{
+		// The payload rides in the request body (a forwarded or envelope upload);
+		// the socket arm above is the agent/TCP-SDK streaming path.
+		if (message->m_body->size() > MAX_UPLOAD_SIZE)
+			throw std::invalid_argument("upload exceeds the size limit");
+		const auto tempFile = file + "." + Utility::shortID() + ".part";
+		FileUploadInfo upload(file, tempFile, message->m_headers, overwrite);
+		if (!upload.m_file.is_open())
+			throw std::runtime_error("failed to create the upload file");
+		upload.m_file.write(reinterpret_cast<const char *>(message->m_body->data()),
+							static_cast<std::streamsize>(message->m_body->size()));
+		if (!upload.m_file.good())
+			throw std::runtime_error("failed to write the upload file");
+		upload.m_file.flush();
+		upload.m_file.close();
+		// rename() replaces the destination atomically; the no-overwrite case
+		// was guarded by the isFileExist precheck above.
+		if (std::rename(tempFile.c_str(), file.c_str()) != 0)
+		{
+			Utility::removeFile(tempFile);
+			throw std::runtime_error("failed to publish the upload file");
+		}
+		upload.m_committed = true;
+		Utility::applyFilePermission(file, message->m_headers);
+		LOG_INF << fname << "File uploaded successfully: " << file << " (" << message->m_body->size() << " bytes)";
+		nlohmann::json respJson;
+		respJson["status"] = "success";
+		respJson["file"] = fs::path(file).filename().string();
+		respJson["size"] = message->m_body->size();
+		message->reply(web::http::status_codes::OK, respJson);
+		return;
 	}
 	else
 	{
 		// WebSocket clients reuse their original Dex bearer; never echo it in a response.
+		message->reply(web::http::status_codes::OK, body, headers);
 	}
-	message->reply(web::http::status_codes::OK, body, headers);
 	// set permission
 	Utility::applyFilePermission(file, message->m_headers);
+}
+
+void RestHandler::apiFileDelete(const std::shared_ptr<HttpRequest> &message)
+{
+	const static char fname[] = "RestHandler::apiFileDelete() ";
+	permissionCheck(message, PERMISSION_KEY_file_delete);
+	if (0 == message->m_headers.count(HTTP_HEADER_KEY_file_path))
+	{
+		message->reply(web::http::status_codes::BadRequest, Utility::text2json("header 'X-File-Path' not found"));
+		return;
+	}
+	const auto file = Utility::decodeHeaderFilePath(message->m_headers.find(HTTP_HEADER_KEY_file_path)->second);
+	if (!Utility::validateFilePath(file, Configuration::instance()->getFileAllowedBaseDir()))
+	{
+		message->reply(web::http::status_codes::Forbidden, Utility::text2json("File path is not allowed"));
+		return;
+	}
+
+	boost::system::error_code ec;
+	if (fs::is_symlink(file, ec))
+	{
+		message->reply(web::http::status_codes::BadRequest, Utility::text2json("symlinks not allowed"));
+		return;
+	}
+	if (!fs::is_regular_file(file, ec))
+	{
+		message->reply(web::http::status_codes::NotFound, Utility::text2json("file not found"));
+		return;
+	}
+	if (!fs::remove(file, ec))
+	{
+		message->reply(web::http::status_codes::InternalError, Utility::text2json("failed to remove the file"));
+		return;
+	}
+	LOG_INF << fname << "File deleted: " << file;
+	message->reply(web::http::status_codes::OK, Utility::text2json("success"));
 }
 
 void RestHandler::apiLabelsView(const std::shared_ptr<HttpRequest> &message)

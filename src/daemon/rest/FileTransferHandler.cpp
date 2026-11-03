@@ -59,7 +59,9 @@ void FileTransferHandler::prepareTransfer(std::unique_ptr<Response> &resp, int c
 		// Temp file lives in the destination's own directory (append a unique suffix to the
 		// full path) so the final rename stays on the same filesystem and is atomic.
 		const auto tempName = fileName + "." + Utility::shortID() + ".part";
-		auto uploadInfo = std::make_unique<FileUploadInfo>(fileName, tempName, resp->file_upload_request_headers);
+		const auto overwrite = resp->file_upload_request_headers.count(HTTP_HEADER_KEY_file_overwrite) != 0 &&
+							   resp->file_upload_request_headers.find(HTTP_HEADER_KEY_file_overwrite)->second == "true";
+		auto uploadInfo = std::make_unique<FileUploadInfo>(fileName, tempName, resp->file_upload_request_headers, overwrite);
 		if (!uploadInfo->m_file.is_open())
 		{
 			auto msg = Utility::text2json("Failed open file").dump();
@@ -148,9 +150,16 @@ void FileTransferHandler::recvNextUploadChunk(std::vector<std::uint8_t> &data, i
 		// dtor removes the temp and the destination is left untouched.
 		const auto dst = m_pendingUpload->m_filePath;
 		const auto tmp = m_pendingUpload->m_tempPath;
+		const auto overwrite = m_pendingUpload->m_overwrite;
 		m_pendingUpload->m_file.flush();
 		m_pendingUpload->m_file.close();
-		if (std::rename(tmp.c_str(), dst.c_str()) == 0)
+		// rename() replaces the destination; without the overwrite flag a
+		// destination created after the precheck must not be silently replaced.
+		if (!overwrite && Utility::isFileExist(dst))
+		{
+			LOG_ERR << fname << "Destination already exists at commit time | ClientID=" << clientId << " | Destination=" << dst;
+		}
+		else if (std::rename(tmp.c_str(), dst.c_str()) == 0)
 		{
 			m_pendingUpload->m_committed = true; // already in place; dtor must not remove it
 			Utility::applyFilePermission(dst, m_pendingUpload->m_requestHeaders);

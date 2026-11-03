@@ -19,8 +19,10 @@ struct FileUploadInfo
 	// Stream bytes into a temp file in the SAME directory as the destination, then
 	// atomically rename it into place on success (same directory => same filesystem,
 	// so rename is atomic). The destination only ever appears as a complete file.
-	FileUploadInfo(const std::string &uploadFilePath, const std::string &tempFilePath, const HttpHeaderMap &requestHeaders)
-		: m_filePath(uploadFilePath), m_tempPath(tempFilePath), m_requestHeaders(requestHeaders),
+	// overwrite=true publishes by rename, replacing an existing destination.
+	FileUploadInfo(const std::string &uploadFilePath, const std::string &tempFilePath,
+				   const HttpHeaderMap &requestHeaders, bool overwrite = false)
+		: m_filePath(uploadFilePath), m_tempPath(tempFilePath), m_requestHeaders(requestHeaders), m_overwrite(overwrite),
 		  m_file(tempFilePath, std::ios::binary | std::ios::out | std::ios::trunc)
 	{
 	}
@@ -39,6 +41,7 @@ struct FileUploadInfo
 	std::string m_filePath;
 	std::string m_tempPath;
 	HttpHeaderMap m_requestHeaders;
+	bool m_overwrite = false;
 	std::ofstream m_file;
 	bool m_committed = false;
 };
