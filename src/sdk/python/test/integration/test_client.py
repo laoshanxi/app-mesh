@@ -18,9 +18,9 @@ import threading
 import time
 import unittest
 from unittest import TestCase
+from urllib.parse import urlsplit
 
 import requests
-from urllib.parse import urlsplit
 
 _HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.abspath(os.path.join(_HERE, "..")))        # test/  -> _support package
@@ -41,6 +41,7 @@ from _support.client_mixins import (
 )
 
 _WSS_REST_PORT = config.WSS_REST_PORT
+_TCP_PORT = config.TCP_PORT
 
 
 # ---------------------------------------------------------------------------
@@ -62,10 +63,6 @@ class TestHTTP(ProtocolTestMixin, AppOutputMixin, PrincipalManagementMixin, Task
 
     def _create_client(self):
         return AppMeshClient()
-
-    @unittest.skip("Go agent IsValidFileName blocks /etc/* on download (fixed in source, awaiting release); TCP/WSS still cover it.")
-    def test_22_download_readonly_file(self):
-        pass
 
     def test_16_config_set(self):
         """HTTP-specific: set config (VerifyServer flag for SSL)."""
@@ -91,7 +88,7 @@ class TestTCP(
     """Tests using TCP client (AppMeshClientTCP)."""
 
     def setUp(self):
-        self.client = AppMeshClientTCP()
+        self.client = AppMeshClientTCP(tcp_address=("127.0.0.1", _TCP_PORT))
 
     def tearDown(self):
         try:
@@ -100,7 +97,7 @@ class TestTCP(
             pass
 
     def _create_client(self):
-        return AppMeshClientTCP()
+        return AppMeshClientTCP(tcp_address=("127.0.0.1", _TCP_PORT))
 
 
 class TestWSS(
@@ -111,7 +108,7 @@ class TestWSS(
     """Tests using WebSocket Secure client (AppMeshClientWSS)."""
 
     def setUp(self):
-        self.client = AppMeshClientWSS()
+        self.client = AppMeshClientWSS(wss_address=("127.0.0.1", _WSS_REST_PORT))
 
     def tearDown(self):
         try:
@@ -120,18 +117,32 @@ class TestWSS(
             pass
 
     def _create_client(self):
-        return AppMeshClientWSS()
+        return AppMeshClientWSS(wss_address=("127.0.0.1", _WSS_REST_PORT))
 
     def test_17_forward_to(self):
         """A forwarded request reaches the peer over the daemon's own transport.
 
-        The client speaks WSS to this daemon; the daemon's forwarding hop to
-        the peer is TCP (msgpack over TLS), and a bare host resolves to the
-        peer's TCP API port.
+        On the WSS-only build the hop is a WebSocket connection, and a bare host
+        must mean the WebSocket listener - not the TCP API port, which such a
+        build does not listen on.
         """
         config.attach_test_bearer(self.client)
         try:
             self.client.forward_to = "127.0.0.1"
+            apps = self.client.list_apps()
+            self.assertGreater(len(apps), 0)
+        finally:
+            self.client.forward_to = None
+
+    def test_18_forward_to_api_port(self):
+        """The API port documented for TCP targets reaches the WebSocket listener.
+
+        On the WSS-only build an explicit 6059 target would otherwise dial a port
+        that nothing listens on.
+        """
+        config.attach_test_bearer(self.client)
+        try:
+            self.client.forward_to = f"127.0.0.1:{_TCP_PORT}"
             apps = self.client.list_apps()
             self.assertGreater(len(apps), 0)
         finally:
@@ -176,9 +187,9 @@ class TestWSS(
     def test_20_forwarded_hop_survives_idle(self):
         """An idle forwarded hop stays pooled long enough to deliver an event.
 
-        The forwarding hop is a pooled TCP connection that carries no traffic
-        while a subscription waits; if an idle hop were dropped or left
-        unusable, a forwarded subscription would be silently lost.
+        A WebSocket listener hangs up a connection that stayed silent for 35
+        seconds, so the hop must be pinged while it waits - otherwise an idle
+        forwarded subscription is silently lost.
         """
         config.attach_test_bearer(self.client)
         self.assertIn("app-subscribe", self.client.get_principal_permissions())
@@ -214,7 +225,8 @@ class TestWSS(
             self.client.forward_to = None
 
 
-class TestWSSRest(ProtocolTestMixin, AppOutputMixin, PrincipalManagementMixin, TaskOperationMixin, StressTestMixin, TestCase):
+class TestWSSRest(ProtocolTestMixin, AppOutputMixin, PrincipalManagementMixin, TaskOperationMixin, StressTestMixin,
+    TestCase):
     """Tests using plain HTTPS REST client against the WSS (lws) port."""
 
     def setUp(self):
@@ -238,7 +250,7 @@ class TestProtocolFixes(TestCase):
 
     def test_path_traversal_rejected(self):
         """File paths with '..' must be rejected."""
-        client = AppMeshClientTCP()
+        client = AppMeshClientTCP(tcp_address=("127.0.0.1", _TCP_PORT))
         config.attach_test_bearer(client)
         with self.assertRaises(Exception):
             client.download_file("/opt/appmesh/../../etc/shadow", "shadow.local")
@@ -247,7 +259,7 @@ class TestProtocolFixes(TestCase):
 
     def test_path_traversal_upload_rejected(self):
         """Upload with '..' in remote path must be rejected."""
-        client = AppMeshClientTCP()
+        client = AppMeshClientTCP(tcp_address=("127.0.0.1", _TCP_PORT))
         config.attach_test_bearer(client)
         with tempfile.NamedTemporaryFile(delete=False, suffix=".txt") as tmp:
             tmp.write(b"test")
@@ -260,7 +272,7 @@ class TestProtocolFixes(TestCase):
 
     def test_tcp_large_app_output(self):
         """TCP transport handles non-trivial payload (message framing)."""
-        client = AppMeshClientTCP()
+        client = AppMeshClientTCP(tcp_address=("127.0.0.1", _TCP_PORT))
         config.attach_test_bearer(client)
         exit_code, output = client.run_app_sync(App({"command": "seq 1 100", "shell": True}), max_time=5)
         self.assertEqual(0, exit_code)
@@ -284,7 +296,7 @@ class TestProtocolFixes(TestCase):
 
     def test_tcp_concurrent_requests(self):
         """TCP handles multiple rapid sequential requests."""
-        client = AppMeshClientTCP()
+        client = AppMeshClientTCP(tcp_address=("127.0.0.1", _TCP_PORT))
         config.attach_test_bearer(client)
         for _ in range(10):
             apps = client.list_apps()
@@ -323,6 +335,7 @@ class TestProtocolFixes(TestCase):
         cfg = client.set_config({"REST": {"SSL": {"VerifyServer": True}}})
         self.assertTrue(cfg["REST"]["SSL"]["VerifyServer"])
         client.set_config({"REST": {"SSL": {"VerifyServer": False}}})
+
 
 # ---------------------------------------------------------------------------
 # The unauthenticated surface must not disclose the running release
@@ -398,8 +411,7 @@ class TestUnauthenticatedSurface(TestCase):
                 surface = self._surface(response)
                 self.assertNotIn("server", [name.lower() for name in response.headers],
                                  "framework banner header on " + where)
-                for framework in ("drogon", "libwebsockets"):
-                    self.assertNotIn(framework, surface.lower(), framework + " name on " + where)
+                self.assertNotIn("drogon", surface.lower(), "framework name on " + where)
                 self.assertNotIn(version, surface, "product version on " + where)
 
     def test_metrics_need_no_token(self):

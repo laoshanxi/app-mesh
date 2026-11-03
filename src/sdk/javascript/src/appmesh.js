@@ -113,9 +113,7 @@ function parseDuration(duration) {
   const datePattern = `(${numbers}Y)?(${numbers}M)?(${numbers}W)?(${numbers}D)?`;
   const timePattern = `T(${fractionalNumbers}H)?(${fractionalNumbers}M)?(${fractionalNumbers}S)?`;
   const iso8601 = `P(?:${datePattern}(?:${timePattern})?)`;
-  const objMap = [
-    "years", "months", "weeks", "days", "hours", "minutes", "seconds",
-  ];
+  const objMap = ["years", "months", "weeks", "days", "hours", "minutes", "seconds"];
 
   // Parse duration string
   const matches = duration.replace(/,/g, ".").match(new RegExp(iso8601));
@@ -252,7 +250,8 @@ async function _lookupGroup(key, value) {
       return parts[0] && !isNaN(gid) ? { name: parts[0], gid } : null;
     }
     // macOS: "name: staff" / "gid: 20" lines, and empty output when unknown
-    const macResult = spawnSync('dscacheutil', ['-q', 'group', '-a', key, String(value)], { encoding: 'utf8', timeout: 3000 });
+    const macResult = spawnSync('dscacheutil', ['-q', 'group', '-a', key, String(value)],
+      { encoding: 'utf8', timeout: 3000 });
     if (macResult.status !== 0 || !macResult.stdout) return null;
     const lines = macResult.stdout.split('\n');
     const nameLine = lines.find(entry => entry.startsWith('name:'));
@@ -360,7 +359,8 @@ class AppMeshClient {
    *   rejectUnauthorized: true
    * };
    */
-  constructor(baseURL = ENV.isNode ? 'https://127.0.0.1:6060' : window.location.origin, sslConfig = null, tokenProvider = null) {
+  constructor(baseURL = ENV.isNode ? 'https://127.0.0.1:6060' : window.location.origin,
+    sslConfig = null, tokenProvider = null) {
     // Base URL for API requests
     this.baseURL = baseURL;
 
@@ -371,7 +371,7 @@ class AppMeshClient {
     // read from it via _getAccessToken()
     this._tokenProvider = null;
     if (tokenProvider) {
-      this.set_token_provider(tokenProvider);
+      this.setTokenProvider(tokenProvider);
     }
 
     // Configure axios instance
@@ -411,15 +411,14 @@ class AppMeshClient {
     );
 
     // Response interceptor
-    this._client.interceptors.response.use(
-      response => this._handleUnauthorizedRetry(response),
-      error => {
+    this._client.interceptors.response.use(response => this._handleUnauthorizedRetry(response), error => {
         // Typed SDK errors (e.g. JSON parse failures from transformResponse) pass through unchanged
         if (error instanceof AppMeshError) {
           return Promise.reject(error);
         }
         // Network-level failure (DNS, connection refused, timeout, ...)
-        const err = new AppMeshError('Request failed: ' + (error.message || 'Unknown error'), error.response?.status ?? null, error.response?.data ?? null);
+        const err = new AppMeshError('Request failed: ' + (error.message || 'Unknown error'),
+          error.response?.status ?? null, error.response?.data ?? null);
         err.cause = error;
         return Promise.reject(err);
       }
@@ -432,7 +431,7 @@ class AppMeshClient {
    * and `clear()` follow the contract in token_provider.js.
    * @param {Object} provider - Token provider
    */
-  set_token_provider(provider) {
+  setTokenProvider(provider) {
     if (!provider || typeof provider.getAccessToken !== 'function') {
       throw new TypeError('tokenProvider must implement async getAccessToken()');
     }
@@ -440,21 +439,21 @@ class AppMeshClient {
   }
 
   /** Attach a caller-owned, non-refreshing access token in memory. */
-  set_bearer_token(token) {
+  setBearerToken(token) {
     if (token === null || token === undefined) {
-      this.clear_bearer_token();
+      this.clearBearerToken();
       return;
     }
-    this.set_token_provider(new StaticAccessTokenProvider(token));
+    this.setTokenProvider(new StaticAccessTokenProvider(token));
   }
 
-  /** Source-compatible alias for set_bearer_token(). */
-  set_token(token) {
-    this.set_bearer_token(token);
+  /** Source-compatible alias for setBearerToken(). */
+  setToken(token) {
+    this.setBearerToken(token);
   }
 
   /** Remove the locally attached bearer without contacting Engine or the authentication service. */
-  clear_bearer_token() {
+  clearBearerToken() {
     const provider = this._tokenProvider;
     if (provider && typeof provider.clear === 'function') {
       provider.clear();
@@ -508,12 +507,12 @@ class AppMeshClient {
   }
 
   /** Return Engine's public OAuth/OIDC configuration. */
-  async get_auth_config() {
+  async getAuthConfig() {
     return (await this._request("get", "/appmesh/auth/config")).data;
   }
 
   /** Return the verified principal represented by the current bearer. */
-  async get_current_principal() {
+  async getCurrentPrincipal() {
     return (await this._request("get", "/appmesh/principal/self")).data;
   }
 
@@ -521,7 +520,7 @@ class AppMeshClient {
    * Get all applications info
    * @returns {Object} All apps info
    */
-  async list_apps() {
+  async listApps() {
     const response = await this._request("get", "/appmesh/applications");
     return response.data;
   }
@@ -531,7 +530,7 @@ class AppMeshClient {
    * @param {string} name - App name
    * @returns {Object} App config
    */
-  async get_app(name) {
+  async getApp(name) {
     const response = await this._request("get", `/appmesh/app/${name}`);
     return response.data;
   }
@@ -542,7 +541,7 @@ class AppMeshClient {
    * @returns {boolean} True if healthy; false only when the daemon's health verdict says unhealthy
    * @throws {AppMeshError} On auth/missing-app/server errors (non-200) or network/transport failure
    */
-  async check_app_health(name) {
+  async checkAppHealth(name) {
     const response = await this._request("get", `/appmesh/app/${name}/health`);
     return parseInt(response.data, 10) === 0;
   }
@@ -579,9 +578,9 @@ class AppMeshClient {
    *   resource_limit: { cpu_shares: null, memory_mb: null, memory_virt_mb: null },
    *   behavior: { exit: "standby", exit_code_actions: { "0": "keepalive" } }
    * };
-   * await client.add_app("ping", appConfig);
+   * await client.addApp("ping", appConfig);
    */
-  async add_app(name, appJson) {
+  async addApp(name, appJson) {
     const response = await this._request("put", `/appmesh/app/${name}`, appJson);
     return response.data;
   }
@@ -591,7 +590,7 @@ class AppMeshClient {
    * @param {string} name - App name
    * @returns {Promise<boolean>} Success status
    */
-  async delete_app(name) {
+  async deleteApp(name) {
     try {
       const response = await this._request("delete", `/appmesh/app/${name}`);
       return response.status === 200;
@@ -606,7 +605,7 @@ class AppMeshClient {
    * @param {string} name - App name
    * @returns {Promise<boolean>} true on success; failures throw AppMeshError
    */
-  async enable_app(name) {
+  async enableApp(name) {
     await this._request("post", `/appmesh/app/${name}/enable`);
     return true;
   }
@@ -616,7 +615,7 @@ class AppMeshClient {
    * @param {string} name - App name
    * @returns {Promise<boolean>} true on success; failures throw AppMeshError
    */
-  async disable_app(name) {
+  async disableApp(name) {
     await this._request("post", `/appmesh/app/${name}/disable`);
     return true;
   }
@@ -632,7 +631,8 @@ class AppMeshClient {
    * @param {number} [timeout=0] - Server long-poll timeout in seconds
    * @returns {Promise<AppOutput>} Output body, next cursor, and exit code when available
    */
-  async get_app_output(app_name, stdout_position = 0, stdout_index = 0, stdout_maxsize = 10240, process_uuid = "", timeout = 0) {
+  async getAppOutput(app_name, stdout_position = 0, stdout_index = 0, stdout_maxsize = 10240,
+    process_uuid = "", timeout = 0) {
     const params = {
       stdout_position: stdout_position.toString(),
       stdout_index: stdout_index.toString(),
@@ -658,7 +658,8 @@ class AppMeshClient {
    * @param {number|string} [lifecycle] - Lifecycle time
    * @returns {Promise<number|null>} Exit code parsed from `X-Exit-Code`, or `null` when absent
    */
-  async run_app_sync(app, stdoutHandler = defaultOutputHandler, maxTime = CONSTANTS.DEFAULT_RUN_APP_TIMEOUT_SECONDS, lifecycle = CONSTANTS.DEFAULT_RUN_APP_LIFECYCLE_SECONDS) {
+  async runAppSync(app, stdoutHandler = defaultOutputHandler, maxTime = CONSTANTS.DEFAULT_RUN_APP_TIMEOUT_SECONDS,
+    lifecycle = CONSTANTS.DEFAULT_RUN_APP_LIFECYCLE_SECONDS) {
     const params = {
       timeout: parseDuration(maxTime),
       lifecycle: parseDuration(lifecycle)
@@ -667,17 +668,15 @@ class AppMeshClient {
     const response = await this._request("post", "/appmesh/app/syncrun", app, { params });
     let exitCode = null;
 
+    if (stdoutHandler) {
+      stdoutHandler(response.data, 0);
+    }
     if (response.status === 200) {
-      if (stdoutHandler) {
-        stdoutHandler(response.data, 0);
-      }
       // axios lowercases header names; the TCP transport keeps the daemon's exact case
       const exitCodeHeader = _getHeader(response.headers, "X-Exit-Code");
       if (exitCodeHeader) {
         exitCode = parseInt(exitCodeHeader, 10);
       }
-    } else if (stdoutHandler) {
-      stdoutHandler(response.data, 0);
     }
 
     return exitCode;
@@ -690,7 +689,8 @@ class AppMeshClient {
    * @param {string|number} [lifecycle] - Lifecycle time
    * @returns {AppRun} Running app handle that also snapshots the current forwarding host
    */
-  async run_app_async(app, maxTime = CONSTANTS.DEFAULT_RUN_APP_TIMEOUT_SECONDS, lifecycle = CONSTANTS.DEFAULT_RUN_APP_LIFECYCLE_SECONDS) {
+  async runAppAsync(app, maxTime = CONSTANTS.DEFAULT_RUN_APP_TIMEOUT_SECONDS,
+    lifecycle = CONSTANTS.DEFAULT_RUN_APP_LIFECYCLE_SECONDS) {
     const params = {
       timeout: parseDuration(maxTime),
       lifecycle: parseDuration(lifecycle)
@@ -709,14 +709,14 @@ class AppMeshClient {
    * the SDK also attempts to delete the temporary run app.
    * @throws {AppMeshError} If polling the app output fails.
    */
-  async wait_for_async_run(run, stdoutHandler = defaultOutputHandler, timeout = 0) {
+  async waitForAsyncRun(run, stdoutHandler = defaultOutputHandler, timeout = 0) {
     if (run) {
       let lastOutputPosition = 0;
       const start = new Date();
       const interval = 1;
 
       while (run.procUid.length > 0) {
-        const appOut = await this.get_app_output(run.appName, lastOutputPosition, 0, 20480, run.procUid, interval);
+        const appOut = await this.getAppOutput(run.appName, lastOutputPosition, 0, 20480, run.procUid, interval);
         if (appOut.output && stdoutHandler) {
           stdoutHandler(appOut.output, lastOutputPosition);
         }
@@ -727,7 +727,7 @@ class AppMeshClient {
 
         if (appOut.exitCode !== null) {
           // Process finished
-          await this.delete_app(run.appName);
+          await this.deleteApp(run.appName);
           return appOut.exitCode;
         }
 
@@ -749,7 +749,7 @@ class AppMeshClient {
    * @param {number} [timeout=300] - Timeout in seconds
    * @returns {Promise<string>} Response from app
    */
-  async run_task(appName, data, timeout = 300) {
+  async runTask(appName, data, timeout = 300) {
     if (timeout <= 0) {
       timeout = 300;
     }
@@ -764,13 +764,16 @@ class AppMeshClient {
    * @param {string} appName - App name
    * @returns {Promise<boolean>} true on success; failures throw AppMeshError
    */
-  async cancel_task(appName) {
+  async cancelTask(appName) {
     await this._request("delete", `/appmesh/app/${appName}/task`);
     return true;
   }
 
   /**
-   * Download a remote file. Behavior differs by environment:
+   * Download a remote file.
+   *
+   * Plain-HTTP transport: GET answers the file bytes; the agent proxy serves
+   * the same route from local disk.
    *
    * - **Node.js**: `localFile` is a filesystem path — the response body is written to it,
    *   and when `applyAttrs` is true the returned mode and best-effort owner/group metadata
@@ -785,32 +788,52 @@ class AppMeshClient {
    * @param {boolean} [applyAttrs=false] - Node.js only: apply returned mode and best-effort
    * owner/group metadata on non-Windows platforms
    */
-  async download_file(filePath, localFile = null, applyAttrs = false) {
+  async downloadFile(filePath, localFile = null, applyAttrs = false) {
     if (!localFile) localFile = filePath.split(/[\\/]/).pop();
     const headers = { [CONSTANTS.HTTP_HEADER_KEY_X_FILE_PATH]: encodeURIComponent(filePath) };
+    // Node streams the body to disk; the browser needs the whole buffer for Blob.
     const response = await this._request("get", "/appmesh/file/download", null, {
       headers,
       config: {
-        responseType: "arraybuffer"
+        responseType: ENV.isNode ? "stream" : "arraybuffer"
       }
     });
+    // A streamed body cannot be read twice, so error details stay header-level in Node.
+    const errDetail = ENV.isNode ? "" : response.data;
+
+    // A JSON reply without Content-Disposition is a legacy placeholder, not content.
+    if (response.status === 200 && !response.headers?.["content-disposition"] &&
+        String(response.headers?.["content-type"] ?? "").toLowerCase().includes("json")) {
+      if (ENV.isNode) response.data.destroy(); // release the unread stream's socket
+      throw new AppMeshError(
+        `File download is not supported by this server surface: ${filePath}`, response.status, errDetail);
+    }
 
     if (response.status !== 200) {
-      throw new AppMeshError(`Failed to download file: ${filePath}`, response.status, response.data);
+      throw new AppMeshError(`Failed to download file: ${filePath}`, response.status, errDetail);
     }
 
     if (ENV.isNode) {
-      const fs = await import('fs/promises');
+      const fsMod = await import('fs');
+      // stream/promises needs Node 15; engines declares 14, so promisify the callback form.
+      const { promisify } = await import('util');
+      const pipeline = promisify((await import('stream')).pipeline);
+      const fs = fsMod.promises;
 
       try {
-        await fs.writeFile(localFile, Buffer.from(response.data));
+        await pipeline(response.data, fsMod.createWriteStream(localFile));
 
         if (applyAttrs && process.platform !== 'win32') {
           const respHeaders = response.headers; // avoid shadowing outer `headers`
           try {
             const mode = respHeaders["x-file-mode"];
             if (mode) {
-              await fs.chmod(localFile, parseInt(mode, 10));
+              const modeVal = parseInt(mode, 10);
+              if (Number.isInteger(modeVal) && modeVal >= 0 && modeVal <= 0o777) {
+                await fs.chmod(localFile, modeVal);
+              } else {
+                console.warn("Warning: Invalid x-file-mode value:", mode);
+              }
             }
             // chown: resolve user/group names to uid/gid via id(1) command
             const username = respHeaders["x-file-user"];
@@ -846,12 +869,16 @@ class AppMeshClient {
 
   /**
    * Upload a file to the remote server.
+   *
+   * Plain-HTTP transport: POST streams the raw file bytes as the body; the
+   * agent proxy accepts the same route.
+   *
    * @param {string|File} localFile - Local file path/object
    * @param {string} [filePath=null] - Remote target path; defaults to the basename of localFile
    * @param {boolean} [applyAttrs=false] - In Node.js, send local permission bits plus
    * user/group (names when resolvable locally, numeric ids otherwise)
    */
-  async upload_file(localFile, filePath = null, applyAttrs = false) {
+  async uploadFile(localFile, filePath = null, applyAttrs = false) {
     if (!filePath) {
       // Node.js passes a path string; browser passes a File (use its name)
       const sourceName = typeof localFile === 'string' ? localFile : localFile && localFile.name;
@@ -861,73 +888,55 @@ class AppMeshClient {
       filePath = sourceName.split(/[\\/]/).pop();
     }
     const headers = { [CONSTANTS.HTTP_HEADER_KEY_X_FILE_PATH]: encodeURIComponent(filePath) };
-    let formData;
+    let body;
 
     if (ENV.isNode) {
-      // Node.js environment
-      const FormData = (await import('form-data')).default;
       const fs = await import('fs');
-      formData = new FormData();
-
-      const filename = filePath.split('/').pop();
-      formData.append("filename", filename);
-
       const stat = fs.statSync(localFile);
-      if (stat.size < 10 * 1024 * 1024) {
-        // For files < 10MB, use buffer
-        const fileBuffer = fs.readFileSync(localFile);
-        formData.append("file", fileBuffer, { filename: localFile.split('/').pop() });
-      } else {
-        // Stream for larger files
-        formData.append("file", fs.createReadStream(localFile));
-      }
 
-      // Add file attributes
       if (applyAttrs) {
         headers["X-File-Mode"] = (stat.mode & 0o777).toString(); // Only permission bits
-        // Send user/group names when resolvable; the daemon also accepts
-        // all-digit values (os::chown -> getUidByName numeric fallback, and
-        // the Go agent's ApplyFileAttributes), so fall back to numeric ids.
         const username = await _resolveUserName(stat.uid);
         const groupName = await _resolveGroupName(stat.gid);
         headers["X-File-User"] = username || String(stat.uid);
         headers["X-File-Group"] = groupName || String(stat.gid);
       }
 
-      // Add form-data headers
-      Object.assign(headers, formData.getHeaders());
+      // Stream larger files; buffer small ones.
+      body = stat.size < 10 * 1024 * 1024 ? fs.readFileSync(localFile) : fs.createReadStream(localFile);
     } else {
       // Browser environment
-      formData = new FormData();
-
-      // Get filename
-      let filename;
-      if (localFile instanceof File) {
-        filename = localFile.name;
-      } else if (localFile instanceof Blob) {
-        filename = filePath.split('/').pop();
+      if (localFile instanceof File || localFile instanceof Blob) {
+        body = localFile;
       } else {
         throw new AppMeshError('In browser, localFile must be File or Blob');
       }
-
-      formData.append("filename", filename);
-      formData.append("file", localFile);
     }
 
-    await this._request("post", "/appmesh/file/upload", formData, {
+    const response = await this._request("post", "/appmesh/file/upload", body, {
       headers,
       config: {
         maxBodyLength: Infinity,
         maxContentLength: Infinity
       }
     });
+    if (response.status !== 200 && response.status !== 201) {
+      throw new AppMeshError(`Failed to upload file: ${filePath}`, response.status, response.data);
+    }
+    // A 200 JSON status reply means a legacy daemon stored nothing.
+    const contentType = String(response.headers?.["content-type"] ?? "").toLowerCase();
+    if (response.status === 200 && contentType.includes("json") &&
+        response.data && typeof response.data === "object" && "message" in response.data) {
+      throw new AppMeshError(
+        `File upload is not supported by this server surface: ${filePath}`, response.status, response.data);
+    }
   }
 
   /**
    * Get host resource usage
    * @returns {Object} Resource stats
    */
-  async get_host_resources() {
+  async getHostResources() {
     const response = await this._request("get", "/appmesh/resources");
     return response.data;
   }
@@ -936,7 +945,7 @@ class AppMeshClient {
    * Get current configuration
    * @returns {Promise<Object>} Config JSON
    */
-  async get_config() {
+  async getConfig() {
     const response = await this._request("get", "/appmesh/config");
     return response.data;
   }
@@ -946,7 +955,7 @@ class AppMeshClient {
    * @param {Object} config - Partial config document to POST to `/appmesh/config`
    * @returns {Object} Updated config
    */
-  async set_config(config) {
+  async setConfig(config) {
     const response = await this._request("post", "/appmesh/config", config);
     return response.data;
   }
@@ -956,8 +965,8 @@ class AppMeshClient {
    * @param {string} [level="DEBUG"] - Log level
    * @returns {string} Updated level
    */
-  async set_log_level(level = "DEBUG") {
-    const response = await this.set_config({ BaseConfig: { LogLevel: level } });
+  async setLogLevel(level = "DEBUG") {
+    const response = await this.setConfig({ BaseConfig: { LogLevel: level } });
     return response.BaseConfig.LogLevel;
   }
 
@@ -967,7 +976,7 @@ class AppMeshClient {
    * @param {string} labelValue - Label value
    * @returns {Promise<boolean>} true on success; failures throw AppMeshError
    */
-  async add_label(labelName, labelValue) {
+  async addLabel(labelName, labelValue) {
     await this._request("put", `/appmesh/label/${labelName}`, null, { params: { value: labelValue } });
     return true;
   }
@@ -978,7 +987,7 @@ class AppMeshClient {
    * @param {string} labelName - Label name
    * @returns {Promise<boolean>} true on success; failures throw AppMeshError
    */
-  async delete_label(labelName) {
+  async deleteLabel(labelName) {
     await this._request("delete", `/appmesh/label/${labelName}`);
     return true;
   }
@@ -988,59 +997,59 @@ class AppMeshClient {
    * Get all server labels
    * @returns {Promise<Object>} All labels
    */
-  async list_labels() {
+  async listLabels() {
     const response = await this._request("get", "/appmesh/labels");
     return response.data;
   }
 
 
   /** List Engine authorization overlays keyed by immutable principal ID. */
-  async list_principals() {
+  async listPrincipals() {
     return (await this._request("get", "/appmesh/principals")).data;
   }
 
   /** Update an Engine authorization overlay; never mutate IdP account data. */
-  async update_principal(principalId, policy) {
+  async updatePrincipal(principalId, policy) {
     await this._request("post", `/appmesh/principal/${encodeURIComponent(principalId)}`, policy);
     return true;
   }
 
   /** Delete only an Engine authorization overlay. */
-  async delete_principal(principalId) {
+  async deletePrincipal(principalId) {
     await this._request("delete", `/appmesh/principal/${encodeURIComponent(principalId)}`);
     return true;
   }
 
   /** Safe compatibility alias returning a Principal, not an IdP user. */
-  async get_current_user() {
-    return this.get_current_principal();
+  async getCurrentUser() {
+    return this.getCurrentPrincipal();
   }
 
   /**
    * Get available permissions
    * @returns {Object[]} Permission list
    */
-  async list_permissions() {
+  async listPermissions() {
     const response = await this._request("get", "/appmesh/permissions");
     return response.data;
   }
 
   /** Get effective permissions for the current verified principal. */
-  async get_principal_permissions() {
+  async getPrincipalPermissions() {
     const response = await this._request("get", "/appmesh/principal/self/permissions");
     return response.data;
   }
 
-  /** Safe compatibility alias for get_principal_permissions(). */
-  async get_user_permissions() {
-    return this.get_principal_permissions();
+  /** Safe compatibility alias for getPrincipalPermissions(). */
+  async getUserPermissions() {
+    return this.getPrincipalPermissions();
   }
 
   /**
    * Get all roles and permissions
    * @returns {Object[]} Role array
    */
-  async list_roles() {
+  async listRoles() {
     const response = await this._request("get", "/appmesh/roles");
     return response.data;
   }
@@ -1051,7 +1060,7 @@ class AppMeshClient {
    * @param {Object} rolePermissionJson - Permission IDs
    * @returns {Promise<boolean>} true on success; failures throw AppMeshError
    */
-  async update_role(roleName, rolePermissionJson) {
+  async updateRole(roleName, rolePermissionJson) {
     await this._request("post", `/appmesh/role/${roleName}`, rolePermissionJson);
     return true;
   }
@@ -1061,7 +1070,7 @@ class AppMeshClient {
    * @param {string} roleName - Role name
    * @returns {Promise<boolean>} true on success; failures throw AppMeshError
    */
-  async delete_role(roleName) {
+  async deleteRole(roleName) {
     await this._request("delete", `/appmesh/role/${roleName}`);
     return true;
   }
@@ -1070,7 +1079,7 @@ class AppMeshClient {
    * Get raw Prometheus metrics text from the server.
    * @returns {Promise<string>} Metrics text
    */
-  async get_metrics() {
+  async getMetrics() {
     const response = await this._request("get", "/appmesh/metrics", null, {
       config: { responseType: "text" }
     });
@@ -1082,7 +1091,8 @@ class AppMeshClient {
    * @throws {AppMeshError} Always — use AppMeshClientTCP for event subscriptions.
    */
   async subscribe() {
-    throw new AppMeshError("subscribe requires the TCP client (AppMeshClientTCP, imported from 'appmesh/tcp'); the HTTP client does not support event subscriptions");
+    throw new AppMeshError("subscribe requires the TCP client (AppMeshClientTCP, imported from 'appmesh/tcp'); " +
+      "the HTTP client does not support event subscriptions");
   }
 
   /**
@@ -1090,7 +1100,8 @@ class AppMeshClient {
    * @throws {AppMeshError} Always — use AppMeshClientTCP for event subscriptions.
    */
   async unsubscribe() {
-    throw new AppMeshError("unsubscribe requires the TCP client (AppMeshClientTCP, imported from 'appmesh/tcp'); the HTTP client does not support event subscriptions");
+    throw new AppMeshError("unsubscribe requires the TCP client (AppMeshClientTCP, imported from 'appmesh/tcp'); " +
+      "the HTTP client does not support event subscriptions");
   }
 
   /**
@@ -1124,16 +1135,10 @@ class AppMeshClient {
       headers[CONSTANTS.HTTP_HEADER_KEY_AUTH] = `Bearer ${token}`;
     }
 
-    // Add forwarding host if specified
+    // Forwarding host, sent as given: a bare host is resolved to the server's own
+    // service port; the client-side port may be a host-side mapping absent on the target.
     if (this.forwardingHost) {
-      if (this.forwardingHost.includes(":")) {
-        headers[CONSTANTS.HTTP_HEADER_KEY_X_TARGET_HOST] = this.forwardingHost;
-      } else {
-        const parsedUrl = new URL(this.baseURL);
-        const defaultPort = parsedUrl.protocol === 'https:' ? '443' : '80';
-        const port = parsedUrl.port || defaultPort;
-        headers[CONSTANTS.HTTP_HEADER_KEY_X_TARGET_HOST] = `${this.forwardingHost}:${port}`;
-      }
+      headers[CONSTANTS.HTTP_HEADER_KEY_X_TARGET_HOST] = this.forwardingHost;
     }
     return headers;
   }
@@ -1297,7 +1302,7 @@ class AppRun {
    * @param {function} callback - Function to execute within the forward host context
    * @returns {Promise<*>} Result of the callback function
    */
-  async with_forwarding_host(callback) {
+  async withForwardingHost(callback) {
     const originalValue = this._client.forwardingHost;
     this._client.forwardingHost = this._forwardingHost;
     try {
@@ -1314,14 +1319,18 @@ class AppRun {
    * @returns {Promise<number|null>} Return exit code if process finished, return null for timeout or exception
    */
   async wait(stdoutHandler = defaultOutputHandler, timeout = 0) {
-    return this.with_forwarding_host(() =>
-      this._client.wait_for_async_run(this, stdoutHandler, timeout)
+    return this.withForwardingHost(() =>
+      this._client.waitForAsyncRun(this, stdoutHandler, timeout)
     );
   }
 }
 
 // Export the main classes
-export { AppMeshClient, AppOutput, AppRun, AppMeshError, AppRemovedError, TransportDisconnectedError, DEFAULT_CA_FILE, StaticAccessTokenProvider, RefreshTokenProvider };
+export {
+  AppMeshClient, AppOutput, AppRun, AppMeshError, AppRemovedError, TransportDisconnectedError,
+  DEFAULT_CA_FILE, StaticAccessTokenProvider, RefreshTokenProvider
+};
 // Exported for the TCP client (Node.js only); not part of the browser-facing API
 export { _resolveUid, _resolveGid, _resolveUserName, _resolveGroupName };
 export default AppMeshClient;
+

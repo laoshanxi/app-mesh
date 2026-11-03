@@ -9,6 +9,7 @@ import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.net.HttpURLConnection;
 import java.net.URL;
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
@@ -30,7 +31,6 @@ import org.junit.jupiter.api.Test;
  */
 public class SubscribeTest {
 
-    private static final String EVENT_URI = "/appmesh/event";
 
     private static class OrderingClient extends AppMeshClient {
         private final List<String> actions = new ArrayList<>();
@@ -78,9 +78,9 @@ public class SubscribeTest {
         // Build a ResponseMessage with event payload
         ResponseMessage original = new ResponseMessage();
         original.uuid = "evt-uuid-1";
-        original.request_uri = EVENT_URI;
-        original.http_status = 200;
-        original.body_msg_type = "application/json";
+        original.requestUri = MessageDemuxer.EVENT_URI;
+        original.httpStatus = 200;
+        original.bodyMsgType = "application/json";
 
         JSONObject eventBody = new JSONObject();
         eventBody.put("subscription_id", "sub-test");
@@ -103,8 +103,8 @@ public class SubscribeTest {
 
         ResponseMessage decoded = ResponseMessage.deserialize(serialized);
         assertEquals("evt-uuid-1", decoded.uuid);
-        assertEquals(EVENT_URI, decoded.request_uri);
-        assertEquals(200, decoded.http_status);
+        assertEquals(MessageDemuxer.EVENT_URI, decoded.requestUri);
+        assertEquals(200, decoded.httpStatus);
         assertEquals("sub-test", decoded.headers.get("X-Subscription-Id"));
         assertEquals("EXIT", decoded.headers.get("X-Event-Type"));
         assertEquals("myapp", decoded.headers.get("X-App-Name"));
@@ -120,7 +120,7 @@ public class SubscribeTest {
 
     @Test
     public void testEventUriConstant() {
-        assertEquals("/appmesh/event", EVENT_URI);
+        assertEquals("/appmesh/event", MessageDemuxer.EVENT_URI);
     }
 
     @Test
@@ -128,9 +128,9 @@ public class SubscribeTest {
         // Build a subscribe request
         RequestMessage req = new RequestMessage();
         req.uuid = "req-uuid-sub";
-        req.request_uri = "/appmesh/app/myapp/subscribe";
-        req.http_method = "POST";
-        req.client_addr = "test-client";
+        req.requestUri = "/appmesh/app/myapp/subscribe";
+        req.httpMethod = "POST";
+        req.clientAddr = "test-client";
         req.headers = new HashMap<>();
         req.headers.put("Authorization", "Bearer test-token");
         req.query = new HashMap<>();
@@ -149,7 +149,8 @@ public class SubscribeTest {
         };
     }
 
-    // Conformance: S7 (partial) — waiter registered before the response arrives is routed by UUID (docs/source/SDKContract.md)
+    // Conformance: S7 (partial) — waiter registered before the response arrives is routed by UUID
+    // (docs/source/SDKContract.md)
     @Test
     public void testDemuxerRoutesResponseToPreRegisteredWaiter() throws Exception {
         BlockingQueue<byte[]> queue = new LinkedBlockingQueue<>();
@@ -158,8 +159,8 @@ public class SubscribeTest {
         try {
             ResponseMessage resp = new ResponseMessage();
             resp.uuid = "req-s7";
-            resp.request_uri = "/appmesh/app/test";
-            resp.http_status = 200;
+            resp.requestUri = "/appmesh/app/test";
+            resp.httpStatus = 200;
             resp.body = "{}".getBytes("UTF-8");
             resp.headers = new HashMap<>();
 
@@ -169,7 +170,7 @@ public class SubscribeTest {
             ResponseMessage got = demuxer.waitForResponse("req-s7");
             assertNotNull(got, "response arriving right after send must not be dropped");
             assertEquals("req-s7", got.uuid);
-            assertEquals(200, got.http_status);
+            assertEquals(200, got.httpStatus);
         } finally {
             demuxer.stop();
         }
@@ -209,12 +210,57 @@ public class SubscribeTest {
         assertNull(waiterResult.get(), "disconnect wakes the waiter with null, never a response");
     }
 
+    // Conformance: S4 — events pushed before the callback registers (atomic-subscribe
+    // race) are buffered per subID and flushed in arrival order on registration, ahead
+    // of later live events; none are lost (docs/source/SDKContract.md).
+    @Test
+    public void testDemuxerBufferedEventsFlushInOrder() throws Exception {
+        BlockingQueue<byte[]> queue = new LinkedBlockingQueue<>();
+        MessageDemuxer demuxer = new MessageDemuxer(queueReader(queue));
+        demuxer.start();
+        try {
+            java.util.List<Long> order = java.util.Collections.synchronizedList(new ArrayList<>());
+            final CountDownLatch allDelivered = new CountDownLatch(3);
+            // Two events arrive before any callback registers: they must be buffered.
+            queue.put(eventFrame("sub-s4", 1));
+            queue.put(eventFrame("sub-s4", 2));
+
+            // Registration flushes the buffered events before later live ones.
+            demuxer.registerEventCallback("sub-s4", event -> {
+                if (MessageDemuxer.EVENT_TYPE_DISCONNECTED.equals(event.eventType)) {
+                    return;
+                }
+                order.add(event.sequence);
+                allDelivered.countDown();
+            });
+
+            queue.put(eventFrame("sub-s4", 3));
+
+            assertTrue(allDelivered.await(5, TimeUnit.SECONDS), "buffered + live events not all delivered");
+            assertEquals(Arrays.asList(1L, 2L, 3L), order, "buffered events must flush in order before live ones");
+        } finally {
+            demuxer.stop();
+        }
+    }
+
+    private static byte[] eventFrame(String subId, long seq) throws IOException {
+        ResponseMessage resp = new ResponseMessage();
+        resp.uuid = "evt-" + seq;
+        resp.requestUri = MessageDemuxer.EVENT_URI;
+        resp.httpStatus = 200;
+        resp.headers = new HashMap<>();
+        resp.body = ("{\"subscription_id\":\"" + subId + "\",\"event_type\":\"START\","
+                + "\"app_name\":\"fast-app\",\"timestamp\":0,\"sequence\":" + seq + ",\"data\":{\"pid\":1}}")
+                .getBytes(StandardCharsets.UTF_8);
+        return resp.serialize();
+    }
+
     @Test
     public void testEventResponseHeaders() throws IOException {
         ResponseMessage resp = new ResponseMessage();
         resp.uuid = "evt-2";
-        resp.request_uri = EVENT_URI;
-        resp.http_status = 200;
+        resp.requestUri = MessageDemuxer.EVENT_URI;
+        resp.httpStatus = 200;
         resp.body = "{}".getBytes("UTF-8");
         resp.headers = new HashMap<>();
         resp.headers.put("X-Subscription-Id", "sub-123");

@@ -63,11 +63,13 @@ func (f *fakeRequester) capture(method string, apiPath string, headers map[strin
 	f.sent = append(f.sent, fakeSentRequest{method: method, path: apiPath, header: copied})
 }
 
-func (f *fakeRequester) Send(method string, apiPath string, queries url.Values, headers map[string]string, body io.Reader) (int, []byte, http.Header, error) {
+func (f *fakeRequester) Send(method string, apiPath string, queries url.Values, headers map[string]string,
+	body io.Reader) (int, []byte, http.Header, error) {
 	return f.SendContext(context.Background(), method, apiPath, queries, headers, body)
 }
 
-func (f *fakeRequester) SendContext(ctx context.Context, method string, apiPath string, queries url.Values, headers map[string]string, body io.Reader) (int, []byte, http.Header, error) {
+func (f *fakeRequester) SendContext(ctx context.Context, method string, apiPath string, queries url.Values,
+	headers map[string]string, body io.Reader) (int, []byte, http.Header, error) {
 	f.capture(method, apiPath, headers)
 	if f.header == nil {
 		return f.status, []byte(f.body), http.Header{}, nil
@@ -271,7 +273,7 @@ func TestTokenProviderRefreshesOn401(t *testing.T) {
 	defer server.Close()
 
 	provider := &fakeRefreshProvider{token: "stale-token"}
-	client, err := NewHTTPClient(Option{AppMeshUri: server.URL, TokenProvider: provider})
+	client, err := NewHTTPClient(Option{AppMeshURI: server.URL, TokenProvider: provider})
 	require.NoError(t, err)
 	defer client.Close()
 
@@ -303,7 +305,7 @@ func TestStaticTokenProviderDoesNotRetryOn401(t *testing.T) {
 
 	provider, err := NewStaticTokenProvider("static-token")
 	require.NoError(t, err)
-	client, err := NewHTTPClient(Option{AppMeshUri: server.URL, TokenProvider: provider})
+	client, err := NewHTTPClient(Option{AppMeshURI: server.URL, TokenProvider: provider})
 	require.NoError(t, err)
 	defer client.Close()
 
@@ -334,7 +336,8 @@ func TestTokenProviderRefreshFailureReturnsError(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client, err := NewHTTPClient(Option{AppMeshUri: server.URL, TokenProvider: &failingRefreshProvider{token: "stale-token"}})
+	client, err := NewHTTPClient(Option{AppMeshURI: server.URL,
+		TokenProvider: &failingRefreshProvider{token: "stale-token"}})
 	require.NoError(t, err)
 	defer client.Close()
 
@@ -374,7 +377,7 @@ func TestSetTokenReplacesProvider(t *testing.T) {
 	defer server.Close()
 
 	provider := &fakeRefreshProvider{token: "stale-token"}
-	client, err := NewHTTPClient(Option{AppMeshUri: server.URL, TokenProvider: provider})
+	client, err := NewHTTPClient(Option{AppMeshURI: server.URL, TokenProvider: provider})
 	require.NoError(t, err)
 	defer client.Close()
 

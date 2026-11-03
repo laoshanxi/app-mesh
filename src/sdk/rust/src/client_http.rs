@@ -34,13 +34,15 @@ type Result<T> = std::result::Result<T, AppMeshError>;
 // ---------------------------------------------------------------------------
 // Helper: build small header/query maps without per-call HashMap::new boilerplate
 // ---------------------------------------------------------------------------
-macro_rules! hmap {
-    () => { HashMap::new() };
-    ($($k:expr => $v:expr),+ $(,)?) => {{
+macro_rules !hmap
+{
+	() =>{HashMap::new ()};
+	($($k:expr => $v:expr),+ $(,)?) => {{
         let mut m = HashMap::with_capacity(8);
-        $(m.insert($k.to_string(), $v.to_string());)+
-        m
-    }};
+	$(m.insert($k.to_string(), $v.to_string());) + m
+}
+}
+;
 }
 
 // ---------------------------------------------------------------------------
@@ -56,6 +58,8 @@ pub struct HTTPRequester {
 }
 
 impl HTTPRequester {
+    /// Creates an HTTP requester for `url` with the given TLS verification, optional client certificate, and request
+    /// timeout.
     pub fn new(
         url: String,
         ssl_verify: Option<String>,
@@ -64,47 +68,20 @@ impl HTTPRequester {
         danger_accept_invalid_certs: bool,
     ) -> Result<Self> {
         let timeout = timeout.unwrap_or(Duration::from_secs(60));
-        // reqwest uses `rustls-no-provider`; install a process-default provider to avoid panics.
-        crate::tls_config::ensure_crypto_provider();
         // Engine SDK sessions deliberately have no cookie store. Browser application
         // state is a separate concern; SDK authentication is RFC 6750 Bearer-only.
-        let mut client_builder = ReqwestClient::builder().timeout(timeout);
-
-        // SSL setup. Verification is disabled only on explicit intent (danger
-        // flag or the legacy empty CA path). A configured-but-missing CA is a hard
-        // error; auto uses the App Mesh CA bundle if installed, else system CAs.
-        if danger_accept_invalid_certs || ssl_verify.as_deref() == Some("") {
-            client_builder = client_builder.danger_accept_invalid_certs(true);
+        let verify = if danger_accept_invalid_certs || ssl_verify.as_deref() == Some("") {
+            crate::tls_config::SslVerify::False
         } else {
-            let ca_path = ssl_verify.or_else(|| {
-                std::path::Path::new(DEFAULT_SSL_CA_CERT_PATH)
-                    .exists()
-                    .then(|| DEFAULT_SSL_CA_CERT_PATH.to_string())
-            });
-            if let Some(ca_path) = ca_path {
-                let cert_bytes = std::fs::read(&ca_path).map_err(|e| {
-                    AppMeshError::ConfigurationError(format!("Failed to read CA certificate '{}': {}", ca_path, e))
-                })?;
-                let cert = reqwest::Certificate::from_pem(&cert_bytes).map_err(|e| {
-                    AppMeshError::ConfigurationError(format!("Invalid CA certificate '{}': {}", ca_path, e))
-                })?;
-                client_builder = client_builder.add_root_certificate(cert);
-            }
-        }
-
-        if let Some((cert, key)) = &ssl_client_cert {
-            let cert_content = std::fs::read_to_string(cert).map_err(|e| {
-                AppMeshError::ConfigurationError(format!("Failed to read client certificate '{}': {}", cert, e))
-            })?;
-            let key_content = std::fs::read_to_string(key).map_err(|e| {
-                AppMeshError::ConfigurationError(format!("Failed to read client key '{}': {}", key, e))
-            })?;
-            let pem = format!("{}\n{}", cert_content, key_content);
-            let identity = reqwest::Identity::from_pem(pem.as_bytes()).map_err(|e| {
-                AppMeshError::ConfigurationError(format!("Invalid client certificate/key: {}", e))
-            })?;
-            client_builder = client_builder.identity(identity);
-        }
+            crate::tls_config::resolve_ssl_verify(ssl_verify)?
+        };
+        let client_cert = ssl_client_cert.map(|(cert, key)| crate::tls_config::ClientCert::Pair(cert, key));
+        let client_builder = crate::tls_config::configure_reqwest_tls(
+            ReqwestClient::builder().timeout(timeout),
+            &verify,
+            client_cert.as_ref(),
+        )
+        .map_err(AppMeshError::ConfigurationError)?;
 
         Ok(Self {
             url,
@@ -132,9 +109,7 @@ impl HTTPRequester {
     }
 
     fn add_common_headers(&self, headers: &mut HashMap<String, String>) {
-        headers
-            .entry(HTTP_HEADER_KEY_USER_AGENT.to_string())
-            .or_insert_with(|| HTTP_USER_AGENT.to_string());
+        headers.entry(HTTP_HEADER_KEY_USER_AGENT.to_string()).or_insert_with(|| HTTP_USER_AGENT.to_string());
 
         if let Some(token) = self.access_token.read().unwrap_or_else(|e| e.into_inner()).as_ref() {
             headers
@@ -143,22 +118,11 @@ impl HTTPRequester {
         }
 
         // Poisoning is benign here (guarded state stays valid), so recover the guard.
+        // Sent as given: a bare host is resolved to the server's own service port; the
+        // client-side port may be a host-side mapping that does not exist on the target.
         if let Some(forward_to) = self.forward_to.lock().unwrap_or_else(|e| e.into_inner()).as_ref() {
-            let forward_host = if forward_to.contains(':') {
-                forward_to.clone()
-            } else {
-                format!("{}:{}", forward_to, Self::parse_url_port(&self.url))
-            };
-            headers.insert(HTTP_HEADER_KEY_FORWARDING_HOST.to_string(), forward_host);
+            headers.insert(HTTP_HEADER_KEY_FORWARDING_HOST.to_string(), forward_to.clone());
         }
-    }
-
-    fn parse_url_port(url: &str) -> String {
-        url.parse::<url::Url>()
-            .ok()
-            .and_then(|parsed| parsed.port_or_known_default())
-            .map(|port| port.to_string())
-            .unwrap_or_else(|| "6060".to_string())
     }
 
     /// Execute a request and return the raw `reqwest::Response` without buffering the body.
@@ -293,8 +257,7 @@ impl AppMeshClient {
         danger_accept_invalid_certs: bool,
     ) -> Result<Arc<Self>> {
         let url = url.unwrap_or_else(|| DEFAULT_HTTP_URL.to_string());
-        let requester =
-            HTTPRequester::new(url.clone(), ssl_verify, ssl_client_cert, timeout, danger_accept_invalid_certs)?;
+        let requester = HTTPRequester::new(url.clone(), ssl_verify, ssl_client_cert, timeout, danger_accept_invalid_certs)?;
         Ok(Arc::new(Self {
             req: Box::new(requester),
             url,
@@ -345,6 +308,11 @@ impl AppMeshClient {
         self.req.set_forward_to(url);
     }
 
+    /// Get the cluster forwarding host.
+    pub fn get_forward_to(&self) -> Option<String> {
+        self.req.get_forward_to()
+    }
+
     /// Execute a raw request (useful for advanced use cases).
     pub async fn raw_request(
         &self,
@@ -364,12 +332,22 @@ impl AppMeshClient {
         *self.token_provider.lock().unwrap_or_else(|error| error.into_inner()) = provider;
     }
 
+    /// Whether the transport's event demuxer is currently running. TCP file
+    /// transfers are rejected while it owns the read side (the read loop would
+    /// steal the raw chunk frames and corrupt the transfer).
+    pub fn demuxer_running(&self) -> bool {
+        self.req.get_demuxer().map(|d| d.is_running()).unwrap_or(false)
+    }
+
+    /// Push a fresh provider-managed bearer to the requester, if a provider is
+    /// attached. Mirrors the Python SDK's `_ensure_demuxer`, which consults the
+    /// provider before the WSS upgrade instead of reusing the last stored token.
+    async fn refresh_requester_token(&self) -> Result<()> {
+        self.prepare_bearer().await.map(|_| ())
+    }
+
     async fn prepare_bearer(&self) -> Result<Option<(Arc<dyn TokenProvider>, String)>> {
-        let provider = self
-            .token_provider
-            .lock()
-            .unwrap_or_else(|error| error.into_inner())
-            .clone();
+        let provider = self.token_provider.lock().unwrap_or_else(|error| error.into_inner()).clone();
         if let Some(provider) = provider {
             let token = provider.access_token().await?;
             self.req.handle_token_update(Some(token.clone()));
@@ -397,20 +375,14 @@ impl AppMeshClient {
         // provider's refresh grant (Python SDK parity: refresh once after a 401 when
         // the request body can be re-sent). The rejected token is passed along so the
         // provider can coalesce racing refreshes instead of issuing a second grant.
-        let response = self
-            .req
-            .send(method.clone(), path, body, headers.clone(), query.clone(), false)
-            .await?;
+        let response = self.req.send(method.clone(), path, body, headers.clone(), query.clone(), false).await?;
         if response.status() == StatusCode::UNAUTHORIZED && provider.can_refresh() {
             if let Ok(tokens) = provider.refresh_access_token(&sent_token).await {
                 self.req.handle_token_update(Some(tokens.access_token));
                 return self.req.send(method, path, body, headers, query, fail_on_error).await;
             }
         }
-        if fail_on_error
-            && !response.status().is_success()
-            && response.status() != StatusCode::PRECONDITION_REQUIRED
-        {
+        if fail_on_error && !response.status().is_success() && response.status() != StatusCode::PRECONDITION_REQUIRED {
             return Err(AppMeshError::RequestFailed {
                 status: response.status(),
                 message: String::from_utf8_lossy(response.body()).into_owned(),
@@ -488,7 +460,9 @@ impl AppMeshClient {
             loop {
                 let (mut sleep_duration, mut due) = {
                     let Some(client) = weak.upgrade() else { break };
-                    if !client.auto_refresh.load(Ordering::Relaxed) { break }
+                    if !client.auto_refresh.load(Ordering::Relaxed) {
+                        break;
+                    }
                     Self::compute_refresh_plan(&client)
                 };
                 if failures > 0 {
@@ -501,7 +475,9 @@ impl AppMeshClient {
 
                 // Re-acquire the client (it may have been dropped)
                 let Some(client) = weak.upgrade() else { break };
-                if !client.auto_refresh.load(Ordering::Relaxed) { break }
+                if !client.auto_refresh.load(Ordering::Relaxed) {
+                    break;
+                }
                 if !due {
                     continue;
                 }
@@ -536,13 +512,8 @@ impl AppMeshClient {
     /// Seconds before expiry at which to renew: a fraction of the token's own lifetime,
     /// floored at `TOKEN_REFRESH_MARGIN_SECS`.
     fn refresh_margin(token: &str, exp: u64, iat: u64, now: u64) -> u64 {
-        let lifetime = if iat > 0 && exp > iat {
-            exp - iat
-        } else {
-            exp.saturating_sub(now)
-        };
-        let margin =
-            ((lifetime as f64 * (1.0 - TOKEN_REFRESH_LIFETIME_RATIO)) as u64).max(TOKEN_REFRESH_MARGIN_SECS);
+        let lifetime = if iat > 0 && exp > iat { exp - iat } else { exp.saturating_sub(now) };
+        let margin = ((lifetime as f64 * (1.0 - TOKEN_REFRESH_LIFETIME_RATIO)) as u64).max(TOKEN_REFRESH_MARGIN_SECS);
 
         // Jitter derived from the token: stable across polls, distinct per client.
         let mut hash: u32 = 2166136261; // FNV-1a
@@ -556,7 +527,11 @@ impl AppMeshClient {
 
         // Clamp last: the floor (and its jitter) must never exceed the token's own life,
         // or the loop would spin at ~1Hz.
-        if lifetime > 0 { jittered.min(lifetime / 2) } else { jittered }
+        if lifetime > 0 {
+            jittered.min(lifetime / 2)
+        } else {
+            jittered
+        }
     }
 
     /// How long to sleep, and whether a renewal is due afterwards. Sleep is capped at
@@ -567,11 +542,7 @@ impl AppMeshClient {
         let Some(jwt_str) = client.get_access_token() else {
             // A held refresh token can still mint a new access token; with neither
             // credential there is nothing to renew, so just idle.
-            let has_provider = client
-                .token_provider
-                .lock()
-                .unwrap_or_else(|error| error.into_inner())
-                .is_some();
+            let has_provider = client.token_provider.lock().unwrap_or_else(|error| error.into_inner()).is_some();
             return if has_provider { (Duration::from_secs(1), true) } else { (poll, false) };
         };
 
@@ -580,10 +551,7 @@ impl AppMeshClient {
             return (poll, true);
         };
 
-        let now = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap_or_default()
-            .as_secs();
+        let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_secs();
         let refresh_at = exp.saturating_sub(Self::refresh_margin(&jwt_str, exp, iat, now));
         if refresh_at <= now {
             return (Duration::from_secs(1), true); // at or past the refresh point
@@ -599,9 +567,7 @@ impl AppMeshClient {
     /// Bounded exponential backoff for the nth consecutive renewal failure (n >= 1).
     fn refresh_retry_delay(failures: u32) -> Duration {
         let shift = failures.saturating_sub(1).min(16);
-        let secs = TOKEN_REFRESH_RETRY_BASE_SECS
-            .saturating_mul(1u64 << shift)
-            .min(TOKEN_REFRESH_RETRY_MAX_SECS);
+        let secs = TOKEN_REFRESH_RETRY_BASE_SECS.saturating_mul(1u64 << shift).min(TOKEN_REFRESH_RETRY_MAX_SECS);
         Duration::from_secs(secs)
     }
 
@@ -614,37 +580,37 @@ impl AppMeshClient {
         }
 
         // Decode the payload (second part) using base64 URL-safe no-pad
-        let payload_bytes = base64::engine::general_purpose::URL_SAFE_NO_PAD
-            .decode(parts[1])
-            .ok()?;
+        let payload_bytes = base64::engine::general_purpose::URL_SAFE_NO_PAD.decode(parts[1]).ok()?;
         let payload: Value = serde_json::from_slice(&payload_bytes).ok()?;
         let exp = payload.get("exp")?.as_u64()?;
         let iat = payload.get("iat").and_then(|v| v.as_u64()).unwrap_or(0);
         Some((exp, iat))
     }
-
 }
 
 // -- Principal and authorization management --------------------------------
 
 impl AppMeshClient {
+    /// Returns the principal the current token authenticates as.
     pub async fn get_current_principal(&self) -> Result<Value> {
         let resp = self.send(Method::GET, "/appmesh/principal/self", None, None, None, true).await?;
         resp.json()
     }
 
+    /// Lists all registered principals.
     pub async fn list_principals(&self) -> Result<Value> {
         let resp = self.send(Method::GET, "/appmesh/principals", None, None, None, true).await?;
         resp.json()
     }
 
+    /// Creates or updates a principal permission mapping.
     pub async fn update_principal(&self, principal_id: &str, policy: Value) -> Result<()> {
         let body_bytes = serde_json::to_vec(&policy)?;
         self.send(
             Method::POST,
             &format!("/appmesh/principal/{}", encode_path_segment(principal_id)),
             Some(&body_bytes),
-            Some(hmap! { HTTP_HEADER_CONTENT_TYPE => "application/json" }),
+            Some(hmap! {HTTP_HEADER_CONTENT_TYPE => "application/json"}),
             None,
             true,
         )
@@ -652,6 +618,7 @@ impl AppMeshClient {
         Ok(())
     }
 
+    /// Deletes a principal.
     pub async fn delete_principal(&self, principal_id: &str) -> Result<()> {
         self.send(
             Method::DELETE,
@@ -665,18 +632,19 @@ impl AppMeshClient {
         Ok(())
     }
 
+    /// Returns the permissions granted to a principal.
     pub async fn get_principal_permissions(&self) -> Result<Vec<String>> {
-        let resp = self
-            .send(Method::GET, "/appmesh/principal/self/permissions", None, None, None, true)
-            .await?;
+        let resp = self.send(Method::GET, "/appmesh/principal/self/permissions", None, None, None, true).await?;
         json_string_array(&resp.json()?)
     }
 
+    /// Lists every permission known to the server.
     pub async fn list_permissions(&self) -> Result<Vec<String>> {
         let resp = self.send(Method::GET, "/appmesh/permissions", None, None, None, true).await?;
         json_string_array(&resp.json()?)
     }
 
+    /// Lists all roles and their permission sets.
     pub async fn list_roles(&self) -> Result<HashMap<String, Vec<String>>> {
         let resp = self.send(Method::GET, "/appmesh/roles", None, None, None, true).await?;
         let json: Value = resp.json()?;
@@ -692,13 +660,14 @@ impl AppMeshClient {
         Ok(roles)
     }
 
+    /// Creates or updates a role permission mapping.
     pub async fn update_role(&self, role: &str, permissions: Vec<String>) -> Result<()> {
         let body_bytes = serde_json::to_vec(&permissions)?;
         self.send(
             Method::POST,
             &format!("/appmesh/role/{}", encode_path_segment(role)),
             Some(&body_bytes),
-            Some(hmap! { HTTP_HEADER_CONTENT_TYPE => "application/json" }),
+            Some(hmap! {HTTP_HEADER_CONTENT_TYPE => "application/json"}),
             None,
             true,
         )
@@ -706,6 +675,7 @@ impl AppMeshClient {
         Ok(())
     }
 
+    /// Deletes a role.
     pub async fn delete_role(&self, role: &str) -> Result<()> {
         self.send(Method::DELETE, &format!("/appmesh/role/{}", encode_path_segment(role)), None, None, None, true).await?;
         Ok(())
@@ -767,9 +737,8 @@ impl AppMeshClient {
 
     /// Get a single application by name.
     pub async fn get_app(&self, name: &str) -> Result<Application> {
-        let resp = self
-            .send(Method::GET, &format!("/appmesh/app/{}", encode_path_segment(name)), None, None, None, true)
-            .await?;
+        let resp =
+            self.send(Method::GET, &format!("/appmesh/app/{}", encode_path_segment(name)), None, None, None, true).await?;
         resp.json()
     }
 
@@ -800,19 +769,16 @@ impl AppMeshClient {
             query.insert(HTTP_QUERY_KEY_PROCESS_UUID.into(), uuid.to_string());
         }
         if let Some(t) = timeout {
-            query.insert(HTTP_QUERY_KEY_STDOUT_TIMEOUT.into(), t.to_string());
+            query.insert(HTTP_QUERY_KEY_TIMEOUT.into(), t.to_string());
         }
 
-        let resp = self.send(Method::GET, &format!("/appmesh/app/{}/output", encode_path_segment(name)), None, None, Some(query), false)
+        let resp = self
+            .send(Method::GET, &format!("/appmesh/app/{}/output", encode_path_segment(name)), None, None, Some(query), false)
             .await?;
 
         // Now we can read headers *and* body without cloning, thanks to &self on ResponseExt
-        let mut out = AppOutput {
-            status_code: resp.status().as_u16(),
-            output: resp.text()?,
-            output_position: None,
-            exit_code: None,
-        };
+        let mut out =
+            AppOutput { status_code: resp.status().as_u16(), output: resp.text()?, output_position: None, exit_code: None };
 
         if let Some(pos) = resp.headers().get(HTTP_HEADER_KEY_OUTPUT_POS) {
             out.output_position = Some(parse_numeric_header(HTTP_HEADER_KEY_OUTPUT_POS, pos)?);
@@ -826,8 +792,9 @@ impl AppMeshClient {
 
     /// Check application health (returns `true` if healthy).
     pub async fn check_app_health(&self, name: &str) -> Result<bool> {
-        let resp =
-            self.send(Method::GET, &format!("/appmesh/app/{}/health", encode_path_segment(name)), None, None, None, true).await?;
+        let resp = self
+            .send(Method::GET, &format!("/appmesh/app/{}/health", encode_path_segment(name)), None, None, None, true)
+            .await?;
         let text = resp.text()?;
         Ok(text.trim() == "0")
     }
@@ -859,15 +826,15 @@ impl AppMeshClient {
         subscribe_events: Option<&[&str]>,
         callback: Option<EventCallback>,
     ) -> Result<Application> {
-        let name = app
-            .name
-            .as_deref()
-            .ok_or_else(|| AppMeshError::ConfigurationError("App name required".into()))?;
+        let name = app.name.as_deref().ok_or_else(|| AppMeshError::ConfigurationError("App name required".into()))?;
         let body_bytes = serde_json::to_vec(app)?;
         if subscribe_events.is_some() {
             if self.req.supports_demuxer() {
                 // START may arrive before the add-app response on a persistent
-                // connection, so the demuxer must own the read side first.
+                // connection, so the demuxer must own the read side first. The
+                // provider-managed bearer is pushed first so a WSS upgrade (when
+                // not yet connected) authenticates with a fresh token.
+                self.refresh_requester_token().await?;
                 self.req.enable_demuxer().await?;
             } else {
                 warn!("subscribe_events has no effect over HTTP; use the TCP or WSS client to receive events");
@@ -883,7 +850,7 @@ impl AppMeshClient {
                 Method::PUT,
                 &format!("/appmesh/app/{}", encode_path_segment(name)),
                 Some(&body_bytes),
-                Some(hmap! { HTTP_HEADER_CONTENT_TYPE => "application/json" }),
+                Some(hmap! {HTTP_HEADER_CONTENT_TYPE => "application/json"}),
                 query,
                 true,
             )
@@ -900,16 +867,15 @@ impl AppMeshClient {
 
     /// Add or update an application from raw JSON (advanced).
     pub async fn add_app_raw(&self, app: Value) -> Result<Application> {
-        let name = app[JSON_KEY_APP_NAME]
-            .as_str()
-            .ok_or_else(|| AppMeshError::ConfigurationError("App name required".into()))?;
+        let name =
+            app[JSON_KEY_APP_NAME].as_str().ok_or_else(|| AppMeshError::ConfigurationError("App name required".into()))?;
         let body_bytes = serde_json::to_vec(&app)?;
         let resp = self
             .send(
                 Method::PUT,
                 &format!("/appmesh/app/{}", encode_path_segment(name)),
                 Some(&body_bytes),
-                Some(hmap! { HTTP_HEADER_CONTENT_TYPE => "application/json" }),
+                Some(hmap! {HTTP_HEADER_CONTENT_TYPE => "application/json"}),
                 None,
                 true,
             )
@@ -950,6 +916,9 @@ impl AppMeshClient {
         });
         // Enable the demuxer before the request even when no callback was supplied:
         // otherwise an event racing the response can be consumed by the direct reader.
+        // A provider-managed bearer is pushed first so the WSS upgrade (when the
+        // transport is not yet connected) authenticates with a fresh token.
+        self.refresh_requester_token().await?;
         self.req.enable_demuxer().await?;
 
         let resp = self.send(Method::POST, &path, None, None, query, true).await?;
@@ -966,24 +935,30 @@ impl AppMeshClient {
         Ok(result)
     }
 
-    /// Unsubscribe from events by subscription ID.
+    /// Unsubscribe from events by subscription ID. Returns `false` when the daemon had
+    /// already dropped it (its app was removed): unsubscribe is idempotent.
     ///
-    /// Also unregisters the event callback from the demuxer (if active).
+    /// Also unregisters the event callback from the demuxer (if active) — only
+    /// after the server confirmed, so a failed DELETE keeps the callback able
+    /// to receive events (Python SDK order).
     pub async fn unsubscribe(&self, subscription_id: &str) -> Result<bool> {
-        // Unregister from demuxer first
-        if let Some(demuxer) = self.req.get_demuxer() {
-            demuxer.unregister_event_callback(subscription_id);
-        }
-
         let mut query = HashMap::new();
         query.insert("subscription_id".to_string(), subscription_id.to_string());
         let resp = self.send(Method::DELETE, "/appmesh/subscribe", None, None, Some(query), false).await?;
-        Ok(resp.status() == StatusCode::OK)
+        let status = resp.status();
+        if status == StatusCode::OK || status == StatusCode::NOT_FOUND {
+            if let Some(demuxer) = self.req.get_demuxer() {
+                demuxer.unregister_event_callback(subscription_id);
+            }
+        }
+        Ok(status == StatusCode::OK)
     }
 
+    /// Deletes an application; returns `false` when it did not exist.
     pub async fn delete_app(&self, name: &str) -> Result<bool> {
-        let resp =
-            self.send(Method::DELETE, &format!("/appmesh/app/{}", encode_path_segment(name)), None, None, None, false).await?;
+        let resp = self
+            .send(Method::DELETE, &format!("/appmesh/app/{}", encode_path_segment(name)), None, None, None, false)
+            .await?;
         match resp.status() {
             StatusCode::OK => Ok(true),
             StatusCode::NOT_FOUND => Ok(false),
@@ -994,13 +969,17 @@ impl AppMeshClient {
         }
     }
 
+    /// Enables scheduling of an application.
     pub async fn enable_app(&self, name: &str) -> Result<()> {
-        self.send(Method::POST, &format!("/appmesh/app/{}/enable", encode_path_segment(name)), None, None, None, true).await?;
+        self.send(Method::POST, &format!("/appmesh/app/{}/enable", encode_path_segment(name)), None, None, None, true)
+            .await?;
         Ok(())
     }
 
+    /// Disables scheduling of an application; current runs are stopped by the server.
     pub async fn disable_app(&self, name: &str) -> Result<()> {
-        self.send(Method::POST, &format!("/appmesh/app/{}/disable", encode_path_segment(name)), None, None, None, true).await?;
+        self.send(Method::POST, &format!("/appmesh/app/{}/disable", encode_path_segment(name)), None, None, None, true)
+            .await?;
         Ok(())
     }
 }
@@ -1011,12 +990,7 @@ impl AppMeshClient {
     /// Run an application synchronously and return `(exit_code, stdout)`.
     ///
     /// `exit_code` is populated from the `X-Exit-Code` header when present.
-    pub async fn run_app_sync(
-        &self,
-        app: &Application,
-        max_time: i32,
-        lifecycle: i32,
-    ) -> Result<(Option<i32>, String)> {
+    pub async fn run_app_sync(&self, app: &Application, max_time: i32, lifecycle: i32) -> Result<(Option<i32>, String)> {
         let query = hmap! {
             HTTP_QUERY_KEY_TIMEOUT => max_time,
             HTTP_QUERY_KEY_LIFECYCLE => lifecycle,
@@ -1028,7 +1002,7 @@ impl AppMeshClient {
                 Method::POST,
                 "/appmesh/app/syncrun",
                 Some(&body_bytes),
-                Some(hmap! { HTTP_HEADER_CONTENT_TYPE => "application/json" }),
+                Some(hmap! {HTTP_HEADER_CONTENT_TYPE => "application/json"}),
                 Some(query),
                 false,
             )
@@ -1045,17 +1019,8 @@ impl AppMeshClient {
 
     /// Convenience: run a shell command synchronously. No app name is sent, so
     /// the daemon assigns a unique temporary name per call.
-    pub async fn run_sync(
-        &self,
-        command: &str,
-        max_time: i32,
-        lifecycle: i32,
-    ) -> Result<(Option<i32>, String)> {
-        let app = Application {
-            command: Some(command.to_string()),
-            shell: Some(true),
-            ..Default::default()
-        };
+    pub async fn run_sync(&self, command: &str, max_time: i32, lifecycle: i32) -> Result<(Option<i32>, String)> {
+        let app = Application { command: Some(command.to_string()), shell: Some(true), ..Default::default() };
         self.run_app_sync(&app, max_time, lifecycle).await
     }
 
@@ -1063,12 +1028,7 @@ impl AppMeshClient {
     ///
     /// The handle captures the current forwarding target so later polling can keep talking to the
     /// same cluster node.
-    pub async fn run_app_async(
-        self: &Arc<Self>,
-        app: &Application,
-        max_time: i32,
-        lifecycle: i32,
-    ) -> Result<AppRun> {
+    pub async fn run_app_async(self: &Arc<Self>, app: &Application, max_time: i32, lifecycle: i32) -> Result<AppRun> {
         let query = hmap! {
             HTTP_QUERY_KEY_TIMEOUT => max_time,
             HTTP_QUERY_KEY_LIFECYCLE => lifecycle,
@@ -1080,7 +1040,7 @@ impl AppMeshClient {
                 Method::POST,
                 "/appmesh/app/run",
                 Some(&body_bytes),
-                Some(hmap! { HTTP_HEADER_CONTENT_TYPE => "application/json" }),
+                Some(hmap! {HTTP_HEADER_CONTENT_TYPE => "application/json"}),
                 Some(query),
                 true,
             )
@@ -1104,17 +1064,8 @@ impl AppMeshClient {
     /// Convenience: run a shell command asynchronously. No app name is sent, so
     /// the daemon assigns a unique temporary name per call; [`AppRun::app_name`]
     /// carries the server-assigned name.
-    pub async fn run_async(
-        self: &Arc<Self>,
-        command: &str,
-        max_time: i32,
-        lifecycle: i32,
-    ) -> Result<AppRun> {
-        let app = Application {
-            command: Some(command.to_string()),
-            shell: Some(true),
-            ..Default::default()
-        };
+    pub async fn run_async(self: &Arc<Self>, command: &str, max_time: i32, lifecycle: i32) -> Result<AppRun> {
+        let app = Application { command: Some(command.to_string()), shell: Some(true), ..Default::default() };
         self.run_app_async(&app, max_time, lifecycle).await
     }
 
@@ -1159,9 +1110,8 @@ impl AppMeshClient {
         let start_time = std::time::Instant::now();
 
         loop {
-            let app_out = self
-                .get_app_output(&run.app_name, last_output_position, 0, 10240, Some(&run.proc_uid), Some(1))
-                .await?;
+            let app_out =
+                self.get_app_output(&run.app_name, last_output_position, 0, 10240, Some(&run.proc_uid), Some(1)).await?;
 
             // Advance only on an explicit position: a missing header means no new
             // output, and resetting the cursor would re-deliver from byte 0.
@@ -1196,8 +1146,13 @@ impl AppMeshClient {
     /// Run a task by sending JSON data to a running app and returning its response body.
     pub async fn run_task(&self, name: &str, data: Value, timeout: i32) -> Result<String> {
         let timeout = if timeout <= 0 { 300 } else { timeout };
-        let query = hmap! { HTTP_QUERY_KEY_TIMEOUT => timeout };
-        let body_bytes = serde_json::to_vec(&data)?;
+        let query = hmap! {HTTP_QUERY_KEY_TIMEOUT => timeout};
+        // A bare string is the payload itself — the daemon delivers the body as-is
+        // (Python/JS SDKs send strings raw); any other JSON value is sent as JSON.
+        let body_bytes = match data {
+            Value::String(text) => text.into_bytes(),
+            other => serde_json::to_vec(&other)?,
+        };
 
         let resp = self
             .send(
@@ -1216,8 +1171,9 @@ impl AppMeshClient {
 
     /// Cancel a running task.
     pub async fn cancel_task(&self, name: &str) -> Result<bool> {
-        let resp =
-            self.send(Method::DELETE, &format!("/appmesh/app/{}/task", encode_path_segment(name)), None, None, None, false).await?;
+        let resp = self
+            .send(Method::DELETE, &format!("/appmesh/app/{}/task", encode_path_segment(name)), None, None, None, false)
+            .await?;
         Ok(resp.status() == StatusCode::OK)
     }
 }
@@ -1236,22 +1192,23 @@ impl AppMeshClient {
     /// first App Mesh administrator. The Engine accepts this only from loopback
     /// on a built-in auth owner while the one-time enrollment window is open.
     pub async fn enroll_first_admin(&self) -> Result<Value> {
-        let resp = self
-            .send(Method::POST, "/appmesh/auth/enroll-first-admin", None, None, None, true)
-            .await?;
+        let resp = self.send(Method::POST, "/appmesh/auth/enroll-first-admin", None, None, None, true).await?;
         resp.json()
     }
 
+    /// Returns live host resource usage (CPU, memory, network).
     pub async fn get_host_resources(&self) -> Result<Value> {
         let resp = self.send(Method::GET, "/appmesh/resources", None, None, None, true).await?;
         resp.json()
     }
 
+    /// Returns the daemon configuration document.
     pub async fn get_config(&self) -> Result<Value> {
         let resp = self.send(Method::GET, "/appmesh/config", None, None, None, true).await?;
         resp.json()
     }
 
+    /// Replaces the daemon configuration document.
     pub async fn set_config(&self, config: Value) -> Result<Value> {
         let body_bytes = serde_json::to_vec(&config)?;
         let resp = self
@@ -1259,7 +1216,7 @@ impl AppMeshClient {
                 Method::POST,
                 "/appmesh/config",
                 Some(&body_bytes),
-                Some(hmap! { HTTP_HEADER_CONTENT_TYPE => "application/json" }),
+                Some(hmap! {HTTP_HEADER_CONTENT_TYPE => "application/json"}),
                 None,
                 true,
             )
@@ -1267,12 +1224,14 @@ impl AppMeshClient {
         resp.json()
     }
 
+    /// Sets the daemon log level (e.g. `DEBUG`, `INFO`).
     pub async fn set_log_level(&self, level: &str) -> Result<String> {
-        let cfg = json!({ JSON_KEY_BASE_CONFIG: { JSON_KEY_LOG_LEVEL: level } });
+        let cfg = json!({JSON_KEY_BASE_CONFIG : {JSON_KEY_LOG_LEVEL : level}});
         let resp = self.set_config(cfg).await?;
         Ok(resp[JSON_KEY_BASE_CONFIG][JSON_KEY_LOG_LEVEL].as_str().unwrap_or(level).to_string())
     }
 
+    /// Returns Prometheus metrics in text exposition format.
     pub async fn get_metrics(&self) -> Result<String> {
         let resp = self.send(Method::GET, "/appmesh/metrics", None, None, None, true).await?;
         resp.text()
@@ -1282,41 +1241,63 @@ impl AppMeshClient {
 // -- Label Management -------------------------------------------------------
 
 impl AppMeshClient {
+    /// Lists the host labels used for placement constraints.
     pub async fn list_labels(&self) -> Result<Value> {
         let resp = self.send(Method::GET, "/appmesh/labels", None, None, None, true).await?;
         resp.json()
     }
 
-
+    /// Adds or updates a host label.
     pub async fn add_label(&self, label: &str, value: &str) -> Result<()> {
-        let query = hmap! { HTTP_QUERY_KEY_VALUE => value };
-        self.send(Method::PUT, &format!("/appmesh/label/{}", encode_path_segment(label)), None, None, Some(query), true).await?;
+        let query = hmap! {HTTP_QUERY_KEY_VALUE => value};
+        self.send(Method::PUT, &format!("/appmesh/label/{}", encode_path_segment(label)), None, None, Some(query), true)
+            .await?;
         Ok(())
     }
 
-
+    /// Deletes a host label.
     pub async fn delete_label(&self, label: &str) -> Result<()> {
         self.send(Method::DELETE, &format!("/appmesh/label/{}", encode_path_segment(label)), None, None, None, true).await?;
         Ok(())
     }
-
 }
 
 // -- File Management --------------------------------------------------------
 
+fn is_json_reply(headers: &reqwest::header::HeaderMap) -> bool {
+    headers
+        .get("content-type")
+        .and_then(|v| v.to_str().ok())
+        .map(|v| v.to_ascii_lowercase().contains("json"))
+        .unwrap_or(false)
+}
+
+/// A JSON reply without Content-Disposition is a legacy placeholder, not content.
+fn check_download_reply(headers: &reqwest::header::HeaderMap) -> Result<()> {
+    if headers.get("content-disposition").is_none() && is_json_reply(headers) {
+        return Err(AppMeshError::RequestFailed {
+            status: StatusCode::NOT_FOUND,
+            message: "File download is not supported by this server surface (legacy reply without content)".to_string(),
+        });
+    }
+    Ok(())
+}
+
+/// A 200 JSON `{"message":...}` body is a legacy daemon's status reply: nothing was stored.
+fn check_upload_reply(status: StatusCode, headers: &reqwest::header::HeaderMap, body: &str) -> Result<()> {
+    if status == StatusCode::OK && is_json_reply(headers) && body.starts_with("{\"message\"") {
+        return Err(AppMeshError::RequestFailed {
+            status: StatusCode::NOT_FOUND,
+            message: "File upload is not supported by this server surface (legacy reply without storage)".to_string(),
+        });
+    }
+    Ok(())
+}
+
 impl AppMeshClient {
-    /// Download a file from the remote server.
-    ///
-    /// When `preserve_permissions` is true, POSIX mode/owner/group metadata from response headers
-    /// is applied locally on a best-effort basis.
-    ///
-    /// An empty `local_file` defaults to the basename of `remote_file`.
-    pub async fn download_file(
-        &self,
-        remote_file: &str,
-        local_file: &str,
-        preserve_permissions: bool,
-    ) -> Result<()> {
+    /// Download a remote file (`preserve_permissions` applies returned POSIX
+    /// metadata best-effort; empty `local_file` defaults to the remote basename).
+    pub async fn download_file(&self, remote_file: &str, local_file: &str, preserve_permissions: bool) -> Result<()> {
         // Empty local_file: derive the local path from the remote file's basename.
         let local_file = if local_file.is_empty() {
             Path::new(remote_file).file_name().and_then(|n| n.to_str()).unwrap_or(remote_file)
@@ -1324,17 +1305,23 @@ impl AppMeshClient {
             local_file
         };
         let remote_path = encode_file_path(remote_file);
-        let headers = hmap! { HTTP_HEADER_KEY_X_FILE_PATH => remote_path.as_str() };
+        let headers = hmap! {HTTP_HEADER_KEY_X_FILE_PATH => remote_path.as_str()};
+        let fallback_headers = headers.clone();
         let local_path = Path::new(local_file);
 
-        // Stream response chunks to disk (bounded memory) when the transport supports it.
+        // Plain-HTTP transport: GET answers the file bytes.
         self.prepare_bearer().await?;
-        if let Some(mut resp) = self
-            .req
-            .send_streaming(Method::GET, "/appmesh/file/download", None, Some(headers.clone()), None, true)
-            .await?
+        if let Some(resp) =
+            self.req.send_streaming(Method::GET, "/appmesh/file/download", None, Some(headers), None, false).await?
         {
+            if !resp.status().is_success() {
+                let status = resp.status();
+                let text = resp.text().await.unwrap_or_default();
+                return Err(AppMeshError::RequestFailed { status, message: text });
+            }
+            check_download_reply(resp.headers())?;
             let mut file = fs::File::create(local_path)?;
+            let mut resp = resp;
             while let Some(chunk) = resp.chunk().await? {
                 file.write_all(&chunk)?;
             }
@@ -1347,27 +1334,40 @@ impl AppMeshClient {
         }
 
         // Buffered fallback for transports without HTTP streaming.
-        let resp =
-            self.send(Method::GET, "/appmesh/file/download", None, Some(headers), None, true).await?;
+        let resp = self.send(Method::GET, "/appmesh/file/download", None, Some(fallback_headers), None, true).await?;
+        check_download_reply(resp.headers())?;
         fs::write(local_path, resp.bytes())?;
-
         if preserve_permissions {
             let _ = Self::apply_file_attributes(local_path, resp.headers());
         }
         Ok(())
     }
 
-    /// Upload a file to the remote server.
-    ///
-    /// When `preserve_permissions` is true, local POSIX metadata is sent in headers so the server
-    /// can recreate permissions/ownership when supported.
-    ///
-    /// An empty `remote_file` defaults to the local file's basename.
-    pub async fn upload_file(
+    /// Delete a remote file. The same path validation as upload/download
+    /// applies on the daemon; a missing file fails with 404.
+    pub async fn delete_file(&self, remote_file: &str) -> Result<()> {
+        let remote_path = encode_file_path(remote_file);
+        let headers = hmap! {HTTP_HEADER_KEY_X_FILE_PATH => remote_path.as_str()};
+        self.prepare_bearer().await?;
+        self.send(Method::DELETE, "/appmesh/file/delete", None, Some(headers), None, true).await?;
+        Ok(())
+    }
+
+    /// Upload a local file (`preserve_permissions` sends local POSIX metadata;
+    /// empty `remote_file` defaults to the local basename). Plain-HTTP transport:
+    /// POST streams the raw file bytes as the body.
+    pub async fn upload_file(&self, local_file: &str, remote_file: &str, preserve_permissions: bool) -> Result<()> {
+        self.upload_file_with(local_file, remote_file, preserve_permissions, false).await
+    }
+
+    /// [`Self::upload_file`] with `overwrite`: the daemon refuses an existing
+    /// remote file with 409 unless the caller opts into replacing it.
+    pub async fn upload_file_with(
         &self,
         local_file: &str,
         remote_file: &str,
         preserve_permissions: bool,
+        overwrite: bool,
     ) -> Result<()> {
         let remote_file = if remote_file.is_empty() {
             Path::new(local_file).file_name().and_then(|n| n.to_str()).unwrap_or(local_file)
@@ -1379,11 +1379,6 @@ impl AppMeshClient {
             return Err(AppMeshError::NotFound(format!("Local file not found: {}", local_file)));
         }
 
-        // Wire format matches the Python/Go/JS SDKs: multipart/form-data with a text field
-        // "filename" (remote basename) and the content in a part named "file"; the remote
-        // path travels in the X-File-Path header.
-        let remote_name = Path::new(remote_file).file_name().and_then(|n| n.to_str()).unwrap_or(remote_file);
-        let local_name = Path::new(local_file).file_name().and_then(|n| n.to_str()).unwrap_or(local_file);
         let remote_path = encode_file_path(remote_file);
         let mut headers = hmap! {
             HTTP_HEADER_KEY_X_FILE_PATH => remote_path.as_str(),
@@ -1391,58 +1386,41 @@ impl AppMeshClient {
         if preserve_permissions {
             Self::get_file_attributes(local_path, &mut headers);
         }
+        if overwrite {
+            headers.insert(HTTP_HEADER_KEY_X_FILE_OVERWRITE.to_string(), "true".to_string());
+        }
+        let fallback_headers = headers.clone();
 
-        // Stream the multipart body (bounded memory) when the transport supports it.
         self.prepare_bearer().await?;
         let file = tokio::fs::File::open(local_path).await?;
-        let file_len = file.metadata().await?.len();
-        let file_part = reqwest::multipart::Part::stream_with_length(reqwest::Body::from(file), file_len)
-            .file_name(local_name.to_string())
-            .mime_str("application/octet-stream")?;
-        let form = reqwest::multipart::Form::new()
-            .text("filename", remote_name.to_string())
-            .part("file", file_part);
-        let mut streaming_headers = headers.clone();
-        streaming_headers.insert(
-            HTTP_HEADER_CONTENT_TYPE.to_string(),
-            format!("multipart/form-data; boundary={}", form.boundary()),
-        );
-        if self
+        if let Some(resp) = self
             .req
             .send_streaming(
                 Method::POST,
                 "/appmesh/file/upload",
-                Some(reqwest::Body::wrap_stream(form.into_stream())),
-                Some(streaming_headers),
+                Some(reqwest::Body::from(file)),
+                Some(headers),
                 None,
-                true,
+                false,
             )
             .await?
-            .is_some()
         {
+            let status = resp.status();
+            if !status.is_success() {
+                let text = resp.text().await.unwrap_or_default();
+                return Err(AppMeshError::RequestFailed { status, message: text });
+            }
+            let headers = resp.headers().clone();
+            let body = resp.text().await.unwrap_or_default();
+            check_upload_reply(status, &headers, &body)?;
             return Ok(());
         }
 
-        // Buffered fallback for transports without HTTP streaming: same multipart body,
-        // serialized in memory.
-        let file_content = fs::read(local_file)?;
-        let file_part = reqwest::multipart::Part::bytes(file_content)
-            .file_name(local_name.to_string())
-            .mime_str("application/octet-stream")?;
-        let form = reqwest::multipart::Form::new()
-            .text("filename", remote_name.to_string())
-            .part("file", file_part);
-        headers.insert(
-            HTTP_HEADER_CONTENT_TYPE.to_string(),
-            format!("multipart/form-data; boundary={}", form.boundary()),
-        );
-        let mut body_bytes = Vec::new();
-        let mut stream = std::pin::pin!(form.into_stream());
-        while let Some(chunk) = futures_util::TryStreamExt::try_next(&mut stream).await? {
-            body_bytes.extend_from_slice(&chunk);
-        }
-        self.send(Method::POST, "/appmesh/file/upload", Some(&body_bytes), Some(headers), None, true)
-            .await?;
+        // Buffered fallback for transports without HTTP streaming.
+        let body_bytes = fs::read(local_file)?;
+        let resp =
+            self.send(Method::POST, "/appmesh/file/upload", Some(&body_bytes), Some(fallback_headers), None, true).await?;
+        check_upload_reply(resp.status(), resp.headers(), std::str::from_utf8(resp.body()).unwrap_or(""))?;
         Ok(())
     }
 
@@ -1459,22 +1437,13 @@ impl AppMeshClient {
                 headers.get(HTTP_HEADER_KEY_X_FILE_USER).and_then(|v| v.to_str().ok()),
                 headers.get(HTTP_HEADER_KEY_X_FILE_GROUP).and_then(|v| v.to_str().ok()),
             ) {
-                let uid = UnixUser::from_name(u)
-                    .ok()
-                    .flatten()
-                    .map(|x| x.uid)
-                    .or_else(|| u.parse().ok().map(Uid::from_raw));
+                let uid = UnixUser::from_name(u).ok().flatten().map(|x| x.uid).or_else(|| u.parse().ok().map(Uid::from_raw));
 
-                let gid = Group::from_name(g)
-                    .ok()
-                    .flatten()
-                    .map(|x| x.gid)
-                    .or_else(|| g.parse().ok().map(Gid::from_raw));
+                let gid = Group::from_name(g).ok().flatten().map(|x| x.gid).or_else(|| g.parse().ok().map(Gid::from_raw));
 
                 if let (Some(uid), Some(gid)) = (uid, gid) {
-                    chown(local_file, Some(uid), Some(gid)).map_err(|e| {
-                        AppMeshError::Other(format!("Failed to chown '{}': {}", local_file.display(), e))
-                    })?;
+                    chown(local_file, Some(uid), Some(gid))
+                        .map_err(|e| AppMeshError::Other(format!("Failed to chown '{}': {}", local_file.display(), e)))?;
                 }
             }
 
@@ -1510,20 +1479,12 @@ impl AppMeshClient {
 
             headers.insert(
                 HTTP_HEADER_KEY_X_FILE_USER.into(),
-                UnixUser::from_uid(Uid::from_raw(uid))
-                    .ok()
-                    .flatten()
-                    .map(|u| u.name)
-                    .unwrap_or_else(|| uid.to_string()),
+                UnixUser::from_uid(Uid::from_raw(uid)).ok().flatten().map(|u| u.name).unwrap_or_else(|| uid.to_string()),
             );
 
             headers.insert(
                 HTTP_HEADER_KEY_X_FILE_GROUP.into(),
-                Group::from_gid(Gid::from_raw(gid))
-                    .ok()
-                    .flatten()
-                    .map(|g| g.name)
-                    .unwrap_or_else(|| gid.to_string()),
+                Group::from_gid(Gid::from_raw(gid)).ok().flatten().map(|g| g.name).unwrap_or_else(|| gid.to_string()),
             );
         }
     }
@@ -1584,11 +1545,9 @@ mod tests {
     fn test_decode_jwt_exp_valid() {
         // Build a minimal JWT: header.payload.signature
         // payload: {"sub":"admin","exp":1700000000}
-        let payload = serde_json::json!({"sub": "admin", "exp": 1700000000u64});
-        let payload_b64 = base64::engine::general_purpose::URL_SAFE_NO_PAD
-            .encode(serde_json::to_vec(&payload).unwrap());
-        let header_b64 = base64::engine::general_purpose::URL_SAFE_NO_PAD
-            .encode(b"{\"alg\":\"HS256\"}");
+        let payload = serde_json::json!({"sub" : "admin", "exp" : 1700000000u64});
+        let payload_b64 = base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(serde_json::to_vec(&payload).unwrap());
+        let header_b64 = base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(b"{\"alg\":\"HS256\"}");
         let token = format!("{}.{}.fake_sig", header_b64, payload_b64);
 
         let times = AppMeshClient::decode_jwt_times(&token);
@@ -1597,11 +1556,9 @@ mod tests {
 
     #[test]
     fn test_decode_jwt_exp_missing() {
-        let payload = serde_json::json!({"sub": "admin"});
-        let payload_b64 = base64::engine::general_purpose::URL_SAFE_NO_PAD
-            .encode(serde_json::to_vec(&payload).unwrap());
-        let header_b64 = base64::engine::general_purpose::URL_SAFE_NO_PAD
-            .encode(b"{\"alg\":\"HS256\"}");
+        let payload = serde_json::json!({"sub" : "admin"});
+        let payload_b64 = base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(serde_json::to_vec(&payload).unwrap());
+        let header_b64 = base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(b"{\"alg\":\"HS256\"}");
         let token = format!("{}.{}.fake_sig", header_b64, payload_b64);
 
         assert_eq!(AppMeshClient::decode_jwt_times(&token), None);
@@ -1616,14 +1573,12 @@ mod tests {
 
     /// Build an unsigned JWT carrying iat/exp, all the refresh pacing logic reads.
     fn make_jwt(iat: u64, exp: u64) -> String {
-        let mut claims = serde_json::json!({ "exp": exp });
+        let mut claims = serde_json::json!({"exp" : exp});
         if iat > 0 {
             claims["iat"] = serde_json::json!(iat);
         }
-        let payload_b64 = base64::engine::general_purpose::URL_SAFE_NO_PAD
-            .encode(serde_json::to_vec(&claims).unwrap());
-        let header_b64 =
-            base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(b"{\"alg\":\"HS256\"}");
+        let payload_b64 = base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(serde_json::to_vec(&claims).unwrap());
+        let header_b64 = base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(b"{\"alg\":\"HS256\"}");
         format!("{}.{}.fake_sig", header_b64, payload_b64)
     }
 
@@ -1657,9 +1612,8 @@ mod tests {
     fn test_refresh_margin_spreads_across_tokens() {
         let now = 1_700_000_000u64;
         let exp = now + 3600;
-        let distinct: std::collections::HashSet<u64> = (0..20)
-            .map(|i| AppMeshClient::refresh_margin(&format!("{}{}", make_jwt(now, exp), i), exp, now, now))
-            .collect();
+        let distinct: std::collections::HashSet<u64> =
+            (0..20).map(|i| AppMeshClient::refresh_margin(&format!("{}{}", make_jwt(now, exp), i), exp, now, now)).collect();
         assert!(distinct.len() > 5, "jitter must spread renewals, got {} distinct", distinct.len());
     }
 
@@ -1738,10 +1692,7 @@ mod tests {
         ) -> Result<http::Response<Bytes>> {
             self.state.calls.lock().unwrap_or_else(|e| e.into_inner()).push("send");
             assert_eq!(path, "/appmesh/app/atomic-app");
-            assert_eq!(
-                query.as_ref().and_then(|q| q.get("subscribe_events")).map(String::as_str),
-                Some("START,EXIT")
-            );
+            assert_eq!(query.as_ref().and_then(|q| q.get("subscribe_events")).map(String::as_str), Some("START,EXIT"));
             // The daemon pushes START before the add-app response returns.
             self.state.event_tx.send(event_frame("sub-atomic", 1)).unwrap();
             self.state.event_tx.send(event_frame("sub-atomic", 2)).unwrap();
@@ -1753,7 +1704,7 @@ mod tests {
                 assert!(tokio::time::Instant::now() < deadline, "events were not buffered");
                 tokio::time::sleep(Duration::from_millis(5)).await;
             }
-            let body = serde_json::to_vec(&json!({"name": "atomic-app", "subscription_id": "sub-atomic"})).unwrap();
+            let body = serde_json::to_vec(&json!({"name" : "atomic-app", "subscription_id" : "sub-atomic"})).unwrap();
             Ok(http::Response::builder().status(200).body(Bytes::from(body)).unwrap())
         }
 
@@ -1806,10 +1757,7 @@ mod tests {
         assert_eq!(result.subscription_id.as_deref(), Some("sub-atomic"));
 
         // The demuxer must own the read side before the request is sent.
-        assert_eq!(
-            *state.calls.lock().unwrap_or_else(|e| e.into_inner()),
-            vec!["enable_demuxer", "send"]
-        );
+        assert_eq!(*state.calls.lock().unwrap_or_else(|e| e.into_inner()), vec!["enable_demuxer", "send"]);
 
         // A live event sent after registration must land after the flushed ones.
         state.event_tx.send(event_frame("sub-atomic", 3)).unwrap();

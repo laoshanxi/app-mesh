@@ -80,11 +80,7 @@ fn login_scopes(scopes: &[String], refresh_token: bool) -> Vec<String> {
     if refresh_token {
         return scopes.to_vec();
     }
-    let filtered: Vec<String> = scopes
-        .iter()
-        .filter(|scope| scope.as_str() != "offline_access")
-        .cloned()
-        .collect();
+    let filtered: Vec<String> = scopes.iter().filter(|scope| scope.as_str() != "offline_access").cloned().collect();
     if filtered.is_empty() {
         // An empty list would make the SDK apply its defaults, which include
         // offline_access; substitute the same defaults without it.
@@ -107,11 +103,7 @@ async fn password_login(oauth: &OAuthClient, args: &LogonArgs, builtin: bool) ->
     if username.is_empty() {
         bail!("Username cannot be empty");
     }
-    let password = Zeroizing::new(if args.password_stdin {
-        read_password_stdin()?
-    } else {
-        prompt_password("Password: ")?
-    });
+    let password = Zeroizing::new(if args.password_stdin { read_password_stdin()? } else { prompt_password("Password: ")? });
     if password.is_empty() {
         bail!("Password cannot be empty");
     }
@@ -124,17 +116,12 @@ async fn password_login(oauth: &OAuthClient, args: &LogonArgs, builtin: bool) ->
             let retry = builtin
                 .then(|| builtin_email(&username))
                 .flatten()
-                .filter(|_| {
-                    matches!(&error, AppMeshError::RequestFailed { status, .. } if status.as_u16() == 401)
-                });
+                .filter(|_| matches!(&error, AppMeshError::RequestFailed { status, .. } if status.as_u16() == 401));
             match retry {
                 Some(email) => {
                     // The retried identity is user input; keep it out of the log.
                     eprintln!("Built-in password login rejected the short name; retrying with its email form");
-                    oauth
-                        .password_login(&email, password.as_str())
-                        .await
-                        .context("Built-in password login failed")
+                    oauth.password_login(&email, password.as_str()).await.context("Built-in password login failed")
                 }
                 None => Err(error).context("Built-in password login failed"),
             }
@@ -156,10 +143,7 @@ pub async fn logon(cli: &Cli, args: &LogonArgs) -> Result<i32> {
     // Discovery goes over the HTTPS side channel: the WSS transport presents its
     // bearer only at upgrade time, so it must stay unconnected until a token exists.
     let advertised: EngineAuthConfig = serde_json::from_value(
-        engine
-            .get_auth_config_https(cli.forward_to.as_deref())
-            .await
-            .context("Engine OAuth discovery failed")?,
+        engine.get_auth_config_https(cli.forward_to.as_deref()).await.context("Engine OAuth discovery failed")?,
     )
     .context("Engine returned invalid OAuth configuration")?;
     let builtin_password = advertised.flows.iter().any(|flow| flow == "password");
@@ -187,9 +171,7 @@ pub async fn logon(cli: &Cli, args: &LogonArgs) -> Result<i32> {
         true => oauth_config,
         false => oauth_config.browser_entry(advertised.browser_entry.trim()),
     };
-    let oauth = OAuthClient::discover(oauth_config.clone())
-        .await
-        .context("Authentication service discovery failed")?;
+    let oauth = OAuthClient::discover(oauth_config.clone()).await.context("Authentication service discovery failed")?;
 
     let tokens = if args.browser {
         browser_login(&oauth, args.login_timeout).await?
@@ -218,11 +200,7 @@ pub async fn logon(cli: &Cli, args: &LogonArgs) -> Result<i32> {
     // Validate the access token at the resource server before reporting success. The
     // refresh token remains only in the OAuth/CLI session and is never installed.
     engine.client().set_token(&tokens.access_token);
-    let mut principal = engine
-        .client()
-        .get_current_principal()
-        .await
-        .context("Engine rejected the access token")?;
+    let mut principal = engine.client().get_current_principal().await.context("Engine rejected the access token")?;
     if should_enroll_first_admin(&first_admin_enrollment, &principal) {
         if cli.forward_to.is_some() {
             bail!(
@@ -233,9 +211,7 @@ pub async fn logon(cli: &Cli, args: &LogonArgs) -> Result<i32> {
             .client()
             .enroll_first_admin()
             .await
-            .context(
-                "First administrator setup failed. Run 'appm logon' once on the authentication owner host",
-            )?;
+            .context("First administrator setup failed. Run 'appm logon' once on the authentication owner host")?;
         eprintln!("Assigned the first App Mesh administrator.");
     }
     let session = StoredSession::new(engine_endpoint.clone(), oauth_config, tokens);
@@ -263,14 +239,12 @@ pub async fn logon(cli: &Cli, args: &LogonArgs) -> Result<i32> {
     Ok(0)
 }
 
-fn should_enroll_first_admin(
-    enrollment: &FirstAdminEnrollment,
-    principal: &serde_json::Value,
-) -> bool {
+fn should_enroll_first_admin(enrollment: &FirstAdminEnrollment, principal: &serde_json::Value) -> bool {
     enrollment.available
-        && enrollment.subject.as_deref().is_some_and(|expected| {
-            principal.get("subject").and_then(serde_json::Value::as_str) == Some(expected)
-        })
+        && enrollment
+            .subject
+            .as_deref()
+            .is_some_and(|expected| principal.get("subject").and_then(serde_json::Value::as_str) == Some(expected))
 }
 
 pub async fn logoff(cli: &Cli, args: &LogoffArgs) -> Result<i32> {
@@ -289,25 +263,22 @@ pub async fn logoff(cli: &Cli, args: &LogoffArgs) -> Result<i32> {
                 match oauth.revoke().await {
                     Ok(true) => revocation_message = "Tokens were revoked.".into(),
                     Ok(false) => {
-                        revocation_message =
-                            "The authentication service does not support revocation. The access token remains valid until expiry."
-                                .into()
+                        revocation_message = "The authentication service does not support revocation. The access token \
+								remains valid until expiry."
+                            .into()
                     }
                     Err(error) => {
                         revocation_failed = true;
-                        revocation_message = format!(
-                            "Token revocation failed ({}). The access token may remain valid until expiry.",
-                            error
-                        )
+                        revocation_message =
+                            format!("Token revocation failed ({}). The access token may remain valid until expiry.", error)
                     }
                 }
             }
             Err(error) => {
                 revocation_failed = true;
                 revocation_message = format!(
-                    "The authentication service was unavailable for revocation ({}). The access token may remain valid until expiry.",
-                    error
-                )
+	"The authentication service was unavailable for revocation ({}). The access token may remain valid until expiry.",
+												  error)
             }
         }
     }
@@ -320,23 +291,17 @@ pub async fn logoff(cli: &Cli, args: &LogoffArgs) -> Result<i32> {
 pub async fn loginfo(cli: &Cli, _args: &LoginfoArgs) -> Result<i32> {
     let engine_endpoint = get_current_endpoint(cli)?;
     let client = build_client_with_auth(cli).await?;
-    let principal = client
-        .client()
-        .get_current_principal()
-        .await
-        .context("The stored sign-in session is not valid at the Engine")?;
-    let session = config::load_session(&engine_endpoint)?.ok_or_else(|| {
-        anyhow::anyhow!("No sign-in session is configured for {}", engine_endpoint)
-    })?;
+    let principal =
+        client.client().get_current_principal().await.context("The stored sign-in session is not valid at the Engine")?;
+    let session = config::load_session(&engine_endpoint)?
+        .ok_or_else(|| anyhow::anyhow!("No sign-in session is configured for {}", engine_endpoint))?;
 
     println!("Engine: {}", engine_endpoint);
     if let Some(principal_id) = principal.get("principal_id").and_then(serde_json::Value::as_str) {
         println!("Principal: {}", principal_id);
     }
-    if let Some(display_name) = principal
-        .get("display_name")
-        .and_then(serde_json::Value::as_str)
-        .filter(|name| !name.is_empty())
+    if let Some(display_name) =
+        principal.get("display_name").and_then(serde_json::Value::as_str).filter(|name| !name.is_empty())
     {
         println!("Display name: {}", display_name);
     }
@@ -355,10 +320,7 @@ fn format_token_expiry(epoch: u64) -> String {
     let Ok(timestamp) = jiff::Timestamp::from_second(seconds) else {
         return epoch.to_string();
     };
-    timestamp
-        .to_zoned(jiff::tz::TimeZone::system())
-        .strftime("%Y-%m-%d %H:%M:%S %Z")
-        .to_string()
+    timestamp.to_zoned(jiff::tz::TimeZone::system()).strftime("%Y-%m-%d %H:%M:%S %Z").to_string()
 }
 
 async fn device_login(oauth: &OAuthClient) -> Result<appmesh::TokenSet> {
@@ -370,16 +332,11 @@ async fn device_login(oauth: &OAuthClient) -> Result<appmesh::TokenSet> {
         .unwrap_or("the verification URL supplied by the authentication service");
     eprintln!("Open {}", verification_uri);
     eprintln!("Enter code: {}", device.user_code);
-    oauth
-        .wait_for_device_authorization(&device)
-        .await
-        .context("Device authorization failed")
+    oauth.wait_for_device_authorization(&device).await.context("Device authorization failed")
 }
 
 async fn browser_login(oauth: &OAuthClient, timeout_seconds: u64) -> Result<appmesh::TokenSet> {
-    let listener = TcpListener::bind((std::net::Ipv4Addr::LOCALHOST, 0))
-        .await
-        .context("bind OAuth loopback callback")?;
+    let listener = TcpListener::bind((std::net::Ipv4Addr::LOCALHOST, 0)).await.context("bind OAuth loopback callback")?;
     let port = listener.local_addr()?.port();
     let request = oauth.authorization_request(&format!("http://127.0.0.1:{}/callback", port))?;
 
@@ -396,10 +353,7 @@ async fn browser_login(oauth: &OAuthClient, timeout_seconds: u64) -> Result<appm
     )
     .await
     .map_err(|_| anyhow::anyhow!("Timed out while waiting for the browser callback"))??;
-    oauth
-        .exchange_authorization_code(&code, &request)
-        .await
-        .context("Authorization code exchange failed")
+    oauth.exchange_authorization_code(&code, &request).await.context("Authorization code exchange failed")
 }
 
 /// Upper bound for a callback request head, matching the previous single-read buffer.
@@ -440,9 +394,7 @@ impl CallbackHead {
     /// The complete head, without the terminator or any bytes that follow it.
     fn into_head(self) -> Result<String> {
         let end = find_head_end(&self.bytes).context("OAuth callback head was incomplete")?;
-        std::str::from_utf8(&self.bytes[..end])
-            .context("OAuth callback was not UTF-8")
-            .map(str::to_string)
+        std::str::from_utf8(&self.bytes[..end]).context("OAuth callback was not UTF-8").map(str::to_string)
     }
 }
 
@@ -482,8 +434,7 @@ async fn wait_for_callback(listener: &TcpListener, expected_state: &str) -> Resu
             continue;
         };
         let mut request_parts = request.lines().next().into_iter().flat_map(str::split_whitespace);
-        let (Some(method), Some(target), Some(version)) =
-            (request_parts.next(), request_parts.next(), request_parts.next())
+        let (Some(method), Some(target), Some(version)) = (request_parts.next(), request_parts.next(), request_parts.next())
         else {
             respond(&mut stream, "400 Bad Request", "Invalid OAuth callback.").await?;
             continue;
@@ -492,18 +443,13 @@ async fn wait_for_callback(listener: &TcpListener, expected_state: &str) -> Resu
             respond(&mut stream, "400 Bad Request", "Invalid OAuth callback.").await?;
             continue;
         }
-        let callback = url::Url::parse(&format!("http://127.0.0.1{}", target))
-            .context("parse OAuth callback")?;
+        let callback = url::Url::parse(&format!("http://127.0.0.1{}", target)).context("parse OAuth callback")?;
         if callback.path() != "/callback" {
             respond(&mut stream, "404 Not Found", "Not found.").await?;
             continue;
         }
         let params: Vec<(String, String)> = callback.query_pairs().into_owned().collect();
-        let states: Vec<&str> = params
-            .iter()
-            .filter(|(key, _)| key == "state")
-            .map(|(_, value)| value.as_str())
-            .collect();
+        let states: Vec<&str> = params.iter().filter(|(key, _)| key == "state").map(|(_, value)| value.as_str()).collect();
         if states.len() != 1 || states[0] != expected_state {
             respond(&mut stream, "400 Bad Request", "OAuth state did not match; retrying.").await?;
             continue;
@@ -516,21 +462,13 @@ async fn wait_for_callback(listener: &TcpListener, expected_state: &str) -> Resu
             .filter(|code| !code.is_empty())
             .map(str::to_string)
             .ok_or_else(|| anyhow::anyhow!("The callback did not include an authorization code"))?;
-        respond(
-            &mut stream,
-            "200 OK",
-            "App Mesh login completed. You can close this window.",
-        )
-        .await?;
+        respond(&mut stream, "200 OK", "App Mesh login completed. You can close this window.").await?;
         return Ok(code);
     }
 }
 
 fn single_callback_value<'a>(params: &'a [(String, String)], name: &str) -> Result<Option<&'a str>> {
-    let mut values = params
-        .iter()
-        .filter(|(key, _)| key == name)
-        .map(|(_, value)| value.as_str());
+    let mut values = params.iter().filter(|(key, _)| key == name).map(|(_, value)| value.as_str());
     let first = values.next();
     if values.next().is_some() {
         bail!("The callback included duplicate {} parameters", name);
@@ -539,20 +477,18 @@ fn single_callback_value<'a>(params: &'a [(String, String)], name: &str) -> Resu
 }
 
 fn sanitize_callback_value(value: &str) -> String {
-    value
-        .chars()
-        .filter(|character| !character.is_control())
-        .take(128)
-        .collect()
+    value.chars().filter(|character| !character.is_control()).take(128).collect()
 }
 
 async fn respond(stream: &mut TcpStream, status: &str, body: &str) -> Result<()> {
     let response = format!(
-        "HTTP/1.1 {}\r\nContent-Type: text/plain; charset=utf-8\r\nContent-Length: {}\r\nConnection: close\r\nCache-Control: no-store\r\n\r\n{}",
+        "HTTP/1.1 {}\r\nContent-Type: text/plain; charset=utf-8\r\nContent-Length: {}\r\nConnection: close\r\n\
+         Cache-Control: no-store\r\n\r\n{}",
         status,
         body.len(),
         body
     );
+
     stream.write_all(response.as_bytes()).await.context("write OAuth callback response")?;
     stream.shutdown().await.context("close OAuth callback response")?;
     Ok(())
@@ -561,9 +497,8 @@ async fn respond(stream: &mut TcpStream, status: &str, body: &str) -> Result<()>
 #[cfg(test)]
 mod tests {
     use super::{
-        builtin_email, format_token_expiry, login_scopes, select_login_method,
-        should_enroll_first_admin, CallbackHead, EngineAuthConfig, FirstAdminEnrollment,
-        HeadProgress, LoginMethod, CALLBACK_HEAD_LIMIT,
+        builtin_email, format_token_expiry, login_scopes, select_login_method, should_enroll_first_admin, CallbackHead,
+        EngineAuthConfig, FirstAdminEnrollment, HeadProgress, LoginMethod, CALLBACK_HEAD_LIMIT,
     };
 
     fn flows(entries: &[&str]) -> Vec<String> {
@@ -606,19 +541,16 @@ mod tests {
     fn auth_config_defaults_refresh_token_for_old_daemons() {
         // Daemons predating the toggle omit refresh_token; they issue refresh
         // tokens, so the CLI must treat absence as enabled.
-        let config: EngineAuthConfig = serde_json::from_value(serde_json::json!({
-            "issuer": "https://auth.example",
-            "audience": "appmesh",
-            "public_client_id": "appmesh-cli"
-        }))
+        let config: EngineAuthConfig = serde_json::from_value(serde_json::json!(
+						  {"issuer" : "https://auth.example", "audience" : "appmesh", "public_client_id" : "appmesh-cli"}))
         .expect("old daemon config must parse");
         assert!(config.refresh_token);
 
         let config: EngineAuthConfig = serde_json::from_value(serde_json::json!({
-            "issuer": "https://auth.example",
-            "audience": "appmesh",
-            "public_client_id": "appmesh-cli",
-            "refresh_token": false
+            "issuer" : "https://auth.example",
+            "audience" : "appmesh",
+            "public_client_id" : "appmesh-cli",
+            "refresh_token" : false
         }))
         .expect("new daemon config must parse");
         assert!(!config.refresh_token);
@@ -676,19 +608,13 @@ mod tests {
 
     #[test]
     fn first_admin_enrollment_requires_open_window_and_exact_subject() {
-        let enrollment = FirstAdminEnrollment {
-            available: true,
-            subject: Some("packaged-subject".into()),
-        };
-        let packaged = serde_json::json!({"subject": "packaged-subject"});
-        let other = serde_json::json!({"subject": "other-subject"});
+        let enrollment = FirstAdminEnrollment { available: true, subject: Some("packaged-subject".into()) };
+        let packaged = serde_json::json!({"subject" : "packaged-subject"});
+        let other = serde_json::json!({"subject" : "other-subject"});
         assert!(should_enroll_first_admin(&enrollment, &packaged));
         assert!(!should_enroll_first_admin(&enrollment, &other));
 
-        let closed = FirstAdminEnrollment {
-            available: false,
-            subject: Some("packaged-subject".into()),
-        };
+        let closed = FirstAdminEnrollment { available: false, subject: Some("packaged-subject".into()) };
         assert!(!should_enroll_first_admin(&closed, &packaged));
     }
 
@@ -696,8 +622,7 @@ mod tests {
     fn callback_head_assembles_across_reads() {
         // The terminator and request line arrive in separate reads: the head must
         // only be parsed once the final blank line has been received.
-        let request =
-            b"GET /callback?code=xyz&state=s HTTP/1.1\r\nHost: 127.0.0.1\r\n\r\n";
+        let request = b"GET /callback?code=xyz&state=s HTTP/1.1\r\nHost: 127.0.0.1\r\n\r\n";
         let (first, second) = request.split_at(request.len() - 3);
 
         let mut head = CallbackHead::new();

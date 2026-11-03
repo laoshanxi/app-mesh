@@ -1,4 +1,5 @@
 use clap::{Parser, Subcommand};
+use std::path::PathBuf;
 
 const BUILD_TAG: &str = match option_env!("BUILD_TAG") {
     Some(tag) => tag,
@@ -18,6 +19,11 @@ pub struct Cli {
     /// Forward request to target host
     #[arg(short = 'F', long = "forward-to", global = true)]
     pub forward_to: Option<String>,
+
+    /// CA bundle (PEM) trusted for the Engine's TLS certificate; applies to any
+    /// endpoint, including an explicit remote -H, and is remembered at logon
+    #[arg(long = "ca-cert", global = true, value_name = "PATH")]
+    pub ca_cert: Option<PathBuf>,
 
     /// Enable debug logging
     #[arg(short = 'v', long = "verbose", global = true)]
@@ -41,11 +47,11 @@ pub enum Commands {
     Add(Box<AddArgs>),
 
     /// Remove an application
-    #[command(aliases = ["remove", "unreg"])]
+    #[command(aliases =["remove", "unreg"])]
     Rm(RmArgs),
 
     /// List applications
-    #[command(aliases = ["list", "ls"])]
+    #[command(aliases =["list", "ls"])]
     View(ViewArgs),
 
     /// Enable applications
@@ -60,6 +66,9 @@ pub enum Commands {
     /// Run a command or application
     Run(RunArgs),
 
+    /// Send a task payload to a running application and print its response
+    Task(TaskArgs),
+
     /// Execute a single remote command
     Exec(ExecArgs),
 
@@ -71,6 +80,9 @@ pub enum Commands {
 
     /// Upload a local file
     Put(PutArgs),
+
+    /// Remove a remote file
+    Rmfile(RmfileArgs),
 
     /// Manage host labels
     Label(LabelArgs),
@@ -97,15 +109,15 @@ pub enum Commands {
 #[derive(Parser)]
 pub struct LogonArgs {
     /// Built-in username; password is read from the TTY prompt, or from standard input with --password-stdin
-    #[arg(short = 'u', long = "username", conflicts_with_all = ["device", "browser"])]
+    #[arg(short = 'u', long = "username", conflicts_with_all =["device", "browser"])]
     pub username: Option<String>,
 
     /// Use built-in password login and read the password from the TTY prompt
-    #[arg(long = "password", conflicts_with_all = ["device", "browser", "password_stdin"])]
+    #[arg(long = "password", conflicts_with_all =["device", "browser", "password_stdin"])]
     pub password: bool,
 
     /// Read the password from standard input instead of the TTY prompt (implies built-in password login)
-    #[arg(long = "password-stdin", conflicts_with_all = ["device", "browser"])]
+    #[arg(long = "password-stdin", conflicts_with_all =["device", "browser"])]
     pub password_stdin: bool,
 
     /// Use RFC 8628 Device Authorization
@@ -208,7 +220,7 @@ pub struct AddArgs {
     #[arg(short = 'i', long = "interval")]
     pub interval: Option<String>,
 
-    /// Cron expression schedule (e.g., '0 5 * * *')
+    /// Cron expression schedule (e.g., '0 5 * * * *')
     #[arg(short = 'Y', long = "cron-schedule")]
     pub cron_schedule: Option<String>,
 
@@ -244,7 +256,8 @@ pub struct AddArgs {
     #[arg(short = 'z', long = "secret-env")]
     pub secret_env: Vec<String>,
 
-    /// Process stop grace period (ISO 8601 duration)
+    /// Buffer time for a recurring schedule whose previous run is still
+    /// running (e.g. 'PT30S'); stopping an app always SIGKILLs its group
     #[arg(short = 'R', long = "stop-grace-period")]
     pub stop_grace_period: Option<String>,
 
@@ -386,6 +399,19 @@ pub struct RunArgs {
 }
 
 #[derive(Parser)]
+pub struct TaskArgs {
+    /// Application name
+    pub app: String,
+
+    /// Task payload (text or JSON; '@' reads from a file)
+    pub payload: Option<String>,
+
+    /// Seconds to wait for the application's response
+    #[arg(short = 't', long = "timeout", default_value_t = 300)]
+    pub timeout: i32,
+}
+
+#[derive(Parser)]
 pub struct ExecArgs {
     /// Enable shell mode
     #[arg(short = 'u', long = "shell")]
@@ -474,6 +500,10 @@ pub struct PutArgs {
     #[arg(short = 'l', long = "local", required = true)]
     pub local: String,
 
+    /// Replace the remote file when it already exists
+    #[arg(short = 'f', long = "overwrite")]
+    pub overwrite: bool,
+
     /// Send local POSIX permissions and ownership with the uploaded file
     #[arg(long = "apply-permissions", conflicts_with = "no_attr")]
     pub apply_permissions: bool,
@@ -481,6 +511,13 @@ pub struct PutArgs {
     /// Deprecated compatibility flag; permissions are no longer sent by default
     #[arg(short = 'a', long = "no-attr", hide = true, conflicts_with = "apply_permissions")]
     pub no_attr: bool,
+}
+
+#[derive(Parser)]
+pub struct RmfileArgs {
+    /// Remote file path
+    #[arg(short = 'r', long = "remote", required = true)]
+    pub remote: String,
 }
 
 // ─── System Management ──────────────────────────────────────────────────────
@@ -634,6 +671,18 @@ pub struct WorkflowOutputArgs {
     /// Step name
     #[arg(short = 's', long = "step", required = true)]
     pub step: String,
+
+    /// Byte offset to start reading from (0 by default)
+    #[arg(long = "position")]
+    pub position: Option<i64>,
+
+    /// Maximum number of bytes to read (to the end by default)
+    #[arg(long = "limit")]
+    pub limit: Option<i64>,
+
+    /// Read only the last N bytes of the log
+    #[arg(long = "tail")]
+    pub tail: Option<i64>,
 }
 
 /// Shared args for commands that operate on a specific workflow run.

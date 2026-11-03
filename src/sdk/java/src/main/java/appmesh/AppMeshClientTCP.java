@@ -1,6 +1,5 @@
 package appmesh;
 
-import java.io.ByteArrayInputStream;
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.FileOutputStream;
@@ -15,12 +14,14 @@ import java.nio.file.Path;
 import java.util.Arrays;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.logging.Level;
+import java.util.logging.Logger;
 import java.util.Objects;
 
 
 /** App Mesh client over TCP (TLS). Control requests go over TCP; file transfers use a TCP side channel. */
 public class AppMeshClientTCP extends AppMeshClient {
-    private static final java.util.logging.Logger LOGGER = java.util.logging.Logger.getLogger(AppMeshClientTCP.class.getName());
+    private static final Logger LOGGER = Logger.getLogger(AppMeshClientTCP.class.getName());
     private static final int TCP_BLOCK_SIZE = 16 * 1024 - 128; // TLS-optimized chunk size
     private final TCPTransport tcpTransport;
     private volatile MessageDemuxer demuxer;
@@ -51,20 +52,6 @@ public class AppMeshClientTCP extends AppMeshClient {
         super(builder);
         Objects.requireNonNull(host, "host");
         this.tcpTransport = new TCPTransport(host, port, getSSLSocketFactory());
-    }
-
-    private static AppMeshClient.Builder configureSSL(AppMeshClient.Builder base, boolean disableSSLVerification,
-            String caCertPath, String clientCertPath, String clientKeyPath) {
-        if (caCertPath != null) {
-            base.caCert(caCertPath);
-        }
-        if (clientCertPath != null || clientKeyPath != null) {
-            base.clientCert(clientCertPath, clientKeyPath);
-        }
-        if (disableSSLVerification) {
-            base.disableSSLVerify();
-        }
-        return base;
     }
 
     /** Builder for {@link AppMeshClientTCP} to allow fluent configuration. */
@@ -141,30 +128,64 @@ public class AppMeshClientTCP extends AppMeshClient {
 
     /** Send a request over TCP transport and expose it as an {@link HttpURLConnection}-like object. */
     @Override
-    public HttpURLConnection request(String method, String path, Object body, java.util.Map<String, String> headers,
-            java.util.Map<String, String> params) throws IOException {
+    public HttpURLConnection request(String method, String path, Object body, Map<String, String> headers,
+            Map<String, String> params) throws IOException {
+        // Same 401 refresh-retry contract as the HTTP transport: when a refresh-capable
+        // provider is attached and the caller did not set an explicit Authorization
+        // header, one provider refresh and one replay (mirroring the Python SDK).
+        TokenProvider provider = callerManagesAuth(headers) ? null : getTokenProvider();
+        String sentToken = provider == null ? null : provider.getAccessToken();
+        HttpURLConnection connection = doRequest(method, path, body, headers, params, sentToken);
+        if (provider == null || !provider.canRefresh()
+                || connection.getResponseCode() != HttpURLConnection.HTTP_UNAUTHORIZED) {
+            return connection;
+        }
+        String newToken = provider.refreshAccessToken(sentToken);
+        if (newToken == null || newToken.trim().isEmpty()) {
+            throw new IOException("TokenProvider returned an invalid access token");
+        }
+        connection = doRequest(method, path, body, headers, params, newToken);
+        if (connection.getResponseCode() == HttpURLConnection.HTTP_UNAUTHORIZED) {
+            throw new IOException("TokenProvider failed to replace a rejected access token: HTTP 401");
+        }
+        return connection;
+    }
+
+    protected HttpURLConnection doRequest(String method, String path, Object body, Map<String, String> headers,
+            Map<String, String> params, String tokenOverride) throws IOException {
         try {
             if (!tcpTransport.connected()) {
                 tcpTransport.connect();
             }
+            if (demuxer != null && demuxer.isRunning()) {
+                // connect() re-armed the connect-time SO_TIMEOUT; the demuxer reader must
+                // block indefinitely or an idle subscription gets a spurious DISCONNECTED
+                // after 30 quiet seconds (same rationale as in ensureDemuxer()).
+                tcpTransport.setReadTimeout(0);
+            }
 
             RequestMessage req = new RequestMessage();
             req.uuid = java.util.UUID.randomUUID().toString();
-            req.http_method = method;
-            req.request_uri = path;
+            req.httpMethod = method;
+            req.requestUri = path;
             try {
-                req.client_addr = java.net.InetAddress.getLocalHost().getHostName();
+                req.clientAddr = java.net.InetAddress.getLocalHost().getHostName();
             } catch (Exception e) {
                 // No DNS / container environments may fail or block here; fall back to loopback
-                req.client_addr = java.net.InetAddress.getLoopbackAddress().getHostAddress();
+                req.clientAddr = java.net.InetAddress.getLoopbackAddress().getHostAddress();
             }
             // Merge common headers from parent
             req.headers = new java.util.HashMap<>();
             req.headers.putAll(super.getCommonHeaders());
-            if (headers != null)
+            if (tokenOverride != null) {
+                req.headers.put("Authorization", "Bearer " + tokenOverride);
+            }
+            if (headers != null) {
                 req.headers.putAll(headers);
-            if (params != null)
+            }
+            if (params != null) {
                 req.query = params;
+            }
             if (body != null) {
                 if (body instanceof byte[])
                     req.body = (byte[]) body;
@@ -199,12 +220,15 @@ public class AppMeshClientTCP extends AppMeshClient {
                     tcpTransport.sendMessage(data);
                     while (true) {
                         byte[] respBuf = tcpTransport.receiveMessage();
-                        if (respBuf == null) {
+                        if (respBuf == null || respBuf.length == 0) {
+                            // EOF frame: the transport is dead; close it so the next
+                            // request reconnects instead of reusing the half-open socket.
+                            tcpTransport.close();
                             throw new IOException("EOF from transport");
                         }
                         resp = ResponseMessage.deserialize(respBuf);
                         // Skip server-push event frames (no demuxer to route them)
-                        if (MessageDemuxer.EVENT_URI.equals(resp.request_uri)) {
+                        if (MessageDemuxer.EVENT_URI.equals(resp.requestUri)) {
                             continue;
                         }
                         break;
@@ -227,6 +251,24 @@ public class AppMeshClientTCP extends AppMeshClient {
     }
 
     /**
+     * Reject TCP file transfers while the event demuxer owns the read side: the demuxer
+     * read loop would steal the raw (non-msgpack) chunk frames and corrupt the transfer
+     * (mirrors the Python SDK).
+     */
+    private void ensureNoActiveDemuxer() throws IOException {
+        ensureNoActiveDemuxer(demuxer);
+    }
+
+    // Visible for tests in the same package.
+    static void ensureNoActiveDemuxer(MessageDemuxer demuxer) throws IOException {
+        if (demuxer != null && demuxer.isRunning()) {
+            throw new IOException(
+                    "file transfer is not supported while an event subscription is active over the same TCP connection; "
+                            + "use a separate client instance");
+        }
+    }
+
+    /**
      * Download a file through the TCP file-socket side channel.
      *
      * <p>When {@code applyFileAttributes} is true, returned POSIX metadata is applied locally on a
@@ -234,6 +276,7 @@ public class AppMeshClientTCP extends AppMeshClient {
      */
     @Override
     public boolean downloadFile(String filePath, String localFile, boolean applyFileAttributes) throws IOException {
+        ensureNoActiveDemuxer();
         Map<String, String> headers = new HashMap<>();
         headers.put("X-File-Path", encodeURIComponent(filePath));
         headers.put("X-Recv-File-Socket", "true");
@@ -285,6 +328,7 @@ public class AppMeshClientTCP extends AppMeshClient {
      */
     @Override
     public boolean uploadFile(File localFile, String remoteFile, boolean preservePermissions) throws IOException {
+        ensureNoActiveDemuxer();
         File file = localFile;
         Path localPath = file.toPath();
         if (!Files.exists(localPath)) {
@@ -363,7 +407,7 @@ public class AppMeshClientTCP extends AppMeshClient {
         try {
             tcpTransport.setReadTimeout(0);
         } catch (IOException e) {
-            LOGGER.log(java.util.logging.Level.WARNING, "Failed to clear TCP read timeout for demuxer", e);
+            LOGGER.log(Level.WARNING, "Failed to clear TCP read timeout for demuxer", e);
         }
         demuxer = new MessageDemuxer(() -> tcpTransport.receiveMessage());
         demuxer.start();

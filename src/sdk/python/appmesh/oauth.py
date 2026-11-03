@@ -214,7 +214,8 @@ class OAuthClient(TokenProvider):
         if parsed.scheme == "http" and not allow_plain_http and not OAuthClient._is_loopback_host(parsed.hostname):
             raise ValueError(
                 name
-                + " must use HTTPS unless it targets loopback; set allow_plain_http=True to allow plain HTTP on a trusted network"
+                + " must use HTTPS unless it targets loopback; set allow_plain_http=True to allow plain HTTP on a trusted "
+                    "network"
             )
         return candidate
 

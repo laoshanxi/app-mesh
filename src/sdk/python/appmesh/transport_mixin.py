@@ -202,7 +202,7 @@ class TransportClientMixin:
                 try:
                     response.raise_for_status()
                 except requests.exceptions.HTTPError as e:
-                    raise AppMeshRequestError(f"HTTP request failed: {e}") from e
+                    raise AppMeshRequestError(f"HTTP request failed: {e}", response.status_code) from e
 
             return response
 
@@ -225,7 +225,8 @@ class TransportClientMixin:
             self._demuxer.register_event_callback(result_app.subscription_id, callback)
         return result_app
 
-    def subscribe(self, app_name: str, events: Optional[list] = None, callback: Optional[EventCallback] = None) -> SubscriptionResult:
+    def subscribe(self, app_name: str, events: Optional[list] = None,
+        callback: Optional[EventCallback] = None) -> SubscriptionResult:
         """Subscribe to app events over the transport connection.
 
         Args:
@@ -265,11 +266,18 @@ class TransportClientMixin:
     def unsubscribe(self, subscription_id: str) -> None:
         """Remove an event subscription.
 
+        Idempotent: the daemon drops a subscription itself when its app is removed, so
+        an unknown subscription id (HTTP 404) is not an error.
+
         Args:
             subscription_id: The subscription ID returned by subscribe().
         """
         query = {"subscription_id": subscription_id}
-        self._request_http(AppMeshClient._Method.DELETE, path="/appmesh/subscribe", query=query)
+        try:
+            self._request_http(AppMeshClient._Method.DELETE, path="/appmesh/subscribe", query=query)
+        except AppMeshRequestError as e:
+            if e.status_code != HTTPStatus.NOT_FOUND:
+                raise
 
         if self._demuxer:
             self._demuxer.unregister_event_callback(subscription_id)
@@ -350,7 +358,8 @@ class TransportClientMixin:
                 try:
                     exit_code = int(event.data.get("exit_code"))
                 except (TypeError, ValueError):
-                    failure = AppMeshConnectionError(f"EXIT event for '{run.app_name}' carried an unparseable exit_code: {event.data.get('exit_code')!r}")
+                    failure = AppMeshConnectionError(f"EXIT event for '{run.app_name}' carried an unparseable exit_code: "
+                        "{event.data.get('exit_code')!r}")
                 done.set()
             elif event.event_type == "REMOVED":
                 if exit_code is None and failure is None:

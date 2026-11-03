@@ -1,20 +1,17 @@
-use anyhow::Result;
-use clap::Parser;
-use std::process;
-
 mod app;
 mod client;
 mod commands;
 mod output;
 mod util;
 
+use anyhow::Result;
 use app::{Cli, Commands};
+use clap::Parser;
+use std::process;
 
 #[tokio::main]
 async fn main() {
-    rustls::crypto::ring::default_provider()
-        .install_default()
-        .ok();
+    rustls::crypto::ring::default_provider().install_default().ok();
     env_logger::init();
 
     let cli = Cli::parse();
@@ -62,10 +59,12 @@ async fn run(cli: &Cli) -> Result<i32> {
         Commands::Disable(args) => commands::apps::disable(cli, args).await,
         Commands::Restart(args) => commands::apps::restart(cli, args).await,
         Commands::Run(args) => commands::run::run(cli, args).await,
+        Commands::Task(args) => commands::task::task(cli, args).await,
         Commands::Exec(args) => commands::run::exec(cli, args).await,
         Commands::Shell(args) => commands::run::shell(cli, args).await,
         Commands::Get(args) => commands::file::get(cli, args).await,
         Commands::Put(args) => commands::file::put(cli, args).await,
+        Commands::Rmfile(args) => commands::file::rmfile(cli, args).await,
         Commands::Label(args) => commands::system::label(cli, args).await,
         Commands::Log(args) => commands::system::log_level(cli, args).await,
         Commands::Config(_) => commands::system::config(cli).await,
@@ -129,11 +128,7 @@ mod tests {
             vec!["remove", "-a", "x", "-f"],
             vec!["unreg", "-a", "x", "-f"],
         ] {
-            assert!(
-                !is_error_tolerant_mode(&cli(&args)),
-                "{:?} must propagate errors",
-                args
-            );
+            assert!(!is_error_tolerant_mode(&cli(&args)), "{:?} must propagate errors", args);
         }
     }
 

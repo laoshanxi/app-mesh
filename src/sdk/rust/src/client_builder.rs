@@ -113,8 +113,7 @@ impl ClientBuilder {
         validate_client_cert_pair(&self.ssl_client_cert, &self.ssl_client_key)?;
 
         if let Some(url) = &self.url {
-            url::Url::parse(url)
-                .map_err(|e| AppMeshError::ConfigurationError(format!("Invalid URL '{}': {}", url, e)))?;
+            url::Url::parse(url).map_err(|e| AppMeshError::ConfigurationError(format!("Invalid URL '{}': {}", url, e)))?;
         }
 
         Ok(())
@@ -129,13 +128,8 @@ impl ClientBuilder {
 
         let ssl_client_cert = cert_pair_to_strings(self.ssl_client_cert, self.ssl_client_key);
 
-        let client = AppMeshClient::new(
-            self.url,
-            self.ssl_ca_cert,
-            ssl_client_cert,
-            self.timeout,
-            self.danger_accept_invalid_certs,
-        )?;
+        let client =
+            AppMeshClient::new(self.url, self.ssl_ca_cert, ssl_client_cert, self.timeout, self.danger_accept_invalid_certs)?;
 
         if let Some(token) = &self.jwt_token {
             client.set_token(token);
@@ -152,12 +146,8 @@ impl ClientBuilder {
 /// Reject a client certificate/key pair where only one half is provided.
 fn validate_client_cert_pair(cert: &Option<PathBuf>, key: &Option<PathBuf>) -> Result<()> {
     match (cert, key) {
-        (Some(_), None) => Err(AppMeshError::ConfigurationError(
-            "SSL client certificate provided without key".into(),
-        )),
-        (None, Some(_)) => Err(AppMeshError::ConfigurationError(
-            "SSL client key provided without certificate".into(),
-        )),
+        (Some(_), None) => Err(AppMeshError::ConfigurationError("SSL client certificate provided without key".into())),
+        (None, Some(_)) => Err(AppMeshError::ConfigurationError("SSL client key provided without certificate".into())),
         _ => Ok(()),
     }
 }
@@ -166,147 +156,138 @@ fn validate_client_cert_pair(cert: &Option<PathBuf>, key: &Option<PathBuf>) -> R
 /// the client constructors expect.
 fn cert_pair_to_strings(cert: Option<PathBuf>, key: Option<PathBuf>) -> Option<(String, String)> {
     match (cert, key) {
-        (Some(cert), Some(key)) => {
-            Some((cert.to_string_lossy().to_string(), key.to_string_lossy().to_string()))
-        }
+        (Some(cert), Some(key)) => Some((cert.to_string_lossy().to_string(), key.to_string_lossy().to_string())),
         _ => None,
     }
 }
 
 /// The TCP and WSS builders are identical except for the default port and the
 /// client type they construct, so both are generated from this macro.
-macro_rules! define_transport_builder {
-    (
-        $(#[$outer:meta])*
-        $name:ident, $default_port:expr, $client:ty
-    ) => {
-        $(#[$outer])*
-        #[derive(Default)]
-        pub struct $name {
-            host: Option<String>,
-            port: Option<u16>,
-            ssl_ca_cert: Option<String>,
-            ssl_client_cert: Option<PathBuf>,
-            ssl_client_key: Option<PathBuf>,
-            danger_accept_invalid_certs: bool,
-        }
+macro_rules !define_transport_builder
+{
+	($(#[$outer:meta]) * $name : ident, $default_port : expr,
+	 $client : ty) =>{$(#[$outer]) *
+#[derive(Default)]
+					  pub struct $name{
+						  host : Option<String>,
+						  port : Option<u16>,
+						  ssl_ca_cert : Option<String>,
+						  ssl_client_cert : Option<PathBuf>,
+						  ssl_client_key : Option<PathBuf>,
+						  danger_accept_invalid_certs : bool,
+					  }
 
-        impl $name {
-            /// Create a builder for this transport client.
-            pub fn new() -> Self {
-                Self::default()
-            }
+					  impl $name{/// Create a builder for this transport client.
+								 pub fn new ()
+									 ->Self{Self::default()}
 
-            /// Set the server address (default host `127.0.0.1`, transport default port).
-            pub fn address(mut self, host: impl Into<String>, port: u16) -> Self {
-                self.host = Some(host.into());
-                self.port = Some(port);
-                self
-            }
+								 /// Set the server address (default host `127.0.0.1`, transport default port).
+								 pub fn address(mut self, host : impl Into<String>, port : u16)
+									 ->Self{self.host = Some(host.into());
+	self.port = Some(port);
+	self
+}
 
-            /// Set the host (default: `127.0.0.1`).
-            pub fn host(mut self, host: impl Into<String>) -> Self {
-                self.host = Some(host.into());
-                self
-            }
+/// Set the host (default: `127.0.0.1`).
+pub fn host(mut self, host : impl Into<String>) -> Self
+{
+	self.host = Some(host.into());
+	self
+}
 
-            /// Set the port (default: the transport's default port).
-            pub fn port(mut self, port: u16) -> Self {
-                self.port = Some(port);
-                self
-            }
+/// Set the port (default: the transport's default port).
+pub fn port(mut self, port : u16) -> Self
+{
+	self.port = Some(port);
+	self
+}
 
-            pub fn ssl_ca_cert(mut self, path: impl Into<String>) -> Self {
-                self.ssl_ca_cert = Some(path.into());
-                self
-            }
+pub fn ssl_ca_cert(mut self, path : impl Into<String>) -> Self
+{
+	self.ssl_ca_cert = Some(path.into());
+	self
+}
 
-            pub fn ssl_client_cert(mut self, cert_path: impl Into<PathBuf>) -> Self {
-                self.ssl_client_cert = Some(cert_path.into());
-                self
-            }
+pub fn ssl_client_cert(mut self, cert_path : impl Into<PathBuf>) -> Self
+{
+	self.ssl_client_cert = Some(cert_path.into());
+	self
+}
 
-            pub fn ssl_client_key(mut self, key_path: impl Into<PathBuf>) -> Self {
-                self.ssl_client_key = Some(key_path.into());
-                self
-            }
+pub fn ssl_client_key(mut self, key_path : impl Into<PathBuf>) -> Self
+{
+	self.ssl_client_key = Some(key_path.into());
+	self
+}
 
-            pub fn ssl_client_auth(mut self, cert_path: impl Into<PathBuf>, key_path: impl Into<PathBuf>) -> Self {
-                self.ssl_client_cert = Some(cert_path.into());
-                self.ssl_client_key = Some(key_path.into());
-                self
-            }
+pub fn ssl_client_auth(mut self, cert_path : impl Into<PathBuf>, key_path : impl Into<PathBuf>) -> Self
+{
+	self.ssl_client_cert = Some(cert_path.into());
+	self.ssl_client_key = Some(key_path.into());
+	self
+}
 
-            /// Disable all TLS certificate verification (insecure — development/testing only).
-            pub fn danger_accept_invalid_certs(mut self, accept: bool) -> Self {
-                self.danger_accept_invalid_certs = accept;
-                self
-            }
+/// Disable all TLS certificate verification (insecure — development/testing only).
+pub fn danger_accept_invalid_certs(mut self, accept : bool) -> Self
+{
+	self.danger_accept_invalid_certs = accept;
+	self
+}
 
-            fn validate(&self) -> Result<()> {
-                validate_client_cert_pair(&self.ssl_client_cert, &self.ssl_client_key)
-            }
+fn validate(&self)
+	->Result<()>{validate_client_cert_pair(&self.ssl_client_cert, &self.ssl_client_key)}
 
-            pub fn build(self) -> Result<Arc<$client>> {
-                self.validate()?;
+pub fn build(self)
+	->Result<Arc<$client>>
+{
+	self.validate() ? ;
 
-                let address = Some((
-                    self.host.unwrap_or_else(|| DEFAULT_TCP_HOST.to_string()),
-                    self.port.unwrap_or($default_port),
-                ));
-                let ssl_client_cert = cert_pair_to_strings(self.ssl_client_cert, self.ssl_client_key);
+	let address = Some((self.host.unwrap_or_else(|| DEFAULT_TCP_HOST.to_string()), self.port.unwrap_or($default_port), ));
+	let ssl_client_cert = cert_pair_to_strings(self.ssl_client_cert, self.ssl_client_key);
 
-                // Insecure mode is the explicit SslVerify::False flag; the
-                // legacy empty CA path form resolves to the same disable.
-                let verify = if self.danger_accept_invalid_certs {
-                    crate::tls_config::SslVerify::False
-                } else {
-                    crate::tls_config::resolve_ssl_verify(self.ssl_ca_cert)?
-                };
+	// Insecure mode is the explicit SslVerify::False flag; the
+	// legacy empty CA path form resolves to the same disable.
+	let verify = if self.danger_accept_invalid_certs { crate::tls_config::SslVerify::False }
+	else {crate::tls_config::resolve_ssl_verify(self.ssl_ca_cert) ? };
 
-                <$client>::new_with_verify(address, verify, ssl_client_cert)
-            }
-        }
-    };
+	<$client>::new_with_verify(address, verify, ssl_client_cert)
+}
+}
+}
+;
 }
 
 define_transport_builder!(
-    /// Builder for creating AppMesh TCP clients (default: `127.0.0.1:6059`).
-    ///
-    /// # Examples
-    ///
-    /// ```no_run
-    /// use appmesh::ClientBuilderTCP;
-    ///
-    /// let client = ClientBuilderTCP::new()
-    ///     .address("appmesh.example.com", 6059)
-    ///     .ssl_ca_cert("/path/to/ca.pem")
-    ///     .build()?;
-    /// # Ok::<(), appmesh::AppMeshError>(())
-    /// ```
-    ClientBuilderTCP,
-    DEFAULT_TCP_PORT,
-    AppMeshClientTCP
-);
+	/// Builder for creating AppMesh TCP clients (default: `127.0.0.1:6059`).
+	///
+	/// # Examples
+	///
+	/// ```no_run
+	/// use appmesh::ClientBuilderTCP;
+	///
+	/// let client = ClientBuilderTCP::new()
+	///     .address("appmesh.example.com", 6059)
+	///     .ssl_ca_cert("/path/to/ca.pem")
+	///     .build()?;
+	/// # Ok::<(), appmesh::AppMeshError>(())
+	/// ```
+	ClientBuilderTCP, DEFAULT_TCP_PORT, AppMeshClientTCP);
 
 define_transport_builder!(
-    /// Builder for creating AppMesh WSS clients (default: `127.0.0.1:6058`).
-    ///
-    /// # Examples
-    ///
-    /// ```no_run
-    /// use appmesh::ClientBuilderWSS;
-    ///
-    /// let client = ClientBuilderWSS::new()
-    ///     .address("appmesh.example.com", 6058)
-    ///     .ssl_ca_cert("/path/to/ca.pem")
-    ///     .build()?;
-    /// # Ok::<(), appmesh::AppMeshError>(())
-    /// ```
-    ClientBuilderWSS,
-    DEFAULT_WSS_PORT,
-    AppMeshClientWSS
-);
+	/// Builder for creating AppMesh WSS clients (default: `127.0.0.1:6058`).
+	///
+	/// # Examples
+	///
+	/// ```no_run
+	/// use appmesh::ClientBuilderWSS;
+	///
+	/// let client = ClientBuilderWSS::new()
+	///     .address("appmesh.example.com", 6058)
+	///     .ssl_ca_cert("/path/to/ca.pem")
+	///     .build()?;
+	/// # Ok::<(), appmesh::AppMeshError>(())
+	/// ```
+	ClientBuilderWSS, DEFAULT_WSS_PORT, AppMeshClientWSS);
 
 #[cfg(test)]
 mod tests {

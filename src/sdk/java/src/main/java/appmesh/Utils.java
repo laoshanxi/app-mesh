@@ -62,6 +62,10 @@ import org.threeten.extra.PeriodDuration;
 public class Utils {
     private static final Logger LOGGER = Logger.getLogger(Utils.class.getName());
 
+    private static final String HEADER_FILE_MODE = "X-File-Mode";
+    private static final String HEADER_FILE_USER = "X-File-User";
+    private static final String HEADER_FILE_GROUP = "X-File-Group";
+
     /**
      * Create a per-instance SSLContext. This does NOT modify JVM global defaults.
      *
@@ -282,12 +286,12 @@ public class Utils {
             if (posixView != null) {
                 PosixFileAttributes attrs = posixView.readAttributes();
                 int mode = posixPermissionsToMode(attrs.permissions());
-                attributes.put("X-File-Mode", String.valueOf(mode));
+                attributes.put(HEADER_FILE_MODE, String.valueOf(mode));
 
                 UserPrincipal owner = attrs.owner();
                 GroupPrincipal group = attrs.group();
-                if (owner != null) attributes.put("X-File-User", owner.getName());
-                if (group != null) attributes.put("X-File-Group", group.getName());
+                if (owner != null) attributes.put(HEADER_FILE_USER, owner.getName());
+                if (group != null) attributes.put(HEADER_FILE_GROUP, group.getName());
             }
         } catch (IOException e) {
             LOGGER.log(Level.WARNING, "Error reading file attributes for: " + file.getPath(), e);
@@ -308,8 +312,8 @@ public class Utils {
         }
 
         // Owner / Group — apply first (chown clears setuid/setgid)
-        String userStr = conn.getHeaderField("X-File-User");
-        String groupStr = conn.getHeaderField("X-File-Group");
+        String userStr = conn.getHeaderField(HEADER_FILE_USER);
+        String groupStr = conn.getHeaderField(HEADER_FILE_GROUP);
         if (userStr != null && !userStr.isEmpty() && groupStr != null && !groupStr.isEmpty()) {
             try {
                 UserPrincipalLookupService lookupService = FileSystems.getDefault().getUserPrincipalLookupService();
@@ -332,7 +336,7 @@ public class Utils {
         }
 
         // File mode — apply after chown to preserve all permission bits
-        String fileModeStr = conn.getHeaderField("X-File-Mode");
+        String fileModeStr = conn.getHeaderField(HEADER_FILE_MODE);
         if (fileModeStr != null && !fileModeStr.isEmpty()) {
             try {
                 int mode = Integer.parseInt(fileModeStr.trim());
@@ -358,13 +362,13 @@ public class Utils {
 
     /** Write a file as multipart/form-data to the output stream. */
     static void writeMultipartFormData(OutputStream output, String boundary, File file) throws IOException {
-        String LINE_FEED = "\r\n";
+        String lineFeed = "\r\n";
         String fileName = file.getName();
 
-        output.write(("--" + boundary + LINE_FEED).getBytes());
-        output.write(("Content-Disposition: form-data; name=\"file\"; filename=\"" + fileName + "\"" + LINE_FEED)
+        output.write(("--" + boundary + lineFeed).getBytes());
+        output.write(("Content-Disposition: form-data; name=\"file\"; filename=\"" + fileName + "\"" + lineFeed)
                 .getBytes());
-        output.write(("Content-Type: application/octet-stream" + LINE_FEED + LINE_FEED).getBytes());
+        output.write(("Content-Type: application/octet-stream" + lineFeed + lineFeed).getBytes());
 
         try (FileInputStream inputStream = new FileInputStream(file)) {
             byte[] buffer = new byte[4096];
@@ -374,8 +378,8 @@ public class Utils {
             }
         }
 
-        output.write(LINE_FEED.getBytes());
-        output.write(("--" + boundary + "--" + LINE_FEED).getBytes());
+        output.write(lineFeed.getBytes());
+        output.write(("--" + boundary + "--" + lineFeed).getBytes());
     }
 
     /**

@@ -103,6 +103,10 @@ func (w *WSSConnection) ReadMessage() ([]byte, error) {
 	// ReadMessage returns messageType and payload
 	mt, data, err := conn.ReadMessage()
 	if err != nil {
+		// The websocket is dead after any read error (Close frame, IO failure).
+		// Drop it so Connected() reports false and the next request reconnects
+		// instead of failing on the stale connection forever.
+		w.Close()
 		return nil, err
 	}
 	// Treat text frames as UTF-8 bytes, binary frames as-is
@@ -140,9 +144,26 @@ func (w *WSSConnection) SendMessage(ctx context.Context, buffer []byte) error {
 	}
 
 	if err := conn.WriteMessage(websocket.BinaryMessage, dataToSend); err != nil {
+		// The websocket is unusable after a write failure; drop it so
+		// Connected() reports false and the next request re-dials instead of
+		// failing on the stale connection forever.
+		w.Close()
 		return err
 	}
 	return nil
+}
+
+// Ping sends a WebSocket ping to keep the connection alive through the
+// server's idle timeout (a long-poll request carries no data for minutes).
+func (w *WSSConnection) Ping() error {
+	w.muSend.Lock()
+	defer w.muSend.Unlock()
+
+	conn := w.currentConn()
+	if conn == nil {
+		return fmt.Errorf("not connected")
+	}
+	return conn.WriteControl(websocket.PingMessage, nil, time.Now().Add(10*time.Second))
 }
 
 // Close closes the websocket connection.

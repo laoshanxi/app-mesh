@@ -7,15 +7,14 @@ use std::path::Path;
 use anyhow::{bail, Result};
 use windows_sys::Win32::Foundation::{CloseHandle, GetLastError, LocalFree, ERROR_SUCCESS, HANDLE};
 use windows_sys::Win32::Security::Authorization::{
-    BuildTrusteeWithSidW, GetNamedSecurityInfoW, SetEntriesInAclW, SetNamedSecurityInfoW,
-    EXPLICIT_ACCESS_W, SE_FILE_OBJECT, SET_ACCESS, TRUSTEE_W,
+    BuildTrusteeWithSidW, GetNamedSecurityInfoW, SetEntriesInAclW, SetNamedSecurityInfoW, EXPLICIT_ACCESS_W, SET_ACCESS,
+    SE_FILE_OBJECT, TRUSTEE_W,
 };
 use windows_sys::Win32::Security::{
-    GetAce, GetAclInformation, GetLengthSid, GetTokenInformation, IsWellKnownSid, TokenUser,
-    AclSizeInformation, WinAnonymousSid, WinAuthenticatedUserSid, WinBuiltinGuestsSid,
-    WinBuiltinUsersSid, WinWorldSid,
-    ACCESS_ALLOWED_ACE, ACE_HEADER, ACL_SIZE_INFORMATION, DACL_SECURITY_INFORMATION, NO_INHERITANCE,
-    PROTECTED_DACL_SECURITY_INFORMATION, PSECURITY_DESCRIPTOR, PSID, TOKEN_QUERY, TOKEN_USER,
+    AclSizeInformation, GetAce, GetAclInformation, GetLengthSid, GetTokenInformation, IsWellKnownSid, TokenUser,
+    WinAnonymousSid, WinAuthenticatedUserSid, WinBuiltinGuestsSid, WinBuiltinUsersSid, WinWorldSid, ACCESS_ALLOWED_ACE,
+    ACE_HEADER, ACL_SIZE_INFORMATION, DACL_SECURITY_INFORMATION, NO_INHERITANCE, PROTECTED_DACL_SECURITY_INFORMATION,
+    PSECURITY_DESCRIPTOR, PSID, TOKEN_QUERY, TOKEN_USER,
 };
 use windows_sys::Win32::System::Threading::{GetCurrentProcess, OpenProcessToken};
 
@@ -105,10 +104,7 @@ pub fn restrict_to_current_user(path: &Path) -> Result<()> {
     };
     unsafe { LocalFree(acl as _) };
     if set != ERROR_SUCCESS {
-        return Err(win32_error(
-            &format!("secure permissions on {}", path.display()),
-            set,
-        ));
+        return Err(win32_error(&format!("secure permissions on {}", path.display()), set));
     }
     Ok(())
 }
@@ -133,16 +129,9 @@ pub fn is_restricted(path: &Path) -> Result<bool> {
         )
     };
     if queried != ERROR_SUCCESS {
-        return Err(win32_error(
-            &format!("inspect permissions on {}", path.display()),
-            queried,
-        ));
+        return Err(win32_error(&format!("inspect permissions on {}", path.display()), queried));
     }
-    let restricted = if dacl.is_null() {
-        false
-    } else {
-        unsafe { dacl_has_no_broad_grants(dacl) }
-    };
+    let restricted = if dacl.is_null() { false } else { unsafe { dacl_has_no_broad_grants(dacl) } };
     unsafe { LocalFree(descriptor as _) };
     Ok(restricted)
 }

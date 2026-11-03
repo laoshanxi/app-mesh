@@ -25,21 +25,21 @@ func fileAttributes(filePath string) (map[string]string, error) {
 	}
 
 	h := map[string]string{
-		"X-File-Mode": strconv.FormatUint(uint64(info.Mode().Perm()), 10),
+		headerFileMode: strconv.FormatUint(uint64(info.Mode().Perm()), 10),
 	}
 
 	// Resolve User
 	if u, err := user.LookupId(strconv.Itoa(int(stat.Uid))); err == nil {
-		h["X-File-User"] = u.Username
+		h[headerFileUser] = u.Username
 	} else {
-		h["X-File-User"] = strconv.Itoa(int(stat.Uid))
+		h[headerFileUser] = strconv.Itoa(int(stat.Uid))
 	}
 
 	// Resolve Group
 	if g, err := user.LookupGroupId(strconv.Itoa(int(stat.Gid))); err == nil {
-		h["X-File-Group"] = g.Name
+		h[headerFileGroup] = g.Name
 	} else {
-		h["X-File-Group"] = strconv.Itoa(int(stat.Gid))
+		h[headerFileGroup] = strconv.Itoa(int(stat.Gid))
 	}
 
 	return h, nil
@@ -47,9 +47,9 @@ func fileAttributes(filePath string) (map[string]string, error) {
 
 // ApplyFileAttributes applies ownership and permissions from HTTP headers to a file.
 func ApplyFileAttributes(filePath string, headers http.Header) error {
-	userStr := headers.Get("X-File-User")
-	groupStr := headers.Get("X-File-Group")
-	modeStr := headers.Get("X-File-Mode")
+	userStr := headers.Get(headerFileUser)
+	groupStr := headers.Get(headerFileGroup)
+	modeStr := headers.Get(headerFileMode)
 
 	// 1. Handle Ownership (Chown)
 	if userStr != "" && groupStr != "" {
@@ -67,6 +67,13 @@ func ApplyFileAttributes(filePath string, headers http.Header) error {
 	// 2. Handle Permissions (Chmod) - Done after Chown to ensure bits aren't reset
 	if modeStr != "" {
 		if mode, err := strconv.ParseUint(modeStr, 10, 32); err == nil {
+			// Decimal permission bits (493 = 0755), same convention as the
+			// daemon. Out-of-range values (octal digits sent as-is, e.g. "755")
+			// are ignored, never masked: masking would widen access.
+			if mode > 0o777 {
+				logf("file mode %q is not a decimal value in 0..511; leaving permissions unchanged", modeStr)
+				return nil
+			}
 			return os.Chmod(filePath, os.FileMode(mode))
 		}
 	}

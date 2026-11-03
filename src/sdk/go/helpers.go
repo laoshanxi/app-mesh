@@ -15,7 +15,7 @@ import (
 const tcpConnectTimeoutSeconds = 10
 
 // caSystemTrust is an internal CA-path sentinel meaning "verify against the
-// system trust store" (tls.Config.RootCAs left nil). Produced when SslTrustedCA
+// system trust store" (tls.Config.RootCAs left nil). Produced when SSLTrustedCA
 // is nil and the default App Mesh CA is absent. Distinct from "" (skip-verify).
 const caSystemTrust = "<system>"
 

@@ -25,10 +25,8 @@ mod tcp {
     }
 
     async fn setup_tcp() -> std::sync::Arc<appmesh::AppMeshClientTCP> {
-        let client = ClientBuilderTCP::new()
-            .danger_accept_invalid_certs(true)
-            .build()
-            .expect("ClientBuilderTCP::build failed");
+        let client =
+            ClientBuilderTCP::new().danger_accept_invalid_certs(true).build().expect("ClientBuilderTCP::build failed");
 
         client.client().set_token(&env::var("APPMESH_BEARER_TOKEN").expect("APPMESH_BEARER_TOKEN is required"));
 
@@ -47,7 +45,6 @@ mod tcp {
         let apps = client.list_apps().await.expect("TCP list_apps failed");
         // The server may have zero or more apps registered; the call must succeed.
         let _ = apps;
-
     }
 
     // -----------------------------------------------------------------------
@@ -59,13 +56,9 @@ mod tcp {
     async fn test_tcp_sync_run() {
         let client = setup_tcp().await;
 
-        let app = Application::builder("_tcp_sync_run_")
-            .command("echo tcp-hello")
-            .shell(true)
-            .build();
+        let app = Application::builder("_tcp_sync_run_").command("echo tcp-hello").shell(true).build();
 
-        let (exit_code, output) =
-            client.run_app_sync(&app, 30, 60).await.expect("TCP run_app_sync failed");
+        let (exit_code, output) = client.run_app_sync(&app, 30, 60).await.expect("TCP run_app_sync failed");
 
         assert_eq!(exit_code, Some(0), "echo should exit 0 over TCP");
         assert!(output.contains("tcp-hello"), "output should contain 'tcp-hello', got: {}", output);
@@ -82,10 +75,7 @@ mod tcp {
         let label_key = unique_name("tcp-label");
 
         // Add a label.
-        client
-            .add_label(&label_key, "tcp-value")
-            .await
-            .expect("TCP add_label failed");
+        client.add_label(&label_key, "tcp-value").await.expect("TCP add_label failed");
 
         // Read it back.
         let labels: serde_json::Value = client.list_labels().await.expect("TCP list_labels failed");
@@ -103,11 +93,7 @@ mod tcp {
 
         // Verify removal.
         let labels_after: serde_json::Value = client.list_labels().await.expect("TCP list_labels after delete failed");
-        assert!(
-            labels_after.get(&label_key).is_none(),
-            "label '{}' should be gone after deletion",
-            label_key
-        );
+        assert!(labels_after.get(&label_key).is_none(), "label '{}' should be gone after deletion", label_key);
     }
 
     // -----------------------------------------------------------------------
@@ -155,10 +141,8 @@ mod wss {
     }
 
     async fn setup_wss() -> std::sync::Arc<appmesh::AppMeshClientWSS> {
-        let client = ClientBuilderWSS::new()
-            .danger_accept_invalid_certs(true)
-            .build()
-            .expect("ClientBuilderWSS::build failed");
+        let client =
+            ClientBuilderWSS::new().danger_accept_invalid_certs(true).build().expect("ClientBuilderWSS::build failed");
 
         client.client().set_token(&env::var("APPMESH_BEARER_TOKEN").expect("APPMESH_BEARER_TOKEN is required"));
 
@@ -176,7 +160,6 @@ mod wss {
 
         let apps = client.list_apps().await.expect("WSS list_apps failed");
         let _ = apps;
-
     }
 
     // -----------------------------------------------------------------------
@@ -188,13 +171,9 @@ mod wss {
     async fn test_wss_sync_run() {
         let client = setup_wss().await;
 
-        let app = Application::builder("_wss_sync_run_")
-            .command("echo wss-hello")
-            .shell(true)
-            .build();
+        let app = Application::builder("_wss_sync_run_").command("echo wss-hello").shell(true).build();
 
-        let (exit_code, output) =
-            client.run_app_sync(&app, 30, 60).await.expect("WSS run_app_sync failed");
+        let (exit_code, output) = client.run_app_sync(&app, 30, 60).await.expect("WSS run_app_sync failed");
 
         assert_eq!(exit_code, Some(0), "echo should exit 0 over WSS");
         assert!(output.contains("wss-hello"), "output should contain 'wss-hello', got: {}", output);
@@ -211,17 +190,10 @@ mod wss {
         let app_name = unique_name("wss-mgmt");
 
         // Create a persistent app.
-        let app = Application::builder(&app_name)
-            .command("sleep 300")
-            .shell(true)
-            .build();
+        let app = Application::builder(&app_name).command("sleep 300").shell(true).build();
 
         let created = client.add_app(&app, None).await.expect("WSS add_app failed");
-        assert_eq!(
-            created.name.as_deref(),
-            Some(app_name.as_str()),
-            "created app name should match"
-        );
+        assert_eq!(created.name.as_deref(), Some(app_name.as_str()), "created app name should match");
 
         // Disable it.
         client.disable_app(&app_name).await.expect("WSS disable_app failed");

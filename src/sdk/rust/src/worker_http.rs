@@ -41,8 +41,7 @@ impl AppMeshWorker {
         })?;
         let app_name = env::var("APP_MESH_APPLICATION_NAME").map_err(|_| {
             AppMeshError::ConfigurationError(
-                "Missing environment variable: APP_MESH_APPLICATION_NAME. This must be set by App Mesh service."
-                    .into(),
+                "Missing environment variable: APP_MESH_APPLICATION_NAME. This must be set by App Mesh service.".into(),
             )
         })?;
         Ok((process_key, app_name))
@@ -108,10 +107,7 @@ impl AppMeshWorker {
                     }
                     if status == StatusCode::BAD_REQUEST {
                         let message = resp.text()?;
-                        error!(
-                            "fetch_task permanently rejected with status {}: {}",
-                            status, message
-                        );
+                        error!("fetch_task permanently rejected with status {}: {}", status, message);
                         return Err(AppMeshError::RequestFailed { status, message });
                     }
                     warn!("fetch_task attempt {} failed with status {}: retrying...", attempts + 1, status);
@@ -141,8 +137,7 @@ impl AppMeshWorker {
         let mut headers = HashMap::new();
         headers.insert("X-AppMesh-Process-Key".to_string(), pkey);
 
-        let resp =
-            self.client.raw_request(Method::PUT, &path, Some(result), Some(headers), None, false).await?;
+        let resp = self.client.raw_request(Method::PUT, &path, Some(result), Some(headers), None, false).await?;
 
         let status = resp.status();
         if status != StatusCode::OK {

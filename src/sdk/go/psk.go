@@ -95,7 +95,6 @@ func ReadPSKFromSHM() ([]byte, error) {
 		logf("failed to flush shared memory: %v", err)
 	}
 
-	logf("read PSK (length: %d) from shared memory", len(psk))
 	return psk, nil
 }
 

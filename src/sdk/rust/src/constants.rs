@@ -8,6 +8,7 @@ pub const HTTP_HEADER_KEY_OUTPUT_POS: &str = "X-Output-Position";
 pub const HTTP_HEADER_KEY_EXIT_CODE: &str = "X-Exit-Code";
 pub const HTTP_HEADER_KEY_USER_AGENT: &str = "User-Agent";
 pub const HTTP_HEADER_KEY_X_FILE_PATH: &str = "X-File-Path";
+pub const HTTP_HEADER_KEY_X_FILE_OVERWRITE: &str = "X-File-Overwrite";
 #[cfg(unix)]
 pub const HTTP_HEADER_KEY_X_FILE_MODE: &str = "X-File-Mode";
 #[cfg(unix)]
@@ -23,7 +24,6 @@ pub const HTTP_QUERY_KEY_STDOUT_INDEX: &str = "stdout_index";
 pub const HTTP_QUERY_KEY_STDOUT_POSITION: &str = "stdout_position";
 pub const HTTP_QUERY_KEY_STDOUT_MAXSIZE: &str = "stdout_maxsize";
 pub const HTTP_QUERY_KEY_PROCESS_UUID: &str = "process_uuid";
-pub const HTTP_QUERY_KEY_STDOUT_TIMEOUT: &str = "timeout";
 pub const HTTP_QUERY_KEY_TIMEOUT: &str = "timeout";
 pub const HTTP_QUERY_KEY_LIFECYCLE: &str = "lifecycle";
 pub const HTTP_QUERY_KEY_VALUE: &str = "value";

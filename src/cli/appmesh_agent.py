@@ -1,5 +1,5 @@
-# appmesh_agent.py
 #!/usr/bin/env python3
+# appmesh_agent.py
 """
 Kubernetes proxy container for launch native application in App Mesh.
 Passes user commands to native App Mesh to launch applications outside
@@ -11,6 +11,7 @@ import socket
 import sys
 import warnings
 from pathlib import Path
+
 from urllib3.exceptions import InsecureRequestWarning
 
 import appmesh
@@ -131,7 +132,7 @@ def create_native_app(name, command):
 def main():
     """Main execution function."""
     if len(sys.argv) < 2:
-        print("Usage: script.py <command> [args...]", file=sys.stderr)
+        print("Usage: appmesh_agent.py <command> [args...]", file=sys.stderr)
         sys.exit(1)
 
     # Generate unique monitor name and get shadow name

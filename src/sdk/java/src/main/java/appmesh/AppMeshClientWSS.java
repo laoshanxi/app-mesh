@@ -1,6 +1,5 @@
 package appmesh;
 
-import java.io.ByteArrayInputStream;
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.FileOutputStream;
@@ -58,20 +57,6 @@ public class AppMeshClientWSS extends AppMeshClient {
         super(builder);
         Objects.requireNonNull(host, "host cannot be null");
         this.wssTransport = new WSSTransport(host, port, getSSLSocketFactory());
-    }
-
-    private static AppMeshClient.Builder configureSSL(AppMeshClient.Builder base, boolean disableSSLVerification,
-            String caCertPath, String clientCertPath, String clientKeyPath) {
-        if (caCertPath != null) {
-            base.caCert(caCertPath);
-        }
-        if (clientCertPath != null || clientKeyPath != null) {
-            base.clientCert(clientCertPath, clientKeyPath);
-        }
-        if (disableSSLVerification) {
-            base.disableSSLVerify();
-        }
-        return base;
     }
 
     /**
@@ -171,10 +156,37 @@ public class AppMeshClientWSS extends AppMeshClient {
     @Override
     public HttpURLConnection request(String method, String path, Object body, Map<String, String> headers,
             Map<String, String> params) throws IOException {
+        // Same 401 refresh-retry contract as the HTTP transport: when a refresh-capable
+        // provider is attached and the caller did not set an explicit Authorization
+        // header, one provider refresh and one replay (mirroring the Python SDK).
+        TokenProvider provider = callerManagesAuth(headers) ? null : getTokenProvider();
+        String sentToken = provider == null ? null : provider.getAccessToken();
+        HttpURLConnection connection = doRequest(method, path, body, headers, params, sentToken);
+        if (provider == null || !provider.canRefresh()
+                || connection.getResponseCode() != HttpURLConnection.HTTP_UNAUTHORIZED) {
+            return connection;
+        }
+        String newToken = provider.refreshAccessToken(sentToken);
+        if (newToken == null || newToken.trim().isEmpty()) {
+            throw new IOException("TokenProvider returned an invalid access token");
+        }
+        connection = doRequest(method, path, body, headers, params, newToken);
+        if (connection.getResponseCode() == HttpURLConnection.HTTP_UNAUTHORIZED) {
+            throw new IOException("TokenProvider failed to replace a rejected access token: HTTP 401");
+        }
+        return connection;
+    }
+
+    protected HttpURLConnection doRequest(String method, String path, Object body, Map<String, String> headers,
+            Map<String, String> params, String tokenOverride) throws IOException {
         try {
             Map<String, String> commonHeaders = super.getCommonHeaders();
             String authorization = commonHeaders.get(HEADER_AUTHORIZATION);
-            boolean forwarding = commonHeaders.containsKey("X-Target-Host");
+            if (tokenOverride != null) {
+                authorization = "Bearer " + tokenOverride;
+                commonHeaders = new HashMap<>(commonHeaders);
+                commonHeaders.put(HEADER_AUTHORIZATION, authorization);
+            }
             wssTransport.setAuthorization(authorization);
             if (!wssTransport.connected()) {
                 wssTransport.connect();
@@ -182,27 +194,16 @@ public class AppMeshClientWSS extends AppMeshClient {
 
             RequestMessage req = new RequestMessage();
             req.uuid = UUID.randomUUID().toString();
-            req.http_method = method;
-            req.request_uri = path;
-            req.client_addr = "wss-client";
+            req.httpMethod = method;
+            req.requestUri = path;
+            req.clientAddr = "wss-client";
             req.headers = new HashMap<>();
 
             // Add user agent
             req.headers.put("User-Agent", HTTP_USER_AGENT_WSS);
 
-            // Add common headers from parent
-            commonHeaders.remove(HEADER_AUTHORIZATION);
-            req.headers.putAll(commonHeaders);
-            // The gateway authenticates the WSS session. The target also validates
-            // the same caller bearer on each forwarded request.
-            if (forwarding && authorization != null && !authorization.isEmpty()) {
-                req.headers.put(HEADER_AUTHORIZATION, authorization);
-            }
-
-            // Add custom headers
-            if (headers != null) {
-                req.headers.putAll(headers);
-            }
+            // Common headers, custom headers, and WSS auth semantics for forwarded hops.
+            req.headers.putAll(assembleRequestHeaders(commonHeaders, headers, authorization));
 
             // Add query parameters
             if (params != null) {
@@ -248,7 +249,7 @@ public class AppMeshClientWSS extends AppMeshClient {
                         }
                         resp = ResponseMessage.deserialize(respBuf);
                         // Skip server-push event frames (no demuxer to route them)
-                        if (MessageDemuxer.EVENT_URI.equals(resp.request_uri)) {
+                        if (MessageDemuxer.EVENT_URI.equals(resp.requestUri)) {
                             continue;
                         }
                         break;
@@ -272,6 +273,32 @@ public class AppMeshClientWSS extends AppMeshClient {
     }
 
     /**
+     * Assemble WSS request headers. The gateway authenticates the WSS session, so the
+     * bearer is stripped from non-forwarded requests; a forwarded request is a new hop,
+     * so the target must also receive and validate the current bearer — whether
+     * forwarding comes from the client-wide setting or a per-request
+     * {@code X-Target-Host} header (which overrides the client-wide target).
+     */
+    // Visible for tests in the same package.
+    static Map<String, String> assembleRequestHeaders(Map<String, String> commonHeaders,
+            Map<String, String> extraHeaders, String authorization) {
+        Map<String, String> out = new HashMap<>();
+        if (commonHeaders != null) {
+            out.putAll(commonHeaders);
+        }
+        out.remove(HEADER_AUTHORIZATION);
+        if (extraHeaders != null) {
+            out.putAll(extraHeaders);
+        }
+        if (out.containsKey("X-Target-Host")
+                && !out.containsKey(HEADER_AUTHORIZATION)
+                && authorization != null && !authorization.isEmpty()) {
+            out.put(HEADER_AUTHORIZATION, authorization);
+        }
+        return out;
+    }
+
+    /**
      * Download a file through WSS control messages plus an HTTPS data side channel.
      *
      * <p>When {@code applyFileAttributes} is true, returned POSIX metadata is applied locally on a
@@ -287,7 +314,8 @@ public class AppMeshClientWSS extends AppMeshClient {
             throw new IOException("Download init failed: " + initResp.getResponseCode());
         }
 
-        String authToken = super.getCommonHeaders().get(HEADER_AUTHORIZATION);
+        Map<String, String> commonHeaders = super.getCommonHeaders();
+        String authToken = commonHeaders.get(HEADER_AUTHORIZATION);
         if (authToken == null || authToken.isEmpty()) {
             throw new IOException("File transfer requires a bearer token");
         }
@@ -298,6 +326,11 @@ public class AppMeshClientWSS extends AppMeshClient {
         conn.setRequestMethod("GET");
         conn.setRequestProperty(HEADER_X_FILE_PATH, encodeURIComponent(remoteFile));
         conn.setRequestProperty(HEADER_AUTHORIZATION, authToken);
+        // The data side channel is a separate hop: it carries the forwarding header too.
+        String targetHost = commonHeaders.get("X-Target-Host");
+        if (targetHost != null) {
+            conn.setRequestProperty("X-Target-Host", targetHost);
+        }
         conn.setConnectTimeout(FILE_TRANSFER_TIMEOUT);
         conn.setReadTimeout(FILE_TRANSFER_TIMEOUT);
 
@@ -353,7 +386,8 @@ public class AppMeshClientWSS extends AppMeshClient {
             throw new IOException("Upload init failed: " + initResp.getResponseCode());
         }
 
-        String authToken = super.getCommonHeaders().get(HEADER_AUTHORIZATION);
+        Map<String, String> commonHeaders = super.getCommonHeaders();
+        String authToken = commonHeaders.get(HEADER_AUTHORIZATION);
         if (authToken == null || authToken.isEmpty()) {
             throw new IOException("File transfer requires a bearer token");
         }
@@ -366,6 +400,11 @@ public class AppMeshClientWSS extends AppMeshClient {
         conn.setRequestProperty(HEADER_AUTHORIZATION, authToken);
         conn.setRequestProperty(HEADER_X_FILE_PATH, encodeURIComponent(remoteFile));
         conn.setRequestProperty("Content-Type", "application/octet-stream");
+        // The data side channel is a separate hop: it carries the forwarding header too.
+        String targetHost = commonHeaders.get("X-Target-Host");
+        if (targetHost != null) {
+            conn.setRequestProperty("X-Target-Host", targetHost);
+        }
         conn.setRequestProperty("Content-Length", String.valueOf(file.length()));
         conn.setConnectTimeout(FILE_TRANSFER_TIMEOUT);
         conn.setReadTimeout(FILE_TRANSFER_TIMEOUT);

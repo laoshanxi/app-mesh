@@ -98,10 +98,15 @@ class AppMeshClientWSS(TransportClientMixin, AppMeshClient):
 
     def close(self) -> None:
         """Close the connection and release resources."""
+        had_demuxer = self._demuxer is not None
         if self._demuxer:
             self._demuxer.stop()
         if hasattr(self, "wss_transport") and self.wss_transport:
-            self.wss_transport.close()
+            if had_demuxer:
+                # Wakes the demuxer reader; a closing handshake would hang on it.
+                self.wss_transport.abort()
+            else:
+                self.wss_transport.close()
             self.wss_transport = None
         if self._demuxer:
             self._demuxer.join()
@@ -138,9 +143,13 @@ class AppMeshClientWSS(TransportClientMixin, AppMeshClient):
             AppMeshClient._HTTP_HEADER_KEY_X_FILE_PATH: parse.quote(remote_file),
             AppMeshClient._HTTP_HEADER_KEY_AUTH: f"Bearer {token}",
         }
+        # The data side channel is a separate hop: it carries the forwarding header too.
+        if self.forward_to:
+            header[AppMeshClient._HTTP_HEADER_KEY_X_TARGET_HOST] = self.forward_to
         path = "/appmesh/file/download/ws"
         rest_url = parse.urljoin(self.base_url, path)
-        r = self.session.get(url=rest_url, stream=True, timeout=self.request_timeout, headers=header, cert=self.ssl_client_cert, verify=self.ssl_verify)
+        r = self.session.get(url=rest_url, stream=True, timeout=self.request_timeout, headers=header,
+            cert=self.ssl_client_cert, verify=self.ssl_verify)
         if r.status_code == HTTPStatus.OK:
             # Write file in chunks
             with local_path.open("wb") as fp:
@@ -184,12 +193,16 @@ class AppMeshClientWSS(TransportClientMixin, AppMeshClient):
             AppMeshClient._HTTP_HEADER_KEY_AUTH: f"Bearer {token}",
             AppMeshClient._HTTP_HEADER_KEY_X_FILE_PATH: parse.quote(remote_file),
         }
+        # The data side channel is a separate hop: it carries the forwarding header too.
+        if self.forward_to:
+            header[AppMeshClient._HTTP_HEADER_KEY_X_TARGET_HOST] = self.forward_to
         if preserve_permissions:
             header.update(AppMeshClient._get_file_attributes(local_path))
         rest_url = parse.urljoin(self.base_url, path)
 
         with local_path.open("rb") as fp:
-            r = self.session.post(url=rest_url, stream=True, data=fp, timeout=self.request_timeout, headers=header, cert=self.ssl_client_cert, verify=self.ssl_verify)
+            r = self.session.post(url=rest_url, stream=True, data=fp, timeout=self.request_timeout, headers=header,
+                cert=self.ssl_client_cert, verify=self.ssl_verify)
             try:
                 r.raise_for_status()
             except requests.exceptions.HTTPError as e:

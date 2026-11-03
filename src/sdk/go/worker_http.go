@@ -47,10 +47,12 @@ func (r *WorkerHTTPContext) getRuntimeEnv() (key, appName string, err error) {
 	appName = os.Getenv("APP_MESH_APPLICATION_NAME")
 
 	if key == "" {
-		return "", "", errors.New("missing environment variable: APP_MESH_PROCESS_KEY. This must be set by App Mesh service")
+		return "", "", errors.New("missing environment variable: APP_MESH_PROCESS_KEY. " +
+			"This must be set by App Mesh service")
 	}
 	if appName == "" {
-		return "", "", errors.New("missing environment variable: APP_MESH_APPLICATION_NAME. This must be set by App Mesh service")
+		return "", "", errors.New("missing environment variable: APP_MESH_APPLICATION_NAME. " +
+			"This must be set by App Mesh service")
 	}
 	return key, appName, nil
 }

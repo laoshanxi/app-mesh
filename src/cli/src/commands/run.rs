@@ -1,5 +1,5 @@
 use anyhow::{bail, Context, Result};
-use appmesh::{Application, AppMeshClient, ExitAction};
+use appmesh::{AppMeshClient, Application, ExitAction};
 use std::sync::Arc;
 use uuid::Uuid;
 
@@ -20,9 +20,7 @@ fn join_command(parts: &[String]) -> String {
 /// Single-quote for POSIX shells; arguments of only safe characters are left bare.
 fn shell_quote(arg: &str) -> String {
     let safe = !arg.is_empty()
-        && arg
-            .chars()
-            .all(|c| c.is_ascii_alphanumeric() || matches!(c, '_' | '-' | '.' | '/' | ':' | '=' | '@' | ','));
+        && arg.chars().all(|c| c.is_ascii_alphanumeric() || matches!(c, '_' | '-' | '.' | '/' | ':' | '=' | '@' | ','));
     if safe {
         return arg.to_string();
     }
@@ -38,10 +36,7 @@ pub async fn run(cli: &Cli, args: &RunArgs) -> Result<i32> {
 
     // Build Application — only set name if user specified -a (C++ behavior)
     let mut app = Application::default();
-    app.behavior = Some(appmesh::Behavior {
-        exit: Some(ExitAction::Remove),
-        exit_code_actions: None,
-    });
+    app.behavior = Some(appmesh::Behavior { exit: Some(ExitAction::Remove), exit_code_actions: None });
 
     if let Some(ref name) = args.app {
         app.name = Some(name.clone());
@@ -74,10 +69,27 @@ pub async fn run(cli: &Cli, args: &RunArgs) -> Result<i32> {
         app.env = Some(envs);
     }
 
-    let timeout = AppMeshClient::parse_duration(&args.timeout)
-        .map_err(|e| anyhow::anyhow!("{}", e))?;
-    let lifecycle = AppMeshClient::parse_duration(&args.lifetime)
-        .map_err(|e| anyhow::anyhow!("{}", e))?;
+    let timeout = AppMeshClient::parse_duration(&args.timeout).map_err(|e| anyhow::anyhow!("{}", e))?;
+    let lifecycle = AppMeshClient::parse_duration(&args.lifetime).map_err(|e| anyhow::anyhow!("{}", e))?;
+
+    if let Some(ref name) = args.app {
+        // `run` copies an existing app and starts it on demand; a keepalive task
+        // app would silently do nothing — point at the task command instead.
+        if let Ok(existing) = client.get_app(name).await {
+            let is_keepalive = existing
+                .behavior
+                .as_ref()
+                .and_then(|behavior| behavior.exit.as_ref())
+                .is_some_and(|exit| *exit == ExitAction::Keepalive);
+            if is_keepalive {
+                bail!(
+                    "'{}' is a keepalive task application; nothing was run. Send it a task instead: appm task {} '<payload>'",
+                    name,
+                    name
+                );
+            }
+        }
+    }
 
     // When the user named the run, clean up the transient app on Ctrl+C (matches C++).
     if let Some(ref name) = args.app {
@@ -85,10 +97,9 @@ pub async fn run(cli: &Cli, args: &RunArgs) -> Result<i32> {
     }
 
     if timeout < 0 {
-        let (exit_code, output) = client
-            .run_app_sync(&app, timeout.abs(), lifecycle)
-            .await
-            .context("Sync run failed")?;
+        // "<0: wait until exit" — the daemon treats timeout 0 as no forced termination;
+        // abs() would instead kill the run after |timeout| seconds.
+        let (exit_code, output) = client.run_app_sync(&app, 0, lifecycle).await.context("Sync run failed")?;
         if !output.is_empty() {
             print!("{}", output);
         }
@@ -120,20 +131,18 @@ pub async fn exec(cli: &Cli, args: &ExecArgs) -> Result<i32> {
         bail!("The 'exec' command requires a command to execute.");
     }
 
-    let app_name = derive_exec_app_name(&client).await;
+    let app_name = derive_exec_app_name().await;
 
     // Clean up any existing session
     let _ = client.delete_app(&app_name).await;
 
-    let timeout = AppMeshClient::parse_duration(&args.timeout)
-        .map_err(|e| anyhow::anyhow!("{}", e))?;
-    let lifecycle = AppMeshClient::parse_duration(&args.lifetime)
-        .map_err(|e| anyhow::anyhow!("{}", e))?;
+    let timeout = AppMeshClient::parse_duration(&args.timeout).map_err(|e| anyhow::anyhow!("{}", e))?;
+    let lifecycle = AppMeshClient::parse_duration(&args.lifetime).map_err(|e| anyhow::anyhow!("{}", e))?;
 
     signal::register_cleanup(client.clone(), app_name.clone());
 
     loop {
-        let app = build_exec_app(&app_name, &command, args.session_login, &args.env);
+        let app = build_exec_app(&app_name, &command, args.session_login, &args.env, cli.forward_to.is_some());
 
         let (_app_run, exit_code) = client
             .run_and_wait(&app, timeout, lifecycle, appmesh::print_output_handler(), timeout)
@@ -153,14 +162,12 @@ pub async fn exec(cli: &Cli, args: &ExecArgs) -> Result<i32> {
 pub async fn shell(cli: &Cli, args: &ShellArgs) -> Result<i32> {
     let client = build_client_with_auth(cli).await?;
 
-    let app_name = derive_exec_app_name(&client).await;
+    let app_name = derive_exec_app_name().await;
 
     let _ = client.delete_app(&app_name).await;
 
-    let timeout = AppMeshClient::parse_duration(&args.timeout)
-        .map_err(|e| anyhow::anyhow!("{}", e))?;
-    let lifecycle = AppMeshClient::parse_duration(&args.lifetime)
-        .map_err(|e| anyhow::anyhow!("{}", e))?;
+    let timeout = AppMeshClient::parse_duration(&args.timeout).map_err(|e| anyhow::anyhow!("{}", e))?;
+    let lifecycle = AppMeshClient::parse_duration(&args.lifetime).map_err(|e| anyhow::anyhow!("{}", e))?;
 
     // The daemon resolves the immutable principal and its execution mapping.
     let url = crate::client::get_current_url(cli);
@@ -176,7 +183,7 @@ pub async fn shell(cli: &Cli, args: &ShellArgs) -> Result<i32> {
     if !args.command.is_empty() {
         let initial_cmd = join_command(&args.command);
         return_code =
-            execute_shell_command(&client, &app_name, &initial_cmd, args, timeout, lifecycle)
+            execute_shell_command(&client, &app_name, &initial_cmd, args, timeout, lifecycle, cli.forward_to.is_some())
                 .await
                 .unwrap_or(1);
     }
@@ -201,7 +208,7 @@ pub async fn shell(cli: &Cli, args: &ShellArgs) -> Result<i32> {
                 }
 
                 return_code =
-                    execute_shell_command(&client, &app_name, cmd, args, timeout, lifecycle)
+                    execute_shell_command(&client, &app_name, cmd, args, timeout, lifecycle, cli.forward_to.is_some())
                         .await
                         .unwrap_or(1);
             }
@@ -229,8 +236,9 @@ async fn execute_shell_command(
     args: &ShellArgs,
     timeout: i32,
     lifecycle: i32,
+    forwarded: bool,
 ) -> Result<i32> {
-    let app = build_exec_app(app_name, command, args.session_login, &args.env);
+    let app = build_exec_app(app_name, command, args.session_login, &args.env, forwarded);
 
     // On Ctrl+C, delete the app so the in-flight run observes REMOVED and returns
     // cleanly (unsubscribing itself); the shell then drops back to the prompt instead
@@ -242,18 +250,12 @@ async fn execute_shell_command(
         let app_name = app_name.to_string();
         tokio::spawn(async move {
             if tokio::signal::ctrl_c().await.is_ok() {
-                let _ = tokio::time::timeout(
-                    std::time::Duration::from_secs(3),
-                    client.delete_app(&app_name),
-                )
-                .await;
+                let _ = tokio::time::timeout(std::time::Duration::from_secs(3), client.delete_app(&app_name)).await;
             }
         })
     };
 
-    let result = client
-        .run_and_wait(&app, timeout, lifecycle, appmesh::print_output_handler(), timeout)
-        .await;
+    let result = client.run_and_wait(&app, timeout, lifecycle, appmesh::print_output_handler(), timeout).await;
     watcher.abort();
 
     let (_app_run, exit_code) = result.context("Shell command failed")?;
@@ -265,6 +267,7 @@ fn build_exec_app(
     command: &str,
     session_login: bool,
     extra_env: &[String],
+    forwarded: bool,
 ) -> Application {
     let mut builder = Application::builder(app_name)
         .command(command)
@@ -276,9 +279,12 @@ fn build_exec_app(
         builder = builder.session_login(true);
     }
 
-    // Forward current working directory
-    if let Ok(cwd) = std::env::current_dir() {
-        builder = builder.working_dir(&cwd.to_string_lossy());
+    // Forward current working directory. A forwarded exec runs on another host
+    // where the local cwd does not exist, so keep the server default instead.
+    if !forwarded {
+        if let Ok(cwd) = std::env::current_dir() {
+            builder = builder.working_dir(&cwd.to_string_lossy());
+        }
     }
 
     // Ambient process variables are never copied to the remote application. Name-
@@ -293,7 +299,7 @@ fn build_exec_app(
     builder.build()
 }
 
-async fn derive_exec_app_name(_client: &appmesh::AppMeshClientWSS) -> String {
+async fn derive_exec_app_name() -> String {
     let os_user: String = get_os_username()
         .chars()
         .filter(|character| character.is_ascii_alphanumeric() || matches!(character, '_' | '-'))
@@ -304,7 +310,5 @@ async fn derive_exec_app_name(_client: &appmesh::AppMeshClientWSS) -> String {
 }
 
 fn get_os_username() -> String {
-    std::env::var("USER")
-        .or_else(|_| std::env::var("USERNAME"))
-        .unwrap_or_else(|_| "user".to_string())
+    std::env::var("USER").or_else(|_| std::env::var("USERNAME")).unwrap_or_else(|_| "user".to_string())
 }

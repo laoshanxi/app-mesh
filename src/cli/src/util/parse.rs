@@ -5,11 +5,8 @@ pub fn parse_metadata(meta: &str) -> Result<serde_json::Value> {
         if !std::path::Path::new(file_path).exists() {
             bail!("Input file '{}' does not exist", file_path);
         }
-        let content =
-            std::fs::read_to_string(file_path).context("Failed to read metadata file")?;
-        return Ok(
-            serde_json::from_str(&content).unwrap_or(serde_json::Value::String(content)),
-        );
+        let content = std::fs::read_to_string(file_path).context("Failed to read metadata file")?;
+        return Ok(serde_json::from_str(&content).unwrap_or(serde_json::Value::String(content)));
     }
     Ok(serde_json::from_str(meta).unwrap_or(serde_json::Value::String(meta.to_string())))
 }

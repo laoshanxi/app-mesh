@@ -1,5 +1,9 @@
 # App Mesh JavaScript SDK
 
+> **Naming**: public methods use camelCase (`listApps`, `runAppSync`). The
+> deprecated snake_case aliases (`list_apps`, ...) were removed in 3.1.7 —
+> migrate callers to the camelCase names.
+
 ## Client SDK
 
 ### Build
@@ -22,7 +26,7 @@ npm i appmesh
 import { AppMeshClient } from "appmesh";
 
 const client = new AppMeshClient();
-client.set_bearer_token(process.env.APPMESH_BEARER_TOKEN);
+client.setBearerToken(process.env.APPMESH_BEARER_TOKEN);
 ```
 
 #### Browser (VUE Example)
@@ -98,14 +102,14 @@ const server = new AppMeshWorker();
 
 try {
   // Fetch task from client
-  const payload = await server.fetch_task();
+  const payload = await server.fetchTask();
   console.log("Received:", payload);
 
   // Process the task
   const result = processData(payload);
 
   // Return result to client
-  await server.send_task_result(result);
+  await server.sendTaskResult(result);
 } catch (error) {
   if (error instanceof ProcessSupersededError || error instanceof WorkerRejectedError) {
     // This process was replaced (412), or its request is permanently invalid (400).
@@ -151,9 +155,9 @@ const sslConfig = {
 await withServer(
   () => new AppMeshWorkerTCP(sslConfig, ["127.0.0.1", 6059]),
   async (server) => {
-    const payload = await server.fetch_task();
+    const payload = await server.fetchTask();
     const result = processPayload(payload);
-    await server.send_task_result(result);
+    await server.sendTaskResult(result);
   }
 );
 // Connection automatically closed
@@ -192,7 +196,7 @@ new AppMeshWorker(baseURL, sslConfig, options);
 
 ##### Methods
 
-###### `fetch_task()`
+###### `fetchTask()`
 
 Fetch task payload from the App Mesh service. Automatically retries transient failures.
 
@@ -203,11 +207,11 @@ Fetch task payload from the App Mesh service. Automatically retries transient fa
 **Example:**
 
 ```javascript
-const payload = await server.fetch_task();
+const payload = await server.fetchTask();
 const data = JSON.parse(payload);
 ```
 
-###### `send_task_result(result)`
+###### `sendTaskResult(result)`
 
 Return processed result back to the client.
 
@@ -223,12 +227,12 @@ Return processed result back to the client.
 
 ```javascript
 const result = { status: "success", data: processedData };
-await server.send_task_result(JSON.stringify(result));
+await server.sendTaskResult(JSON.stringify(result));
 ```
 
 ###### `stop()`
 
-Cancel the fetch loop. A running `fetch_task()` call resolves `null`.
+Cancel the fetch loop. A running `fetchTask()` call resolves `null`.
 
 ```javascript
 server.stop();
@@ -288,8 +292,8 @@ Context manager for automatic resource cleanup.
 await withServer(
   () => new AppMeshWorkerTCP(),
   async (server) => {
-    const payload = await server.fetch_task();
-    await server.send_task_result(processData(payload));
+    const payload = await server.fetchTask();
+    await server.sendTaskResult(processData(payload));
   }
 );
 ```
@@ -304,7 +308,7 @@ import { AppMeshWorker } from "appmesh/worker";
 const server = new AppMeshWorker();
 
 try {
-  const payload = await server.fetch_task();
+  const payload = await server.fetchTask();
   const data = JSON.parse(payload);
 
   // Process JSON data
@@ -314,9 +318,9 @@ try {
     timestamp: new Date().toISOString(),
   };
 
-  await server.send_task_result(JSON.stringify(result));
+  await server.sendTaskResult(JSON.stringify(result));
 } catch (error) {
-  await server.send_task_result(
+  await server.sendTaskResult(
     JSON.stringify({
       status: "error",
       message: error.message,
@@ -333,7 +337,7 @@ import crypto from "crypto";
 
 const server = new AppMeshWorker();
 
-const binaryPayload = await server.fetch_task();
+const binaryPayload = await server.fetchTask();
 const hash = crypto.createHash("sha256");
 hash.update(binaryPayload);
 
@@ -342,7 +346,7 @@ const result = {
   checksum: hash.digest("hex"),
 };
 
-await server.send_task_result(JSON.stringify(result));
+await server.sendTaskResult(JSON.stringify(result));
 ```
 
 #### Long-Running Task
@@ -352,7 +356,7 @@ import { AppMeshWorker } from "appmesh/worker";
 
 const server = new AppMeshWorker();
 
-const config = JSON.parse(await server.fetch_task());
+const config = JSON.parse(await server.fetchTask());
 const results = [];
 
 for (let i = 0; i < config.steps; i++) {
@@ -362,7 +366,7 @@ for (let i = 0; i < config.steps; i++) {
   console.log(`Step ${i + 1}/${config.steps} completed`);
 }
 
-await server.send_task_result(
+await server.sendTaskResult(
   JSON.stringify({
     status: "success",
     results: results,
@@ -379,9 +383,9 @@ await server.send_task_result(
 import { AppMeshClient } from "appmesh";
 
 const client = new AppMeshClient();
-client.set_bearer_token(process.env.APPMESH_BEARER_TOKEN);
+client.setBearerToken(process.env.APPMESH_BEARER_TOKEN);
 
-const result = await client.run_task(
+const result = await client.runTask(
   "my-app",
   JSON.stringify({
     action: "process",
@@ -400,7 +404,7 @@ import { AppMeshWorker } from "appmesh/worker";
 
 const server = new AppMeshWorker();
 
-const payload = await server.fetch_task();
+const payload = await server.fetchTask();
 const request = JSON.parse(payload);
 
 const result = {
@@ -408,7 +412,7 @@ const result = {
   sum: request.data.reduce((a, b) => a + b, 0),
 };
 
-await server.send_task_result(JSON.stringify(result));
+await server.sendTaskResult(JSON.stringify(result));
 ```
 
 ## Behavioral contract

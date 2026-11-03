@@ -22,7 +22,8 @@ func TestNewRefreshTokenProviderURLPolicy(t *testing.T) {
 		"https:///auth/token",
 		"not-a-url",
 	} {
-		provider, err := NewRefreshTokenProvider(RefreshTokenConfig{TokenURL: tokenURL, AccessToken: "a1", RefreshToken: "r1"})
+		provider, err := NewRefreshTokenProvider(RefreshTokenConfig{TokenURL: tokenURL, AccessToken: "a1",
+			RefreshToken: "r1"})
 		require.Error(t, err, "token URL %q must be rejected", tokenURL)
 		assert.Nil(t, provider)
 	}
@@ -33,12 +34,14 @@ func TestNewRefreshTokenProviderURLPolicy(t *testing.T) {
 		"http://localhost:6060/auth/token",
 		"http://[::1]:6060/auth/token",
 	} {
-		provider, err := NewRefreshTokenProvider(RefreshTokenConfig{TokenURL: tokenURL, AccessToken: "a1", RefreshToken: "r1"})
+		provider, err := NewRefreshTokenProvider(RefreshTokenConfig{TokenURL: tokenURL, AccessToken: "a1",
+			RefreshToken: "r1"})
 		require.NoError(t, err, "token URL %q must be accepted", tokenURL)
 		require.NotNil(t, provider)
 	}
 
-	provider, err := NewRefreshTokenProvider(RefreshTokenConfig{TokenURL: "https://example.com/auth/token", AccessToken: "a1"})
+	provider, err := NewRefreshTokenProvider(RefreshTokenConfig{TokenURL: "https://example.com/auth/token",
+		AccessToken: "a1"})
 	require.Error(t, err, "an empty refresh token must be rejected")
 	assert.Nil(t, provider)
 }
@@ -256,7 +259,7 @@ func TestRefreshTokenProviderEndToEnd401(t *testing.T) {
 		TokenURL: server.URL + "/auth/token", AccessToken: "stale-token", RefreshToken: "r1", ExpiresIn: 3600,
 	})
 	require.NoError(t, err)
-	client, err := NewHTTPClient(Option{AppMeshUri: server.URL, TokenProvider: provider})
+	client, err := NewHTTPClient(Option{AppMeshURI: server.URL, TokenProvider: provider})
 	require.NoError(t, err)
 	defer client.Close()
 

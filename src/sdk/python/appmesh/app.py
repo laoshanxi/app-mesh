@@ -89,7 +89,8 @@ class App:
             """Default exit behavior, options: 'restart', 'standby', 'keepalive', 'remove'."""
 
             self.exit_code_actions = _get_item(data, "exit_code_actions") or {}
-            """Exit code specific behavior (exit code -> action, e.g., 0:restart, 1:standby), higher priority than default exit behavior"""
+            """Exit code specific behavior (exit code -> action, e.g., 0:restart, 1:standby), """
+            """higher priority than default exit behavior."""
 
         def set_exit_behavior(self, action: "App.Behavior.Action") -> None:
             """Set default behavior for application exit."""
@@ -168,7 +169,8 @@ class App:
         self.end_time = _get_int(data, "end_time")
         """end date time for app (ISO8601 time format, e.g., '2020-10-11T10:22:05')"""
         self.interval = _get_item(data, "interval")
-        """start interval for short running app: integer seconds or ISO 8601 duration (e.g., 30, 'P1Y2M3DT4H5M6S', 'P5W'); use ``cron_schedule`` for a cron expression"""
+        """start interval for short running app: integer seconds or ISO 8601 duration (e.g., 30, 'P1Y2M3DT4H5M6S', """
+        """'P5W'); use ``cron_schedule`` for a cron expression"""
         self.cron_schedule = _get_str(data, "cron_schedule")
         """cron expression for the start schedule (e.g., '* */5 * * * *'); presence means the app runs on a cron schedule"""
         self.daily_limitation = App.DailyLimitation(_get_item(data, "daily_limitation"))
@@ -177,13 +179,16 @@ class App:
         self.health_check_cmd = _get_str(data, "health_check_cmd")
         """health check script command (e.g., sh -x 'curl host:port/health', return 0 is health)"""
         self.depends_on = _get_item(data, "depends_on")
-        """list of application names this app depends on; each must be registered, enabled, running and healthy before this app starts (continuously scheduled apps only, ``Optional[List[str]]``)"""
+        """list of application names this app depends on; each must be registered, enabled, running and healthy before """
+        """this app starts (continuously scheduled apps only, ``Optional[List[str]]``)"""
         self.permission = _get_int(data, "permission")
-        """app user permission, two decimal digits [others][group], each digit deny:1, read:2, write:3. Only the tens digit (others) is evaluated by the daemon for non-owner access; see ``set_permission()``."""
+        """app user permission, two decimal digits [others][group], each digit deny:1, read:2, write:3. Only the tens """
+        """digit (others) is evaluated by the daemon for non-owner access; see ``set_permission()``."""
         self.behavior = App.Behavior(_get_item(data, "behavior"))
 
         self.env = data.get("env", {}) if data else {}
-        """environment variables (e.g., -e env1=value1 -e env2=value2, APP_DOCKER_OPTS is used to input docker run parameters)"""
+        """environment variables (e.g., -e env1=value1 -e env2=value2, APP_DOCKER_OPTS is used to input docker run """
+        """parameters)"""
         self.secret_env = data.get("secret_env", {}) if data else {}
         """security environment variables protected by Engine at rest"""
         self.pid = _get_int(data, "pid")
@@ -220,7 +225,8 @@ class App:
         self.last_error = _get_str(data, "last_error")
         """last error message"""
         self.waiting_for = _get_item(data, "waiting_for")
-        """read-only: dependency names not yet satisfied at the last scheduler pass (``Optional[List[str]]``, absent when nothing is held)"""
+        """read-only: dependency names not yet satisfied at the last scheduler pass (``Optional[List[str]]``, absent """
+        """when nothing is held)"""
         self.next_start_time = _get_int(data, "next_start_time")
         """next start time"""
         self.health = _get_int(data, "health")
@@ -232,7 +238,8 @@ class App:
         self.task_status = _get_str(data, "task_status")
         """task status"""
         self.subscription_id = _get_str(data, "subscription_id")
-        """subscription id returned by the daemon when add_app is called atomically with subscribe_events on a TCP/WSS client; empty for HTTP or when no subscribe_events was supplied"""
+        """subscription id returned by the daemon when add_app is called atomically with subscribe_events on a TCP/WSS """
+        """client; empty for HTTP or when no subscribe_events was supplied"""
 
     @property
     def is_enabled(self) -> Optional[bool]:

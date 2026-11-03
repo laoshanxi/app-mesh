@@ -4,19 +4,33 @@ use crate::app::{Cli, LabelArgs, LogArgs};
 use crate::client::build_client_with_auth;
 use crate::output::format;
 
+// Label keys ride the route path (/appmesh/label/<key>): '/' or '*' can never address a label.
+fn validate_key(lbl: &str, key: &str) -> Result<()> {
+    if key.is_empty() {
+        bail!("Invalid label '{lbl}': expected a non-empty key");
+    }
+    if key.contains('/') || key.contains('*') {
+        bail!("Invalid label '{lbl}': label key may not contain '/' or '*'");
+    }
+    Ok(())
+}
+
 pub async fn label(cli: &Cli, args: &LabelArgs) -> Result<i32> {
     let client = build_client_with_auth(cli).await?;
 
     if args.add {
         for lbl in &args.label {
-            // C++ silently skips entries that are not exactly key=value.
-            if let Some((key, value)) = lbl.split_once('=') {
-                client.add_label(key, value).await.context("Failed to add label")?;
-            }
+            let (key, value) = lbl
+                .split_once('=')
+                .filter(|(key, _)| !key.is_empty())
+                .with_context(|| format!("Invalid label '{lbl}': expected <key>=<value> with a non-empty key"))?;
+            validate_key(lbl, key)?;
+            client.add_label(key, value).await.context("Failed to add label")?;
         }
     } else if args.delete {
         for lbl in &args.label {
             let key = lbl.split('=').next().unwrap_or(lbl);
+            validate_key(lbl, key)?;
             client.delete_label(key).await.context("Failed to delete label")?;
         }
     }
@@ -42,10 +56,7 @@ pub async fn log_level(cli: &Cli, args: &LogArgs) -> Result<i32> {
         bail!("Invalid log level '{}'. Valid: {:?}", args.level, valid_levels);
     }
 
-    let result = client
-        .set_log_level(&level)
-        .await
-        .context("Failed to set log level")?;
+    let result = client.set_log_level(&level).await.context("Failed to set log level")?;
     eprintln!("Log level set to: {}", result);
     Ok(0)
 }
@@ -59,10 +70,7 @@ pub async fn config(cli: &Cli) -> Result<i32> {
 
 pub async fn resource(cli: &Cli) -> Result<i32> {
     let client = build_client_with_auth(cli).await?;
-    let res = client
-        .get_host_resources()
-        .await
-        .context("Failed to get resources")?;
+    let res = client.get_host_resources().await.context("Failed to get resources")?;
     format::print_json(&res)?;
     Ok(0)
 }

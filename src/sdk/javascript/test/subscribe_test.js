@@ -5,8 +5,12 @@
  * Run: node test/subscribe_test.js
  */
 
-import { AppMeshClientTCP, ResponseMessage, MessageDemuxer, EVENT_TYPE_DISCONNECTED } from '../src/appmesh_tcp.js'
+import {
+  AppMeshClientTCP, ResponseMessage, MessageDemuxer, TCPTransport, EVENT_TYPE_DISCONNECTED,
+} from '../src/appmesh_tcp.js'
 import { TransportDisconnectedError } from '../src/appmesh.js'
+import { EventEmitter } from 'events'
+import msgpack from 'msgpack-lite'
 
 let passed = 0
 let failed = 0
@@ -43,7 +47,8 @@ assert('EVENT_URI constant', () => {
 })
 
 assert('AppEvent JSON parsing', () => {
-  const raw = '{"subscription_id":"sub123","event_type":"EXIT","app_name":"myapp","timestamp":1714000000,"sequence":42,"data":{"exit_code":1,"pid":12345}}'
+  const raw = '{"subscription_id":"sub123","event_type":"EXIT","app_name":"myapp","timestamp":1714000000,' +
+    '"sequence":42,"data":{"exit_code":1,"pid":12345}}'
   const event = JSON.parse(raw)
   if (event.subscription_id !== 'sub123') throw new Error('subscription_id mismatch')
   if (event.event_type !== 'EXIT') throw new Error('event_type mismatch')
@@ -71,7 +76,7 @@ await assertAsync('event requests enable demuxer before send', async () => {
     }
   }
 
-  await AppMeshClientTCP.prototype.add_app.call(stub, 'test', { command: 'true' }, ['START'], () => {})
+  await AppMeshClientTCP.prototype.addApp.call(stub, 'test', { command: 'true' }, ['START'], () => {})
   if (actions.join(',') !== 'demuxer,request,callback') {
     throw new Error(`atomic add ordering mismatch: ${actions}`)
   }
@@ -214,12 +219,12 @@ function makeStubWaitClient () {
     unsubscribed: false,
     _cb: null,
     async subscribe (name, events, cb) { stub._cb = cb; return { subscription_id: 'sub-1' } },
-    async get_app_output () {
+    async getAppOutput () {
       if (stub._cb && stub.injectEvent) stub._cb(stub.injectEvent)
       return { output: '', exitCode: null }
     },
     async unsubscribe () { stub.unsubscribed = true },
-    async delete_app () { stub.deleted = true }
+    async deleteApp () { stub.deleted = true }
   }
   return stub
 }
@@ -229,7 +234,7 @@ function makeStubWaitClient () {
 await assertAsync('wait_for_async_run returns negative exit code as-is', async () => {
   const stub = makeStubWaitClient()
   stub.injectEvent = { event_type: 'EXIT', data: { exit_code: -2 } }
-  const code = await AppMeshClientTCP.prototype.wait_for_async_run.call(
+  const code = await AppMeshClientTCP.prototype.waitForAsyncRun.call(
     stub, { appName: 'waitapp', procUid: 'proc-1' }, null, 5)
   if (code !== -2) throw new Error(`expected exit code -2, got ${code}`)
   if (!stub.unsubscribed) throw new Error('live transport must be unsubscribed after the wait')
@@ -244,7 +249,7 @@ await assertAsync('wait_for_async_run disconnect unblocks with typed error', asy
   stub.injectEvent = { event_type: EVENT_TYPE_DISCONNECTED }
   let thrown = null
   try {
-    await AppMeshClientTCP.prototype.wait_for_async_run.call(
+    await AppMeshClientTCP.prototype.waitForAsyncRun.call(
       stub, { appName: 'waitapp', procUid: 'proc-1' }, null, 30)
   } catch (e) {
     thrown = e
@@ -254,6 +259,222 @@ await assertAsync('wait_for_async_run disconnect unblocks with typed error', asy
   }
   if (stub.unsubscribed) throw new Error('must not send unsubscribe on a dead transport')
   if (stub.deleted) throw new Error('must not delete the run app after a disconnect')
+})
+
+// A file transfer must be rejected while the event demuxer owns the read side:
+// the demuxer read loop would steal the raw (non-msgpack) chunk frames and
+// corrupt the transfer (mirrors the Python SDK's _ensure_no_active_demuxer).
+await assertAsync('file transfer rejected while demuxer active', async () => {
+  const stub = {
+    _demuxer: { _running: true },
+    _ensureNoActiveDemuxer: AppMeshClientTCP.prototype._ensureNoActiveDemuxer,
+    async _request () { throw new Error('request must not be sent') }
+  }
+  let thrown = null
+  try { await AppMeshClientTCP.prototype.downloadFile.call(stub, '/remote/file') } catch (e) { thrown = e }
+  if (!thrown || !thrown.message.includes('not supported')) throw new Error(`download not rejected: ${thrown}`)
+
+  thrown = null
+  try { await AppMeshClientTCP.prototype.uploadFile.call(stub, '/local/file') } catch (e) { thrown = e }
+  if (!thrown || !thrown.message.includes('not supported')) throw new Error(`upload not rejected: ${thrown}`)
+})
+
+// A zero-length frame is not a message: the read loop skips it and keeps
+// reading instead of tearing down every subscription (Python parity).
+await assertAsync('read loop skips zero-length frames', async () => {
+  const eventFrame = msgpack.encode({
+    uuid: 'evt-1',
+    request_uri: EVENT_URI,
+    http_status: 200,
+    body: Buffer.from(JSON.stringify({
+      subscription_id: 'sub-zero', event_type: 'START', app_name: 'a',
+      timestamp: 0, sequence: 0, data: {}
+    })),
+    headers: {}
+  })
+  const frames = [Buffer.alloc(0), eventFrame]
+  const transport = {
+    connected: () => true,
+    receiveMessage: () => frames.length ? Promise.resolve(frames.shift()) : new Promise(() => {})
+  }
+  const demuxer = new MessageDemuxer(transport)
+  const received = []
+  demuxer.registerEventCallback('sub-zero', (e) => { if (e.event_type !== EVENT_TYPE_DISCONNECTED) received.push(e) })
+  demuxer.start()
+
+  await new Promise(resolve => setTimeout(resolve, 50))
+  if (received.length !== 1 || received[0].event_type !== 'START') {
+    demuxer.stop()
+    throw new Error(`event after zero-length frame not delivered: ${received.length}`)
+  }
+  demuxer.stop()
+})
+
+// Concurrent subscribe() calls on an unconnected transport must create exactly
+// one demuxer (no dual read loops competing for the socket).
+await assertAsync('concurrent enableDemuxer creates a single demuxer', async () => {
+  const client = new AppMeshClientTCP(false, ['127.0.0.1', 6059])
+  let connects = 0
+  client.tcpTransport = {
+    connected: () => connects > 0,
+    async connect () { connects++; await new Promise(r => setTimeout(r, 20)) },
+    receiveMessage: () => new Promise(() => {}),
+    close () {}
+  }
+  try {
+    await Promise.all([client._enableDemuxer(), client._enableDemuxer(), client._enableDemuxer()])
+    if (connects !== 1) throw new Error(`expected exactly 1 connect, got ${connects}`)
+    if (!client._demuxer || !client._demuxer._running) throw new Error('demuxer not running')
+  } finally {
+    if (client._demuxer) client._demuxer.stop()
+    client.close()
+  }
+})
+
+// A hostile/corrupt 8-byte header (length near 4 GiB) must be rejected before
+// the accumulation loop allocates, and the socket must be closed.
+await assertAsync('oversized frame length rejected and socket closed', async () => {
+  class FakeSocket extends EventEmitter {
+    constructor () { super(); this.destroyed = false }
+    destroy () { this.destroyed = true; this.emit('close') }
+  }
+  const transport = new TCPTransport(['127.0.0.1', 6059], null)
+  const sock = new FakeSocket()
+  transport.socket = sock
+
+  const hostile = Buffer.alloc(8)
+  hostile.writeUInt32BE(0x07C707F8, 0) // valid magic
+  hostile.writeUInt32BE(0xFFFFFFFF, 4) // 4 GiB body length
+
+  const pending = transport.receiveMessage()
+  sock.emit('data', hostile)
+  let thrown = null
+  try { await pending } catch (e) { thrown = e }
+  if (!thrown || !thrown.message.includes('exceeds maximum')) throw new Error(`oversized length not rejected: ${thrown}`)
+  if (!sock.destroyed) throw new Error('socket must be closed after the framing error')
+})
+
+// The X-Subscription-Id fallback lookup is case-insensitive (header case is
+// not contractual on the wire).
+await assertAsync('event sub id fallback is case-insensitive', async () => {
+  const demuxer = new MessageDemuxer(null)
+  const fakeResp = {
+    requestUri: EVENT_URI,
+    headers: { 'x-subscription-id': 'sub-ci' },
+    body: Buffer.from(JSON.stringify({
+      event_type: 'EXIT', app_name: 'a', timestamp: 0, sequence: 0, data: { exit_code: 0 }
+    }))
+  }
+  demuxer._dispatchEvent(fakeResp) // no subscription_id in body -> header fallback -> buffered
+
+  const received = []
+  demuxer.registerEventCallback('sub-ci', (e) => received.push(e))
+  if (received.length !== 1 || received[0].event_type !== 'EXIT') {
+    throw new Error('buffered event not flushed via case-insensitive header fallback')
+  }
+})
+
+// Conformance S4 (SDKContract.md): events arriving before the callback
+// registers (atomic-subscribe race) are buffered per sub_id and flushed in
+// arrival order on registration, ahead of later live events.
+await assertAsync('buffered events flush in order on registration (S4)', async () => {
+  const demuxer = new MessageDemuxer(null)
+  const mkEvent = (seq) => ({
+    requestUri: EVENT_URI,
+    body: Buffer.from(JSON.stringify({
+      subscription_id: 'sub-s4', event_type: 'START', app_name: 'fast-app',
+      timestamp: 0, sequence: seq, data: { pid: 1 }
+    }))
+  })
+
+  // Two events arrive before any callback registers: they must be buffered.
+  demuxer._dispatchEvent(mkEvent(1))
+  demuxer._dispatchEvent(mkEvent(2))
+
+  // Registration flushes the buffered events before later live ones.
+  const order = []
+  demuxer.registerEventCallback('sub-s4', (e) => {
+    if (e.event_type !== EVENT_TYPE_DISCONNECTED) order.push(e.sequence)
+  })
+  demuxer._dispatchEvent(mkEvent(3))
+
+  if (order.join(',') !== '1,2,3') {
+    throw new Error(`expected buffered flush 1,2,3 — got ${order.join(',')}`)
+  }
+})
+
+// The read pump keeps a single persistent 'data' listener: chunks arriving
+// between reads (no waiter in flight) must be buffered and delivered to the
+// next read instead of wedging the transfer. Regression test for the
+// pause/resume churn that deadlocked large TCP downloads.
+await assertAsync('chunks arriving between reads are buffered', async () => {
+  class FakeSocket extends EventEmitter {
+    constructor () { super(); this.destroyed = false }
+    destroy () { this.destroyed = true; this.emit('close') }
+  }
+  const frame = (payload) => {
+    const b = Buffer.alloc(8 + payload.length)
+    b.writeUInt32BE(0x07C707F8, 0)
+    b.writeUInt32BE(payload.length, 4)
+    payload.copy(b, 8)
+    return b
+  }
+  const transport = new TCPTransport(['127.0.0.1', 6059], null)
+  const sock = new FakeSocket()
+  transport.socket = sock
+
+  const p1 = transport.receiveMessage()
+  sock.emit('data', frame(Buffer.from('hello')))
+  if ((await p1).toString() !== 'hello') throw new Error('first frame wrong')
+
+  // Frame arrives while no read is in flight.
+  sock.emit('data', frame(Buffer.from('world')))
+  await new Promise(resolve => setTimeout(resolve, 10))
+  const second = await transport.receiveMessage()
+  if (second.toString() !== 'world') throw new Error('frame between reads was lost')
+
+  // EOF after close resolves pending and future reads with null.
+  transport.close()
+  const eof = await transport.receiveMessage()
+  if (eof !== null) throw new Error('closed transport must read as EOF')
+})
+
+
+// Read-pump error semantics: a socket error rejects the pending read (not a
+// null resolve) and stays latched for later reads; close() drops the pump so a
+// fresh socket re-arms clean state.
+await assertAsync('read pump rejects on socket error, latches, and re-arms after close', async () => {
+  class FakeSocket extends EventEmitter {
+    constructor () { super(); this.destroyed = false }
+    destroy () { this.destroyed = true; this.emit('close') }
+  }
+  const transport = new TCPTransport(['127.0.0.1', 6059], null)
+  const sock = new FakeSocket()
+  transport.socket = sock
+
+  const pending = transport.receiveMessage()
+  sock.emit('error', new Error('boom'))
+  let rejected = null
+  try { await pending } catch (e) { rejected = e }
+  if (!rejected || rejected.message !== 'boom') throw new Error(`pending read must reject with the socket error, got ${rejected}`)
+
+  let latched = null
+  try { await transport.receiveMessage() } catch (e) { latched = e }
+  if (!latched || latched.message !== 'boom') throw new Error('error must latch for later reads')
+
+  transport.close()
+  const fresh = new FakeSocket()
+  transport.socket = fresh
+  const frame = (payload) => {
+    const b = Buffer.alloc(8 + payload.length)
+    b.writeUInt32BE(0x07C707F8, 0)
+    b.writeUInt32BE(payload.length, 4)
+    payload.copy(b, 8)
+    return b
+  }
+  const read = transport.receiveMessage()
+  fresh.emit('data', frame(Buffer.from('rearmed')))
+  if ((await read).toString() !== 'rearmed') throw new Error('pump must re-arm on a fresh socket after close()')
 })
 
 console.log(`\nResults: ${passed} passed, ${failed} failed`)

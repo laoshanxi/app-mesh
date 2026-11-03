@@ -1,5 +1,5 @@
-# container_monitor.py
 #!/usr/bin/env python3
+# container_monitor.py
 """Monitor a Docker container and clean up the corresponding App Mesh applications when it exits."""
 
 import os
@@ -60,7 +60,7 @@ def main():
     """Main function to monitor container and cleanup applications."""
     # Validate command line arguments
     if len(sys.argv) < 2:
-        print("Usage: script.py <container_name> [app_names...]")
+        print("Usage: container_monitor.py <container_name> [app_names...]")
         sys.exit(1)
 
     container_name = sys.argv[1]

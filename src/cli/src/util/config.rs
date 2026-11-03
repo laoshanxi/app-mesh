@@ -13,6 +13,9 @@ pub struct CliConfig {
     pub last_host: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub last_port: Option<u16>,
+    /// CA bundle trusted for last_host, remembered from `--ca-cert` at logon.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub last_ca_cert: Option<PathBuf>,
 }
 
 #[derive(Debug, Clone)]
@@ -25,20 +28,19 @@ pub struct DaemonTlsConfig {
 
 impl Default for DaemonTlsConfig {
     fn default() -> Self {
-        Self {
-            ca_cert: None,
-            client_cert: None,
-            client_key: None,
-            verify_server: true,
-        }
+        Self { ca_cert: None, client_cert: None, client_key: None, verify_server: true }
     }
 }
 
 fn app_dir_name() -> &'static str {
     #[cfg(any(windows, target_os = "macos"))]
-    { "AppMesh" }
+    {
+        "AppMesh"
+    }
     #[cfg(not(any(windows, target_os = "macos")))]
-    { "appmesh" }
+    {
+        "appmesh"
+    }
 }
 
 pub fn config_dir() -> PathBuf {
@@ -107,9 +109,7 @@ pub fn save_session(session: &StoredSession) -> Result<()> {
     temp.persist(&path).map_err(|error| error.error).context("install OAuth session")?;
     set_mode_result(&path, 0o600)?;
     #[cfg(unix)]
-    std::fs::File::open(&dir)
-        .and_then(|directory| directory.sync_all())
-        .context("sync OAuth session directory")?;
+    std::fs::File::open(&dir).and_then(|directory| directory.sync_all()).context("sync OAuth session directory")?;
 
     // Exactly one active OAuth identity is selected per Engine endpoint. Remove stale
     // profiles only after the new session is durable.
@@ -175,11 +175,62 @@ pub fn delete_session(session: &StoredSession) -> Result<()> {
     }
 }
 
+/// Cross-process mutex for one session's initial token preparation. Concurrent
+/// `appm` starts share a single refresh token; without serialization two
+/// refreshes race, the rotation invalidates the loser's grant, and every later
+/// command demands a fresh `appm logon`.
+pub struct SessionLock {
+    path: PathBuf,
+}
+
+const SESSION_LOCK_STALE_AFTER: std::time::Duration = std::time::Duration::from_secs(10);
+const SESSION_LOCK_WAIT_LIMIT: std::time::Duration = std::time::Duration::from_secs(15);
+
+impl SessionLock {
+    /// Blocks until the lock is acquired. A holder that died without releasing
+    /// is recovered once the lock file is older than the stale window.
+    pub fn acquire(session: &StoredSession) -> Result<Self> {
+        let dir = session_dir();
+        ensure_private_directory(&dir)?;
+        let path = session_file(session).with_extension("lock");
+        let deadline = std::time::Instant::now() + SESSION_LOCK_WAIT_LIMIT;
+        loop {
+            match std::fs::OpenOptions::new().write(true).create_new(true).open(&path) {
+                Ok(_) => return Ok(Self { path }),
+                Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {
+                    let stale = std::fs::metadata(&path)
+                        .and_then(|meta| meta.modified())
+                        .ok()
+                        .and_then(|modified| modified.elapsed().ok())
+                        .is_some_and(|age| age > SESSION_LOCK_STALE_AFTER);
+                    if stale {
+                        let _ = std::fs::remove_file(&path);
+                        continue;
+                    }
+                    if std::time::Instant::now() > deadline {
+                        anyhow::bail!("timed out waiting for the OAuth session lock {}", path.display());
+                    }
+                    std::thread::sleep(std::time::Duration::from_millis(50));
+                }
+                Err(error) => {
+                    return Err(error).with_context(|| format!("create OAuth session lock {}", path.display()))
+                }
+            }
+        }
+    }
+}
+
+impl Drop for SessionLock {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_file(&self.path);
+    }
+}
+
 fn read_session_file(path: &Path) -> Result<StoredSession> {
     ensure_private_file(path)?;
     let bytes = std::fs::read(path).with_context(|| format!("read OAuth session {}", path.display()))?;
-    let session: StoredSession = serde_json::from_slice(&bytes)
-        .with_context(|| format!("parse OAuth session {}", path.display()))?;
+    let session: StoredSession =
+        serde_json::from_slice(&bytes).with_context(|| format!("parse OAuth session {}", path.display()))?;
     if session.version != 1 || session.tokens.access_token.trim().is_empty() {
         anyhow::bail!("unsupported or incomplete OAuth session")
     }
@@ -210,11 +261,11 @@ fn ensure_private_file(path: &Path) -> Result<()> {
     Ok(())
 }
 
-pub fn save_last_host(host: &str, port: u16) {
-    let cfg = CliConfig {
-        last_host: Some(host.to_string()),
-        last_port: Some(port),
-    };
+/// Remember the endpoint. A `ca_cert` given here (logon with `--ca-cert`) replaces
+/// the remembered CA; without one, the CA already remembered for this endpoint stays.
+pub fn save_last_host(host: &str, port: u16, ca_cert: Option<&Path>) {
+    let ca_cert = ca_cert.map(Path::to_path_buf).or_else(|| load_last_ca_cert(host, port));
+    let cfg = CliConfig { last_host: Some(host.to_string()), last_port: Some(port), last_ca_cert: ca_cert };
     if let Ok(content) = serde_json::to_string_pretty(&cfg) {
         let path = config_path();
         let _ = std::fs::write(&path, content + "\n");
@@ -228,12 +279,19 @@ pub fn load_last_host() -> Option<(String, u16)> {
     Some((cfg.last_host?, cfg.last_port.unwrap_or(DEFAULT_WSS_PORT)))
 }
 
+/// The CA bundle remembered for this endpoint at logon, if it is that endpoint.
+pub fn load_last_ca_cert(host: &str, port: u16) -> Option<PathBuf> {
+    let content = std::fs::read_to_string(config_path()).ok()?;
+    let cfg: CliConfig = serde_json::from_str(&content).ok()?;
+    (cfg.last_host.as_deref() == Some(host) && cfg.last_port.unwrap_or(DEFAULT_WSS_PORT) == port)
+        .then_some(cfg.last_ca_cert)
+        .flatten()
+}
+
 /// Read daemon config.yaml for TLS config and WSS port.
 pub fn load_daemon_config() -> (Option<(String, u16)>, DaemonTlsConfig) {
     let appmesh_home = detect_appmesh_home();
-    let config_path = appmesh_home
-        .as_ref()
-        .and_then(|home| detect_daemon_config_file(home));
+    let config_path = appmesh_home.as_ref().and_then(|home| detect_daemon_config_file(home));
 
     let Some(config_path) = config_path else {
         return (None, DaemonTlsConfig::default());
@@ -260,7 +318,9 @@ pub fn load_daemon_config() -> (Option<(String, u16)>, DaemonTlsConfig) {
 
         let indent = line.chars().take_while(|ch| *ch == ' ').count();
         let trimmed = line.trim();
-        let Some((key, value)) = trimmed.split_once(':') else { continue };
+        let Some((key, value)) = trimmed.split_once(':') else {
+            continue;
+        };
         let key = key.trim();
         let value = value.trim().trim_matches('"').trim_matches('\'');
 
@@ -299,9 +359,13 @@ pub fn load_daemon_config() -> (Option<(String, u16)>, DaemonTlsConfig) {
 
     let home = appmesh_home.unwrap_or_else(|| {
         #[cfg(unix)]
-        { PathBuf::from("/opt/appmesh") }
+        {
+            PathBuf::from("/opt/appmesh")
+        }
         #[cfg(windows)]
-        { PathBuf::from(r"C:\local\appmesh") }
+        {
+            PathBuf::from(r"C:\local\appmesh")
+        }
     });
     let tls = DaemonTlsConfig {
         ca_cert: ca_cert.map(|p| resolve_path(&home, &p)),
@@ -339,17 +403,17 @@ fn detect_appmesh_home() -> Option<PathBuf> {
 }
 
 fn detect_daemon_config_file(home: &Path) -> Option<PathBuf> {
-    [
-        home.join("work").join("config").join("config.yaml"),
-        home.join("config").join("config.yaml"),
-        home.join("config.yaml"),
-    ]
-    .into_iter()
-    .find(|p| p.exists())
+    [home.join("work").join("config").join("config.yaml"), home.join("config").join("config.yaml"), home.join("config.yaml")]
+        .into_iter()
+        .find(|p| p.exists())
 }
 
 fn resolve_path(home: &Path, path: &Path) -> PathBuf {
-    if path.is_absolute() { path.to_path_buf() } else { home.join(path) }
+    if path.is_absolute() {
+        path.to_path_buf()
+    } else {
+        home.join(path)
+    }
 }
 
 fn set_mode(path: &Path, mode: u32) {
@@ -365,7 +429,9 @@ fn set_mode(path: &Path, mode: u32) {
         }
     }
     #[cfg(not(any(unix, windows)))]
-    { let _ = (path, mode); }
+    {
+        let _ = (path, mode);
+    }
 }
 
 fn set_mode_result(path: &Path, mode: u32) -> Result<()> {
@@ -413,8 +479,7 @@ mod tests {
         #[cfg(unix)]
         {
             use std::os::unix::fs::PermissionsExt;
-            std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o600))
-                .expect("restrict test session");
+            std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o600)).expect("restrict test session");
         }
     }
 
@@ -431,12 +496,10 @@ mod tests {
         #[cfg(unix)]
         {
             use std::os::unix::fs::PermissionsExt;
-            std::fs::set_permissions(&broken, std::fs::Permissions::from_mode(0o600))
-                .expect("restrict broken session");
+            std::fs::set_permissions(&broken, std::fs::Permissions::from_mode(0o600)).expect("restrict broken session");
         }
 
-        let loaded = load_session_from(dir.path(), "wss://engine:6058")
-            .expect("broken candidate must not fail the load");
+        let loaded = load_session_from(dir.path(), "wss://engine:6058").expect("broken candidate must not fail the load");
         assert_eq!(loaded.as_ref().map(|session| session.engine_endpoint.as_str()), Some("wss://engine:6058"));
         assert!(load_session_from(dir.path(), "wss://missing:6058").expect("scan succeeds").is_none());
     }
@@ -453,13 +516,11 @@ mod tests {
         std::fs::write(&leaky, bytes).expect("write leaky session");
         {
             use std::os::unix::fs::PermissionsExt;
-            std::fs::set_permissions(&leaky, std::fs::Permissions::from_mode(0o644))
-                .expect("loosen leaky session");
+            std::fs::set_permissions(&leaky, std::fs::Permissions::from_mode(0o644)).expect("loosen leaky session");
         }
 
         // The loose file is skipped, not fatal, and never returned.
-        let loaded = load_session_from(dir.path(), "wss://engine:6058")
-            .expect("one safe candidate keeps the load usable");
+        let loaded = load_session_from(dir.path(), "wss://engine:6058").expect("one safe candidate keeps the load usable");
         assert!(loaded.is_some(), "safe candidate must still be found");
 
         std::fs::remove_file(dir.path().join("wanted.json")).expect("drop safe candidate");
@@ -470,17 +531,14 @@ mod tests {
     #[test]
     fn load_session_errors_only_when_every_candidate_fails() {
         let dir = tempfile::tempdir().expect("create session directory");
-        assert!(
-            load_session_from(dir.path(), "wss://engine:6058").expect("empty directory is not an error").is_none()
-        );
+        assert!(load_session_from(dir.path(), "wss://engine:6058").expect("empty directory is not an error").is_none());
 
         let broken = dir.path().join("broken.json");
         std::fs::write(&broken, "not json at all").expect("write broken session");
         #[cfg(unix)]
         {
             use std::os::unix::fs::PermissionsExt;
-            std::fs::set_permissions(&broken, std::fs::Permissions::from_mode(0o600))
-                .expect("restrict broken session");
+            std::fs::set_permissions(&broken, std::fs::Permissions::from_mode(0o600)).expect("restrict broken session");
         }
         assert!(load_session_from(dir.path(), "wss://engine:6058").is_err());
     }

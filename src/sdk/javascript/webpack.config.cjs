@@ -40,7 +40,9 @@ const config = {
       https: false,
       http: false,
       buffer: false,
-      child_process: false
+      child_process: false,
+      stream: false,
+      util: false
     }
   },
   plugins: [

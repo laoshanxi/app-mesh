@@ -32,9 +32,7 @@ pub fn read_password_stdin() -> Result<String> {
         bail!("--password-stdin requires a piped or redirected standard input");
     }
     let mut input = String::new();
-    stdin
-        .read_to_string(&mut input)
-        .context("read password from standard input")?;
+    stdin.read_to_string(&mut input).context("read password from standard input")?;
     single_line_password(&input)
 }
 

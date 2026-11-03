@@ -2,6 +2,7 @@ package appmesh;
 
 import java.io.Closeable;
 import java.io.File;
+import java.io.FileInputStream;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
@@ -83,7 +84,7 @@ public class AppMeshClient implements Closeable {
 
         // Explicit non-empty CA path must be readable; auto-detected defaults fall back to system trust
         if (builder.caCertExplicitlySet && !builder.disableSSLVerification && builder.caCertFilePath != null
-                && !builder.caCertFilePath.isEmpty() && !new java.io.File(builder.caCertFilePath).canRead()) {
+                && !builder.caCertFilePath.isEmpty() && !new File(builder.caCertFilePath).canRead()) {
             throw new IllegalArgumentException("CA certificate file not found or unreadable: " + builder.caCertFilePath);
         }
         // Build per-instance SSLContext
@@ -103,6 +104,21 @@ public class AppMeshClient implements Closeable {
         this.sslSocketFactory = factory;
     }
 
+    /** Applies the shared SSL options (CA, client certificate pair, verify switch) to a builder. */
+    protected static Builder configureSSL(Builder base, boolean disableSSLVerification,
+            String caCertPath, String clientCertPath, String clientKeyPath) {
+        if (caCertPath != null) {
+            base.caCert(caCertPath);
+        }
+        if (clientCertPath != null || clientKeyPath != null) {
+            base.clientCert(clientCertPath, clientKeyPath);
+        }
+        if (disableSSLVerification) {
+            base.disableSSLVerify();
+        }
+        return base;
+    }
+
     /** Builder for {@link AppMeshClient}. */
     public static class Builder {
         private String baseURL = "https://127.0.0.1:6060";
@@ -120,7 +136,7 @@ public class AppMeshClient implements Closeable {
 
         public Builder() {
             // Auto-detect only the trust anchor. Client identities are always opt-in.
-            if (new java.io.File(DEFAULT_SSL_DIR).isDirectory()) {
+            if (new File(DEFAULT_SSL_DIR).isDirectory()) {
                 this.caCertFilePath = DEFAULT_SSL_CA_CERT;
             }
         }
@@ -503,11 +519,12 @@ public class AppMeshClient implements Closeable {
     }
 
     /**
-     * Unsubscribe from events by subscription ID.
+     * Unsubscribe from events by subscription ID. Idempotent: the daemon drops a
+     * subscription itself when its app is removed.
      *
      * @param subscriptionId the subscription ID returned by {@link #subscribe}
-     * @return true if unsubscribed successfully
-     * @throws IOException on network failure or a non-2xx server response
+     * @return true if the server removed it, false if it was already gone (HTTP 404)
+     * @throws IOException on network failure or any other non-2xx server response
      */
     public boolean unsubscribe(String subscriptionId) throws IOException {
         return unsubscribe(subscriptionId, null);
@@ -515,16 +532,17 @@ public class AppMeshClient implements Closeable {
 
     /** Internal variant with per-request header overrides (e.g. {@code X-Target-Host} forwarding). */
     boolean unsubscribe(String subscriptionId, Map<String, String> extraHeaders) throws IOException {
-        // Unregister from demuxer first
+        Map<String, String> query = new HashMap<>();
+        query.put("subscription_id", subscriptionId);
+        HttpURLConnection conn = request("DELETE", "/appmesh/subscribe", null, extraHeaders, query);
+        // 404: the daemon already dropped the subscription with its app. Any other
+        // failure keeps the callback able to receive events (Python SDK order).
+        boolean existed = ensureOkOrNotFound("unsubscribe", conn);
         MessageDemuxer demuxer = demuxerOrNull();
         if (demuxer != null) {
             demuxer.unregisterEventCallback(subscriptionId);
         }
-
-        Map<String, String> query = new HashMap<>();
-        query.put("subscription_id", subscriptionId);
-        HttpURLConnection conn = request("DELETE", "/appmesh/subscribe", null, extraHeaders, query);
-        return ensureOk("unsubscribe", conn);
+        return existed;
     }
 
     // -------- Application Output & Execution --------
@@ -657,8 +675,9 @@ public class AppMeshClient implements Closeable {
      * the shared {@link #setForwardTo} state.
      */
     public Integer waitForAsyncRun(AppRun run, OutputHandler stdoutHandler, int timeoutSeconds) throws Exception {
-        if (run == null)
+        if (run == null) {
             return null;
+        }
         Map<String, String> forwardHeaders = forwardHeaders(run.getForwardingHost());
         long lastOutputPosition = 0;
         LocalDateTime start = LocalDateTime.now();
@@ -718,14 +737,22 @@ public class AppMeshClient implements Closeable {
     /**
      * Download a remote file to local disk.
      *
-     * <p>When {@code applyFileAttributes} is true, POSIX metadata from response headers is applied
-     * locally on a best-effort basis.
+     * <p>Plain-HTTP transport: GET answers the file bytes; the agent proxy serves the same
+     * route from local disk. {@code applyFileAttributes} applies returned POSIX metadata
+     * best-effort.
      */
     public boolean downloadFile(String filePath, String localFile, boolean applyFileAttributes) throws IOException {
         Map<String, String> headers = new HashMap<>(commonHeaders());
         headers.put("X-File-Path", encodeURIComponent(filePath));
 
         HttpURLConnection conn = request("GET", "/appmesh/file/download", null, headers, null);
+        // A JSON reply without Content-Disposition is a legacy placeholder, not content.
+        String contentType = conn.getContentType() == null ? "" : conn.getContentType().toLowerCase();
+        if (conn.getResponseCode() == HttpURLConnection.HTTP_OK && contentType.contains("json")
+                && conn.getHeaderField("Content-Disposition") == null) {
+            conn.disconnect();
+            throw new IOException("File download is not supported by this server surface (legacy reply without content)");
+        }
         if (conn.getResponseCode() != HttpURLConnection.HTTP_OK) {
             throw new IOException(Utils.readResponseSafe(conn));
         }
@@ -771,6 +798,9 @@ public class AppMeshClient implements Closeable {
     /**
      * Upload a local file to the remote server.
      *
+     * <p>Plain-HTTP transport: POST streams the raw file bytes as the body; the agent
+     * proxy accepts the same route.
+     *
      * <p>When {@code preservePermissions} is true, local file metadata is sent in headers so the
      * server can recreate permissions and ownership when supported.
      */
@@ -786,9 +816,7 @@ public class AppMeshClient implements Closeable {
         if (preservePermissions) {
             headers.putAll(Utils.getFileAttributes(file));
         }
-
-        String boundary = Utils.generateBoundary();
-        headers.put(CONTENT_TYPE_HEADER, "multipart/form-data; boundary=" + boundary);
+        headers.put(CONTENT_TYPE_HEADER, "application/octet-stream");
 
         URL url = Utils.toUrl(this.baseURL + "/appmesh/file/upload");
         HttpURLConnection connection = (HttpURLConnection) url.openConnection();
@@ -796,23 +824,38 @@ public class AppMeshClient implements Closeable {
         connection.setDoOutput(true);
         connection.setRequestMethod("POST");
         // Stream the request body instead of buffering the whole file in memory
-        connection.setChunkedStreamingMode(4096);
+        connection.setFixedLengthStreamingMode(file.length());
         connection.setConnectTimeout(connectTimeoutMs);
         connection.setReadTimeout(readTimeoutMs);
         commonHeaders().forEach(connection::setRequestProperty);
         headers.forEach(connection::setRequestProperty);
 
-        try (OutputStream output = connection.getOutputStream()) {
-            Utils.writeMultipartFormData(output, boundary, file);
+        try (InputStream fis = new FileInputStream(file);
+                OutputStream os = connection.getOutputStream()) {
+            byte[] buffer = new byte[4096];
+            int bytesRead;
+            while ((bytesRead = fis.read(buffer)) != -1) {
+                os.write(buffer, 0, bytesRead);
+            }
+            os.flush();
         }
 
         int responseCode = connection.getResponseCode();
-        if (responseCode != HttpURLConnection.HTTP_OK) {
-            String responseBody = Utils.readErrorResponse(connection);
-            LOGGER.severe("HTTP error code: " + responseCode);
-            throw new IOException("HTTP error code: " + responseCode + ", Response: " + responseBody);
+        // A 200 JSON status reply means a legacy daemon stored nothing.
+        String replyType = connection.getContentType() == null ? "" : connection.getContentType().toLowerCase();
+        if (responseCode >= HttpURLConnection.HTTP_OK && responseCode < HttpURLConnection.HTTP_MULT_CHOICE) {
+            if (responseCode == HttpURLConnection.HTTP_OK && replyType.contains("json")
+                    && Utils.readResponseSafe(connection).contains("\"message\"")) {
+                connection.disconnect();
+                throw new IOException("File upload is not supported by this server surface (legacy reply without storage)");
+            }
+            connection.disconnect();
+            return true;
         }
-        return true;
+        String responseBody = Utils.readErrorResponse(connection);
+        connection.disconnect();
+        LOGGER.severe("HTTP error code: " + responseCode);
+        throw new IOException("HTTP error code: " + responseCode + ", Response: " + responseBody);
     }
 
     /**
@@ -865,13 +908,15 @@ public class AppMeshClient implements Closeable {
 
     /** Update an Engine authorization overlay; this never changes IdP account data. */
     public boolean updatePrincipal(String principalId, JSONObject policy) throws IOException {
-        HttpURLConnection conn = request("POST", "/appmesh/principal/" + encodeURIComponent(principalId), policy, null, null);
+        HttpURLConnection conn =
+                request("POST", "/appmesh/principal/" + encodeURIComponent(principalId), policy, null, null);
         return ensureOk("updatePrincipal", conn);
     }
 
     /** Delete only the Engine authorization overlay for a principal. */
     public boolean deletePrincipal(String principalId) throws IOException {
-        HttpURLConnection conn = request("DELETE", "/appmesh/principal/" + encodeURIComponent(principalId), null, null, null);
+        HttpURLConnection conn =
+                request("DELETE", "/appmesh/principal/" + encodeURIComponent(principalId), null, null, null);
         int status = conn.getResponseCode();
         if (status == HttpURLConnection.HTTP_NO_CONTENT || status == HttpURLConnection.HTTP_OK) return true;
         if (status == HttpURLConnection.HTTP_NOT_FOUND) return false;
@@ -981,40 +1026,24 @@ public class AppMeshClient implements Closeable {
             headers.put(AUTHORIZATION_HEADER, BEARER_PREFIX + token);
         }
         if (this.forwardTo != null && !this.forwardTo.isEmpty()) {
-            headers.put("X-Target-Host", normalizeForwardHost(this.forwardTo));
+            headers.put("X-Target-Host", this.forwardTo);
         }
         return headers;
-    }
-
-    /** Append the base URL port when the forward host carries none. */
-    private String normalizeForwardHost(String host) {
-        if (host.contains(":")) {
-            return host;
-        }
-        try {
-            URL url = Utils.toUrl(this.baseURL);
-            int port = url.getPort();
-            if (port == -1) {
-                port = "https".equalsIgnoreCase(url.getProtocol()) ? 443 : 80;
-            }
-            return host + ":" + port;
-        } catch (Exception e) {
-            LOGGER.log(Level.SEVERE, "Failed to parse baseURL", e);
-            throw new RuntimeException("Failed to set forward host", e);
-        }
     }
 
     /**
      * Build a per-request {@code X-Target-Host} header map for the given forwarding host,
      * or null when no forwarding is requested. Explicit request headers override
      * {@link #commonHeaders()}, so this wins over the client-wide forward setting.
+     * The host is sent as given: a bare host is resolved to the server's own service
+     * port, since the client-side port may be a host-side mapping absent on the target.
      */
     Map<String, String> forwardHeaders(String forwardingHost) {
         if (forwardingHost == null || forwardingHost.isEmpty()) {
             return null;
         }
         Map<String, String> headers = new HashMap<>();
-        headers.put("X-Target-Host", normalizeForwardHost(forwardingHost));
+        headers.put("X-Target-Host", forwardingHost);
         return headers;
     }
 
@@ -1048,8 +1077,9 @@ public class AppMeshClient implements Closeable {
     }
 
     protected String encodeURIComponent(String value) {
-        if (value == null)
+        if (value == null) {
             return null;
+        }
         try {
             String encoded = URLEncoder.encode(value, StandardCharsets.UTF_8.name());
             return encoded.replace("+", "%20")
@@ -1099,7 +1129,7 @@ public class AppMeshClient implements Closeable {
     }
 
     /** Whether the caller supplied its own Authorization header, disabling provider-managed auth. */
-    private static boolean callerManagesAuth(Map<String, String> headers) {
+    protected static boolean callerManagesAuth(Map<String, String> headers) {
         if (headers == null) {
             return false;
         }

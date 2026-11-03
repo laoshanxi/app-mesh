@@ -61,7 +61,8 @@ class TestSubscribeConformance(TestCase):
         returned as the exit code, never conflated with an error sentinel."""
         from appmesh.subscribe import AppEvent
 
-        client = self._FakeWaitClient(inject_event=AppEvent(subscription_id="sub-1", event_type="EXIT", data={"exit_code": -2}))
+        client = self._FakeWaitClient(inject_event=AppEvent(subscription_id="sub-1", event_type="EXIT",
+            data={"exit_code": -2}))
         code = client.wait_for_async_run(self._fake_run(), timeout=5)
         self.assertEqual(-2, code)
         self.assertTrue(client.deleted, "run app must be deleted after a real observed exit")
@@ -87,7 +88,8 @@ class TestSubscribeConformance(TestCase):
         from appmesh.subscribe import MessageDemuxer
 
         response_buf = msgpack.packb(
-            {"uuid": "req-s7", "request_uri": "/appmesh/app/test", "http_status": 200, "body_msg_type": "", "body": b"{}", "headers": {}}
+            {"uuid": "req-s7", "request_uri": "/appmesh/app/test", "http_status": 200, "body_msg_type": "", "body": b"{}",
+                "headers": {}}
         )
         delivered = threading.Event()
 

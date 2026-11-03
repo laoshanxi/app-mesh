@@ -75,11 +75,6 @@ pub struct ResponseMessage {
 }
 
 impl ResponseMessage {
-    #[allow(dead_code)]
-    pub fn new() -> Self {
-        Self::default()
-    }
-
     /// Deserialize from MessagePack format
     pub fn deserialize(buf: &[u8]) -> Result<Self, rmp_serde::decode::Error> {
         rmp_serde::from_slice(buf)
