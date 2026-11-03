@@ -119,6 +119,13 @@ For native packages (`.deb`/`.rpm`), systemd setup, and cluster initialization, 
 
 Runs on CentOS 7 and Ubuntu 18.04 (x86 and ARM). This branch is the low-platform maintenance line; newer distributions are served by the `main` line.
 
+The SDKs (Python, Go, Rust, Java, JavaScript), the CLI, the workflow engine, the LLM agent and the integration packages are synced wholesale from the `main` line. Known differences against a `main`-line daemon:
+
+- The daemon keeps libwebsockets as the only transport, the ACE process engine, and C++11/14 — the `main`-line rewrites (Drogon, Boost.Process, C++17) do not apply here.
+- Cluster authorization replication (owner snapshot pull, read-only followers) is a `main`-line feature and is not planned for this branch.
+- llm-agent (`claude-agent-sdk`) and the MCP server (`fastmcp`) need a **Python 3.10+** runtime at deploy time; Ubuntu 18.04's system Python is 3.6. The Python SDK itself supports 3.6.
+- Client capabilities that query daemon routes only `main` carries beyond this sync degrade to the documented behavior instead of failing the build (for example cluster replication endpoints).
+
 ## 🔄 Workflow Pipeline
 
 Define CI/CD pipelines as YAML — similar to GitHub Actions, but running natively on App Mesh with the built-in [Workflow Engine](https://app-mesh.readthedocs.io/en/latest/Workflow.html):
@@ -199,6 +206,7 @@ The Computing pillar makes App Mesh a natural runtime for AI workloads:
 ## 📚 Documentation
 
 - [Read the Docs](https://app-mesh.readthedocs.io/) — full documentation
+- [Product Guide (中文)](docs/source/PRODUCT-GUIDE.md) / [Product Guide (EN)](docs/source/PRODUCT-GUIDE-EN.md) — features, business scenarios, and AI agent patterns, with runnable examples
 - [Feature Overview](docs/source/FeatureOverview.md) — the full capability map behind Hosting and Computing
 - [Installation Guide](https://app-mesh.readthedocs.io/en/latest/Install.html)
 - [Security](https://app-mesh.readthedocs.io/en/latest/Security.html)

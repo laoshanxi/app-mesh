@@ -12,6 +12,8 @@ Welcome to AppMesh's documentation!
    :numbered:
 
    README.md
+   PRODUCT-GUIDE.md
+   PRODUCT-GUIDE-EN.md
    FeatureOverview.md
    Build.md
    CLI.md
