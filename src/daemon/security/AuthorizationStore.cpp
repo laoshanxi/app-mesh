@@ -60,6 +60,9 @@ namespace
 			PERMISSION_KEY_role_view,
 			PERMISSION_KEY_permission_list,
 			PERMISSION_KEY_app_subscribe,
+			// Granted by the packaged appmesh-admin role; consumed by the workflow
+			// administration surface.
+			"workflow-admin",
 		};
 		return permissions;
 	}
