@@ -862,8 +862,15 @@ void RestHandler::apiFileUpload(const std::shared_ptr<HttpRequest> &message)
 			throw std::runtime_error("failed to write the upload file");
 		upload.m_file.flush();
 		upload.m_file.close();
-		// rename() replaces the destination atomically; the no-overwrite case
-		// was guarded by the isFileExist precheck above.
+		// rename() replaces the destination atomically; re-check at commit so a
+		// destination created after the precheck is never silently replaced
+		// without the overwrite flag (the socket path checks the same way).
+		if (!overwrite && Utility::isFileExist(file))
+		{
+			Utility::removeFile(tempFile);
+			message->reply(web::http::status_codes::Conflict, Utility::text2json("file already exist"));
+			return;
+		}
 		if (std::rename(tempFile.c_str(), file.c_str()) != 0)
 		{
 			Utility::removeFile(tempFile);
