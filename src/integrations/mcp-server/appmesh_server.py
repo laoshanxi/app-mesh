@@ -38,9 +38,14 @@ import os
 from typing import Optional
 from urllib.parse import quote
 
-from fastmcp import FastMCP
-from fastmcp.dependencies import CurrentAccessToken
-from fastmcp.server.auth import AccessToken
+try:
+    from fastmcp import FastMCP
+    from fastmcp.dependencies import CurrentAccessToken
+    from fastmcp.server.auth import AccessToken
+except ImportError:
+    # Python 3.6 hosts (the legacy line): the stdlib fallback provides the same
+    # surface; see fastmcp_compat.py.
+    from fastmcp_compat import FastMCP, CurrentAccessToken, AccessToken
 
 from appmesh import App, AppMeshClient
 

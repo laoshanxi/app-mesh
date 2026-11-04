@@ -5,7 +5,6 @@ by this cwd), so there is no session record to store — the directory IS the st
 No owner, tenant, message history, or persisted session map: access control is the
 daemon's (RBAC + the worker App's permission), and continuity is the SDK's (by cwd).
 """
-from __future__ import annotations
 
 import hashlib
 import os

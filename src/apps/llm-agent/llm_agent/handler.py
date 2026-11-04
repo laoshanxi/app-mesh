@@ -7,7 +7,6 @@ No auth, quota, owner, tenant, session store, or per-session lock: the daemon au
 ``run_task`` (RBAC + the worker App's owner-permission), the serve loop is serial, and
 the SDK owns the conversation (by cwd). A session is just its workdir.
 """
-from __future__ import annotations
 
 import json
 import logging

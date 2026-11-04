@@ -9,6 +9,12 @@ The MCP server validates the caller access token. It forwards the same token to 
 
 The MCP server does not receive a password. It does not issue or exchange a token.
 
+Python 3.6 hosts (this legacy line on Ubuntu 18.04) run the same server on the standard
+library: when `fastmcp` is not importable, `fastmcp_compat.py` serves the Streamable
+HTTP transport (JSON responses, no SSE channel) with the same OAuth resource-server
+behavior — token verification is delegated to the Engine, which is the token's audience
+and authority anyway. Python >= 3.10 hosts get the full `fastmcp` server automatically.
+
 ## Install
 
 ```shell

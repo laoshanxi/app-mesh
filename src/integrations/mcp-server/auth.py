@@ -5,9 +5,15 @@ from typing import Optional
 from urllib import parse
 
 import requests
-from fastmcp.server.auth import RemoteAuthProvider
-from fastmcp.server.auth.providers.jwt import JWTVerifier
-from pydantic import AnyHttpUrl
+try:
+    from fastmcp.server.auth import RemoteAuthProvider
+    from fastmcp.server.auth.providers.jwt import JWTVerifier
+    from pydantic import AnyHttpUrl
+except ImportError:
+    # Python 3.6 hosts (the legacy line): the stdlib fallback in
+    # fastmcp_compat.py provides these; its verifier delegates the decision
+    # to the App Mesh daemon (the token's actual audience and authority).
+    from fastmcp_compat import RemoteAuthProvider, JWTVerifier, AnyHttpUrl
 
 from appmesh import AppMeshClient
 

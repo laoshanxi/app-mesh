@@ -1,2 +1,9 @@
-fastmcp>=3.2.0
+# App Mesh MCP server runtime dependencies.
 appmesh>=2.0.4
+requests
+# Python >= 3.10 hosts run the full fastmcp server (Streamable HTTP with SSE,
+# pydantic-validated JWT verification). Python 3.6 hosts (the legacy line)
+# need nothing more than the two lines above: fastmcp_compat.py provides the
+# transport and auth surface from the standard library, delegating token
+# verification to the App Mesh daemon itself.
+fastmcp>=3.2.0; python_version >= "3.10"

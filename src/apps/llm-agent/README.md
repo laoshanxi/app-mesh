@@ -16,8 +16,13 @@ SDK's; access control is the daemon's.
 The agent loop is delegated to the Claude Agent SDK, which **drives a Claude Code CLI as
 a subprocess**. The App's host/image therefore needs:
 
-- `python3` with `appmesh` and `claude-agent-sdk` importable (see [`requirements.txt`](requirements.txt)).
-  The `claude-agent-sdk` wheel **bundles the Claude Code CLI** — there is no Node.js to install.
+- `python3` with `appmesh` importable (see [`requirements.txt`](requirements.txt)).
+  - On Python >= 3.10, `claude-agent-sdk` is installed with it; the wheel **bundles the
+    Claude Code CLI** — there is no Node.js to install.
+  - On Python 3.6 hosts (this legacy line on Ubuntu 18.04), `claude_sdk_compat` provides
+    the same agent loop by driving the Claude Code CLI on `PATH` directly with the
+    identical `--print --output-format stream-json` protocol — put the CLI on the host
+    (or point `CLAUDE_CODE_CLI` at it) and `pip install dataclasses`.
 - A model credential as a **secured** env var — `ANTHROPIC_API_KEY` for the Anthropic API,
   or the equivalent for another backend (Bedrock / Vertex / a gateway). See
   [Models & providers](#models--providers).

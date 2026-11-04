@@ -123,7 +123,7 @@ The SDKs (Python, Go, Rust, Java, JavaScript), the CLI, the workflow engine, the
 
 - The daemon keeps libwebsockets as the only transport, the ACE process engine, and C++11/14 — the `main`-line rewrites (Drogon, Boost.Process, C++17) do not apply here.
 - Cluster authorization replication (owner snapshot pull, read-only followers) is a `main`-line feature and is not planned for this branch.
-- llm-agent (`claude-agent-sdk`) and the MCP server (`fastmcp`) need a **Python 3.10+** runtime at deploy time; Ubuntu 18.04's system Python is 3.6. The Python SDK itself supports 3.6.
+- llm-agent and the MCP server run on the system Python 3.6 through bundled compat layers (`claude_sdk_compat` drives the Claude Code CLI's stream-json protocol directly; `fastmcp_compat` serves the MCP Streamable HTTP transport from the standard library). On Python 3.10+ hosts the official `claude-agent-sdk` / `fastmcp` stacks are used instead, unchanged.
 - Client capabilities that query daemon routes only `main` carries beyond this sync degrade to the documented behavior instead of failing the build (for example cluster replication endpoints).
 
 ## 🔄 Workflow Pipeline

@@ -1,7 +1,11 @@
 # Optional llm-agent runtime dependencies. The Docker llm_agent target installs this file.
 appmesh
-# The agent loop is delegated to the official Claude Agent SDK (Claude Code-based). Its
-# platform wheel BUNDLES the Claude Code CLI binary it drives as a subprocess — no Node.js
-# needed. The Claude API key comes from ANTHROPIC_API_KEY in the App's secured env
+# Python 3.6 hosts (the legacy line) need the dataclasses backport; the agent loop then
+# runs through claude_sdk_compat, which drives the Claude Code CLI on PATH directly with
+# the same stream-json protocol the official SDK uses.
+dataclasses; python_version < "3.7"
+# On Python >= 3.10 the official Claude Agent SDK is preferred: its platform wheel
+# BUNDLES the Claude Code CLI binary it drives as a subprocess — no Node.js needed.
+# The Claude API key comes from ANTHROPIC_API_KEY in the App's secured env
 # (Bedrock/Vertex via the usual CLAUDE_CODE_USE_* env).
-claude-agent-sdk
+claude-agent-sdk; python_version >= "3.10"

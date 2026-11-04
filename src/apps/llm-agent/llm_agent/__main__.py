@@ -17,7 +17,6 @@ Env (defaults in parens):
   LLMAGENT_SESSION_TTL_HOURS(168, shared)  LLMAGENT_SESSION_IDLE_MINUTES(30, worker)
   LLMAGENT_SESSION_MAX_HOURS(8, worker)
 """
-from __future__ import annotations
 
 import argparse
 import json
