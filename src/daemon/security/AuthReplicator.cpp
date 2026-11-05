@@ -1,5 +1,8 @@
 #include "AuthReplicator.h"
 
+#include "AuthReplicationTokens.h"
+#include "VaultClient.h"
+
 #include <algorithm>
 #include <chrono>
 #include <filesystem>
@@ -21,6 +24,8 @@ namespace
 	const char *ENV_TOKEN_FILE = "APPMESH_AUTH_REPLICATION_TOKEN_FILE";
 	const char *ENV_CA = "APPMESH_AUTH_REPLICATION_CA";
 	const char *ENV_INTERVAL = "APPMESH_AUTH_REPLICATION_INTERVAL";
+	const char *ENV_TOKEN_SOURCE = "APPMESH_AUTH_REPLICATION_TOKEN_SOURCE";
+	const char *ENV_VAULT_ADDR = "APPMESH_AUTH_REPLICATION_TOKEN_VAULT_ADDR";
 	constexpr int DEFAULT_INTERVAL_SECONDS = 30;
 	constexpr int MIN_INTERVAL_SECONDS = 5;
 	constexpr int MAX_INTERVAL_SECONDS = 3600;
@@ -33,7 +38,24 @@ namespace
 		if (!in)
 			return {};
 		std::string content((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
-		return Utility::stdStringTrim(content);
+		// The file may hold per-follower tokens, one per line with labels. This
+		// node presents the FIRST one: in the shared-file topology (compose)
+		// that line is the cluster's shared token; a real deployment gives each
+		// follower its own single-token file anyway.
+		const auto tokens = AuthReplication::parseTokenFile(content);
+		return tokens.empty() ? std::string() : tokens.front().token;
+	}
+
+	/// Vault-sourced token: read fresh on every pull, so a rotation done in
+	/// Vault propagates within one pull cycle (no restart, no materialized
+	/// copy). A missing KV entry returns an empty token and fails the pull
+	/// closed; a Vault outage throws and the pull retries next cycle.
+	std::string readVaultToken(const std::string &label)
+	{
+		VaultClient::Config config;
+		config.address = Utility::stdStringTrim(Utility::getenv(ENV_VAULT_ADDR));
+		config.tokenFile = Utility::stdStringTrim(Utility::getenv("APPMESH_AUTH_REPLICATION_TOKEN_VAULT_TOKEN_FILE"));
+		return VaultClient::readReplicationToken(config, label);
 	}
 }
 
@@ -47,15 +69,22 @@ void AuthReplicator::start()
 {
 	if (m_worker.joinable())
 		return;
+	const auto vaultAddress = Utility::stdStringTrim(Utility::getenv(ENV_VAULT_ADDR));
+	const bool vaultSource = Utility::stdStringTrim(Utility::getenv(ENV_TOKEN_SOURCE)) == "vault" && !vaultAddress.empty();
 	m_tokenFile = Utility::stdStringTrim(Utility::getenv(ENV_TOKEN_FILE));
-	if (m_tokenFile.empty())
+	// The Vault source reads its credential from Vault, not from the accept
+	// file: requiring the file here would leave the documented vault-only
+	// configuration without any replication at all.
+	if (m_tokenFile.empty() && !vaultSource)
 		return;
 	m_source = Utility::stdStringTrim(Utility::getenv(ENV_FROM));
 	if (m_source.empty())
 	{
 		// Owner side: only the token file is configured. Publish a random token
-		// for the followers' read-only volume; no pull runs here.
-		ensureOwnerTokenFile();
+		// for the followers' read-only volume; no pull runs here. The Vault
+		// source never reads it, so no unused credential is left on disk.
+		if (!vaultSource)
+			ensureOwnerTokenFile();
 		return;
 	}
 	const auto interval = Utility::getenv(ENV_INTERVAL);
@@ -71,8 +100,12 @@ void AuthReplicator::start()
 		}
 	}
 	m_caPath = Utility::stdStringTrim(Utility::getenv(ENV_CA));
-	LOG_INF << "authorization replication enabled: from <" << m_source << "> every <" << m_intervalSeconds
-			<< ">s, token file <" << m_tokenFile << ">";
+	if (vaultSource)
+		LOG_INF << "authorization replication enabled: from <" << m_source << "> every <" << m_intervalSeconds
+				<< ">s, Vault token source <" << vaultAddress << ">";
+	else
+		LOG_INF << "authorization replication enabled: from <" << m_source << "> every <" << m_intervalSeconds
+				<< ">s, token file <" << m_tokenFile << ">";
 	m_worker = std::thread(&AuthReplicator::run, this);
 }
 
@@ -159,10 +192,27 @@ void AuthReplicator::pullOnce()
 	const static char fname[] = "AuthReplicator::pullOnce() ";
 	try
 	{
-		const auto token = readTokenFile(m_tokenFile);
+		std::string token;
+		const auto source = Utility::stdStringTrim(Utility::getenv(ENV_TOKEN_SOURCE));
+		const auto vaultAddress =
+			source == "vault" ? Utility::stdStringTrim(Utility::getenv(ENV_VAULT_ADDR)) : std::string();
+		if (!vaultAddress.empty())
+		{
+			const auto label = Utility::stdStringTrim(Utility::getenv("APPMESH_AUTH_REPLICATION_LABEL"));
+			if (label.empty() || !AuthReplication::isValidLabel(label))
+			{
+				LOG_WAR << fname
+						<< "APPMESH_AUTH_REPLICATION_LABEL is required with the Vault token source and may only use"
+						   " letters, digits, '.', '_' or '-'";
+				return;
+			}
+			token = readVaultToken(label);
+		}
+		else
+			token = readTokenFile(m_tokenFile);
 		if (token.empty())
 		{
-			LOG_WAR << fname << "replication token file <" << m_tokenFile << "> is missing or empty";
+			LOG_WAR << fname << "replication token is missing or empty";
 			return;
 		}
 

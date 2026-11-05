@@ -3,6 +3,7 @@
 # --- Define library ---
 set(SRC_LIST
   AuthReplicator.cpp
+  AuthReplicationTokens.cpp
   AuthorizationStore.cpp
   HMACVerifier.cpp
   InternalCapability.cpp
@@ -12,6 +13,7 @@ set(SRC_LIST
   Security.cpp
   SecurityOidc.cpp
   SharedMemory.cpp
+  VaultClient.cpp
 )
 add_library(security STATIC ${SRC_LIST})
 add_library(${PROJECT_NAME}::security ALIAS security)

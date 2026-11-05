@@ -494,6 +494,29 @@ verify_certificates() {
 }
 
 #===============================================================================
+# SAN Listing (for external issuers)
+#===============================================================================
+
+# --san-list mode: print the collected names for an external issuer (Vault
+# PKI and friends), one list per line — DNS first, then IP — using the same
+# host discovery and the same DNS/IP split as parse_hosts_to_san.
+print_san_lists() {
+    local hosts dns="" ips="" host
+    hosts=$(get_host_addresses)
+    IFS=',' read -ra host_array <<< "$hosts"
+    for host in "${host_array[@]}"; do
+        host=$(echo "$host" | xargs)
+        [[ -z "$host" ]] && continue
+        if [[ "$host" =~ ^([0-9]{1,3}\.){3}[0-9]{1,3}$ ]]; then
+            ips+="${ips:+,}${host}"
+        else
+            dns+="${dns:+,}${host}"
+        fi
+    done
+    printf '%s\n%s\n' "$dns" "$ips"
+}
+
+#===============================================================================
 # Main
 #===============================================================================
 
@@ -536,4 +559,8 @@ main() {
     log "Certificate generation completed successfully"
 }
 
-main "$@"
+if [[ "${1:-}" == "--san-list" ]]; then
+    print_san_lists
+else
+    main "$@"
+fi

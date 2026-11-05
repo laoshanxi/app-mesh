@@ -1,0 +1,42 @@
+#pragma once
+
+#include <string>
+#include <vector>
+
+/// Per-follower replication tokens for the owner's policy snapshot endpoint.
+///
+/// The token file holds one accepted bearer per line, with an optional audit
+/// label after whitespace:
+///
+///     9f3c...e1            shared legacy token (no label)
+///     77a1...d0 slave1     per-follower token, revocable alone
+///     # comment lines are ignored
+///
+/// A single unlabeled line is exactly the legacy shared-token deployment, so
+/// existing clusters keep working unchanged. Revoking one follower is a file
+/// edit: the endpoint re-reads the file on every request.
+namespace AuthReplication
+{
+struct AcceptedToken
+{
+	std::string token;
+	std::string label;
+};
+
+/// Parses the token file content. Unlabeled tokens get the label "shared".
+std::vector<AcceptedToken> parseTokenFile(const std::string &fileContent);
+
+/// Constant-time match of the presented bearer against an explicit accepted
+/// set (file or Vault sourced). Every entry is compared, without early exit,
+/// so the matching position is not observable through timing. Returns the
+/// matched label, or an empty string when nothing matches.
+std::string matchToken(const std::vector<AcceptedToken> &tokens, const std::string &presented);
+
+/// File-content convenience wrapper: parse, then match.
+std::string matchToken(const std::string &fileContent, const std::string &presented);
+
+/// True when the follower label holds only letters, digits, '.', '_' or '-'.
+/// The same whitelist the shell tooling applies, so an operator typo fails in
+/// the tooling instead of building a Vault URL the label was never meant for.
+bool isValidLabel(const std::string &label);
+} // namespace AuthReplication

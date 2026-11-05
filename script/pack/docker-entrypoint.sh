@@ -59,6 +59,22 @@ prepare_tls() {
     ensure_private_directory "$TLS_DIR"
     local existing=0
     local path
+
+    if [ "${APPMESH_SSL_SOURCE:-file}" = "vault" ]; then
+        # The Vault PKI bootstrap (already run) issued the five daemon-consumed
+        # files. The CA private key stays in Vault: there is no ca-key.pem and
+        # nothing to generate locally.
+        for path in \
+            "$TLS_DIR/ca.pem" "$TLS_DIR/server.pem" "$TLS_DIR/server-key.pem" \
+            "$TLS_DIR/client.pem" "$TLS_DIR/client-key.pem"; do
+            [ ! -L "$path" ] || die "Refusing symbolic-link TLS material: $path"
+            [ -f "$path" ] || die "TLS state is incomplete: $path was not issued by the Vault PKI bootstrap"
+        done
+        chmod 644 "$TLS_DIR/ca.pem" "$TLS_DIR/server.pem" "$TLS_DIR/client.pem"
+        chmod 600 "$TLS_DIR/server-key.pem" "$TLS_DIR/client-key.pem"
+        return
+    fi
+
     for path in \
         "$TLS_DIR/ca.pem" "$TLS_DIR/ca-key.pem" \
         "$TLS_DIR/server.pem" "$TLS_DIR/server-key.pem" \

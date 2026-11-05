@@ -12,6 +12,9 @@
 # The CLI speaks WSS on 6058, not the REST port 6060 (the Go agent). The master's
 # TLS material lives in the appmesh_tls volume: the CA survives container
 # re-creation, and the MCP service mounts it read-only to verify the engine.
+# The optional docker-compose.vault.yaml layer replaces the self-signed
+# generation with central issuance: every node's leaf certificates come from
+# the Vault PKI engine (APPMESH_SSL_SOURCE=vault).
 # Host ports use the daemon defaults:
 #   trust the CA once: docker cp appmesh_master:/opt/appmesh/ssl/ca.pem ./master-ca.pem
 #   REST/SDK clients: https://127.0.0.1:6060
@@ -45,10 +48,15 @@ services:
       # Bind the Dex listener to the protected compose network for followers.
       # Never publish this plaintext listener beyond a protected network.
       - APPMESH_AUTH_LISTEN=0.0.0.0:6062
-      # Cluster authorization replication (owner side): publish a random shared
-      # token here; followers read it from their read-only mount of the same
-      # volume. Setting only this file enables the replication endpoint.
+      # Cluster authorization replication (owner side): the accept list at
+      # APPMESH_AUTH_REPLICATION_TOKEN_FILE holds one bearer per follower
+      # ("<token> <label>"); an unlabeled line is the legacy shared token.
+      # The declared follower set is provisioned at bootstrap with per-follower
+      # token files in the shared volume (projected-secret pattern): revoking
+      # one follower never touches the others. Deployments that prefer a
+      # secrets service layer docker-compose.vault.yaml on top.
       - APPMESH_AUTH_REPLICATION_TOKEN_FILE=/opt/appmesh/work/auth/replication/replication-token
+      - APPMESH_AUTH_REPLICATION_FOLLOWERS=appmesh_slave1 appmesh_slave2 appmesh_llm
     volumes:
       # Keep the generated TLS material in a named volume: the CA survives
       # container re-creation, and the MCP service mounts the same volume
@@ -134,13 +142,15 @@ services:
       - APPMESH_AUTH_BROWSER_ENTRY=https://127.0.0.1/auth
       # Cluster authorization replication (follower side): pull the owner's
       # policy so a follower serves forwarded requests without a manual
-      # authorization.yaml copy. The token travels only inside the network.
+      # authorization.yaml copy. Each follower presents its OWN token file,
+      # provisioned by the owner bootstrap into the shared volume; revoke or
+      # rotate one follower without touching the others.
       - APPMESH_AUTH_REPLICATION_FROM=https://appmesh_master:6058
-      - APPMESH_AUTH_REPLICATION_TOKEN_FILE=/opt/appmesh/work/auth/replication/replication-token
+      - APPMESH_AUTH_REPLICATION_TOKEN_FILE=/opt/appmesh/work/auth/replication/appmesh_slave1.token
       - APPMESH_AUTH_REPLICATION_CA=/mnt/appmesh-tls/ca.pem
     volumes:
-      # The shared replication token (read-only). The policy is pulled from the
-      # owner's engine listener over TLS, verified with the owner CA.
+      # The per-follower replication token (read-only). The policy is pulled
+      # from the owner's engine listener over TLS, verified with the owner CA.
       - appmesh_replication:/opt/appmesh/work/auth/replication:ro
       - appmesh_tls:/mnt/appmesh-tls:ro
     cap_drop:
@@ -174,7 +184,7 @@ services:
       - APPMESH_AUTH_ACCESS_URL=http://appmesh_master:6062/auth
       - APPMESH_AUTH_BROWSER_ENTRY=https://127.0.0.1/auth
       - APPMESH_AUTH_REPLICATION_FROM=https://appmesh_master:6058
-      - APPMESH_AUTH_REPLICATION_TOKEN_FILE=/opt/appmesh/work/auth/replication/replication-token
+      - APPMESH_AUTH_REPLICATION_TOKEN_FILE=/opt/appmesh/work/auth/replication/appmesh_llm.token
       - APPMESH_AUTH_REPLICATION_CA=/mnt/appmesh-tls/ca.pem
     volumes:
       - appmesh_replication:/opt/appmesh/work/auth/replication:ro
@@ -206,7 +216,7 @@ services:
       # Same browser entry as the master; it fronts the issuer path.
       - APPMESH_AUTH_BROWSER_ENTRY=https://127.0.0.1/auth
       - APPMESH_AUTH_REPLICATION_FROM=https://appmesh_master:6058
-      - APPMESH_AUTH_REPLICATION_TOKEN_FILE=/opt/appmesh/work/auth/replication/replication-token
+      - APPMESH_AUTH_REPLICATION_TOKEN_FILE=/opt/appmesh/work/auth/replication/appmesh_slave2.token
       - APPMESH_AUTH_REPLICATION_CA=/mnt/appmesh-tls/ca.pem
     volumes:
       - appmesh_replication:/opt/appmesh/work/auth/replication:ro

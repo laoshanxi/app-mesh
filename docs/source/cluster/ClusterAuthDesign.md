@@ -193,11 +193,69 @@ changes only the target node. Two ways keep the nodes consistent:
 The owner is the single writer; followers pull its policy and converge like
 read replicas. The engine implements the pull (no external tooling):
 
-- The owner publishes a random token into
-  `APPMESH_AUTH_REPLICATION_TOKEN_FILE` when that variable is set. The
-  packaged compose cluster shares the file through the read-only
-  `appmesh_replication` volume, the same trust boundary as the plaintext
-  Dex listener.
+- The owner publishes the replication accept list into
+  `APPMESH_AUTH_REPLICATION_TOKEN_FILE` when that variable is set: one
+  bearer per line, each with a follower label. A single unlabeled line is
+  the legacy shared token and keeps working. The packaged compose cluster
+  provisions per-follower tokens at bootstrap
+  (`APPMESH_AUTH_REPLICATION_FOLLOWERS` names the follower set) and mounts
+  each follower's own `<label>.token` read-only through the
+  `appmesh_replication` volume — the projected-secret pattern used by
+  Kubernetes Secrets, with the same trust boundary as the plaintext Dex
+  listener.
+- Per-follower tokens close the shared-secret exposure: one compromised
+  follower is revoked alone, without re-keying the cluster. The engine
+  re-reads the accept list on every pull and the follower re-reads its own
+  token on every pull, so issuing, rotating and revoking take effect
+  without a restart:
+
+  ```shell
+  # on the owner: print a new per-follower token exactly once
+  /opt/appmesh/script/appmesh-auth.sh replication-token slave1
+  # with a provisioned <label>.token slot present, the same command rotates
+  # the token in place (the follower picks it up on its next pull)
+  /opt/appmesh/script/appmesh-auth.sh replication-token-list
+  /opt/appmesh/script/appmesh-auth.sh replication-token-revoke slave1
+  ```
+
+  A pull with a revoked token is rejected with `401`; other followers keep
+  pulling. The matched label is written to the owner log, so the audit
+  trail names the follower behind every snapshot served.
+- **Vault source (optional secrets-service integration).** The file mode
+  above is the default and needs nothing else. Deployments that run a
+  secrets service can select it instead:
+  `APPMESH_AUTH_REPLICATION_TOKEN_SOURCE=vault` plus
+  `APPMESH_AUTH_REPLICATION_TOKEN_VAULT_ADDR` and
+  `APPMESH_AUTH_REPLICATION_TOKEN_VAULT_TOKEN_FILE` on every node (the
+  accept-list file behind `APPMESH_AUTH_REPLICATION_TOKEN_FILE` is not part
+  of the vault-only configuration); the
+  accepted tokens then live in Vault KV v2 under `secret/appmesh/replication`:
+
+  - The owner lists the KV entries and verifies against them on every pull
+    request; a follower reads its own entry (named by
+    `APPMESH_AUTH_REPLICATION_LABEL`) on every pull. Issuing, rotating and
+    revoking are KV operations through the same tooling, take effect on
+    the next pull, and land in the Vault audit log. An entry whose data was
+    deleted (a revoked follower) is skipped by the list; the other
+    followers keep pulling.
+  - Each follower holds one scoped Vault machine identity — an AppRole
+    (role_id plus a one-time secret_id) whose policy reads its own KV entry
+    and issues its TLS leaf certificates from the cluster PKI — created by
+    the owner bootstrap and delivered once through the replication volume.
+    This is the single bootstrap credential; the replication bearers
+    themselves are never materialized. The policy is rewritten on every
+    bootstrap, so a follower provisioned before the PKI source gains its
+    issue path on the next bootstrap.
+  - A Vault outage fails closed: pulls answer `503` and retry on the next
+    cycle. Nothing opens without the source.
+  - The packaged compose cluster ships this as an opt-in layer:
+    `docker compose -f docker-compose.yaml -f docker-compose.vault.yaml
+    up -d` runs a real Vault server (file storage, an init sidecar that
+    unseals after restarts, KV v2, AppRole and the audit device enabled)
+    and switches the token source; the base cluster alone stays
+    file-based with no Vault dependency. Production hardening: TLS
+    listener, auto-unseal, periodic tokens, wrapped secret_id delivery,
+    and an HSM-backed seal.
 - A follower with `APPMESH_AUTH_REPLICATION_FROM` (the owner's engine
   listener, `https://appmesh_master:6058` in compose, verified with the
   owner CA through `APPMESH_AUTH_REPLICATION_CA`) plus the token file pulls
@@ -382,13 +440,62 @@ Pattern 2. Share one CA across the cluster:
    Copy the new leaf files and `ca.pem` to the new node. Never distribute
    `ca-key.pem`.
 
+Pattern 3. Central issuance (Vault PKI, one trust domain for the cluster):
+
+1. Select the source with `APPMESH_SSL_SOURCE=vault` plus
+   `APPMESH_SSL_VAULT_ADDR` and `APPMESH_SSL_VAULT_TOKEN_FILE` (both
+   default to their `APPMESH_AUTH_REPLICATION_TOKEN_VAULT_*` counterparts,
+   so the vault compose layer needs no extra address configuration). A
+   deployment mixing this source with file-sourced replication tokens, or
+   a physical cluster without the compose init sidecar, must deliver the
+   token file itself — one line for a service token with the issuing
+   policy, two lines for an AppRole pair.
+2. The Vault PKI engine holds one cluster CA and a single issuing role
+   (`appmesh-node` by name, `APPMESH_SSL_VAULT_PKI_ROLE` to change it).
+   The role issues both server and client leaves with the same name
+   coverage as the self-signed generator — hostname, FQDN, local
+   addresses, and `APPMESH_SSL_EXTRA_SAN` peers.
+3. Every node's `appmesh-auth.sh bootstrap` (the docker entrypoint runs it
+   before the TLS check) requests its own five files: `ca.pem` plus the
+   server and client pairs. There is no `ca-key.pem` by design: the CA
+   private key never leaves Vault. The node verifies its owner through its
+   own copy of the same CA (`APPMESH_AUTH_REPLICATION_CA` may point at
+   `/opt/appmesh/ssl/ca.pem`), and any node verifies any peer.
+4. Bootstrap is idempotent by trust, not by file presence: existing
+   material that does not chain to the current Vault CA is re-issued. An
+   upgrade from the self-signed volume therefore converges on the next
+   start instead of splitting the trust domain.
+5. Renew on demand with `appmesh-auth.sh tls-renew`, then restart the node
+   (the engine loads certificates once at start). A physical host can run
+   the action from a systemd timer or cron; a shorter role TTL pairs well
+   with that.
+
+Two Vault behaviors shape the naming. Vault drops underscore DNS names
+from certificates outright — an early validation no role knob disables
+(hashicorp/vault#31925) — so the compose layer dials a hyphenated network
+alias (`appmesh-master`) instead of the underscore service name and adds
+it to the owner's `APPMESH_SSL_EXTRA_SAN`; the issuer string follows the
+same alias so every node and client carries one canonical value.
+Physical clusters with RFC-legal FQDNs are unaffected. And the generated
+root must carry a subject (`common_name="AppMesh Root CA"`): an empty
+issuer name fails strict chain verification.
+
+The node credentials are the same Vault machine identities the
+replication tokens use: the owner issues with its service token, a
+follower with its AppRole (policy: read its own KV entry, issue TLS
+leaves). A Vault outage fails closed — bootstrap dies and the restart
+policy retries. Production hardening: replace the generated root with an
+intermediate CA signed by the organization root, shorten the role TTL
+under a renewal timer, and keep auto-unseal on the server.
+
 Do not copy only `ca.pem` onto a follower. The follower then trusts the
 shared CA, but it still serves its old self-signed certificate. Clients
-that verify against the shared CA reject it.
+that verify against the shared CA reject it. (Pattern 3 is the exception:
+a follower re-issues its own leaves from the same CA.)
 
 A macOS client rejects leaf certificates with a validity above 825 days.
 The packaged script sets 825 days for leaf certificates and 3650 days for
-the CA.
+the CA; the Vault role mirrors both (825-day leaves, 10-year root).
 
 ### Web UI entry
 

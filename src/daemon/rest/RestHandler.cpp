@@ -16,10 +16,12 @@
 #include "../Label.h"
 #include "../ResourceCollection.h"
 #include "../application/Application.h"
+#include "../security/AuthReplicationTokens.h"
 #include "../security/HMACVerifier.h"
 #include "../security/InternalCapability.h"
 #include "../security/SecretProtector.h"
 #include "../security/Security.h"
+#include "../security/VaultClient.h"
 #include "EventDispatcher.h"
 #include "HttpRequest.h"
 #include "PrometheusRest.h"
@@ -1410,40 +1412,70 @@ void RestHandler::apiRolesView(const std::shared_ptr<HttpRequest> &message)
 void RestHandler::apiAuthReplicationPolicy(const std::shared_ptr<HttpRequest> &message)
 {
 	const static char fname[] = "RestHandler::apiAuthReplicationPolicy() ";
+	// The token source is a deployment choice: the accept file (default) or a
+	// secrets service (Vault). One selector, one seam; absent configuration
+	// keeps the local file behavior with no external dependency.
+	const auto source = Utility::stdStringTrim(Utility::getenv("APPMESH_AUTH_REPLICATION_TOKEN_SOURCE"));
+	const auto vaultAddress =
+		source == "vault" ? Utility::stdStringTrim(Utility::getenv("APPMESH_AUTH_REPLICATION_TOKEN_VAULT_ADDR"))
+						  : std::string();
 	const auto tokenFile = Utility::stdStringTrim(Utility::getenv("APPMESH_AUTH_REPLICATION_TOKEN_FILE"));
-	if (tokenFile.empty())
+	if (tokenFile.empty() && vaultAddress.empty())
 	{
 		// Feature off: answer as an unknown route so the endpoint's existence
 		// does not depend on the deployment.
-		LOG_DBG << fname << "replication policy requested but APPMESH_AUTH_REPLICATION_TOKEN_FILE is not configured";
+		LOG_DBG << fname << "replication policy requested but no replication token source is configured";
 		throw NotFoundException("Path not found");
 	}
-	std::ifstream tokenStream(tokenFile, std::ios::binary);
-	if (!tokenStream)
-	{
-		LOG_WAR << fname << "replication token file <" << tokenFile << "> is not readable";
-		throw NotFoundException("Path not found");
-	}
-	std::string expected((std::istreambuf_iterator<char>(tokenStream)), std::istreambuf_iterator<char>());
-	expected = Utility::stdStringTrim(expected);
-
-	// Compare the bearer in constant time: the token authorizes a full policy
-	// snapshot (principals and roles), not just one principal's own record.
+	// The bearer is verified against the accepted set on every request:
+	// a file source is re-read per request, a Vault source is listed fresh
+	// per request, so revoking one follower (file edit or KV delete) takes
+	// effect on that follower's next pull without a restart.
 	const auto authorization = Utility::stdStringTrim(message->m_headers.get(HTTP_HEADER_JWT_Authorization));
 	constexpr char scheme[] = "Bearer ";
 	std::string presented;
 	if (authorization.size() > sizeof(scheme) - 1 && authorization.compare(0, sizeof(scheme) - 1, scheme) == 0)
 		presented = Utility::stdStringTrim(authorization.substr(sizeof(scheme) - 1));
-	volatile unsigned char diff = presented.size() ^ expected.size();
-	const size_t n = std::min(presented.size(), expected.size());
-	for (size_t i = 0; i < n; ++i)
-		diff |= static_cast<unsigned char>(presented[i]) ^ static_cast<unsigned char>(expected[i]);
-	if (diff != 0)
+	std::string matchedLabel;
+	if (!vaultAddress.empty())
 	{
-		LOG_WAR << fname << "replication policy request rejected: invalid token";
+		// Vault is the single source of truth: issuing and revoking are KV
+		// operations through the operator tooling, and a Vault outage fails
+		// the pull closed (the follower retries next cycle).
+		VaultClient::Config config{vaultAddress,
+								   Utility::stdStringTrim(Utility::getenv("APPMESH_AUTH_REPLICATION_TOKEN_VAULT_TOKEN_FILE"))};
+		try
+		{
+			matchedLabel = AuthReplication::matchToken(VaultClient::listReplicationTokens(config), presented);
+		}
+		catch (const std::exception &e)
+		{
+			LOG_WAR << fname << "replication token source unavailable: " << e.what();
+			message->reply(web::http::status_codes::ServiceUnavailable,
+						   Utility::text2json("replication token source unavailable"));
+			return;
+		}
+	}
+	else
+	{
+		std::ifstream tokenStream(tokenFile, std::ios::binary);
+		if (!tokenStream)
+		{
+			LOG_WAR << fname << "replication token file <" << tokenFile << "> is not readable";
+			throw NotFoundException("Path not found");
+		}
+		std::string expected((std::istreambuf_iterator<char>(tokenStream)), std::istreambuf_iterator<char>());
+		matchedLabel = AuthReplication::matchToken(expected, presented);
+	}
+	if (matchedLabel.empty())
+	{
+		LOG_WAR << fname << "replication policy request rejected: invalid token from <" << message->m_remote_address
+				<< ">";
 		message->reply(web::http::status_codes::Unauthorized, Utility::text2json("invalid replication token"));
 		return;
 	}
+	LOG_INF << fname << "served the replication policy snapshot to <" << matchedLabel << "> from <"
+			<< message->m_remote_address << ">";
 	message->reply(web::http::status_codes::OK, Security::instance()->replicationPolicySnapshot());
 }
 

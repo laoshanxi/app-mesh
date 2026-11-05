@@ -5,7 +5,10 @@
 ################################################################################
 
 param(
-    [string]$WorkingDir
+    [string]$WorkingDir,
+    # Print the collected names for an external issuer (Vault PKI and
+    # friends) instead of generating: DNS list first, then IP list.
+    [switch]$SanList
 )
 # The bundled openssl.exe lives next to the daemon (bin\), which also covers
 # installs relocated away from the default C:\local\appmesh directory.
@@ -157,7 +160,13 @@ function Get-HostAddresses {
     # Add localhost entries
     $addresses += "localhost"
     $addresses += "127.0.0.1"
-    
+
+    # Cluster sharing: extra peer names from APPMESH_SSL_EXTRA_SAN (parity
+    # with the bash generator).
+    if ($env:APPMESH_SSL_EXTRA_SAN) {
+        $addresses += ($env:APPMESH_SSL_EXTRA_SAN -split ',')
+    }
+
     return ($addresses | Sort-Object -Unique) -join ","
 }
 
@@ -462,6 +471,22 @@ function Main {
     Write-Log "    openssl s_server -cert server.pem -key server-key.pem -CAfile ca.pem -verify 1 -port 8443"
     Write-Log "Client test:"
     Write-Log "    openssl s_client -cert client.pem -key client-key.pem -CAfile ca.pem -verify 1 -connect localhost:8443"
+}
+
+# SAN-list mode: print the collected names for an external issuer, one list
+# per line (DNS first, then IP), split the way the Vault API wants them
+# (alt_names takes DNS names, ip_sans takes addresses).
+if ($SanList) {
+    $dns = @()
+    $ips = @()
+    foreach ($entry in ((Get-HostAddresses) -split ',')) {
+        $name = $entry.Trim()
+        if ([string]::IsNullOrWhiteSpace($name)) { continue }
+        if ($name -match '^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$') { $ips += $name } else { $dns += $name }
+    }
+    Write-Output ($dns -join ',')
+    Write-Output ($ips -join ',')
+    exit 0
 }
 
 # Run main function
