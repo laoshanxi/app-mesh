@@ -177,10 +177,12 @@ int AppMeshDaemon::run(int argc, char *argv[])
 		startStartupApplications();
 		prewarmAuthentication();
 		initializeRestService();
+#if !defined(_WIN32)
 		// Reconcile App Mesh labeled containers against the restored registry:
 		// leftovers of removed applications are logged (and deleted with
 		// APPMESH_DOCKER_ORPHAN_SWEEP=delete).
 		DockerApiProcess::sweepOrphanContainers();
+#endif
 		runMainLoop();
 	}
 	catch (const std::exception &e)
@@ -505,10 +507,12 @@ void AppMeshDaemon::startAgentApplication()
 			throw std::runtime_error("Failed to wait for PSK read from agent process");
 		}
 	}
+#if !defined(_WIN32)
 	// Docker applications dial back through the agent's docker proxy; surface a
 	// broken channel at boot instead of the first container start's 407. Runs
 	// for a freshly created agent and for one restored from the registry alike.
 	DockerApiProcess::selfCheckDockerAgent();
+#endif
 }
 
 void AppMeshDaemon::performHighAvailabilityRecovery()

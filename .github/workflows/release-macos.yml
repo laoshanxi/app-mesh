@@ -21,7 +21,7 @@ jobs:
   build:
     strategy:
       matrix:
-        os: [macos-14, macos-15]
+        os: [macos-26, macos-15]
     runs-on: ${{ matrix.os }}
     permissions:
       contents: read
@@ -66,7 +66,7 @@ jobs:
     needs: build
     strategy:
       matrix:
-        os: [macos-14, macos-15]
+        os: [macos-26, macos-15]
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v6
@@ -187,10 +187,10 @@ jobs:
       id-token: write
       attestations: write
     steps:
-      - name: Download macos-14 packages
+      - name: Download macos-26 packages
         uses: actions/download-artifact@v8
         with:
-          name: macos-14-${{ github.sha }}
+          name: macos-26-${{ github.sha }}
 
       - name: Download macos-15 packages
         uses: actions/download-artifact@v8

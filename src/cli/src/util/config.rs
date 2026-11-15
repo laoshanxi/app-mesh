@@ -277,7 +277,7 @@ fn process_alive(pid: u32) -> bool {
     use windows_sys::Win32::System::Threading::OpenProcess;
     // PROCESS_QUERY_LIMITED_INFORMATION; a handle means the pid still exists.
     let handle = unsafe { OpenProcess(0x1000, 0, pid) };
-    if handle != 0 {
+    if !handle.is_null() {
         unsafe { windows_sys::Win32::Foundation::CloseHandle(handle) };
         return true;
     }
