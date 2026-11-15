@@ -99,8 +99,8 @@ private:
 			for (const int fd : m_wakeFd)
 			{
 				const int flags = ::fcntl(fd, F_GETFL, 0);
-				if (flags >= 0)
-					::fcntl(fd, F_SETFL, flags | O_NONBLOCK);
+				if (flags < 0 || ::fcntl(fd, F_SETFL, flags | O_NONBLOCK) != 0)
+					LOG_WAR << "PumpPoller failed to set wake fd <" << fd << "> nonblocking errno=" << errno;
 			}
 		}
 		m_thread = std::thread([this] { run(); });

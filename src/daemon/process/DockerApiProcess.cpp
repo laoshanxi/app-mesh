@@ -137,40 +137,45 @@ namespace
 	// Negotiated "/v1.xx" prefix, probed once per daemon run. Empty keeps the
 	// server's default (latest) version: the pre-negotiation behavior.
 	std::mutex g_versionMutex;
-	bool g_versionProbed = false;
+	std::atomic<bool> g_versionProbed{false};
 	std::string g_versionPrefix;
 
 	const std::string &dockerApiVersionPrefix()
 	{
-		std::lock_guard guard(g_versionMutex);
-		if (g_versionProbed)
-			return g_versionPrefix;
-
-		g_versionProbed = true;
-		try
+		// Probe outside the mutex: the 10s network probe must never block
+		// concurrent docker calls; a racing caller falls back to the default.
+		if (!g_versionProbed.load(std::memory_order_acquire) &&
+			g_versionProbed.exchange(true, std::memory_order_acq_rel) == false)
 		{
-			std::map<std::string, std::string> header;
-			signDockerRequest(header);
-			const auto resp = RestClient::request(dockerAgentBaseUrl(), web::http::methods::GET, "/appmesh/docker/version",
-												  "", header, {}, 10);
-			const auto version = JSON::parse(resp->text, nullptr);
-			int major = 0, minor = 0;
-			if (resp->statusCode == web::http::status_codes::OK && HAS_JSON_FIELD(version, "ApiVersion") &&
-				version["ApiVersion"].isString() &&
-				sscanf(version["ApiVersion"].asCString(), "%d.%d", &major, &minor) == 2)
+			std::string prefix;
+			try
 			{
-				if (major == 1 && minor > DOCKER_API_TARGET_MINOR)
-					minor = DOCKER_API_TARGET_MINOR;
-				if (major == 1 && minor >= DOCKER_API_MIN_MINOR)
-					g_versionPrefix = Utility::stringFormat("/v1.%d", minor);
+				std::map<std::string, std::string> header;
+				signDockerRequest(header);
+				const auto resp = RestClient::request(dockerAgentBaseUrl(), web::http::methods::GET, "/appmesh/docker/version",
+													  "", header, {}, 10);
+				const auto version = JSON::parse(resp->text, nullptr);
+				int major = 0, minor = 0;
+				if (resp->statusCode == web::http::status_codes::OK && HAS_JSON_FIELD(version, "ApiVersion") &&
+					version["ApiVersion"].isString() &&
+					sscanf(version["ApiVersion"].asCString(), "%d.%d", &major, &minor) == 2)
+				{
+					if (major == 1 && minor > DOCKER_API_TARGET_MINOR)
+						minor = DOCKER_API_TARGET_MINOR;
+					if (major == 1 && minor >= DOCKER_API_MIN_MINOR)
+						prefix = Utility::stringFormat("/v1.%d", minor);
+				}
 			}
+			catch (const std::exception &ex)
+			{
+				LOG_DBG << "DockerApiProcess dockerApiVersionPrefix() probe failed, using the server default: " << ex.what();
+			}
+			std::lock_guard guard(g_versionMutex);
+			g_versionPrefix = std::move(prefix);
+			LOG_INF << "DockerApiProcess negotiated Docker Engine API prefix <"
+					<< (g_versionPrefix.empty() ? "<server default>" : g_versionPrefix) << ">";
 		}
-		catch (const std::exception &ex)
-		{
-			LOG_DBG << "DockerApiProcess dockerApiVersionPrefix() probe failed, using the server default: " << ex.what();
-		}
-		LOG_INF << "DockerApiProcess negotiated Docker Engine API prefix <"
-				<< (g_versionPrefix.empty() ? "<server default>" : g_versionPrefix) << ">";
+		std::lock_guard guard(g_versionMutex);
 		return g_versionPrefix;
 	}
 } // namespace
