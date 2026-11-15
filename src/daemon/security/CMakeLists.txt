@@ -9,6 +9,9 @@ set(SRC_LIST
   InternalCapability.cpp
   OidcTokenVerifier.cpp
   Principal.cpp
+  ReplayGuard.cpp
+  RequestHardening.cpp
+  RequestSignature.cpp
   SecretProtector.cpp
   Security.cpp
   SecurityOidc.cpp

@@ -23,6 +23,7 @@
 #include "../../../common/Utility.h"
 #include "../../../common/json.h"
 #include "../../Configuration.h"
+#include "../../security/RequestHardening.h"
 #include "../../security/Security.h"
 #include "../Data.h"
 #include "../EventDispatcher.h"
@@ -66,6 +67,12 @@ namespace
 		return principal.id();
 	}
 
+	// Request hardening (replay protection + signature) for the exact-route
+	// file endpoints, which bypass the shared worker pipeline. Streamed bodies
+	// are not bound into the signature (documented exemption): clients sign
+	// these endpoints with the empty-body hash. Returns false after replying.
+	bool enforceFileHardening(const drogon::HttpRequestPtr &req, const drogon::AdviceCallback &callback);
+
 	drogon::HttpResponsePtr plainResponse(drogon::HttpStatusCode code, const std::string &body)
 	{
 		auto resp = drogon::HttpResponse::newHttpResponse();
@@ -104,6 +111,47 @@ namespace
 		std::string m{req->methodString()};
 		std::transform(m.begin(), m.end(), m.begin(), [](unsigned char c) { return static_cast<char>(std::toupper(c)); });
 		return m;
+	}
+
+	bool enforceFileHardening(const drogon::HttpRequestPtr &req, const drogon::AdviceCallback &callback)
+	{
+		const static char fname[] = "enforceFileHardening() ";
+		RequestHardening::Input input;
+		input.method = upperMethod(req);
+		input.path = req->getOriginalPath();
+		// Parse the raw query with the same %XX-only decoder as the worker path
+		// (handleWorkerRequest): getParameters() would decode '+' as space and
+		// the two paths would disagree on the canonical query.
+		const auto &rawQuery = req->query();
+		for (size_t pos = 0; pos < rawQuery.size();)
+		{
+			const auto amp = rawQuery.find('&', pos);
+			const auto pair = rawQuery.substr(pos, amp == std::string::npos ? std::string::npos : amp - pos);
+			const auto eq = pair.find('=');
+			const auto key = pair.substr(0, eq);
+			const auto value = eq == std::string::npos ? std::string() : pair.substr(eq + 1);
+			input.query.emplace(decodeQueryComponent(key), decodeQueryComponent(value));
+			if (amp == std::string::npos)
+				break;
+			pos = amp + 1;
+		}
+		input.bearer = req->getHeader(web::http::header_names::authorization);
+		input.keyId = req->getHeader(HTTP_HEADER_KEY_X_Request_Key);
+		input.timestamp = req->getHeader(HTTP_HEADER_KEY_X_Timestamp);
+		input.nonce = req->getHeader(HTTP_HEADER_KEY_X_Nonce);
+		input.signature = req->getHeader(HTTP_HEADER_KEY_X_Signature);
+		// Same canonical file-route view as the worker path (strips the "/ws"
+		// channel suffix; streamed bodies hash empty per the exemption).
+		input.path = RequestHardening::canonicalFileRoute(input.path, input.body, input.bodySize);
+
+		const auto decision = RequestHardening::instance().evaluate(input);
+		if (decision.audit)
+			LOG_WAR << fname << "tolerated request hardening violation: " << decision.reason;
+		if (decision.action != RequestHardening::Decision::Action::Reject)
+			return true;
+		LOG_WAR << fname << "rejected file request path <" << input.path << ">: " << decision.reason;
+		callback(plainResponse(decision.status == 409 ? drogon::k409Conflict : drogon::k401Unauthorized, decision.reason));
+		return false;
 	}
 
 	// Per-request state shared by the stream reader callbacks of one HTTP request.
@@ -634,6 +682,8 @@ void DrogonAdaptor::handleDownload(const drogon::HttpRequestPtr &req, drogon::Ad
 		callback(resp);
 		return;
 	}
+	if (!enforceFileHardening(req, callback))
+		return;
 
 	const auto &filePathHeader = req->getHeader(HTTP_HEADER_KEY_file_path);
 	if (filePathHeader.empty())
@@ -725,6 +775,8 @@ void DrogonAdaptor::handleUpload(const drogon::HttpRequestPtr &req, drogon::Requ
 		callback(resp);
 		return;
 	}
+	if (!enforceFileHardening(req, callback))
+		return;
 
 	const auto &filePathHeader = req->getHeader(HTTP_HEADER_KEY_file_path);
 	if (filePathHeader.empty())
@@ -891,6 +943,8 @@ void DrogonAdaptor::handleFileDelete(const drogon::HttpRequestPtr &req, drogon::
 		callback(resp);
 		return;
 	}
+	if (!enforceFileHardening(req, callback))
+		return;
 
 	const auto &filePathHeader = req->getHeader(HTTP_HEADER_KEY_file_path);
 	if (filePathHeader.empty())

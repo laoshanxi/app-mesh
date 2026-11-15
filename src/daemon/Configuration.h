@@ -59,6 +59,12 @@ public:
 		bool m_restEnabled;
 		bool m_corsDisabled;
 		std::set<std::string> m_csrfAllowedOrigins; // CSRF: Origins allowed for cookie-auth state-changing requests
+		// Request hardening: nonce replay protection and HMAC request signature,
+		// each one of off | audit | enforce; window bounds both the nonce memory
+		// and the accepted X-Timestamp skew (10..3600s).
+		std::string m_requestReplayProtection;
+		std::string m_requestSignature;
+		int m_requestReplayWindowSeconds;
 		std::string m_fileAllowedBaseDir;
 		int m_workerThreads;      // 0 = derive from the CPUs the daemon may use
 		int m_transportIoThreads; // 0 = derive from the CPUs the daemon may use
@@ -145,6 +151,9 @@ public:
 	std::string getSSLClientCertificateKeyFile() const;
 	bool getRestEnabled() const;
 	bool getCorsDisabled() const;
+	std::string getRequestReplayProtection() const;
+	std::string getRequestSignature() const;
+	int getRequestReplayWindowSeconds() const;
 	std::set<std::string> getCsrfAllowedOrigins() const;
 	std::string getFileAllowedBaseDir() const;
 	/// Effective worker threads: the configured value, or the CPU-derived default

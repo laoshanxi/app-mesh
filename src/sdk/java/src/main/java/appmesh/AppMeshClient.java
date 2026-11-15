@@ -58,6 +58,8 @@ public class AppMeshClient implements Closeable {
     private final String baseURL;
     private final AtomicReference<TokenProvider> tokenProvider = new AtomicReference<>(null);
     private volatile String forwardTo;
+    // Opt-in HMAC request signer (REST.RequestSignature hardening); null when disabled.
+    private volatile RequestSigner requestSigner;
 
     // Per-instance SSL (avoids modifying JVM global defaults)
     private final SSLSocketFactory sslSocketFactory;
@@ -80,6 +82,9 @@ public class AppMeshClient implements Closeable {
             this.tokenProvider.set(builder.tokenProvider);
         } else if (builder.jwtToken != null && !builder.jwtToken.trim().isEmpty()) {
             this.tokenProvider.set(new StaticAccessTokenProvider(builder.jwtToken));
+        }
+        if (builder.requestSignature != null) {
+            this.requestSigner = builder.requestSignature;
         }
 
         // Explicit non-empty CA path must be readable; auto-detected defaults fall back to system trust
@@ -128,6 +133,7 @@ public class AppMeshClient implements Closeable {
         private char[] keyPassword;
         private String jwtToken;
         private TokenProvider tokenProvider;
+        private RequestSigner requestSignature;
         private boolean disableSSLVerification = false;
         private int connectTimeoutMs = DEFAULT_CONNECT_TIMEOUT_MS;
         private int readTimeoutMs = DEFAULT_READ_TIMEOUT_MS;
@@ -195,6 +201,17 @@ public class AppMeshClient implements Closeable {
          */
         public Builder tokenProvider(TokenProvider tokenProvider) {
             this.tokenProvider = tokenProvider;
+            return this;
+        }
+
+        /**
+         * Enable HMAC request signing (opt-in) with a per-principal API key
+         * ({@code POST /appmesh/security/apikeys}). Each request then carries the
+         * {@code X-Request-Key}, {@code X-Timestamp}, {@code X-Nonce} and
+         * {@code X-Signature} headers. The secret is never logged.
+         */
+        public Builder requestSignature(String keyId, String secret) {
+            this.requestSignature = new RequestSigner(keyId, secret);
             return this;
         }
 
@@ -340,6 +357,64 @@ public class AppMeshClient implements Closeable {
     public String getToken() {
         TokenProvider provider = this.tokenProvider.get();
         return provider == null ? null : provider.getAccessToken();
+    }
+
+    // -------- Request signature (opt-in hardening) --------
+
+    /**
+     * Enable HMAC request signing on every subsequent request (opt-in) with a
+     * per-principal API key ({@code POST /appmesh/security/apikeys}). Adds the
+     * {@code X-Request-Key}, {@code X-Timestamp}, {@code X-Nonce} and
+     * {@code X-Signature} headers on HTTP, TCP and WSS transports. The signature is an
+     * integrity layer on top of the bearer, not a replacement for it. The secret is
+     * kept in memory only and never logged.
+     */
+    public void setRequestSignature(String keyId, String secret) {
+        this.requestSigner = new RequestSigner(keyId, secret);
+    }
+
+    /** Disable request signing; subsequent requests carry no signature headers. */
+    public void clearRequestSignature() {
+        this.requestSigner = null;
+    }
+
+    /** Whether {@link #setRequestSignature} is currently active on this client. */
+    public boolean isRequestSignatureEnabled() {
+        return this.requestSigner != null;
+    }
+
+    /** The attached signer, or null when signing is disabled. */
+    protected RequestSigner getRequestSigner() {
+        return this.requestSigner;
+    }
+
+    /**
+     * Attach the four signature headers to a framed (TCP/WSS) request: the query map
+     * carries decoded values and the body is the exact frame body (empty for the
+     * streamed file endpoints, which sign the empty-string hash).
+     */
+    protected void applyRequestSignature(Map<String, String> headers, String method, String path,
+            Map<String, String> query, byte[] body) {
+        RequestSigner signer = this.requestSigner;
+        if (signer == null) {
+            return;
+        }
+        signer.attach(headers, method, path, RequestSigner.canonicalQuery(query), body);
+    }
+
+    /**
+     * Attach the four signature headers to a raw connection with no query and no bound
+     * body — used by the streamed file endpoints, which sign the empty-string hash
+     * (documented exemption: the file content is not bound into the signature).
+     */
+    protected void applyRequestSignature(HttpURLConnection connection, String method, String path) {
+        RequestSigner signer = this.requestSigner;
+        if (signer == null) {
+            return;
+        }
+        Map<String, String> headers = new HashMap<>();
+        signer.attach(headers, method, path, "", null);
+        headers.forEach(connection::setRequestProperty);
     }
 
     /** Return Engine's public OAuth/OIDC configuration. */
@@ -829,6 +904,9 @@ public class AppMeshClient implements Closeable {
         connection.setReadTimeout(readTimeoutMs);
         commonHeaders().forEach(connection::setRequestProperty);
         headers.forEach(connection::setRequestProperty);
+        // Streamed file upload: sign the empty-string body hash (documented exemption —
+        // the signature binds method/path/timestamp/nonce, not the file content).
+        applyRequestSignature(connection, "POST", "/appmesh/file/upload");
 
         try (InputStream fis = new FileInputStream(file);
                 OutputStream os = connection.getOutputStream()) {
@@ -1151,11 +1229,14 @@ public class AppMeshClient implements Closeable {
             Map<String, String> params, String token) throws IOException {
         StringBuilder urlBuilder = new StringBuilder(baseURL).append(path);
 
+        // The encoded query is kept as a string: the signature canonicalizes from the
+        // exact wire form (the daemon percent-decodes it back with %-only decoding).
+        String encodedQuery = null;
         if (params != null && !params.isEmpty()) {
-            urlBuilder.append('?');
+            StringBuilder queryBuilder = new StringBuilder();
             for (Map.Entry<String, ?> e : params.entrySet()) {
                 try {
-                    urlBuilder.append(URLEncoder.encode(e.getKey(), StandardCharsets.UTF_8.name()))
+                    queryBuilder.append(URLEncoder.encode(e.getKey(), StandardCharsets.UTF_8.name()))
                             .append('=')
                             .append(URLEncoder.encode(String.valueOf(e.getValue()), StandardCharsets.UTF_8.name()))
                             .append('&');
@@ -1163,7 +1244,9 @@ public class AppMeshClient implements Closeable {
                     throw new RuntimeException("Error encoding URL parameters", ex);
                 }
             }
-            urlBuilder.setLength(urlBuilder.length() - 1);
+            queryBuilder.setLength(queryBuilder.length() - 1);
+            encodedQuery = queryBuilder.toString();
+            urlBuilder.append('?').append(encodedQuery);
         }
 
         URL url = Utils.toUrl(urlBuilder.toString());
@@ -1179,8 +1262,9 @@ public class AppMeshClient implements Closeable {
         if (headers != null) {
             allHeaders.putAll(headers);
         }
-        allHeaders.forEach(connection::setRequestProperty);
 
+        // The body bytes are computed once: the signature must hash exactly the bytes written.
+        byte[] bodyBytes = null;
         if ("POST".equalsIgnoreCase(method) || "PUT".equalsIgnoreCase(method) || "PATCH".equalsIgnoreCase(method)) {
             if (body != null) {
                 String bodyString;
@@ -1196,12 +1280,24 @@ public class AppMeshClient implements Closeable {
                 } else {
                     bodyString = body.toString();
                 }
+                bodyBytes = bodyString.getBytes(StandardCharsets.UTF_8);
+            }
+        }
 
-                connection.setDoOutput(true);
-                try (OutputStream os = connection.getOutputStream()) {
-                    os.write(bodyString.getBytes(StandardCharsets.UTF_8));
-                    os.flush();
-                }
+        // Request signature (opt-in): sign the method exactly as sent on the wire.
+        RequestSigner signer = this.requestSigner;
+        if (signer != null) {
+            signer.attach(allHeaders, method.toUpperCase(), path,
+                    encodedQuery == null ? "" : RequestSigner.canonicalQueryFromEncoded(encodedQuery), bodyBytes);
+        }
+
+        allHeaders.forEach(connection::setRequestProperty);
+
+        if (bodyBytes != null) {
+            connection.setDoOutput(true);
+            try (OutputStream os = connection.getOutputStream()) {
+                os.write(bodyBytes);
+                os.flush();
             }
         }
 

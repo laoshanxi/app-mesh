@@ -69,6 +69,23 @@ void SecurityOidc::updateRole(const std::string &role, const Json::Value &permis
 
 void SecurityOidc::deleteRole(const std::string &role) { m_authorization.deleteRole(role); }
 
+Json::Value SecurityOidc::issueApiKey(const std::string &principalId) { return m_authorization.issueApiKey(principalId); }
+
+Json::Value SecurityOidc::apiKeysJson(const std::string &principalId, bool all) const
+{
+	return m_authorization.apiKeysJson(principalId, all);
+}
+
+bool SecurityOidc::deleteApiKey(const std::string &keyId, const std::string &requestingPrincipalId, bool manageAll)
+{
+	return m_authorization.deleteApiKey(keyId, requestingPrincipalId, manageAll);
+}
+
+bool SecurityOidc::apiKeySecret(const std::string &keyId, std::string &principalId, std::string &secret) const
+{
+	return m_authorization.apiKeySecret(keyId, principalId, secret);
+}
+
 Json::Value SecurityOidc::replicationPolicySnapshot() const { return m_authorization.replicationSnapshotJson(); }
 
 bool SecurityOidc::applyReplicatedPolicy(const Json::Value &policy) { return m_authorization.applyReplicatedPolicy(policy); }

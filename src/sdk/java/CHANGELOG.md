@@ -1,5 +1,23 @@
 # Changelog
 
+## 3.0.12
+
+- Opt-in HMAC request signing (`setRequestSignature(keyId, secret)` /
+  `Builder.requestSignature(keyId, secret)`, mirror of the JavaScript 3.1.13
+  feature): every request carries `X-Request-Key`, `X-Timestamp`, `X-Nonce` and
+  `X-Signature` (lowercase hex HMAC-SHA256) over the daemon canonical string
+  `METHOD \n path \n sortedQuery \n sha256hex(body) \n timestamp \n nonce`, on
+  the HTTP, TCP and WSS transports. Streamed file endpoints
+  (`/appmesh/file/download|upload|delete`) sign the empty-string body hash.
+  The API key secret is never logged. Disabling (`clearRequestSignature`)
+  removes the headers.
+- Path/query canonical fixes for signed requests: the WSS data-channel routes
+  `/appmesh/file/{upload,download}/ws` sign the route without the trailing
+  `/ws` (daemon `canonicalFileRoute`), matching the updated Security.md
+  signature spec.
+- The TCP and WSS builders forward `requestSignature(keyId, secret)` like the
+  HTTP builder, so signing can be enabled at build time on every transport.
+
 ## 3.0.10
 
 - `forwardTo`: a bare host is sent as given instead of appending the client's own

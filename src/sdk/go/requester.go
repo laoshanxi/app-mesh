@@ -30,6 +30,7 @@ type Requester interface {
 	getTokenProvider() TokenProvider
 	setForwardTo(forwardTo string)
 	getForwardTo() string
+	setRequestSigner(signer *requestSigner)
 }
 
 // tokenState carries the per-requester static token and forwarding target
@@ -37,6 +38,7 @@ type Requester interface {
 type tokenState struct {
 	forwardingHost atomic.String
 	token          atomic.String
+	requestSigner  atomic.Pointer[requestSigner] // opt-in HMAC request signing (nil = off)
 	tokenProviderHolder
 	refreshMu sync.Mutex // serializes 401-triggered refreshes across concurrent requests
 }
@@ -94,6 +96,20 @@ func (s *tokenState) setForwardTo(forwardTo string) {
 
 func (s *tokenState) getForwardTo() string {
 	return s.forwardingHost.Load()
+}
+
+// setRequestSigner attaches (nil detaches) the opt-in HMAC request signer.
+// A nil keyID clears signing; the secret stays private to the signer.
+func (s *tokenState) setRequestSigner(signer *requestSigner) {
+	if signer == nil || signer.keyID == "" {
+		s.requestSigner.Store(nil)
+		return
+	}
+	s.requestSigner.Store(signer)
+}
+
+func (s *tokenState) getRequestSigner() *requestSigner {
+	return s.requestSigner.Load()
 }
 
 // HTTP Request executor
@@ -241,11 +257,24 @@ func (h *HTTPRequester) doContext(ctx context.Context, method string, apiPath st
 		return nil, fmt.Errorf("http client is nil")
 	}
 
+	// Snapshot the signer once: the query encoding below and the signing step
+	// at the end must observe the same toggle state — reading it twice could
+	// pair a percent-only encoded query from one state with a signature (or its
+	// absence) from another under a concurrent toggle.
+	signer := h.getRequestSigner()
+
 	// Build URL
 	u := h.baseURL
 	u.Path = path.Join(u.Path, apiPath)
 	if queries != nil {
-		u.RawQuery = queries.Encode()
+		if signer != nil {
+			// The daemon percent-decodes the query with '+' kept literal, so a
+			// signed request must never rely on '+'-for-space: the decoded
+			// values the daemon verifies must equal the values signed below.
+			u.RawQuery = encodeQueryPercentOnly(queries)
+		} else {
+			u.RawQuery = queries.Encode()
+		}
 	}
 
 	req, err := http.NewRequestWithContext(ctx, method, u.String(), body)
@@ -281,6 +310,13 @@ func (h *HTTPRequester) doContext(ctx context.Context, method string, apiPath st
 			continue
 		}
 		req.Header.Set(k, v)
+	}
+
+	// Opt-in request signature (X-Request-Key/X-Timestamp/X-Nonce/X-Signature),
+	// applied last so it signs the request exactly as it goes on the wire.
+	// Uses the signer snapshot taken above, so encoding and signing stay paired.
+	if err := signHTTPRequest(req, queries, signer); err != nil {
+		return nil, err
 	}
 
 	// Execute request
@@ -506,6 +542,9 @@ func (t *TCPRequester) request(req *http.Request) (*Response, error) {
 	if err := applyProcessProof(data, t.psk); err != nil {
 		return nil, err
 	}
+	// Opt-in HMAC request signature: the four headers go into the frame header
+	// map; the framed uuid serves as the nonce.
+	applyRequestSignature(data, t.getRequestSigner())
 
 	buf, err := data.Serialize()
 	if err != nil {
@@ -792,6 +831,9 @@ func (w *WSSRequester) request(req *http.Request) (*Response, error) {
 	if err := applyProcessProof(data, w.psk); err != nil {
 		return nil, err
 	}
+	// Opt-in HMAC request signature: the four headers go into the frame header
+	// map; the framed uuid serves as the nonce.
+	applyRequestSignature(data, w.getRequestSigner())
 
 	buf, err := data.Serialize()
 	if err != nil {

@@ -249,6 +249,7 @@ func (f *fakeWaitRequester) setTokenProvider(TokenProvider)  {}
 func (f *fakeWaitRequester) getTokenProvider() TokenProvider { return nil }
 func (f *fakeWaitRequester) setForwardTo(string)             {}
 func (f *fakeWaitRequester) getForwardTo() string            { return "" }
+func (f *fakeWaitRequester) setRequestSigner(*requestSigner) {}
 func (f *fakeWaitRequester) enableDemuxer()                  { f.actions = append(f.actions, "demuxer") }
 func (f *fakeWaitRequester) getDemuxer() *MessageDemuxer     { return f.demuxer }
 

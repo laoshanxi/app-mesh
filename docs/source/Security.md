@@ -94,6 +94,13 @@ The Engine does not use the username, email address, display name, group, or tok
 
 The operation writes the role binding and closes the enrollment state in one atomic change. A later role removal does not reopen enrollment.
 
+Enrollment guidance for operators:
+
+- Run the enrollment from the daemon host, with the packaged administrator signed in, as the first action after installation.
+- The enrollment window closes after the first success, after the installation of a pre-existing first-administrator binding, or when the node becomes an authentication replica.
+- Keep the packaged administrator credential in the secrets file protected. The file is the bootstrap credential. Limit file access to the installation user.
+- If the packaged credential is exposed, treat it as compromised: enroll the first administrator, then disable the password flow or replace the credential before the node serves remote clients.
+
 ## Built-in credentials
 
 The built-in profile creates an administrator and a read-only viewer. Setup generates random passwords. It stores each initial password in a private credential file. It stores only the password hash in the authentication-service runtime configuration.
@@ -163,6 +170,64 @@ HTTP, TCP, and WSS can forward normal request methods. HTTP supports one respons
 Some local operations use a narrow internal proof. Examples include a workflow capability, a per-spawn pre-shared key with per-request HMAC for managed system processes (Agent and Workflow), a managed-process key for the task RPC, and optional mTLS.
 
 An internal proof does not create a principal. It does not replace a user bearer. Each proof has a limited operation and transport scope.
+
+## Request replay protection and signatures
+
+Two independent hardening layers can be enabled per deployment. Both default to `off`. Both accept `off`, `audit`, or `enforce`:
+
+- `REST.RequestReplayProtection` rejects a repeated request nonce.
+- `REST.RequestSignature` requires a valid HMAC request signature.
+
+`REST.RequestReplayWindowSeconds` (10 to 3600, default 300) bounds both layers. It defines how long a nonce is remembered and how far an `X-Timestamp` value may drift from the daemon clock (the signature and replay checks add a fixed 30-second grace on top of the window). Reload the daemon configuration (SIGHUP) to change a mode without a restart.
+
+Replay protection works without client changes on TCP and WSS transports. Each framed request already carries a unique `uuid`, and the daemon uses it as the nonce. HTTP clients send the nonce in the `X-Nonce` header. In `enforce` mode an authenticated HTTP request without a nonce is rejected with `401`. A repeated nonce is rejected with `409`.
+
+### API keys
+
+A request signature is produced with a per-principal API key. Manage keys through the REST API:
+
+| Endpoint | Purpose |
+| --- | --- |
+| `POST /appmesh/security/apikeys` | Issue a key for the caller. An administrator may pass `{"principal": "<id>"}` and issue for another principal. |
+| `GET /appmesh/security/apikeys` | List the caller's keys. `?all=1` lists every key and needs the `principal-list` permission. |
+| `DELETE /appmesh/security/apikey/<key_id>` | Revoke a key. The owner or the `principal-set` permission may revoke. |
+
+The response of `POST /appmesh/security/apikeys` contains the secret exactly once. Store it at the client. The daemon stores the key in the authorization file with mode `0600`. Cluster replication copies API keys to follower nodes with the rest of the policy. A principal may hold at most 10 keys. A revoked principal loses its keys.
+
+### Signature format
+
+A signature is an integrity layer on top of bearer authentication. It does not replace the bearer token. Authorization is still decided by the bearer.
+
+The client sends four headers on each request:
+
+| Header | Content |
+| --- | --- |
+| `X-Request-Key` | The API key id, for example `ak-3f9c2a81b0d4`. |
+| `X-Timestamp` | Unix time in seconds. |
+| `X-Nonce` | A random value, unique per request. |
+| `X-Signature` | Hex HMAC-SHA256 over the string to sign. |
+
+Build the string to sign with this exact form:
+
+```
+METHOD + "\n" + path + "\n" + sortedQuery + "\n" + sha256hex(body) + "\n" + timestamp + "\n" + nonce
+```
+
+- `path` is the request path without the query. Use the path exactly as sent. Do not percent-decode it.
+- `sortedQuery` joins the query parameters as `key=value` pairs with `&`. Sort the pairs by key, then by value. Use the decoded parameter values. An empty query is an empty string.
+- `sha256hex(body)` is the lowercase hex SHA-256 of the request body. A request without a body hashes the empty string.
+- The five file routes (`/appmesh/file/download`, `/appmesh/file/upload`, `/appmesh/file/delete`, and the two `/ws` data-channel variants) sign the empty string in place of the body hash, and the signed path is the file route without the trailing `/ws`. The `/ws` suffix selects the transfer channel; it is not part of the signed resource. This exemption is documented: the signature binds the method, path, query, timestamp, and nonce, but not the file content.
+
+TCP and WSS clients carry the four headers in the request header map. The framed message `uuid` may serve as the nonce.
+
+The daemon compares signatures in constant time. A request that fails verification is rejected with `401` in `enforce` mode and logged in `audit` mode.
+
+### Scope and limits
+
+- The nonce cache is node-local. Each node rejects a nonce it has already served. Forwarded write requests reach the owner node, so the effective protection covers the write path.
+- Requests that carry no credential are exempt. Public routes stay reachable for browsers and probes.
+- Internal workflow capabilities are exempt. They are loopback-only and time-bound.
+- A deployment that terminates TLS at a proxy should enable `RequestSignature` in `enforce` mode. The signature then survives the proxy hop.
 
 ## Removed interfaces
 

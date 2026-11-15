@@ -85,6 +85,7 @@ func (f *fakeRequester) setTokenProvider(TokenProvider)  {}
 func (f *fakeRequester) getTokenProvider() TokenProvider { return nil }
 func (f *fakeRequester) setForwardTo(string)             {}
 func (f *fakeRequester) getForwardTo() string            { return "" }
+func (f *fakeRequester) setRequestSigner(*requestSigner) {}
 
 func newFakeClient(status int, body string) (*AppMeshClient, *fakeRequester) {
 	fake := &fakeRequester{status: status, body: body}

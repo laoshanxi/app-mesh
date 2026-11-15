@@ -64,6 +64,55 @@ mod tests {
         }
     }
 
+    // -- HMAC request signing -------------------------------------------------
+
+    #[tokio::test]
+    async fn test_request_signer_headers_reach_the_server() {
+        use appmesh::RequestSigner;
+
+        let mut server = Server::new_async().await;
+        let mock = server
+            .mock("POST", "/appmesh/config")
+            .match_header("x-request-key", "ak-e2e")
+            .match_header("x-timestamp", mockito::Matcher::Regex(r"^\d+$".into()))
+            .match_header("x-nonce", mockito::Matcher::Regex(r"^[0-9a-f]{32}$".into()))
+            .match_header("x-signature", mockito::Matcher::Regex(r"^[0-9a-f]{64}$".into()))
+            .with_status(200)
+            .with_body("{}")
+            .expect(1)
+            .create_async()
+            .await;
+
+        let signer = RequestSigner::new("ak-e2e", "e2e-secret");
+        let client = ClientBuilder::new()
+            .url(server.url())
+            .danger_accept_invalid_certs(true)
+            .request_signer(signer)
+            .build()
+            .unwrap();
+
+        client.set_config(json!({ "k": "v" })).await.unwrap();
+        mock.assert_async().await;
+    }
+
+    #[tokio::test]
+    async fn test_unsigned_client_sends_no_signature_headers() {
+        let mut server = Server::new_async().await;
+        let mock = server
+            .mock("GET", "/appmesh/applications")
+            .match_header("x-signature", mockito::Matcher::Missing)
+            .match_header("x-request-key", mockito::Matcher::Missing)
+            .with_status(200)
+            .with_body("[]")
+            .expect(1)
+            .create_async()
+            .await;
+
+        let client = create_test_client(&server);
+        client.list_apps().await.unwrap();
+        mock.assert_async().await;
+    }
+
     #[tokio::test]
     async fn test_401_retry_replays_body_after_refresh() {
         // Python SDK parity: a 401 on a request with a replayable body (here a

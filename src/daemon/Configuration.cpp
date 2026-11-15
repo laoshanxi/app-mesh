@@ -546,6 +546,24 @@ bool Configuration::getCorsDisabled() const
 	return m_rest->m_corsDisabled;
 }
 
+std::string Configuration::getRequestReplayProtection() const
+{
+	std::lock_guard guard(m_hotupdateMutex);
+	return m_rest->m_requestReplayProtection;
+}
+
+std::string Configuration::getRequestSignature() const
+{
+	std::lock_guard guard(m_hotupdateMutex);
+	return m_rest->m_requestSignature;
+}
+
+int Configuration::getRequestReplayWindowSeconds() const
+{
+	std::lock_guard guard(m_hotupdateMutex);
+	return m_rest->m_requestReplayWindowSeconds;
+}
+
 std::set<std::string> Configuration::getCsrfAllowedOrigins() const
 {
 	std::lock_guard guard(m_hotupdateMutex);
@@ -947,6 +965,12 @@ void Configuration::hotUpdate(Json::Value &jsonValue)
 				SET_COMPARE(this->m_rest->m_corsDisabled, newConfig->m_rest->m_corsDisabled);
 			if (HAS_JSON_FIELD(rest, JSON_KEY_CsrfAllowedOrigins))
 				SET_COMPARE(this->m_rest->m_csrfAllowedOrigins, newConfig->m_rest->m_csrfAllowedOrigins);
+			if (HAS_JSON_FIELD(rest, JSON_KEY_RequestReplayProtection))
+				SET_COMPARE(this->m_rest->m_requestReplayProtection, newConfig->m_rest->m_requestReplayProtection);
+			if (HAS_JSON_FIELD(rest, JSON_KEY_RequestSignature))
+				SET_COMPARE(this->m_rest->m_requestSignature, newConfig->m_rest->m_requestSignature);
+			if (HAS_JSON_FIELD(rest, JSON_KEY_RequestReplayWindowSeconds))
+				SET_COMPARE(this->m_rest->m_requestReplayWindowSeconds, newConfig->m_rest->m_requestReplayWindowSeconds);
 			if (HAS_JSON_FIELD(rest, JSON_KEY_FileAllowedBaseDir))
 				SET_COMPARE(this->m_rest->m_fileAllowedBaseDir, newConfig->m_rest->m_fileAllowedBaseDir);
 			if (HAS_JSON_FIELD(rest, JSON_KEY_RestListenPort))
@@ -1218,6 +1242,27 @@ std::shared_ptr<Configuration::JsonRest> Configuration::JsonRest::FromJson(const
 		}
 	}
 	rest->m_fileAllowedBaseDir = GET_JSON_STR_VALUE(jsonValue, JSON_KEY_FileAllowedBaseDir);
+	// Request hardening modes: case-insensitive off | audit | enforce; an
+	// invalid value keeps the previous setting (off at boot) with a warning,
+	// the same keep-previous rule the neighboring keys use.
+	const auto normalizeMode = [&jsonValue](const char *key, std::string &field) {
+		auto mode = GET_JSON_STR_VALUE(jsonValue, key);
+		std::transform(mode.begin(), mode.end(), mode.begin(), [](unsigned char c) { return std::tolower(c); });
+		if (mode == "off" || mode == "audit" || mode == "enforce")
+			field = mode;
+		else if (!mode.empty())
+			LOG_WAR << "Configuration::JsonRest::FromJson() ignored invalid <" << key << "> value <" << mode
+					<< ">, expected off | audit | enforce";
+	};
+	normalizeMode(JSON_KEY_RequestReplayProtection, rest->m_requestReplayProtection);
+	normalizeMode(JSON_KEY_RequestSignature, rest->m_requestSignature);
+	rest->m_requestReplayWindowSeconds = GET_JSON_INT_VALUE(jsonValue, JSON_KEY_RequestReplayWindowSeconds);
+	if (rest->m_requestReplayWindowSeconds < 10 || rest->m_requestReplayWindowSeconds > 3600)
+	{
+		LOG_DBG << fname << "Default value <" << DEFAULT_REQUEST_REPLAY_WINDOW_SECONDS << "> will be used for "
+				<< JSON_KEY_RequestReplayWindowSeconds;
+		rest->m_requestReplayWindowSeconds = DEFAULT_REQUEST_REPLAY_WINDOW_SECONDS;
+	}
 	SET_JSON_INT_VALUE(jsonValue, JSON_KEY_PrometheusExporterListenPort, rest->m_promListenPort);
 	// Rejecting a value keeps the previous one instead of failing the whole load.
 	auto workerThreads = GET_JSON_INT_VALUE(jsonValue, JSON_KEY_WorkerThreads);
@@ -1319,6 +1364,9 @@ Json::Value Configuration::JsonRest::AsJson() const
 	for (const auto &origin : m_csrfAllowedOrigins)
 		result[JSON_KEY_CsrfAllowedOrigins].append(origin);
 	result[JSON_KEY_FileAllowedBaseDir] = std::string(m_fileAllowedBaseDir);
+	result[JSON_KEY_RequestReplayProtection] = std::string(m_requestReplayProtection);
+	result[JSON_KEY_RequestSignature] = std::string(m_requestSignature);
+	result[JSON_KEY_RequestReplayWindowSeconds] = m_requestReplayWindowSeconds;
 	// SSL
 	result[JSON_KEY_SSL] = m_ssl->AsJson();
 
@@ -1329,6 +1377,8 @@ Configuration::JsonRest::JsonRest()
 	: m_restEnabled(false), m_corsDisabled(false), m_workerThreads(DEFAULT_WORKER_THREADS),
 	  m_transportIoThreads(DEFAULT_TRANSPORT_IO_THREADS), m_restListenPort(DEFAULT_REST_LISTEN_PORT),
 	  m_promListenPort(DEFAULT_PROM_LISTEN_PORT), m_tcpApiPort(DEFAULT_TCP_REST_LISTEN_PORT),
+	  m_requestReplayProtection("off"), m_requestSignature("off"),
+	  m_requestReplayWindowSeconds(DEFAULT_REQUEST_REPLAY_WINDOW_SECONDS),
 	  m_webSocketPort(DEFAULT_WEB_SOCKET_PORT)
 {
 	m_ssl = std::make_shared<JsonSsl>();

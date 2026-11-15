@@ -57,6 +57,8 @@ class AppMeshClientWSS(TransportClientMixin, AppMeshClient):
         *,
         bearer_token: Optional[str] = None,
         token_provider: Optional[TokenProvider] = None,
+        api_key: Optional[str] = None,
+        api_secret: Optional[str] = None,
     ):
         """Construct a WSS transport client that reuses the standard App Mesh client API.
 
@@ -72,6 +74,9 @@ class AppMeshClientWSS(TransportClientMixin, AppMeshClient):
               - tuple: (cert_path, key_path)
             bearer_token: Caller-owned access token.
             token_provider: Provider that supplies and refreshes access tokens.
+            api_key: API key id for opt-in HMAC request signing (see
+              ``AppMeshClient.enable_request_signature``); requires ``api_secret``.
+            api_secret: API key secret. Signing activates only when both are set.
 
         Note:
             WSS connections require an explicit full-chain CA specification for certificate validation,
@@ -89,6 +94,8 @@ class AppMeshClientWSS(TransportClientMixin, AppMeshClient):
             ssl_client_cert=ssl_client_cert,
             bearer_token=bearer_token,
             token_provider=token_provider,
+            api_key=api_key,
+            api_secret=api_secret,
         )
 
     @property
@@ -147,6 +154,10 @@ class AppMeshClientWSS(TransportClientMixin, AppMeshClient):
         if self.forward_to:
             header[AppMeshClient._HTTP_HEADER_KEY_X_TARGET_HOST] = self.forward_to
         path = "/appmesh/file/download/ws"
+        # The /ws file endpoints enforce the same request-signature hardening as
+        # every other route; sign the side-channel request too (empty-body hash,
+        # the streamed file content is exempt by design).
+        self._append_signature_headers(header, "GET", path)
         rest_url = parse.urljoin(self.base_url, path)
         r = self.session.get(url=rest_url, stream=True, timeout=self.request_timeout, headers=header,
             cert=self.ssl_client_cert, verify=self.ssl_verify)
@@ -198,6 +209,9 @@ class AppMeshClientWSS(TransportClientMixin, AppMeshClient):
             header[AppMeshClient._HTTP_HEADER_KEY_X_TARGET_HOST] = self.forward_to
         if preserve_permissions:
             header.update(AppMeshClient._get_file_attributes(local_path))
+        # Same request-signature hardening as the download side channel; the
+        # streamed file content is exempt (empty-body hash) by design.
+        self._append_signature_headers(header, "POST", path)
         rest_url = parse.urljoin(self.base_url, path)
 
         with local_path.open("rb") as fp:

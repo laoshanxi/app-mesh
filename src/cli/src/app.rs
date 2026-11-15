@@ -25,6 +25,16 @@ pub struct Cli {
     #[arg(long = "ca-cert", global = true, value_name = "PATH")]
     pub ca_cert: Option<PathBuf>,
 
+    /// API key id for HMAC request signing (env: APPMESH_API_KEY); requires --api-secret
+    #[arg(long = "api-key", global = true, value_name = "KEY_ID")]
+    pub api_key: Option<String>,
+
+    /// API key secret for HMAC request signing (env: APPMESH_API_SECRET); never stored.
+    /// Use `-` to read one line from stdin and keep the secret out of argv; with
+    /// `logon --password-stdin` the secret line comes first, the password second
+    #[arg(long = "api-secret", global = true, value_name = "SECRET")]
+    pub api_secret: Option<String>,
+
     /// Enable debug logging
     #[arg(short = 'v', long = "verbose", global = true)]
     pub verbose: bool,

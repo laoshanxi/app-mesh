@@ -80,6 +80,21 @@ bool Utility::isNumber(const std::string &str)
 
 std::string Utility::stdStringTrim(const std::string &str) { return boost::trim_copy(str, std::locale::classic()); }
 
+// The credential after a case-insensitive "Bearer" scheme; empty when absent.
+std::string Utility::bearerCredential(const std::string &authorization)
+{
+	const auto value = stdStringTrim(authorization);
+	const auto separator = value.find(' ');
+	if (separator == std::string::npos)
+		return {};
+	auto scheme = value.substr(0, separator);
+	std::transform(scheme.begin(), scheme.end(), scheme.begin(),
+				   [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+	if (scheme != "bearer")
+		return {};
+	return stdStringTrim(value.substr(separator + 1));
+}
+
 // jsoncpp coerces wrong-typed scalars (int -> "5"); these keep the reads strict
 std::string Utility::jsonStringField(const Json::Value &value, const std::string &key)
 {

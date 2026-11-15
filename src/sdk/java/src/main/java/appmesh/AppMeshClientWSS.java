@@ -116,6 +116,12 @@ public class AppMeshClientWSS extends AppMeshClient {
             return this;
         }
 
+        /** Enable HMAC request signing (opt-in) with an API key pair, same contract as the HTTP builder. */
+        public Builder requestSignature(String keyId, String secret) {
+            base.requestSignature(keyId, secret);
+            return this;
+        }
+
         /** Connection timeout in milliseconds for HTTPS side-channel requests. */
         public Builder connectTimeoutMs(int ms) {
             base.connectTimeoutMs(ms);
@@ -214,6 +220,10 @@ public class AppMeshClientWSS extends AppMeshClient {
             if (body != null) {
                 req.body = convertToBytes(body);
             }
+
+            // Request signature (opt-in): attaches after header assembly so the gateway's
+            // bearer handling cannot strip it; signs the frame exactly as serialized.
+            applyRequestSignature(req.headers, req.httpMethod, req.requestUri, req.query, req.body);
 
             // Send request
             byte[] data = req.serialize();
@@ -333,6 +343,8 @@ public class AppMeshClientWSS extends AppMeshClient {
         }
         conn.setConnectTimeout(FILE_TRANSFER_TIMEOUT);
         conn.setReadTimeout(FILE_TRANSFER_TIMEOUT);
+        // Streamed file download: sign the empty-string body hash (documented exemption).
+        applyRequestSignature(conn, "GET", "/appmesh/file/download/ws");
 
         int responseCode = conn.getResponseCode();
         // Any 2xx is success: the WebSocket file endpoint answers 201 Created on upload,
@@ -411,6 +423,8 @@ public class AppMeshClientWSS extends AppMeshClient {
 
         // Disable chunked transfer for better compatibility
         conn.setFixedLengthStreamingMode(file.length());
+        // Streamed file upload: sign the empty-string body hash (documented exemption).
+        applyRequestSignature(conn, "POST", "/appmesh/file/upload/ws");
 
         // Add file attributes if requested
         if (applyFileAttributes) {

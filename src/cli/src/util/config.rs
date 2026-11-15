@@ -175,36 +175,47 @@ pub fn delete_session(session: &StoredSession) -> Result<()> {
     }
 }
 
-/// Cross-process mutex for one session's initial token preparation. Concurrent
-/// `appm` starts share a single refresh token; without serialization two
-/// refreshes race, the rotation invalidates the loser's grant, and every later
-/// command demands a fresh `appm logon`.
+/// Cross-process mutex for one session file. Concurrent `appm` starts share a
+/// single refresh token; without serialization two refreshes race, the rotation
+/// invalidates the loser's grant, and every later command demands a fresh
+/// `appm logon`.
 pub struct SessionLock {
     path: PathBuf,
+    pid: u32,
 }
 
 const SESSION_LOCK_STALE_AFTER: std::time::Duration = std::time::Duration::from_secs(10);
 const SESSION_LOCK_WAIT_LIMIT: std::time::Duration = std::time::Duration::from_secs(15);
+/// A readable holder pid is trusted for far longer than the plain stale
+/// window, so a slow token refresh keeps its lock; only a pid that has held
+/// for minutes (a recycled pid or a zombie) is declared gone.
+const HOLDER_PID_STALE_AFTER: std::time::Duration = std::time::Duration::from_secs(120);
 
 impl SessionLock {
     /// Blocks until the lock is acquired. A holder that died without releasing
-    /// is recovered once the lock file is older than the stale window.
+    /// is recovered once its recorded pid is gone; a lock without a readable
+    /// pid still falls back to the stale window.
     pub fn acquire(session: &StoredSession) -> Result<Self> {
         let dir = session_dir();
         ensure_private_directory(&dir)?;
         let path = session_file(session).with_extension("lock");
+        Self::acquire_at(&path)
+    }
+
+    fn acquire_at(path: &Path) -> Result<Self> {
+        let pid = std::process::id();
         let deadline = std::time::Instant::now() + SESSION_LOCK_WAIT_LIMIT;
         loop {
             match std::fs::OpenOptions::new().write(true).create_new(true).open(&path) {
-                Ok(_) => return Ok(Self { path }),
+                Ok(mut file) => {
+                    // Name the holder so a waiter can tell a live process from a
+                    // crashed one; a failed write only costs the mtime fallback.
+                    let _ = write!(file, "{}", pid);
+                    return Ok(Self { path: path.to_path_buf(), pid });
+                }
                 Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {
-                    let stale = std::fs::metadata(&path)
-                        .and_then(|meta| meta.modified())
-                        .ok()
-                        .and_then(|modified| modified.elapsed().ok())
-                        .is_some_and(|age| age > SESSION_LOCK_STALE_AFTER);
-                    if stale {
-                        let _ = std::fs::remove_file(&path);
+                    if lock_holder_dead(path) {
+                        let _ = std::fs::remove_file(path);
                         continue;
                     }
                     if std::time::Instant::now() > deadline {
@@ -220,10 +231,110 @@ impl SessionLock {
     }
 }
 
+/// True when the lock's holder is provably gone: the recorded pid is dead, or
+/// the file is older than the stale window (the holder died between creating
+/// the file and writing its pid, or a recycled pid / a zombie now answers for
+/// the holder). A live holder is trusted far longer than the plain stale
+/// window, but not forever.
+fn lock_holder_dead(path: &Path) -> bool {
+    let content = std::fs::read_to_string(path).unwrap_or_default();
+    if let Ok(pid) = content.trim().parse::<u32>() {
+        if pid == std::process::id() {
+            // Pid reuse: this process is a waiter, never the holder, so the
+            // file's age is the only signal left.
+        } else if !process_alive(pid) {
+            return true;
+        } else {
+            // A live pid outranks the plain stale window: a holder refreshing
+            // tokens can outlast it. Only a holder that has held for many
+            // times the window is declared gone — that is the recycled-pid or
+            // zombie case, not a slow refresh.
+            return !lock_older_than(path, HOLDER_PID_STALE_AFTER);
+        }
+    }
+    lock_older_than(path, SESSION_LOCK_STALE_AFTER)
+}
+
+fn lock_older_than(path: &Path, limit: std::time::Duration) -> bool {
+    std::fs::metadata(path)
+        .and_then(|meta| meta.modified())
+        .ok()
+        .and_then(|modified| modified.elapsed().ok())
+        .is_some_and(|age| age > limit)
+}
+
+#[cfg(unix)]
+fn process_alive(pid: u32) -> bool {
+    // Signal 0 only probes existence; EPERM still means the process is there.
+    let sent = unsafe { libc::kill(pid as libc::pid_t, 0) } == 0;
+    sent || std::io::Error::last_os_error().raw_os_error() == Some(libc::EPERM)
+}
+
+#[cfg(windows)]
+fn process_alive(pid: u32) -> bool {
+    use windows_sys::Win32::System::Threading::OpenProcess;
+    // PROCESS_QUERY_LIMITED_INFORMATION; a handle means the pid still exists.
+    let handle = unsafe { OpenProcess(0x1000, 0, pid) };
+    if handle != 0 {
+        unsafe { windows_sys::Win32::Foundation::CloseHandle(handle) };
+        return true;
+    }
+    false
+}
+
 impl Drop for SessionLock {
     fn drop(&mut self) {
-        let _ = std::fs::remove_file(&self.path);
+        // Remove the lock only while it still names this process: a waiter may
+        // already have stolen a lock we held past its holder's lifetime.
+        let ours = std::fs::read_to_string(&self.path)
+            .is_ok_and(|content| content.trim().parse::<u32>() == Ok(self.pid));
+        if ours {
+            let _ = std::fs::remove_file(&self.path);
+        }
     }
+}
+
+/// What a session-file mutation should do after re-reading the file under the
+/// cross-process lock.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum SessionUpdate {
+    /// The on-disk session still holds the refresh token this update started
+    /// from; persist the new token set.
+    Write,
+    /// A parallel process already refreshed past this update; its on-disk token
+    /// set is the only live one, so adopt it instead of clobbering.
+    Adopt(TokenSet),
+    /// The session is gone or rebound to another identity; touch nothing.
+    Skip,
+}
+
+/// Decide a token update against the latest on-disk session. Refresh-token
+/// rotation allows exactly one consumer per grant: once the disk no longer
+/// holds the refresh token this update consumed, a parallel CLI won the
+/// rotation and writing our tokens would destroy the working session.
+pub fn decide_session_update(
+    used_refresh: Option<&str>,
+    disk: Option<&StoredSession>,
+    binding: &StoredSession,
+) -> SessionUpdate {
+    let Some(disk) = disk else { return SessionUpdate::Skip };
+    if disk.engine_endpoint != binding.engine_endpoint || disk.oauth != binding.oauth {
+        return SessionUpdate::Skip;
+    }
+    if disk.tokens.refresh_token.as_deref() == used_refresh {
+        SessionUpdate::Write
+    } else {
+        SessionUpdate::Adopt(disk.tokens.clone())
+    }
+}
+
+/// Hold the cross-process session lock and hand the caller the freshest
+/// on-disk session, so every session-file mutation decides against state it
+/// just observed. The caller's result is returned with the lock released.
+pub fn with_session_lock<T>(session: &StoredSession, update: impl FnOnce(Option<StoredSession>) -> Result<T>) -> Result<T> {
+    let _guard = SessionLock::acquire(session)?;
+    let latest = load_session(&session.engine_endpoint).ok().flatten();
+    update(latest)
 }
 
 fn read_session_file(path: &Path) -> Result<StoredSession> {
@@ -541,5 +652,105 @@ mod tests {
             std::fs::set_permissions(&broken, std::fs::Permissions::from_mode(0o600)).expect("restrict broken session");
         }
         assert!(load_session_from(dir.path(), "wss://engine:6058").is_err());
+    }
+
+    #[test]
+    fn token_update_writes_only_while_the_disk_grant_is_ours() {
+        let mut session = test_session("wss://engine:6058");
+        session.tokens.refresh_token = Some("r1".into());
+
+        // The disk still holds the grant this refresh consumed: safe to write.
+        assert_eq!(decide_session_update(Some("r1"), Some(&session), &session), SessionUpdate::Write);
+        // No refresh grant on either side (access-token-only session): still safe.
+        let mut grantless = session.clone();
+        grantless.tokens.refresh_token = None;
+        assert_eq!(decide_session_update(None, Some(&grantless), &grantless), SessionUpdate::Write);
+
+        // A parallel CLI rotated the grant: adopt its token set, never clobber it.
+        let mut rotated = session.clone();
+        rotated.tokens.access_token = "parallel-access".into();
+        rotated.tokens.refresh_token = Some("r2".into());
+        assert_eq!(
+            decide_session_update(Some("r1"), Some(&rotated), &session),
+            SessionUpdate::Adopt(rotated.tokens.clone())
+        );
+
+        // The session file is gone (logon replaced or removed it): touch nothing.
+        assert_eq!(decide_session_update(Some("r1"), None, &session), SessionUpdate::Skip);
+
+        // Another identity owns the endpoint now: never clobber or adopt it.
+        let mut rebound = session.clone();
+        rebound.oauth = OAuthConfig::new("https://other-auth", "https://other-auth", "appmesh-cli");
+        assert_eq!(decide_session_update(Some("r1"), Some(&rebound), &session), SessionUpdate::Skip);
+    }
+
+    #[test]
+    fn session_lock_names_its_holder_and_releases() {
+        let dir = tempfile::tempdir().expect("create session directory");
+        let path = dir.path().join("engine.lock");
+        {
+            let _guard = SessionLock::acquire_at(&path).expect("acquire fresh lock");
+            let content = std::fs::read_to_string(&path).expect("read lock file");
+            assert_eq!(content.trim(), std::process::id().to_string());
+            // A live holder is never stale, however old the file may look.
+            assert!(!lock_holder_dead(&path));
+        }
+        assert!(!path.exists(), "drop must remove a lock we still own");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn session_lock_steals_only_dead_holders() {
+        let dir = tempfile::tempdir().expect("create session directory");
+        // A dead pid (an exited child) is recoverable immediately.
+        let mut child = std::process::Command::new("true").spawn().expect("spawn short-lived child");
+        let dead_pid = child.id();
+        child.wait().expect("reap child");
+        eventually(|| lock_holder_dead(&dead_lock_file(dir.path(), dead_pid)), "dead holder must be detected");
+
+        // A live holder blocks the steal.
+        let mut child = std::process::Command::new("sleep").arg("10").spawn().expect("spawn live child");
+        let live = dir.path().join("live.lock");
+        std::fs::write(&live, child.id().to_string()).expect("write live-holder lock");
+        assert!(!lock_holder_dead(&live));
+        let _ = child.kill();
+        let _ = child.wait();
+
+        // A lock with no readable pid falls back to the age window: fresh is not stale.
+        let empty = dir.path().join("empty.lock");
+        std::fs::write(&empty, "").expect("write empty lock");
+        assert!(!lock_holder_dead(&empty));
+
+        // acquire_at recovers the dead holder's lock without the stale wait.
+        let stolen = SessionLock::acquire_at(&dead_lock_file(dir.path(), dead_pid)).expect("steal dead holder's lock");
+        drop(stolen);
+    }
+
+    #[test]
+    fn session_lock_drop_keeps_a_stolen_lock() {
+        let dir = tempfile::tempdir().expect("create session directory");
+        let path = dir.path().join("engine.lock");
+        let guard = SessionLock::acquire_at(&path).expect("acquire fresh lock");
+        // A waiter stole the file while we held it: our drop must not remove
+        // theirs (pid 0 names no real process on any platform).
+        std::fs::write(&path, "0").expect("overwrite with another holder");
+        drop(guard);
+        assert_eq!(std::fs::read_to_string(&path).expect("stolen lock survives").trim(), "0");
+    }
+
+    fn dead_lock_file(dir: &Path, pid: u32) -> PathBuf {
+        let path = dir.join("dead.lock");
+        std::fs::write(&path, pid.to_string()).expect("write dead-holder lock");
+        path
+    }
+
+    fn eventually(condition: impl Fn() -> bool, what: &str) {
+        for _ in 0..100 {
+            if condition() {
+                return;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(20));
+        }
+        panic!("{}", what);
     }
 }

@@ -64,6 +64,25 @@ REST:
   # e.g. CsrfAllowedOrigins: ["https://ui.example.com", "https://admin.example.com"]
   CsrfAllowedOrigins: []
 
+  # Request replay protection: nonce dedup for authenticated requests.
+  # off     - no replay checks (default)
+  # audit   - log detected replays, do not reject
+  # enforce - reject replays with 409; authenticated requests must carry a fresh
+  #           nonce (X-Nonce, or the frame uuid on WSS/TCP)
+  RequestReplayProtection: "off"
+
+  # HMAC request signature: binds method + path + query + body hash + timestamp
+  # + nonce to an API key secret (POST /appmesh/security/apikeys). This is an
+  # integrity layer on top of bearer authentication, not a replacement.
+  # off     - no signature checks (default)
+  # audit   - verify when the signature headers are present, log failures
+  # enforce - authenticated requests must carry a valid signature (401 otherwise)
+  RequestSignature: "off"
+
+  # Replay window in seconds (10..3600): how long a nonce is remembered and how
+  # far an X-Timestamp may drift from the daemon clock.
+  RequestReplayWindowSeconds: 300
+
   # Allowed base directory for file upload/download operations.
   # The daemon's own installation tree is always refused, even inside this directory.
   # Empty (the default) means no jail: paths outside the daemon's own tree are

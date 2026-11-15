@@ -60,6 +60,16 @@ type Option struct {
 	// rejected instead of signed.
 	PSK []byte
 
+	// RequestSignatureKeyID and RequestSignatureSecret enable opt-in HMAC
+	// request signing on every transport (see Security.md, "Request replay
+	// protection and signatures"). Each request then carries X-Request-Key,
+	// X-Timestamp, X-Nonce and X-Signature headers. The key pair comes from
+	// POST /appmesh/security/apikeys, which returns the secret exactly once.
+	// The signature is an integrity layer on top of the bearer token, not a
+	// replacement for it. An empty key ID keeps signing off.
+	RequestSignatureKeyID  string
+	RequestSignatureSecret string
+
 	// HTTPTimeout is the overall timeout for http.Client requests; honored when non-zero.
 	HTTPTimeout time.Duration
 }
@@ -114,6 +124,9 @@ func newHTTPClientWithRequester(options Option, r Requester) (*AppMeshClient, er
 	}
 	// Applies to every transport: a TCP/WSS requester arrives here without the option.
 	req.setForwardTo(options.ForwardTo)
+	if options.RequestSignatureKeyID != "" {
+		req.setRequestSigner(newRequestSigner(options.RequestSignatureKeyID, options.RequestSignatureSecret))
+	}
 
 	c := &AppMeshClient{
 		req:              req,
@@ -152,6 +165,21 @@ func (r *AppMeshClient) SetToken(token string) {
 // without contacting Engine or the authentication service.
 func (r *AppMeshClient) ClearToken() {
 	r.req.setToken("")
+}
+
+// WithRequestSignature enables (or, with an empty keyID, disables) opt-in HMAC
+// request signing on every transport: each request then carries X-Request-Key,
+// X-Timestamp, X-Nonce and X-Signature headers over an HMAC-SHA256 of the
+// canonical request string (see Security.md, "Request replay protection and
+// signatures"). The key pair comes from POST /appmesh/security/apikeys; the
+// secret is kept in memory only and never logged. The signature is an
+// integrity layer on top of the bearer token, not a replacement for it.
+func (r *AppMeshClient) WithRequestSignature(keyID, secret string) {
+	if keyID == "" {
+		r.req.setRequestSigner(nil)
+		return
+	}
+	r.req.setRequestSigner(newRequestSigner(keyID, secret))
 }
 
 // GetToken returns the current in-memory access token.

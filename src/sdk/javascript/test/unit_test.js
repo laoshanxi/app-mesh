@@ -15,6 +15,7 @@
  */
 
 import http from 'http'
+import nodeCrypto from 'node:crypto'
 import msgpack from 'msgpack-lite'
 import fs, { writeFileSync, unlinkSync } from 'fs'
 import { tmpdir } from 'os'
@@ -23,6 +24,10 @@ import {
   AppMeshClient, AppMeshError, StaticAccessTokenProvider, RefreshTokenProvider, _resolveUserName, _resolveGroupName
 } from '../src/appmesh.js'
 import { AppMeshClientTCP } from '../src/appmesh_tcp.js'
+import {
+  RequestSigner, canonicalString, canonicalQuery, canonicalQueryFromEncoded, bodySha256Hex,
+  canonicalSigningPath, isEmptyBodyExemptPath, EMPTY_BODY_SHA256
+} from '../src/request_signature.js'
 
 let passed = 0
 let failed = 0
@@ -62,6 +67,11 @@ async function expectAppMeshError (promise, { errorCode, statusCode } = {}) {
 // what the SDK put on the wire.
 let uploadHeaders = null
 
+// Full wire snapshots (method, url, headers, body) of requests to /signed*,
+// and of the /appmesh/refreshable attempts, for the request-signature tests.
+const signedRequests = []
+const signedRefreshRequests = []
+
 // Authorization headers the mock server received on the refresh routes, in order,
 // so a test can assert the 401 retry sequence.
 let authRequests = []
@@ -82,13 +92,19 @@ function startMockServer () {
       })
     } else if (req.url === '/appmesh/refreshable') {
       authRequests.push(req.headers.authorization || null)
-      if (req.headers.authorization === 'Bearer new-token') {
-        res.writeHead(200, { 'Content-Type': 'application/json' })
-        res.end('{"ok": true}')
-      } else {
-        res.writeHead(401, { 'Content-Type': 'application/json' })
-        res.end('{"message": "Unauthorized"}')
-      }
+      // Full header snapshots for the request-signature retry assertions.
+      let body = ''
+      req.on('data', chunk => { body += chunk })
+      req.on('end', () => {
+        signedRefreshRequests.push({ method: req.method, url: req.url, headers: req.headers, body })
+        if (req.headers.authorization === 'Bearer new-token') {
+          res.writeHead(200, { 'Content-Type': 'application/json' })
+          res.end('{"ok": true}')
+        } else {
+          res.writeHead(401, { 'Content-Type': 'application/json' })
+          res.end('{"message": "Unauthorized"}')
+        }
+      })
     } else if (req.url === '/appmesh/always-401') {
       authRequests.push(req.headers.authorization || null)
       res.writeHead(401, { 'Content-Type': 'application/json' })
@@ -119,6 +135,22 @@ function startMockServer () {
     } else if (req.url === '/appmesh/app/denied/health') {
       res.writeHead(401, { 'Content-Type': 'application/json' })
       res.end('{"message": "Unauthorized"}')
+    } else if (req.url.startsWith('/signed') || req.url.startsWith('/pfx/signed') ||
+               req.url === '/appmesh/file/download/ws') {
+      // Capture the exact wire form (method, path, query, headers, body) so the
+      // request-signature tests can verify like the daemon does.
+      let body = ''
+      req.on('data', chunk => { body += chunk })
+      req.on('end', () => {
+        signedRequests.push({
+          method: req.method,
+          url: req.url,
+          headers: req.headers,
+          body: Buffer.from(body, 'utf8')
+        })
+        res.writeHead(200, { 'Content-Type': 'application/json' })
+        res.end('{"ok": true}')
+      })
     } else {
       res.writeHead(404, { 'Content-Type': 'application/json' })
       res.end('{"message": "Not Found"}')
@@ -695,6 +727,290 @@ await assert('TCP download resolves names before chown and skips unknown ones', 
   } finally {
     fs.chownSync = originalChownSync
     try { unlinkSync(localFile) } catch (_) {}
+  }
+})
+
+// ---- Request signature (opt-in HMAC, REST.RequestSignature hardening) ----
+//
+// The canonical string must mirror src/daemon/security/RequestSignature.{h,cpp}
+// byte-for-byte. The fixed vectors below were produced independently with
+// `openssl dgst -sha256 -hmac`, so a drift in the canonical form (separator,
+// order, body hash, hex case) fails the test instead of failing on the daemon.
+
+const SIG_KEY_ID = 'ak-3f9c2a81b0d4'
+const SIG_SECRET = 's3cret-key'
+const VECTOR_GET_QUERY = '53f587f8c38267cbd15f7b5c846f21a1e00e8baedb8b901b3d1f0b802cc06cfe'
+const VECTOR_POST_FILE = 'fa047e47d2b039c652e7029a41530cc8e3a0e81fe2fc71a7fcd145ea96f6ef80'
+const hmacHex = (canonical) => nodeCrypto.createHmac('sha256', SIG_SECRET).update(canonical, 'utf8').digest('hex')
+
+// Independent daemon-side verification: rebuild the canonical string from what
+// the daemon would see (raw path, %-only decoded query, raw body bytes) using
+// node:crypto directly, not the SDK signer.
+function verifyCaptured (captured) {
+  const url = new URL(captured.url, 'http://localhost')
+  const canonical = canonicalString(
+    captured.method,
+    url.pathname,
+    canonicalQueryFromEncoded(url.search ? url.search.slice(1) : ''),
+    nodeCrypto.createHash('sha256').update(captured.body).digest('hex'),
+    captured.headers['x-timestamp'],
+    captured.headers['x-nonce']
+  )
+  return { canonical, signature: captured.headers['x-signature'], expected: hmacHex(canonical) }
+}
+
+await assert('signer known-answer vectors match the daemon canonical form', async () => {
+  const signer = new RequestSigner(SIG_KEY_ID, SIG_SECRET)
+  const canonical = canonicalString('GET', '/appmesh/app/demo', 'b=2&a=1', EMPTY_BODY_SHA256,
+    '1700000000', 'n-12345')
+  if (canonical !== `GET\n/appmesh/app/demo\nb=2&a=1\n${EMPTY_BODY_SHA256}\n1700000000\nn-12345`) {
+    throw new Error(`unexpected canonical form: ${JSON.stringify(canonical)}`)
+  }
+  if (await signer.sign(canonical) !== VECTOR_GET_QUERY) {
+    throw new Error(`GET+query vector mismatch: ${await signer.sign(canonical)}`)
+  }
+  const fileCanonical = canonicalString('POST', '/appmesh/file/upload', '', EMPTY_BODY_SHA256,
+    '1700000001', 'abc')
+  if (await signer.sign(fileCanonical) !== VECTOR_POST_FILE) {
+    throw new Error(`POST file vector mismatch: ${await signer.sign(fileCanonical)}`)
+  }
+  if (signer.toString().includes(SIG_SECRET)) throw new Error('toString must redact the secret')
+})
+
+await assert('body hash: empty body, FIPS vector, and streamed-file exemption', async () => {
+  if (await bodySha256Hex('/x', null) !== EMPTY_BODY_SHA256) throw new Error('null body must hash the empty string')
+  if (await bodySha256Hex('/x', Buffer.alloc(0)) !== EMPTY_BODY_SHA256) throw new Error('empty body must hash the empty string')
+  if (await bodySha256Hex('/x', Buffer.from('abc')) !==
+      'ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad') {
+    throw new Error('sha256("abc") vector mismatch')
+  }
+  // Streamed file endpoints sign the empty-string hash even with a body present.
+  if (await bodySha256Hex('/appmesh/file/upload', Buffer.from('streamed bytes')) !== EMPTY_BODY_SHA256) {
+    throw new Error('file endpoint must sign the empty-string hash')
+  }
+  // The exemption is the exact daemon route set: subpaths hash their real body.
+  if (!isEmptyBodyExemptPath('/appmesh/file/download')) throw new Error('the route itself is exempt')
+  if (!isEmptyBodyExemptPath('/appmesh/file/download/ws')) throw new Error('the /ws channel is exempt')
+  if (isEmptyBodyExemptPath('/appmesh/file/download/other')) throw new Error('subpaths are NOT exempt')
+})
+
+await assert('canonicalQuery sorts decoded pairs and skips null values', () => {
+  if (canonicalQuery({ b: '2', a: '1', c: '3' }) !== 'a=1&b=2&c=3') throw new Error('pairs must sort by key')
+  if (canonicalQuery({ k: 'y', j: 'z' }) !== 'j=z&k=y') throw new Error('sort by key then value')
+  if (canonicalQuery({}) !== '') throw new Error('empty query must be the empty string')
+  if (canonicalQuery(null) !== '') throw new Error('null query must be the empty string')
+  if (canonicalQuery({ q: 'a b', skip: null }) !== 'q=a b') throw new Error('null values are skipped, values stay decoded')
+  if (canonicalQuery({ k: 'é' }) !== 'k=é') throw new Error('decoded non-ASCII stays decoded')
+})
+
+await assert('canonicalQueryFromEncoded mirrors the daemon parser', () => {
+  // %20 decodes to a space, '+' stays literal, %2F decodes to '/'; a duplicate
+  // key keeps only its first occurrence (daemon std::map::emplace).
+  if (canonicalQueryFromEncoded('b=2&a=%20&a=+&x=%2F') !== 'a= &b=2&x=/') {
+    throw new Error(`got ${canonicalQueryFromEncoded('b=2&a=%20&a=+&x=%2F')}`)
+  }
+  if (canonicalQueryFromEncoded('k=%zz') !== 'k=%zz') throw new Error('malformed escape keeps the raw component')
+  if (canonicalQueryFromEncoded('a=1&a=2') !== 'a=1') throw new Error('duplicate key keeps the first value')
+  if (canonicalQueryFromEncoded('flag&a=1') !== 'a=1&flag=') throw new Error('a pair without = has an empty value')
+  if (canonicalQueryFromEncoded('') !== '' || canonicalQueryFromEncoded(null) !== '') throw new Error('empty input')
+  if (canonicalQueryFromEncoded('k=%C3%A9') !== 'k=é') throw new Error('UTF-8 percent escapes decode')
+})
+
+await assert('canonical query order is UTF-8 bytes, not UTF-16 code units', () => {
+  // An emoji (U+1F600, UTF-16 surrogate pair) sorts BEFORE U+FFFD by UTF-16
+  // code units but AFTER it by UTF-8 bytes; the daemon orders by UTF-8 bytes.
+  const expected = '\uFFFD=2&\uD83D\uDE00=1'
+  const encoded = canonicalQueryFromEncoded('%F0%9F%98%80=1&%EF%BF%BD=2')
+  if (encoded !== expected) throw new Error(`encoded form got ${encoded}`)
+  const mapped = canonicalQuery({ '\uD83D\uDE00': '1', '\uFFFD': '2' })
+  if (mapped !== expected) throw new Error(`map form got ${mapped}`)
+})
+
+await assert('HTTP transport attaches a verifiable signature (query, body, spaces)', async () => {
+  const client = new AppMeshClient(baseURL)
+  client.enableRequestSignature(SIG_KEY_ID, SIG_SECRET)
+  if (!client.isRequestSignatureEnabled()) throw new Error('signer must report enabled')
+
+  await client.request('post', '/signed/echo', 'hello body', { params: { b: '2', a: '1' } })
+  let captured = signedRequests[signedRequests.length - 1]
+  if (captured.headers['x-request-key'] !== SIG_KEY_ID) throw new Error('X-Request-Key missing')
+  if (!/^\d+$/.test(captured.headers['x-timestamp'] || '')) throw new Error('X-Timestamp must be unix seconds')
+  if (!captured.headers['x-nonce']) throw new Error('X-Nonce missing')
+  let verified = verifyCaptured(captured)
+  if (verified.signature !== verified.expected) {
+    throw new Error(`signature mismatch:\n  got      ${verified.signature}\n  expected ${verified.expected}`)
+  }
+
+  // A space in a query value must reach the daemon decodable (the signed client
+  // forces pure percent encoding: %20, never '+'-for-space).
+  await client.request('get', '/signed/spaces', null, { params: { q: 'a b', a: '1' } })
+  captured = signedRequests[signedRequests.length - 1]
+  if (!captured.url.includes('q=a%20b')) throw new Error(`space must be %20 on the wire: ${captured.url}`)
+  verified = verifyCaptured(captured)
+  if (verified.signature !== verified.expected) throw new Error('space-query signature mismatch')
+
+  // Object bodies sign the JSON bytes axios actually writes.
+  await client.request('put', '/signed/obj', { command: 'true' })
+  captured = signedRequests[signedRequests.length - 1]
+  if (captured.body.toString('utf8') !== '{"command":"true"}') {
+    throw new Error(`unexpected wire body: ${captured.body.toString('utf8')}`)
+  }
+  verified = verifyCaptured(captured)
+  if (verified.signature !== verified.expected) throw new Error('JSON body signature mismatch')
+
+  // Opt-out removes the headers entirely.
+  client.disableRequestSignature()
+  if (client.isRequestSignatureEnabled()) throw new Error('signer must report disabled')
+  await client.request('get', '/signed/off')
+  captured = signedRequests[signedRequests.length - 1]
+  if (captured.headers['x-signature'] !== undefined || captured.headers['x-request-key'] !== undefined) {
+    throw new Error('signature must be opt-in')
+  }
+})
+
+await assert('canonicalSigningPath strips the /ws data-channel suffix', () => {
+  if (canonicalSigningPath('/appmesh/file/download/ws') !== '/appmesh/file/download') {
+    throw new Error('download/ws must sign the route without /ws')
+  }
+  if (canonicalSigningPath('/appmesh/file/upload/ws') !== '/appmesh/file/upload') {
+    throw new Error('upload/ws must sign the route without /ws')
+  }
+  if (canonicalSigningPath('/appmesh/file/delete') !== '/appmesh/file/delete') throw new Error('delete route passes through')
+  if (canonicalSigningPath('/appmesh/applications') !== '/appmesh/applications') throw new Error('other paths pass through')
+})
+
+await assert('HTTP signature binds the wire path (space, baseURL prefix, /ws strip)', async () => {
+  const client = new AppMeshClient(baseURL)
+  client.enableRequestSignature(SIG_KEY_ID, SIG_SECRET)
+
+  // A path with a space: axios percent-encodes it on the wire, so the signature
+  // must be computed over the ENCODED wire path, not the caller's raw path.
+  await client.request('get', '/signed/sp ace')
+  let captured = signedRequests[signedRequests.length - 1]
+  if (!captured.url.startsWith('/signed/sp%20ace')) {
+    throw new Error(`wire path must be %20-encoded: ${captured.url}`)
+  }
+  let verified = verifyCaptured(captured)
+  if (verified.signature !== verified.expected) {
+    throw new Error('path-with-space signature mismatch (the raw path was signed, not the wire path)')
+  }
+
+  // A baseURL with a path prefix: the prefix is part of the wire path and must
+  // be signed too.
+  const prefixed = new AppMeshClient(`${baseURL}/pfx`)
+  prefixed.enableRequestSignature(SIG_KEY_ID, SIG_SECRET)
+  await prefixed.request('get', '/signed/prefixed')
+  captured = signedRequests[signedRequests.length - 1]
+  if (captured.url !== '/pfx/signed/prefixed') {
+    throw new Error(`the baseURL path prefix must reach the wire: ${captured.url}`)
+  }
+  verified = verifyCaptured(captured)
+  if (verified.signature !== verified.expected) {
+    throw new Error('baseURL-prefix signature mismatch (the prefix was not signed)')
+  }
+
+  // The /ws data-channel route signs the route WITHOUT the trailing "/ws"
+  // (daemon canonicalFileRoute) with the empty-string body hash.
+  await client.request('get', '/appmesh/file/download/ws')
+  captured = signedRequests[signedRequests.length - 1]
+  if (captured.url !== '/appmesh/file/download/ws') throw new Error(`unexpected capture url: ${captured.url}`)
+  const wsCanonical = canonicalString('GET', '/appmesh/file/download', '', EMPTY_BODY_SHA256,
+    captured.headers['x-timestamp'], captured.headers['x-nonce'])
+  if (captured.headers['x-signature'] !== hmacHex(wsCanonical)) {
+    throw new Error('/ws route must sign the stripped path with the empty-body hash')
+  }
+})
+
+await assert('HTTP 401 refresh retry re-signs with a fresh nonce', async () => {
+  authRequests.length = 0
+  signedRefreshRequests.length = 0
+  const client = new AppMeshClient(baseURL, null, makeRefreshableProvider([]))
+  client.enableRequestSignature(SIG_KEY_ID, SIG_SECRET)
+  const response = await client.request('post', '/appmesh/refreshable', { ok: true })
+  if (response.status !== 200) throw new Error(`expected retried request to succeed, got ${response.status}`)
+  if (signedRefreshRequests.length !== 2) throw new Error(`expected 2 wire requests, got ${signedRefreshRequests.length}`)
+  const verifications = signedRefreshRequests.map(verifyCaptured)
+  if (verifications.some(v => v.signature !== v.expected)) throw new Error('both attempts must verify')
+  const [first, second] = signedRefreshRequests
+  if (first.headers['x-nonce'] === second.headers['x-nonce']) {
+    throw new Error('the retry must carry a fresh nonce (a replayed nonce is rejected by replay protection)')
+  }
+})
+
+await assert('streamed file upload signs the empty-body hash (documented exemption)', async () => {
+  const localFile = join(tmpdir(), `appmesh-sign-upload-${process.pid}.txt`)
+  writeFileSync(localFile, 'file content bytes')
+  try {
+    const client = new AppMeshClient(baseURL)
+    client.enableRequestSignature(SIG_KEY_ID, SIG_SECRET)
+    await client.uploadFile(localFile, '/remote/file.txt')
+    if (!uploadHeaders) throw new Error('upload request was not captured')
+    // The file bytes go on the wire, but the signature binds the empty hash.
+    const canonical = canonicalString('POST', '/appmesh/file/upload', '', EMPTY_BODY_SHA256,
+      uploadHeaders['x-timestamp'], uploadHeaders['x-nonce'])
+    if (uploadHeaders['x-signature'] !== hmacHex(canonical)) {
+      throw new Error('upload signature must verify with the empty-string body hash')
+    }
+  } finally {
+    unlinkSync(localFile)
+  }
+})
+
+await assert('TCP frame carries the four headers and verifies', async () => {
+  const { client, sent } = makeScriptedTcpClient()
+  client.enableRequestSignature(SIG_KEY_ID, SIG_SECRET)
+  await client._request('put', '/appmesh/app/t', { command: 'true' }, { params: { b: '2', a: '1' } })
+  const frame = msgpack.decode(sent[0])
+  if (frame.headers['X-Request-Key'] !== SIG_KEY_ID) throw new Error('X-Request-Key missing from frame headers')
+  if (!/^\d+$/.test(frame.headers['X-Timestamp'] || '')) throw new Error('X-Timestamp must be unix seconds')
+  if (!frame.headers['X-Nonce']) throw new Error('X-Nonce missing')
+  const canonical = canonicalString(
+    frame.http_method,
+    frame.request_uri,
+    canonicalQuery(frame.query),
+    nodeCrypto.createHash('sha256').update(frame.body).digest('hex'),
+    frame.headers['X-Timestamp'],
+    frame.headers['X-Nonce']
+  )
+  if (frame.headers['X-Signature'] !== hmacHex(canonical)) {
+    throw new Error(`TCP frame signature mismatch for canonical ${JSON.stringify(canonical)}`)
+  }
+})
+
+await assert('TCP 401 retry re-signs with a fresh nonce', async () => {
+  const { client, sent } = makeUnauthorizedThenOkTcpClient()
+  client.setTokenProvider(makeRefreshableProvider([]))
+  client.enableRequestSignature(SIG_KEY_ID, SIG_SECRET)
+  const response = await client._request('get', '/appmesh/app/t')
+  if (response.status !== 200) throw new Error(`expected retried request to succeed, got ${response.status}`)
+  if (sent.length !== 2) throw new Error(`expected original + one retry, got ${sent.length}`)
+  const frames = sent.map(data => msgpack.decode(data))
+  for (const frame of frames) {
+    const canonical = canonicalString(
+      frame.http_method,
+      frame.request_uri,
+      canonicalQuery(frame.query),
+      nodeCrypto.createHash('sha256').update(frame.body).digest('hex'),
+      frame.headers['X-Timestamp'],
+      frame.headers['X-Nonce']
+    )
+    if (frame.headers['X-Signature'] !== hmacHex(canonical)) throw new Error('each attempt must verify')
+  }
+  if (frames[0].headers['X-Nonce'] === frames[1].headers['X-Nonce']) {
+    throw new Error('the retry must carry a fresh nonce')
+  }
+})
+
+await assert('enableRequestSignature validates keyId and secret', () => {
+  const client = new AppMeshClient(baseURL)
+  for (const bad of [[null, 's'], ['', 's'], ['k', null], ['k', '']]) {
+    let threw = false
+    try {
+      client.enableRequestSignature(bad[0], bad[1])
+    } catch (error) {
+      threw = error instanceof TypeError
+    }
+    if (!threw) throw new Error(`expected TypeError for ${JSON.stringify(bad)}`)
   }
 })
 

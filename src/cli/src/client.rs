@@ -1,6 +1,6 @@
 use anyhow::{Context, Result};
-use appmesh::{AppMeshClientWSS, ClientBuilderWSS, OAuthClient, TokenProvider};
-use std::sync::Arc;
+use appmesh::{AppMeshClientWSS, ClientBuilderWSS, OAuthClient, RequestSigner, TokenProvider, TokenSet};
+use std::sync::{Arc, Mutex, MutexGuard};
 
 use crate::app::Cli;
 use crate::util::config;
@@ -20,6 +20,41 @@ pub fn get_current_endpoint(cli: &Cli) -> Result<String> {
     Ok(canonical_endpoint(&host, port))
 }
 
+/// Attach the HMAC request signer when an API key pair is configured via
+/// --api-key/--api-secret or APPMESH_API_KEY/APPMESH_API_SECRET. The secret is
+/// used in memory only and never persisted or logged; `--api-secret -` reads
+/// one line from stdin so the value never crosses argv.
+fn apply_request_signer(client: &Arc<AppMeshClientWSS>, cli: &Cli) {
+    let flag_or_env = |flag: &Option<String>, env: &str| {
+        flag.clone()
+            .or_else(|| std::env::var(env).ok())
+            .map(|value| value.trim().to_string())
+            .filter(|value| !value.is_empty())
+    };
+    let secret = match flag_or_env(&cli.api_secret, "APPMESH_API_SECRET") {
+        // argv is visible to every process through `ps`; `-` keeps the secret out of it.
+        Some(secret) if secret == "-" => read_secret_from_stdin(),
+        secret => secret,
+    };
+    match (flag_or_env(&cli.api_key, "APPMESH_API_KEY"), secret) {
+        (Some(key_id), Some(secret)) => client.set_request_signer(Some(RequestSigner::new(key_id, secret))),
+        (None, None) => {}
+        _ => eprintln!(
+            "Warning: request signing needs both an API key id and secret (--api-key/--api-secret or \
+             APPMESH_API_KEY/APPMESH_API_SECRET); requests are sent unsigned."
+        ),
+    }
+}
+
+/// One trimmed line from stdin; `None` when nothing readable arrived.
+fn read_secret_from_stdin() -> Option<String> {
+    let mut secret = String::new();
+    match std::io::stdin().read_line(&mut secret) {
+        Ok(0) | Err(_) => None,
+        Ok(_) => Some(secret.trim_end_matches(['\r', '\n']).to_string()).filter(|value| !value.is_empty()),
+    }
+}
+
 /// Build an Engine client without performing authentication. This is used for the
 /// public `/appmesh/auth/config` discovery call during login.
 pub async fn build_client(cli: &Cli) -> Result<Arc<AppMeshClientWSS>> {
@@ -30,6 +65,8 @@ pub async fn build_client(cli: &Cli) -> Result<Arc<AppMeshClientWSS>> {
     if let Some(ref fwd) = cli.forward_to {
         client.client().set_forward_to(Some(fwd.clone()));
     }
+
+    apply_request_signer(&client, cli);
 
     // An explicitly passed endpoint becomes the remembered default only after a
     // successful logon; a one-off or mistyped -H must not hijack later commands.
@@ -94,7 +131,9 @@ pub async fn build_client_with_auth(cli: &Cli) -> Result<Arc<AppMeshClientWSS>> 
         || advertised_client != Some(session.oauth.client_id.as_str())
         || advertised_audience != session.oauth.audience.as_deref()
     {
-        config::delete_session(&session)?;
+        // Hold the lock so a parallel refresh cannot re-write the file between
+        // this mismatch verdict and the removal.
+        config::with_session_lock(&session, |_| config::delete_session(&session))?;
         anyhow::bail!(
             "The stored sign-in session does not match the authentication configuration for {}. The incompatible \
 	 session was removed. Run 'appm logon' again.",
@@ -119,38 +158,102 @@ pub async fn build_client_with_auth(cli: &Cli) -> Result<Arc<AppMeshClientWSS>> 
     let oauth =
         Arc::new(OAuthClient::discover(session.oauth.clone()).await.context("Authentication service discovery failed")?);
     // Serialize the initial token preparation across processes and adopt whatever
-    // a parallel CLI already rotated into the session file, so two `appm` starts
-    // never race their refresh grants against each other.
-    let _session_guard = config::SessionLock::acquire(&session)?;
-    let latest_tokens = config::load_session(&endpoint)
-        .ok()
-        .flatten()
-        .map(|latest| latest.tokens)
-        .unwrap_or_else(|| session.tokens.clone());
-    oauth.restore(latest_tokens)?;
-    let engine_endpoint = session.engine_endpoint.clone();
-    let oauth_config = session.oauth.clone();
-    oauth.set_token_update_callback(move |tokens| {
-        config::save_session(&config::StoredSession::new(engine_endpoint.clone(), oauth_config.clone(), tokens.clone()))
-            .map_err(|error| appmesh::AppMeshError::IoError(error.to_string()))
+    // a parallel CLI already rotated into the session file. The guard covers only
+    // the read: `install_on` below may refresh, and that refresh's persistence
+    // callback re-acquires the same lock.
+    let latest_tokens = config::with_session_lock(&session, |latest| {
+        Ok(latest.map(|latest| latest.tokens).unwrap_or_else(|| session.tokens.clone()))
+    })?;
+    oauth.restore(latest_tokens.clone())?;
+    // Mirror of the token set the SDK holds, advanced by every persisted or
+    // adopted update below; its refresh token is the grant the next refresh
+    // consumes and the yardstick for every lock+recheck decision.
+    let known_tokens = Arc::new(Mutex::new(latest_tokens));
+    let binding = session.clone();
+    let oauth_weak = Arc::downgrade(&oauth);
+    let known = Arc::clone(&known_tokens);
+    oauth.set_token_update_callback(move |new_tokens| {
+        let used_refresh = lock_known(&known).refresh_token.clone();
+        config::with_session_lock(&binding, |latest| {
+            match config::decide_session_update(used_refresh.as_deref(), latest.as_ref(), &binding) {
+                config::SessionUpdate::Write => {
+                    config::save_session(&config::StoredSession::new(
+                        binding.engine_endpoint.clone(),
+                        binding.oauth.clone(),
+                        new_tokens.clone(),
+                    ))?;
+                    *lock_known(&known) = new_tokens.clone();
+                }
+                config::SessionUpdate::Adopt(tokens) => {
+                    // A parallel CLI won the rotation; `restore()` swaps the SDK's
+                    // in-memory set for the on-disk one. It touches only the SDK's
+                    // short-lived token mutex, never the refresh mutex this
+                    // callback already runs under, so it cannot deadlock or
+                    // re-enter the refresh in progress.
+                    if let Some(oauth) = oauth_weak.upgrade() {
+                        oauth.restore(tokens.clone())?;
+                    }
+                    *lock_known(&known) = tokens;
+                }
+                config::SessionUpdate::Skip => {}
+            }
+            Ok(())
+        })
+        .map_err(|error| appmesh::AppMeshError::IoError(error.to_string()))
     });
     if let Err(error) = oauth.install_on(client.client()).await {
         // The provider drops its grant on invalid_grant — the refresh token was
         // revoked, expired, or claimed by another login with the same account (for
         // example the web UI). That session can never renew: remove it and say so.
         if !oauth.can_refresh() {
-            config::delete_session(&session)?;
-            return Err(error).context(format!(
-                "The sign-in session for {} was invalidated and removed; another login with the same account \
-             may have replaced it. Run 'appm logon' again.",
-                endpoint
-            ));
+            let used_refresh = lock_known(&known_tokens).refresh_token.clone();
+            // Decide against the latest on-disk session under the lock: only a
+            // file that still holds the grant that just died is ours to remove.
+            enum ColdStart {
+                Removed,
+                Adopted(appmesh::TokenSet),
+                Foreign,
+            }
+            let outcome = config::with_session_lock(&session, |latest| {
+                Ok(match config::decide_session_update(used_refresh.as_deref(), latest.as_ref(), &session) {
+                    config::SessionUpdate::Write => {
+                        config::delete_session(&session)?;
+                        ColdStart::Removed
+                    }
+                    // A parallel CLI won the rotation: its on-disk set is live, so
+                    // adopt it instead of reporting a dead session.
+                    config::SessionUpdate::Adopt(tokens) => ColdStart::Adopted(tokens),
+                    config::SessionUpdate::Skip => ColdStart::Foreign,
+                })
+            })?;
+            match outcome {
+                ColdStart::Removed | ColdStart::Foreign => {
+                    return Err(error).context(format!(
+                        "The sign-in session for {} was invalidated{}; another login with the same account \
+                     may have replaced it. Run 'appm logon' again.",
+                        endpoint,
+                        if matches!(outcome, ColdStart::Removed) { " and removed" } else { "" }
+                    ));
+                }
+                ColdStart::Adopted(tokens) => {
+                    oauth.restore(tokens.clone())?;
+                    *lock_known(&known_tokens) = tokens;
+                    // One retry with the adopted grant; a further failure is real.
+                    oauth.install_on(client.client()).await.context("Access token preparation failed")?;
+                }
+            }
+        } else {
+            return Err(error).context("Access token preparation failed");
         }
-        return Err(error).context("Access token preparation failed");
     }
     client.client().set_token_provider(Some(oauth));
 
     Ok(client)
+}
+
+/// Lock the mirrored token set without propagating a poisoned lock.
+fn lock_known(known: &Mutex<TokenSet>) -> MutexGuard<'_, TokenSet> {
+    known.lock().unwrap_or_else(|error| error.into_inner())
 }
 
 fn build_wss(host: String, port: u16, tls: &config::DaemonTlsConfig) -> Result<Arc<AppMeshClientWSS>> {

@@ -32,6 +32,9 @@ endpoints, requests use an OAuth access token in the
 | POST | `/appmesh/role/{role}` | Create or replace a role |
 | DELETE | `/appmesh/role/{role}` | Delete an unused role |
 | GET | `/appmesh/permissions` | List available permission identifiers |
+| POST | `/appmesh/security/apikeys` | Issue a request-signing API key for the caller; an administrator may pass `{"principal": "<id>"}` in the body to issue for another principal. The response contains the secret exactly once |
+| GET | `/appmesh/security/apikeys` | List the caller's request-signing API keys; `?all=1` lists all keys and needs the `principal-list` permission. Secrets are never returned |
+| DELETE | `/appmesh/security/apikey/{key_id}` | Revoke a request-signing API key. The key owner or the `principal-set` permission may revoke |
 
 ## Applications
 

@@ -24,6 +24,10 @@ public:
 	void deletePrincipal(const std::string &principalId) override;
 	void updateRole(const std::string &role, const Json::Value &permissions) override;
 	void deleteRole(const std::string &role) override;
+	Json::Value issueApiKey(const std::string &principalId) override;
+	Json::Value apiKeysJson(const std::string &principalId, bool all) const override;
+	bool deleteApiKey(const std::string &keyId, const std::string &requestingPrincipalId, bool manageAll) override;
+	bool apiKeySecret(const std::string &keyId, std::string &principalId, std::string &secret) const override;
 	Json::Value replicationPolicySnapshot() const override;
 	bool applyReplicatedPolicy(const Json::Value &policy) override;
 

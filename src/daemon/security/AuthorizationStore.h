@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstdint>
 #include <map>
 #include <memory>
 #include <mutex>
@@ -67,6 +68,16 @@ public:
 	void deleteRole(const std::string &role);
 	void save() const;
 
+	/// Request-signing API keys. The secret is returned by issueApiKey exactly
+	/// once and is stored in the authorization file (0600, like the bootstrap
+	/// shared token) so a replicated snapshot stays verifiable on followers.
+	Json::Value issueApiKey(const std::string &principalId);
+	Json::Value apiKeysJson(const std::string &principalId, bool all) const;
+	/// Owner or a manage-all caller (PERMISSION_KEY_principal_update) may revoke.
+	/// Returns false when the key does not exist.
+	bool deleteApiKey(const std::string &keyId, const std::string &requestingPrincipalId, bool manageAll);
+	bool apiKeySecret(const std::string &keyId, std::string &principalId, std::string &secret) const;
+
 	/// Serialize the policy in the on-disk shape ({"Authorization": {...}}); this
 	/// is the payload the cluster replication endpoint serves to followers.
 	Json::Value replicationSnapshotJson() const;
@@ -80,6 +91,13 @@ public:
 private:
 	/// A parsed policy snapshot. parsePolicy() throws on invalid input without
 	/// touching member state, so callers can validate before committing.
+	struct ApiKey
+	{
+		std::string keyId;
+		std::string principalId;
+		std::string secret;
+		std::int64_t createdAt = 0;
+	};
 	struct PolicyData
 	{
 		std::string provisioningMode;
@@ -88,6 +106,7 @@ private:
 		bool firstAdminEnrolled = false;
 		std::map<std::string, std::set<std::string>> roles;
 		std::map<std::string, std::shared_ptr<AuthorizationPrincipal>> principals;
+		std::map<std::string, ApiKey> apiKeys;
 	};
 	static PolicyData parsePolicy(const Json::Value &root);
 	static Json::Value policyToJson(const PolicyData &data);
@@ -113,6 +132,7 @@ private:
 	mutable std::recursive_mutex m_mutex;
 	std::map<std::string, std::shared_ptr<AuthorizationPrincipal>> m_principals;
 	std::map<std::string, std::set<std::string>> m_roles;
+	std::map<std::string, ApiKey> m_apiKeys;
 	std::string m_provisioningMode;
 	std::string m_firstAdminRole;
 	std::string m_firstAdminSubject;

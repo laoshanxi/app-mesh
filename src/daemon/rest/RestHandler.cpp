@@ -252,6 +252,8 @@ constexpr auto REST_PATH_PRINCIPAL_PERMISSIONS = "/appmesh/principal/self/permis
 constexpr auto REST_PATH_SEC_PERM_VIEW_ALL = "/appmesh/permissions";
 constexpr auto REST_PATH_PRINCIPALS = "/appmesh/principals";
 constexpr auto REST_PATH_PRINCIPAL = R"(/appmesh/principal/([^/\*]+))";
+constexpr auto REST_PATH_SEC_API_KEYS = "/appmesh/security/apikeys";
+constexpr auto REST_PATH_SEC_API_KEY = R"(/appmesh/security/apikey/([^/\*]+))";
 // Cluster authorization replication: the owner serves its policy snapshot to
 // followers authenticated by the shared replication token (no principal).
 constexpr auto REST_PATH_AUTH_REPLICATION_POLICY = "/appmesh/auth/replication/policy";
@@ -371,6 +373,12 @@ RestHandler::RestHandler() : m_metrics(std::make_shared<PrometheusRest>())
 				   std::bind(&RestHandler::apiRoleDelete, this, std::placeholders::_1));
 	bindRestMethod(web::http::methods::GET, REST_PATH_PRINCIPAL_PERMISSIONS,
 				   std::bind(&RestHandler::apiPrincipalPermissionsView, this, std::placeholders::_1));
+	bindRestMethod(web::http::methods::GET, REST_PATH_SEC_API_KEYS,
+				   std::bind(&RestHandler::apiApiKeysView, this, std::placeholders::_1));
+	bindRestMethod(web::http::methods::POST, REST_PATH_SEC_API_KEYS,
+				   std::bind(&RestHandler::apiApiKeyIssue, this, std::placeholders::_1));
+	bindRestMethod(web::http::methods::DEL, REST_PATH_SEC_API_KEY,
+				   std::bind(&RestHandler::apiApiKeyDelete, this, std::placeholders::_1));
 	bindRestMethod(web::http::methods::GET, REST_PATH_SEC_PERM_VIEW_ALL,
 				   std::bind(&RestHandler::apiPermissionsView, this, std::placeholders::_1));
 
@@ -1350,7 +1358,7 @@ void RestHandler::apiWorkflowRegistry(const std::shared_ptr<HttpRequest> &messag
 
 void RestHandler::apiEnrollFirstAdmin(const std::shared_ptr<HttpRequest> &message)
 {
-	// The Agent proxies remote clients as loopback peers, so its requests carry
+	// The Agent proxies remote clients as loopback peers, so their requests carry
 	// x-forwarded-host; enrollment must not be reachable through that hop.
 	if (message->m_headers.contains(HTTP_HEADER_KEY_APPMESH_FORWARDED) ||
 		message->m_headers.contains(HTTP_HEADER_KEY_X_Forwarded_Host) ||
@@ -1407,6 +1415,57 @@ void RestHandler::apiRolesView(const std::shared_ptr<HttpRequest> &message)
 	permissionCheck(message, PERMISSION_KEY_role_view);
 
 	message->reply(web::http::status_codes::OK, Security::instance()->rolesJson());
+}
+
+void RestHandler::apiApiKeysView(const std::shared_ptr<HttpRequest> &message)
+{
+	const static char fname[] = "RestHandler::apiApiKeysView() ";
+	const auto principalId = permissionCheck(message, "");
+	bool all = false;
+	if (message->m_query.count("all") != 0)
+	{
+		// Listing every principal's keys is the admin view of the policy.
+		permissionCheck(message, PERMISSION_KEY_principal_list);
+		all = true;
+	}
+	message->reply(web::http::status_codes::OK, Security::instance()->apiKeysJson(principalId, all));
+}
+
+void RestHandler::apiApiKeyIssue(const std::shared_ptr<HttpRequest> &message)
+{
+	const static char fname[] = "RestHandler::apiApiKeyIssue() ";
+	auto principalId = permissionCheck(message, "");
+	// An admin may issue a key for another principal; everyone else issues
+	// for themselves. The secret is returned exactly once, in this response.
+	auto target = principalId;
+	const auto &body = *message->m_body;
+	if (!body.empty())
+	{
+		const auto json = message->extractJson();
+		const auto requested = json.isObject() ? json.get("principal", "").asString() : "";
+		if (!requested.empty() && requested != principalId)
+		{
+			permissionCheck(message, PERMISSION_KEY_principal_update);
+			target = requested;
+		}
+	}
+	const auto issued = Security::instance()->issueApiKey(target);
+	LOG_INF << fname << "API key <" << issued["key_id"].asString() << "> issued to <" << target << "> by <"
+			<< principalId << ">";
+	message->reply(web::http::status_codes::OK, issued);
+}
+
+void RestHandler::apiApiKeyDelete(const std::shared_ptr<HttpRequest> &message)
+{
+	const static char fname[] = "RestHandler::apiApiKeyDelete() ";
+	const auto principalId = permissionCheck(message, "");
+	const auto path = Utility::decodeURIComponent(message->m_relative_uri);
+	const auto keyId = regexSearch(path, REST_PATH_SEC_API_KEY);
+	const bool manageAll = Security::instance()->permissions(principalId).count(PERMISSION_KEY_principal_update) != 0;
+	if (!Security::instance()->deleteApiKey(keyId, principalId, manageAll))
+		throw NotFoundException("API key not found");
+	LOG_INF << fname << "API key <" << keyId << "> revoked by <" << principalId << ">";
+	message->reply(web::http::status_codes::NoContent);
 }
 
 void RestHandler::apiAuthReplicationPolicy(const std::shared_ptr<HttpRequest> &message)

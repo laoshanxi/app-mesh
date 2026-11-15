@@ -116,6 +116,7 @@ template <typename T> std::shared_ptr<T> make_shared_array(size_t size)
 #define DEFAULT_TCP_REST_LISTEN_PORT 6059
 #define DEFAULT_WEB_SOCKET_PORT 6058
 #define DEFAULT_SCHEDULE_INTERVAL 2
+#define DEFAULT_REQUEST_REPLAY_WINDOW_SECONDS 300
 #define DEFAULT_WORKER_THREADS 0       // 0 = derive from the CPUs the daemon may use
 #define DEFAULT_TRANSPORT_IO_THREADS 0 // 0 = derive from the CPUs the daemon may use
 #define MIN_WORKER_THREADS 2
@@ -184,6 +185,8 @@ public:
 	static bool isNumber(const std::string &str);
 	static bool isDouble(const std::string &str);
 	static std::string stdStringTrim(const std::string &str);
+	// The credential after a case-insensitive "Bearer" scheme; empty when absent.
+	static std::string bearerCredential(const std::string &authorization);
 	static std::string stdStringTrim(const std::string &str, char trimChar, bool leftTrim = true, bool rightTrim = true);
 	static std::string stdStringTrim(const std::string &str, const std::string &trimChars, bool leftTrim = true,
 									 bool rightTrim = true);
@@ -314,6 +317,9 @@ public:
 #define JSON_KEY_FileAllowedBaseDir "FileAllowedBaseDir"
 #define JSON_KEY_CorsDisabled "CorsDisabled"
 #define JSON_KEY_CsrfAllowedOrigins "CsrfAllowedOrigins"
+#define JSON_KEY_RequestReplayProtection "RequestReplayProtection"
+#define JSON_KEY_RequestSignature "RequestSignature"
+#define JSON_KEY_RequestReplayWindowSeconds "RequestReplayWindowSeconds"
 #define JSON_KEY_WebSocketPort "WebSocketPort"
 #define JSON_KEY_PrometheusExporterListenPort "PrometheusExporterListenPort"
 
@@ -322,6 +328,8 @@ public:
 #define JSON_KEY_PosixTimezone "PosixTimezone"
 
 #define JSON_KEY_SSL "SSL"
+// False = every listener accepts plaintext (TLS terminates at an upstream gateway).
+#define JSON_KEY_SSLEnabled "SSLEnabled"
 #define JSON_KEY_SSLVerifyServer "VerifyServer"
 #define JSON_KEY_SSLVerifyClient "VerifyClient"
 #define JSON_KEY_SSLCertificateFile "SSLCertificateFile"
@@ -429,6 +437,10 @@ public:
 #define HTTP_HEADER_KEY_APPMESH_FORWARD_ROUTE "X-AppMesh-Forward-Route"
 #define HTTP_HEADER_KEY_X_Forwarded_Host "X-Forwarded-Host"
 #define HTTP_HEADER_KEY_X_APPMESH_PROCESS_KEY "X-AppMesh-Process-Key"
+#define HTTP_HEADER_KEY_X_Request_Key "X-Request-Key"
+#define HTTP_HEADER_KEY_X_Timestamp "X-Timestamp"
+#define HTTP_HEADER_KEY_X_Nonce "X-Nonce"
+#define HTTP_HEADER_KEY_X_Signature "X-Signature"
 #define HTTP_HEADER_KEY_X_App_Name "X-App-Name"
 #define HTTP_HEADER_KEY_X_Event_Type "X-Event-Type"
 #define HTTP_HEADER_KEY_X_Subscription_Id "X-Subscription-Id"

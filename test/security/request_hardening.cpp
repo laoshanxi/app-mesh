@@ -1,0 +1,419 @@
+// test/security/request_hardening.cpp
+// Request replay protection and HMAC request signature unit tests. The
+// signature crypto runs against verifyWithSecret so no Security instance is
+// needed; RequestHardening::evaluate is exercised with an installed default
+// Configuration plus hot-update, the same mechanism the daemon uses.
+#include "../../src/daemon/Configuration.h"
+#include "../../src/daemon/security/AuthReplicationTokens.h"
+#include "../../src/daemon/security/ReplayGuard.h"
+#include "../../src/daemon/security/RequestHardening.h"
+#include "../../src/daemon/security/RequestSignature.h"
+#include <atomic>
+#include <catch.hpp>
+#include <chrono>
+#include <string>
+
+namespace
+{
+	std::int64_t nowSeconds()
+	{
+		return std::chrono::duration_cast<std::chrono::seconds>(std::chrono::system_clock::now().time_since_epoch())
+			.count();
+	}
+
+	std::string nowTimestamp()
+	{
+		return std::to_string(nowSeconds());
+	}
+
+	// RequestHardening is a singleton whose nonce cache survives across test
+	// cases; fresh nonces per evaluation keep sections independent.
+	std::string freshNonce(const char *prefix)
+	{
+		static std::atomic<unsigned long> counter{0};
+		return std::string(prefix) + "-" + std::to_string(counter++);
+	}
+
+	/// Installs a fresh default Configuration and selects the hardening modes
+	/// through the public hot-update path, like SIGHUP reload in the daemon.
+	struct HardeningConfigGuard
+	{
+		HardeningConfigGuard(const std::string &replay, const std::string &signature, int windowSeconds = 300)
+		{
+			Configuration::instance(std::make_shared<Configuration>());
+			Json::Value rest;
+			rest["RequestReplayProtection"] = replay;
+			rest["RequestSignature"] = signature;
+			rest["RequestReplayWindowSeconds"] = windowSeconds;
+			Json::Value root;
+			root["REST"] = rest;
+			Configuration::instance()->hotUpdate(root);
+		}
+		~HardeningConfigGuard()
+		{
+			// Leave a default configuration behind for any later test.
+			Configuration::instance(std::make_shared<Configuration>());
+		}
+	};
+} // namespace
+
+TEST_CASE("ReplayGuard dedups within the window and forgets after it", "[security][hardening]")
+{
+	ReplayGuard guard;
+	REQUIRE(guard.check("user-a", "n1", std::chrono::seconds(60)) == ReplayGuard::Verdict::First);
+	REQUIRE(guard.check("user-a", "n1", std::chrono::seconds(60)) == ReplayGuard::Verdict::Duplicate);
+	// Namespaces are isolated: the same nonce from another identity is fresh.
+	REQUIRE(guard.check("user-b", "n1", std::chrono::seconds(60)) == ReplayGuard::Verdict::First);
+	// After the window passes the entry no longer reports duplicate.
+	REQUIRE(guard.check("user-a", "n1", std::chrono::seconds(0)) == ReplayGuard::Verdict::First);
+}
+
+TEST_CASE("ReplayGuard flood eviction drops the oldest tenth, not nine tenths", "[security][hardening]")
+{
+	ReplayGuard guard;
+	const auto window = std::chrono::seconds(300);
+	for (std::size_t i = 0; i <= ReplayGuard::MAX_ENTRIES; ++i)
+		guard.check("flood", "nonce-" + std::to_string(i), window);
+	// Crossing the cap sweeps the oldest tenth away; nine tenths of the fresh
+	// flood must survive it.
+	REQUIRE(guard.size() >= ReplayGuard::MAX_ENTRIES * 9 / 10);
+	REQUIRE(guard.size() < ReplayGuard::MAX_ENTRIES);
+	// The evicted oldest nonce is deduped as new again; the newest one is not.
+	REQUIRE(guard.check("flood", "nonce-0", window) == ReplayGuard::Verdict::First);
+	REQUIRE(guard.check("flood", "nonce-" + std::to_string(ReplayGuard::MAX_ENTRIES), window) ==
+			ReplayGuard::Verdict::Duplicate);
+	guard.clear();
+}
+
+TEST_CASE("RequestSignature canonical string is exact and stable", "[security][hardening]")
+{
+	SECTION("canonical query sorts by key")
+	{
+		REQUIRE(RequestSignature::canonicalQuery({{"b", "2"}, {"a", "1"}}) == "a=1&b=2");
+		REQUIRE(RequestSignature::canonicalQuery({}) == "");
+	}
+
+	SECTION("known-answer vector fixes the wire format")
+	{
+		const auto bodyHash = RequestSignature::sha256Hex("", 0);
+		REQUIRE(bodyHash == "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855");
+		REQUIRE(RequestSignature::canonicalString("GET", "/appmesh/applications", "a=1&b=2", bodyHash, "1000",
+												  "nonce-1") ==
+				"GET\n/appmesh/applications\na=1&b=2\n" + bodyHash + "\n1000\nnonce-1");
+	}
+
+	SECTION("file routes sign the stripped path and the empty-body hash")
+	{
+		const std::uint8_t fakeBody[] = {1, 2, 3};
+		const auto *body = fakeBody;
+		std::size_t size = sizeof(fakeBody);
+		REQUIRE(RequestHardening::canonicalFileRoute("/appmesh/file/download/ws", body, size) ==
+				"/appmesh/file/download");
+		REQUIRE(body == nullptr);
+		REQUIRE(size == 0);
+		body = fakeBody;
+		size = sizeof(fakeBody);
+		REQUIRE(RequestHardening::canonicalFileRoute("/appmesh/file/upload", body, size) == "/appmesh/file/upload");
+		REQUIRE(body == nullptr);
+		REQUIRE(size == 0);
+		// Non-file paths keep the body bound and the path untouched.
+		body = fakeBody;
+		size = sizeof(fakeBody);
+		REQUIRE(RequestHardening::canonicalFileRoute("/appmesh/app/my app", body, size) == "/appmesh/app/my app");
+		REQUIRE(body == fakeBody);
+		REQUIRE(size == sizeof(fakeBody));
+	}
+}
+
+TEST_CASE("RequestSignature verifyWithSecret accepts a correct signature and rejects tampering", "[security][hardening]")
+{
+	const std::string secret = "test-secret";
+	const std::string method = "PUT";
+	const std::string path = "/appmesh/app/example";
+	const std::string query = "k=v";
+	const std::string body = R"({"command":"echo hi"})";
+	const auto timestamp = nowTimestamp();
+	const std::string nonce = "abc123";
+
+	const auto signFor = [&](const std::string &bodyValue, const std::string &ts, const std::string &n) {
+		return RequestSignature::sign(secret, RequestSignature::canonicalString(
+												   method, path, query,
+												   RequestSignature::sha256Hex(bodyValue.data(), bodyValue.size()),
+												   ts, n));
+	};
+	const auto signature = signFor(body, timestamp, nonce);
+
+	SECTION("valid signature passes")
+	{
+		const auto result =
+			RequestSignature::verifyWithSecret(secret, method, path, query,
+											   reinterpret_cast<const std::uint8_t *>(body.data()), body.size(),
+											   timestamp, nonce, signature, std::chrono::seconds(300));
+		REQUIRE(result.valid);
+		REQUIRE(result.signedRequest);
+	}
+
+	SECTION("tampered body is rejected")
+	{
+		const std::string evil = R"({"command":"rm -rf /"})";
+		REQUIRE_FALSE(RequestSignature::verifyWithSecret(
+						  secret, method, path, query, reinterpret_cast<const std::uint8_t *>(evil.data()), evil.size(),
+						  timestamp, nonce, signature, std::chrono::seconds(300))
+						  .valid);
+	}
+
+	SECTION("tampered method is rejected")
+	{
+		REQUIRE_FALSE(RequestSignature::verifyWithSecret(
+						  secret, "DELETE", path, query, reinterpret_cast<const std::uint8_t *>(body.data()), body.size(),
+						  timestamp, nonce, signature, std::chrono::seconds(300))
+						  .valid);
+	}
+
+	SECTION("nonce substitution is rejected (nonce is signed material)")
+	{
+		REQUIRE_FALSE(RequestSignature::verifyWithSecret(
+						  secret, method, path, query, reinterpret_cast<const std::uint8_t *>(body.data()), body.size(),
+						  timestamp, "other-nonce", signature, std::chrono::seconds(300))
+						  .valid);
+	}
+
+	SECTION("stale timestamp is rejected")
+	{
+		const auto stale = std::to_string(nowSeconds() - 4000);
+		const auto staleSignature = signFor(body, stale, nonce);
+		REQUIRE_FALSE(RequestSignature::verifyWithSecret(
+						  secret, method, path, query, reinterpret_cast<const std::uint8_t *>(body.data()), body.size(),
+						  stale, nonce, staleSignature, std::chrono::seconds(300))
+						  .valid);
+	}
+
+	SECTION("wrong secret is rejected")
+	{
+		REQUIRE_FALSE(RequestSignature::verifyWithSecret(
+						  "other-secret", method, path, query,
+						  reinterpret_cast<const std::uint8_t *>(body.data()), body.size(), timestamp, nonce,
+						  signature, std::chrono::seconds(300))
+						  .valid);
+	}
+
+	SECTION("incomplete and malformed headers are rejected")
+	{
+		REQUIRE_FALSE(RequestSignature::verifyWithSecret(secret, method, path, query, nullptr, 0, "", nonce, signature,
+														 std::chrono::seconds(300))
+						  .valid);
+		REQUIRE_FALSE(RequestSignature::verifyWithSecret(secret, method, path, query, nullptr, 0, timestamp, nonce,
+														 "not-hex-!!", std::chrono::seconds(300))
+							.valid);
+	}
+}
+
+TEST_CASE("AuthReplication token file accepts per-follower tokens", "[security][replication]")
+{
+	SECTION("legacy single unlabeled token keeps the shared behavior")
+	{
+		const std::string file = "abc123\n";
+		REQUIRE(AuthReplication::parseTokenFile(file).size() == 1);
+		REQUIRE(AuthReplication::matchToken(file, "abc123") == "shared");
+		REQUIRE(AuthReplication::matchToken(file, "abc124").empty());
+		REQUIRE(AuthReplication::matchToken(file, "").empty());
+	}
+
+	SECTION("labeled lines match their own token only")
+	{
+		const std::string file = "tok-a\n# comment\ntok-b slave1\ntok-c\t slave2 \n";
+		REQUIRE(AuthReplication::matchToken(file, "tok-a") == "shared");
+		REQUIRE(AuthReplication::matchToken(file, "tok-b") == "slave1");
+		REQUIRE(AuthReplication::matchToken(file, "tok-c") == "slave2");
+		REQUIRE(AuthReplication::matchToken(file, "tok-d").empty());
+		REQUIRE(AuthReplication::matchToken(file, "tok-").empty());
+	}
+
+	SECTION("revocation is a file edit: removed lines stop matching")
+	{
+		std::string file = "tok-a\n";
+		REQUIRE(AuthReplication::matchToken(file, "tok-a") == "shared");
+		file = "tok-a\ntok-b slave1\n";
+		REQUIRE(AuthReplication::matchToken(file, "tok-b") == "slave1");
+		file = "tok-a\n"; // slave1 revoked
+		REQUIRE(AuthReplication::matchToken(file, "tok-b").empty());
+		REQUIRE(AuthReplication::matchToken(file, "tok-a") == "shared");
+	}
+
+	SECTION("empty and comment-only files match nothing")
+	{
+		REQUIRE(AuthReplication::matchToken("", "x").empty());
+		REQUIRE(AuthReplication::matchToken("# only a comment\n\n", "x").empty());
+	}
+}
+
+TEST_CASE("RequestHardening enforces replay protection per mode", "[security][hardening]")
+{
+	const auto makeInput = [] {
+		RequestHardening::Input input;
+		input.method = "GET";
+		input.path = "/appmesh/applications";
+		input.bearer = "Bearer some.jwt.token";
+		return input;
+	};
+
+	SECTION("off mode allows everything without touching the guard")
+	{
+		HardeningConfigGuard guard("off", "off");
+		const auto decision = RequestHardening::instance().evaluate(makeInput());
+		REQUIRE(decision.action == RequestHardening::Decision::Action::Allow);
+		REQUIRE_FALSE(decision.audit);
+	}
+
+	SECTION("unauthenticated requests are exempt (public routes)")
+	{
+		HardeningConfigGuard guard("enforce", "enforce");
+		auto input = makeInput();
+		input.bearer.clear();
+		REQUIRE(RequestHardening::instance().evaluate(input).action == RequestHardening::Decision::Action::Allow);
+	}
+
+	SECTION("internal capability bearers are exempt")
+	{
+		HardeningConfigGuard guard("enforce", "enforce");
+		auto input = makeInput();
+		// Every scheme casing and spacing the authenticators accept.
+		for (const auto *bearer : {"Bearer amcap1.abc.def", "bearer amcap1.abc.def", "  Bearer   amcap1.abc.def"})
+		{
+			input.bearer = bearer;
+			REQUIRE(RequestHardening::instance().evaluate(input).action == RequestHardening::Decision::Action::Allow);
+		}
+		// A client JWT and the bare prefix are not capabilities.
+		input.bearer = "Bearer eyJhbGciOiJSUzI1NiJ9.payload.sig";
+		const auto jwt = RequestHardening::instance().evaluate(input);
+		REQUIRE(jwt.action == RequestHardening::Decision::Action::Reject);
+		REQUIRE(jwt.status == 401);
+		input.bearer = "Bearer amcap1.";
+		REQUIRE(RequestHardening::instance().evaluate(input).action == RequestHardening::Decision::Action::Reject);
+	}
+
+	SECTION("the replay namespace ignores bearer scheme casing")
+	{
+		// Scheme variants of one credential are one principal: a nonce burned
+		// under one spelling is a duplicate under the other.
+		HardeningConfigGuard guard("enforce", "off");
+		auto input = makeInput();
+		input.nonce = "ns-nonce-1";
+		input.bearer = "Bearer some.jwt.token";
+		REQUIRE(RequestHardening::instance().evaluate(input).action == RequestHardening::Decision::Action::Allow);
+		input.bearer = "bearer some.jwt.token";
+		const auto replayed = RequestHardening::instance().evaluate(input);
+		REQUIRE(replayed.action == RequestHardening::Decision::Action::Reject);
+		REQUIRE(replayed.status == 409);
+	}
+
+	SECTION("bearer-less signed requests namespace by API key")
+	{
+		// Distinct keys never cross-block each other's nonces.
+		HardeningConfigGuard guard("enforce", "off");
+		auto input = makeInput();
+		input.bearer.clear();
+		input.keyId = "key-one";
+		input.nonce = "shared-nonce";
+		REQUIRE(RequestHardening::instance().evaluate(input).action == RequestHardening::Decision::Action::Allow);
+		input.keyId = "key-two";
+		REQUIRE(RequestHardening::instance().evaluate(input).action == RequestHardening::Decision::Action::Allow);
+		input.keyId = "key-one";
+		const auto replayed = RequestHardening::instance().evaluate(input);
+		REQUIRE(replayed.action == RequestHardening::Decision::Action::Reject);
+		REQUIRE(replayed.status == 409);
+	}
+
+	SECTION("cluster replication pulls are exempt (own token auth)")
+	{
+		HardeningConfigGuard guard("enforce", "enforce");
+		auto input = makeInput();
+		input.path = "/appmesh/auth/replication/policy";
+		input.bearer = "Bearer shared-replication-token";
+		REQUIRE(RequestHardening::instance().evaluate(input).action == RequestHardening::Decision::Action::Allow);
+	}
+
+	SECTION("enforce: WSS/TCP uuid is the nonce; replay is rejected 409")
+	{
+		HardeningConfigGuard guard("enforce", "off");
+		auto input = makeInput();
+		input.transportPrincipal = "oidc:1234";
+		input.persistentTransport = true;
+		input.fallbackNonce = freshNonce("uuid");
+		REQUIRE(RequestHardening::instance().evaluate(input).action == RequestHardening::Decision::Action::Allow);
+		const auto replay = RequestHardening::instance().evaluate(input);
+		REQUIRE(replay.action == RequestHardening::Decision::Action::Reject);
+		REQUIRE(replay.status == 409);
+	}
+
+	SECTION("enforce: HTTP without a nonce is rejected 401")
+	{
+		HardeningConfigGuard guard("enforce", "off");
+		auto input = makeInput();
+		input.persistentTransport = false;
+		const auto decision = RequestHardening::instance().evaluate(input);
+		REQUIRE(decision.action == RequestHardening::Decision::Action::Reject);
+		REQUIRE(decision.status == 401);
+	}
+
+	SECTION("audit: replay is tolerated and flagged")
+	{
+		HardeningConfigGuard guard("audit", "off");
+		auto input = makeInput();
+		input.transportPrincipal = "oidc:audit";
+		input.persistentTransport = true;
+		input.fallbackNonce = freshNonce("audit");
+		REQUIRE(RequestHardening::instance().evaluate(input).action == RequestHardening::Decision::Action::Allow);
+		const auto decision = RequestHardening::instance().evaluate(input);
+		REQUIRE(decision.action == RequestHardening::Decision::Action::Allow);
+		REQUIRE(decision.audit);
+	}
+
+	SECTION("enforce signature mode: authenticated request without headers is rejected")
+	{
+		HardeningConfigGuard guard("off", "enforce");
+		auto input = makeInput();
+		input.persistentTransport = true;
+		input.fallbackNonce = freshNonce("sig");
+		const auto decision = RequestHardening::instance().evaluate(input);
+		REQUIRE(decision.action == RequestHardening::Decision::Action::Reject);
+		REQUIRE(decision.status == 401);
+		REQUIRE(decision.reason.find("signature required") != std::string::npos);
+	}
+
+	SECTION("audit signature mode: unsigned authenticated traffic is flagged too")
+	{
+		HardeningConfigGuard guard("off", "audit");
+		auto input = makeInput();
+		input.persistentTransport = true;
+		input.fallbackNonce = freshNonce("sig-audit");
+		const auto decision = RequestHardening::instance().evaluate(input);
+		REQUIRE(decision.action == RequestHardening::Decision::Action::Allow);
+		REQUIRE(decision.audit);
+		REQUIRE(decision.reason.find("signature required") != std::string::npos);
+	}
+
+	SECTION("replay layer: a malformed nonce is treated as missing, never stored")
+	{
+		HardeningConfigGuard guard("enforce", "off");
+		auto input = makeInput();
+		input.transportPrincipal = "oidc:malformed";
+		input.persistentTransport = false;
+		input.nonce = std::string(200, 'x');
+		const auto decision = RequestHardening::instance().evaluate(input);
+		REQUIRE(decision.action == RequestHardening::Decision::Action::Reject);
+		REQUIRE(decision.reason.find("nonce required") != std::string::npos);
+	}
+
+	SECTION("enforce: stale X-Timestamp is rejected when present")
+	{
+		HardeningConfigGuard guard("enforce", "off");
+		auto input = makeInput();
+		input.persistentTransport = true;
+		input.fallbackNonce = freshNonce("stale");
+		input.timestamp = std::to_string(nowSeconds() - 4000);
+		const auto decision = RequestHardening::instance().evaluate(input);
+		REQUIRE(decision.action == RequestHardening::Decision::Action::Reject);
+		REQUIRE(decision.reason.find("timestamp") != std::string::npos);
+	}
+}

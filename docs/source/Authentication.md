@@ -522,6 +522,10 @@ example above.
 
 ## Reference
 
+### Request signatures and replay protection
+
+An access token authenticates the caller. A deployment that also needs per-request integrity or replay rejection enables the request hardening layers. These are independent of OAuth: issue a signing API key, then enable `REST.RequestReplayProtection` and `REST.RequestSignature`. See the Security guide, section "Request replay protection and signatures".
+
 ### Identities and clients
 
 | Item | Value |

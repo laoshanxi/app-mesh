@@ -1,5 +1,30 @@
 # Changelog
 
+## 3.0.17
+
+- Request signing (opt-in): `RequestSigner::new(key_id, secret)` produces the
+  `X-Request-Key`/`X-Timestamp`/`X-Nonce`/`X-Signature` headers over the daemon's
+  canonical string (`METHOD\npath\nsortedQuery\nsha256hex(body)\ntimestamp\nnonce`);
+  the canonical construction mirrors the C++ verifier byte-for-byte. Install one
+  with `ClientBuilder::request_signer` / `ClientBuilderTCP` / `ClientBuilderWSS`
+  or `set_request_signer` on the HTTP, TCP, and WSS clients. The streamed file
+  endpoints sign the empty-string body hash; TCP/WSS reuse the framed message
+  uuid as the nonce; the WSS HTTPS file side channel is signed too. The secret
+  is kept in memory only, never rendered by `Debug`, and never logged.
+- Path/query canonical fixes for signed HTTP requests: the wire query is
+  percent-only encoded (space → `%20`, never reqwest's `.query()` `+`, which
+  the daemon keeps literal), and the WSS data-channel routes
+  `/appmesh/file/{upload,download}/ws` sign the route without the trailing
+  `/ws` (daemon `canonicalFileRoute`).
+- CLI (crate 3.0.2): global `--api-key`/`--api-secret` (env fallback
+  `APPMESH_API_KEY`/`APPMESH_API_SECRET`) attach a request signer to the
+  Engine client; the secret is never persisted. `--api-secret -` reads one
+  line from stdin so the secret never crosses argv (with
+  `logon --password-stdin` the secret line comes first, the password second). The OAuth session lock names its holder pid
+  (waiters steal only dead holders, and a holder never removes a stolen
+  lock), and a cold start that lost the refresh-token rotation adopts the
+  parallel CLI's live token set instead of reporting the session invalidated.
+
 ## 3.0.16
 
 - WSS transport: the WebSocket message/frame size caps are removed (tungstenite

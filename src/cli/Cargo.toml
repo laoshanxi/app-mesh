@@ -1,6 +1,6 @@
 [package]
 name = "appm"
-version = "3.0.1"
+version = "3.0.2"
 edition = "2021"
 description = "App Mesh CLI - Rust implementation using WSS transport"
 
@@ -41,6 +41,9 @@ panic = "abort"
 [dev-dependencies]
 tempfile = "3"
 http = "1"  # tests build typed HTTP statuses for AppMeshError fixtures
+
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"
 
 [target.'cfg(windows)'.dependencies]
 windows-sys = { version = "0.61", features = [
