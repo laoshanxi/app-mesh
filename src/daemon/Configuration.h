@@ -25,6 +25,7 @@ struct JsonDocker
 	// off | audit | enforce; anything else keeps off so a typo cannot weaken it.
 	std::string m_hostSecurityPolicy = "off";
 	static std::shared_ptr<JsonDocker> FromJson(const Json::Value &jsonValue);
+	Json::Value AsJson() const;
 };
 
 class Configuration
@@ -67,6 +68,9 @@ public:
 
 		bool m_restEnabled;
 		bool m_corsDisabled;
+		// CORS: Origins echoed in Access-Control-Allow-Origin. Empty (default)
+		// sends no CORS headers at all — the UI is a same-origin proxy.
+		std::set<std::string> m_corsAllowOrigins;
 		std::set<std::string> m_csrfAllowedOrigins; // CSRF: Origins allowed for cookie-auth state-changing requests
 		// Request hardening: nonce replay protection and HMAC request signature,
 		// each one of off | audit | enforce; window bounds both the nonce memory
@@ -163,6 +167,7 @@ public:
 	std::string getSSLClientCertificateKeyFile() const;
 	bool getRestEnabled() const;
 	bool getCorsDisabled() const;
+	std::set<std::string> getCorsAllowOrigins() const;
 	std::string getRequestReplayProtection() const;
 	std::string getRequestSignature() const;
 	int getRequestReplayWindowSeconds() const;

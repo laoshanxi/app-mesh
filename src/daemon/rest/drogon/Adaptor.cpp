@@ -81,12 +81,15 @@ namespace
 		return resp;
 	}
 
-	// CORS uses a fixed allow-list.
-	void addCors(const drogon::HttpResponsePtr &resp)
+	// CORS is opt-in: no wildcard. The request Origin is echoed only when it is
+	// in REST.CorsAllowOrigins; otherwise no CORS headers are sent at all.
+	void addCors(const drogon::HttpResponsePtr &resp, const std::string &origin)
 	{
 		if (Configuration::instance()->getCorsDisabled())
 			return;
-		resp->addHeader(web::http::header_names::access_control_allow_origin, "*");
+		if (origin.empty() || Configuration::instance()->getCorsAllowOrigins().count(origin) == 0)
+			return;
+		resp->addHeader(web::http::header_names::access_control_allow_origin, origin);
 		resp->addHeader(web::http::header_names::access_control_allow_methods, "GET, POST, PUT, DELETE, OPTIONS");
 		resp->addHeader(web::http::header_names::access_control_allow_headers, "Authorization, Content-Type, X-File-Path");
 	}
@@ -419,11 +422,13 @@ void DrogonAdaptor::setupRoutes()
 		"/appmesh/file/upload/ws",
 		[this](const drogon::HttpRequestPtr &req, drogon::RequestStreamPtr &&stream, drogon::AdviceCallback &&callback)
 		{ handleUpload(req, std::move(stream), std::move(callback)); }, {drogon::Post});
-	// Browser preflight: answer OPTIONS here when the daemon answers CORS itself.
-	const auto corsPreflight = [](const drogon::HttpRequestPtr &, drogon::AdviceCallback &&callback)
+	// Browser preflight for the file routes: answered here (204) because the
+	// allowlist below is the daemon's only CORS source.
+	const auto corsPreflight = [](const drogon::HttpRequestPtr &req, drogon::AdviceCallback &&callback)
 	{
 		auto resp = drogon::HttpResponse::newHttpResponse();
 		resp->setStatusCode(drogon::k204NoContent);
+		addCors(resp, req->getHeader(web::http::header_names::origin));
 		callback(resp);
 	};
 	for (const char *path :
@@ -433,13 +438,13 @@ void DrogonAdaptor::setupRoutes()
 		app.registerHandler(path, corsPreflight, {drogon::Options});
 	}
 	// drogon answers a method mismatch on these routes with an empty 405; answer 404 JSON instead.
-	const auto routeNotFound = [](const drogon::HttpRequestPtr &, drogon::AdviceCallback &&callback)
+	const auto routeNotFound = [](const drogon::HttpRequestPtr &req, drogon::AdviceCallback &&callback)
 	{
 		auto resp = drogon::HttpResponse::newHttpResponse();
 		resp->setStatusCode(drogon::k404NotFound);
 		resp->setContentTypeString("application/json");
 		resp->setBody(JSON::dump(Utility::text2json("Route not found")));
-		addCors(resp);
+		addCors(resp, req->getHeader(web::http::header_names::origin));
 		callback(resp);
 	};
 	app.registerHandler("/appmesh/file/download", routeNotFound, {drogon::Post, drogon::Put, drogon::Delete, drogon::Patch});
@@ -477,17 +482,15 @@ void DrogonAdaptor::setupRoutes()
 				resp->setCloseConnection(true);
 		});
 
-	// drogon always answers preflight with CORS headers; hand OPTIONS back to
-	// the worker when CORS is disabled so its response stays CORS-free.
-	if (Configuration::instance()->getCorsDisabled())
-	{
-		app.registerPreRoutingAdvice(
-			[](const drogon::HttpRequestPtr &req)
-			{
-				if (req->method() == drogon::Options)
-					req->attributes()->insert("drogon.customCORShandling", true);
-			});
-	}
+	// drogon always answers preflight with wildcard-ish CORS headers of its
+	// own; take every OPTIONS request out of that path so the daemon's
+	// allowlist (REST.CorsAllowOrigins) is the only CORS source.
+	app.registerPreRoutingAdvice(
+		[](const drogon::HttpRequestPtr &req)
+		{
+			if (req->method() == drogon::Options)
+				req->attributes()->insert("drogon.customCORShandling", true);
+		});
 
 	// Generic HTTP catch-all: every request is serialized to a msgpack
 	// Request and queued to the shared worker pool. The stream form lets the
@@ -503,11 +506,19 @@ void DrogonAdaptor::setupRoutes()
 
 	// drogon has no server-side sub-protocol API; clients fail the handshake
 	// unless the negotiated protocol is echoed on the 101 response.
+	// The same single funnel stamps the CSP on every REST response: the API
+	// serves JSON and files, never active content, so 'none' has no side effects.
 	app.registerPostHandlingAdvice(
 		[](const drogon::HttpRequestPtr &req, const drogon::HttpResponsePtr &resp)
 		{
-			if (!resp || resp->statusCode() != drogon::k101SwitchingProtocols)
+			if (!resp)
 				return;
+			if (resp->statusCode() != drogon::k101SwitchingProtocols)
+			{
+				resp->addHeader(web::http::header_names::content_security_policy,
+								"default-src 'none'; frame-ancestors 'none'");
+				return;
+			}
 			const auto accepted =
 				dgn::negotiateWsSubprotocol(req->getHeader(web::http::header_names::sec_websocket_protocol));
 			if (!accepted.empty())
@@ -744,7 +755,7 @@ void DrogonAdaptor::handleDownload(const drogon::HttpRequestPtr &req, drogon::Ad
 	resp->addHeader(web::http::header_names::content_disposition, disposition);
 	for (const auto &[name, value] : Utility::fileAttributeHeaders(filePathStr))
 		resp->addHeader(name, value);
-	addCors(resp);
+	addCors(resp, req->getHeader(web::http::header_names::origin));
 	callback(resp);
 }
 
@@ -856,6 +867,7 @@ void DrogonAdaptor::handleUpload(const drogon::HttpRequestPtr &req, drogon::Requ
 	}
 
 	const std::string fileName = filePath.filename().string();
+	const std::string requestOrigin = req->getHeader(web::http::header_names::origin);
 	auto writeFailed = std::make_shared<std::atomic<bool>>(false);
 	stream->setStreamReader(drogon::RequestStreamReader::newReader(
 		// IO loop thread, in order, for this connection only.
@@ -867,7 +879,7 @@ void DrogonAdaptor::handleUpload(const drogon::HttpRequestPtr &req, drogon::Requ
 			if (!upload->m_file.good())
 				writeFailed->store(true, std::memory_order_relaxed);
 		},
-		[upload, writeFailed, fileName, callback = std::move(callback)](std::exception_ptr err) mutable
+		[upload, writeFailed, fileName, requestOrigin, callback = std::move(callback)](std::exception_ptr err) mutable
 		{
 			const static char fname[] = "DrogonAdaptor::handleUpload() ";
 
@@ -911,7 +923,7 @@ void DrogonAdaptor::handleUpload(const drogon::HttpRequestPtr &req, drogon::Requ
 			auto resp = drogon::HttpResponse::newHttpResponse();
 			resp->setStatusCode(drogon::k201Created);
 			resp->setContentTypeString("application/json");
-			addCors(resp);
+			addCors(resp, requestOrigin);
 			// Invalid UTF-8 in the filename makes default dump() throw; 'replace' avoids it.
 			resp->setBody(JSON::dump(respJson));
 			callback(resp);
@@ -982,7 +994,7 @@ void DrogonAdaptor::handleFileDelete(const drogon::HttpRequestPtr &req, drogon::
 	}
 	LOG_INF << fname << "File deleted: " << fullPath;
 	auto resp = plainResponse(drogon::k200OK, "success");
-	addCors(resp);
+	addCors(resp, req->getHeader(web::http::header_names::origin));
 	callback(resp);
 }
 

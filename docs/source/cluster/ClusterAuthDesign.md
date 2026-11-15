@@ -161,7 +161,12 @@ The sequence below describes `appm -H <gateway> -F <target> ...`.
    connection. HTTP and TCP requests are verified at the gateway
    (`Worker::process`). A WSS session is authenticated at the upgrade. A
    forwarded WSS frame repeats the same bearer. The bearer must resolve to
-   the principal that is pinned to the connection.
+   the principal that is pinned to the connection. The principal must also
+   hold the `host-forward` permission — the outbound connection is itself a
+   capability, and without the gate any authenticated principal could probe
+   the network through open/closed/timeout answers (blind port-scan oracle).
+   The Go agent enforces the same grant on its 6060 entry by checking the
+   `/appmesh/principal/self` permissions.
 5. The gateway erases `X-Target-Host` and injects
    `X-AppMesh-Forwarded: 1` plus a route UUID for event correlation. The
    target never sees a forwarding selector. The target cannot re-forward.

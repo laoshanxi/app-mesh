@@ -17,3 +17,8 @@ target_link_libraries(${PROJECT_NAME}
     Boost::regex
     common
 )
+
+# Locate packaged policy files (authorization.yaml) from the source tree in tests.
+target_compile_definitions(${PROJECT_NAME} PRIVATE
+  APPMESH_SOURCE_ROOT="${CMAKE_CURRENT_SOURCE_DIR}/../../"
+)

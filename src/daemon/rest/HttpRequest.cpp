@@ -231,7 +231,7 @@ bool HttpRequest::reply(const std::string &requestUri, const std::string &uuid, 
 		if (m_wsReplyContext->getProtocolType() == WSS::ReplyContext::ProtocolType::Http)
 		{
 			// HTTP protocol
-			response->applyCorsHeaders();
+			response->applyCorsHeaders(m_headers.get(web::http::header_names::origin));
 			response->applySecurityHeaders();
 			m_wsReplyContext->replyHTTP(std::to_string(status), std::string(body.begin(), body.end()),
 										std::move(response->headers), std::string(bodyType));

@@ -36,6 +36,8 @@ endpoints, requests use an OAuth access token in the
 | GET | `/appmesh/security/apikeys` | List the caller's request-signing API keys; `?all=1` lists all keys and needs the `principal-list` permission. Secrets are never returned |
 | DELETE | `/appmesh/security/apikey/{key_id}` | Revoke a request-signing API key. The key owner or the `principal-set` permission may revoke |
 
+`X-Target-Host` forwarding (cluster requests, `-F <node>` in the CLI) requires the `host-forward` permission on the authenticated principal; both the Engine and the Go agent reject a forward without it with 403. The packaged `appmesh-admin` role carries it, viewer/guest roles do not.
+
 ## Applications
 
 | Method | URI | Purpose |
@@ -145,7 +147,8 @@ there. The run then continues until it finishes or reaches its timeout.
 - Uploads never overwrite by default: an existing destination returns `409`. Send `X-File-Overwrite: true` to replace it (the new content is published atomically).
 - `DELETE /appmesh/file/delete` removes one regular file named by `X-File-Path` under its own `file-delete` permission (independent of `file-upload`); a missing file returns `404`, a directory or anything else is refused.
 - The daemon's own installation tree (the directory that holds `bin/`, `ssl/`, `config/`, `script/` and `work/`, for example `/opt/appmesh`) is refused on both directions regardless of `REST.FileAllowedBaseDir`; symbolic links into it are resolved before the check. The `work/tmp` scratch subtree inside it is the one exchangeable exception.
-- An unset `REST.FileAllowedBaseDir` (the packaged default) means no base-directory jail: every absolute path outside the daemon's own tree is transferable in both directions as far as the daemon's OS user allows. Container images run the daemon unprivileged, so host files it cannot read or write stay protected; set the option to confine transfers to one directory tree.
+- An unset `REST.FileAllowedBaseDir` (the packaged default) jails transfers to the daemon's work directory tree (`BaseConfig.WorkingDirectory`, `/opt/appmesh/work` by default). Combined with the installation-tree exclusion above, the exchangeable default is the `work/tmp` scratch area. Set the option to an absolute path to allow transfers in another tree; every absolute path outside the jail is refused for download, upload, and delete.
+- Pseudo filesystems (`/proc`, `/sys`, `/dev`) are refused on every transfer: their files stat as regular size-0 files and would otherwise download as empty `200` bodies.
 | GET | `/appmesh/labels` | List host labels |
 | PUT | `/appmesh/label/{label}` | Set a host label |
 | DELETE | `/appmesh/label/{label}` | Delete a host label |
@@ -159,6 +162,11 @@ there. The run then continues until it finishes or reaches its timeout.
 | GET | `/appmesh/resources` | Get host resources |
 | GET | `/appmesh/metrics` | Get Prometheus metrics |
 | GET | `/metrics` | Get Prometheus metrics |
+
+## Response headers
+
+- CORS is opt-in: the Engine sends `Access-Control-Allow-Origin` only by echoing a request `Origin` listed in `REST.CorsAllowOrigins`. With the default empty list no CORS headers are sent at all (the UI is a same-origin proxy and needs none).
+- Every REST response carries `Content-Security-Policy: default-src 'none'; frame-ancestors 'none'`. The API serves JSON/files, never active content, so the policy has no functional side effects.
 
 ## Out of scope
 

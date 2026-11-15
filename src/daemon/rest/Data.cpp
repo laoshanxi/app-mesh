@@ -50,15 +50,18 @@ bool Response::deserialize(const std::uint8_t *data, std::size_t dataSize)
 	return false;
 }
 
-void Response::applyCorsHeaders()
+void Response::applyCorsHeaders(const std::string &origin)
 {
 	if (Configuration::instance()->getCorsDisabled())
 		return;
+	// CORS is opt-in: no wildcard. Without a matching Origin allowlist entry
+	// no CORS headers are sent at all (the UI is a same-origin proxy).
+	if (origin.empty() || Configuration::instance()->getCorsAllowOrigins().count(origin) == 0)
+		return;
 
-	headers[web::http::header_names::access_control_allow_origin] = "*";
+	headers[web::http::header_names::access_control_allow_origin] = origin;
 	headers[web::http::header_names::access_control_allow_methods] = "GET, POST, PUT, DELETE, OPTIONS";
 	headers[web::http::header_names::access_control_allow_headers] = "Authorization, Content-Type";
-	// Note: Removed Access-Control-Allow-Credentials as it conflicts with wildcard origin
 }
 
 void Response::applySecurityHeaders()

@@ -92,6 +92,28 @@ TEST_CASE("Utility Test", "[Utility]")
 		REQUIRE_FALSE(Utility::validateFilePath(std::string("/tmp/a\0b", 8), ""));
 		REQUIRE(Utility::validateFilePath("/tmp/file", "/tmp"));
 		REQUIRE_FALSE(Utility::validateFilePath("/etc/hostname", "/tmp"));
+		// Pseudo filesystems are refused even when the jail allows them: procfs
+		// files stat as regular size-0 files and would download as empty bodies.
+		REQUIRE_FALSE(Utility::validateFilePath("/proc/self/environ", ""));
+		REQUIRE_FALSE(Utility::validateFilePath("/proc/self/environ", "/"));
+		REQUIRE_FALSE(Utility::validateFilePath("/sys/kernel/notes", "/"));
+		REQUIRE_FALSE(Utility::validateFilePath("/dev/null", "/"));
+		REQUIRE_FALSE(Utility::validateFilePath("/proc", "/"));
+		// A path merely starting with the same letters stays allowed.
+		REQUIRE(Utility::validateFilePath("/tmp/proc-note", ""));
+#if !defined(_WIN32)
+		// The pseudo-fs guard sees through symlinks: a link planted in an
+		// allowed tree must not reach /dev behind even a permissive jail.
+		std::error_code linkEc;
+		const std::string pseudoLink = "/tmp/appmesh_pseudo_link_test";
+		fs::remove(pseudoLink, linkEc);
+		fs::create_symlink("/dev/null", pseudoLink, linkEc);
+		if (!linkEc)
+		{
+			REQUIRE_FALSE(Utility::validateFilePath(pseudoLink, "/"));
+			fs::remove(pseudoLink, linkEc);
+		}
+#endif
 	}
 
 	SECTION("string operation function test")
@@ -131,6 +153,35 @@ TEST_CASE("Utility Test", "[Utility]")
 		LOG_INF << "stdStringTrim:" << Utility::stdStringTrim(env, "0.1");
 	}
 	// teardown
+}
+
+TEST_CASE("packaged authorization policy roles", "[Utility]")
+{
+	init();
+
+	// The shipped default policy is what a fresh deployment boots with; the
+	// host-forward gate (X-Target-Host) must be admin-only so viewer/guest
+	// principals cannot use the node as an outbound probe.
+	const auto root = Utility::yamlToJson(
+		YAML::LoadFile(std::string(APPMESH_SOURCE_ROOT) + "src/daemon/security/authorization.yaml"));
+	REQUIRE(root["Authorization"].isObject());
+	REQUIRE(root["Authorization"]["roles"].isObject());
+
+	const auto rolePermissions = [&root](const std::string &role) {
+		std::set<std::string> permissions;
+		const auto &list = root["Authorization"]["roles"][role];
+		REQUIRE(list.isArray());
+		for (const auto &permission : list)
+			permissions.insert(permission.asString());
+		return permissions;
+	};
+
+	const auto admin = rolePermissions("appmesh-admin");
+	REQUIRE(admin.count(PERMISSION_KEY_host_forward) == 1);
+	const auto viewer = rolePermissions("appmesh-viewer");
+	REQUIRE(viewer.count(PERMISSION_KEY_host_forward) == 0);
+	const auto maintenance = rolePermissions("appmesh-maintenance");
+	REQUIRE(maintenance.count(PERMISSION_KEY_host_forward) == 0);
 }
 
 TEST_CASE("Dependency-backed helpers regression", "[Utility]")

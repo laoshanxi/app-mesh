@@ -51,6 +51,7 @@ namespace
 			PERMISSION_KEY_file_download,
 			PERMISSION_KEY_file_upload,
 			PERMISSION_KEY_file_delete,
+			PERMISSION_KEY_host_forward,
 			PERMISSION_KEY_label_view,
 			PERMISSION_KEY_label_set,
 			PERMISSION_KEY_label_delete,

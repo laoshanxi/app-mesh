@@ -260,6 +260,19 @@ bool Utility::validateFilePath(const std::string &filePath, const std::string &a
 		if (component == "..")
 			return false;
 	}
+	// Reject pseudo filesystems (procfs/sysfs/devfs): their files stat as
+	// regular size-0 files, so a download would answer 200 with an empty body.
+	const auto isPseudoFsPath = [](const std::string &path) {
+		for (const char *pseudo : {"/proc", "/sys", "/dev"})
+		{
+			const auto len = std::char_traits<char>::length(pseudo);
+			if (path.compare(0, len, pseudo) == 0 && (path.size() == len || path[len] == '/'))
+				return true;
+		}
+		return false;
+	};
+	if (isPseudoFsPath(filePath))
+		return false;
 	// Enforce base-directory jail when configured
 	if (!allowedBaseDir.empty() && !isPathTraversalSafe(allowedBaseDir, filePath))
 		return false;
@@ -269,6 +282,12 @@ bool Utility::validateFilePath(const std::string &filePath, const std::string &a
 	const auto scratchDir = (fs::path(getHomeDir()) / APPMESH_WORK_DIR / APPMESH_WORK_TMP_DIR).string();
 	Utility::createDirectory(scratchDir); // the exemption must hold before the daemon first creates it
 	if (isPathTraversalSafe(getHomeDir(), filePath) && !isPathTraversalSafe(scratchDir, filePath))
+		return false;
+	// The pseudo-fs check above is lexical; follow symlinks so a link planted
+	// in an allowed tree cannot reach /proc behind a permissive jail.
+	std::error_code resolveEc;
+	const auto resolvedPath = fs::canonical(filePath, resolveEc);
+	if (!resolveEc && isPseudoFsPath(resolvedPath.string()))
 		return false;
 	return true;
 }

@@ -383,11 +383,12 @@ bool Worker::process(const std::shared_ptr<HttpRequest> &request)
 		// session principal above. HTTP and TCP have no pinned principal, so validate
 		// their bearer before the gateway opens an outbound connection. The target
 		// validates the unchanged bearer again and makes the authorization decision.
-		if (!publicRequest && request->transportPrincipalId().empty())
+		std::string gatewayPrincipalId = request->transportPrincipalId();
+		if (!publicRequest && gatewayPrincipalId.empty())
 		{
 			try
 			{
-				Security::authenticateBearerAuthorization(request->m_headers.get(HTTP_HEADER_JWT_Authorization));
+				gatewayPrincipalId = Security::authenticateBearerAuthorization(request->m_headers.get(HTTP_HEADER_JWT_Authorization)).id();
 			}
 			catch (const AuthenticationUnavailableException &e)
 			{
@@ -398,6 +399,24 @@ bool Worker::process(const std::shared_ptr<HttpRequest> &request)
 			{
 				request->reply(web::http::status_codes::Unauthorized, Utility::text2json(e.what()),
 							   {{"WWW-Authenticate", "Bearer realm=\"appmesh\", error=\"invalid_token\""}});
+				return true;
+			}
+		}
+		// The outbound connection itself is a capability: without this gate any
+		// authenticated principal could probe the network through open/closed/
+		// timeout answers (blind port-scan oracle).
+		if (!gatewayPrincipalId.empty())
+		{
+			try
+			{
+				Security::requirePermission(gatewayPrincipalId, PERMISSION_KEY_host_forward);
+			}
+			catch (const std::exception &e)
+			{
+				// AuthorizationException, or the principal vanished after the
+				// bearer check above; either way fail closed.
+				LOG_WAR << fname << "Rejected forward, principal <" << gatewayPrincipalId << ">: " << e.what();
+				request->reply(web::http::status_codes::Forbidden, Utility::text2json(e.what()));
 				return true;
 			}
 		}

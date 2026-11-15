@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/tls"
 	"crypto/x509"
+	"encoding/json"
 	"fmt"
 	"io"
 	"net"
@@ -43,6 +44,10 @@ const (
 	HTTPHeaderKeyXSendFileSocket  = "X-Send-File-Socket"
 	HTTPHeaderKeyXRecvFileSocket  = "X-Recv-File-Socket"
 	HTTPHeaderKeyFilePath         = "X-File-Path"
+
+	// PermissionHostForward gates X-Target-Host forwarding on the engine; the
+	// agent enforces the same grant before it opens the outbound connection.
+	PermissionHostForward = "host-forward"
 
 	TCPChunkBlockSize = appmesh.TCPChunkBlockSize
 )
@@ -92,6 +97,26 @@ func writeForwardValidationResponse(w http.ResponseWriter, response *Response) {
 			logger.Warnf("Failed to write forwarding authentication response: %v", err)
 		}
 	}
+}
+
+// forwardPermissionGranted reads the /appmesh/principal/self validation answer
+// and reports whether the principal holds the host-forward permission. The
+// outbound connection itself is a capability: without this gate any
+// authenticated principal could probe the network through open/closed/timeout
+// answers (blind port-scan oracle).
+func forwardPermissionGranted(validation *Response) bool {
+	var self struct {
+		Permissions []string `json:"permissions"`
+	}
+	if err := json.Unmarshal(validation.Body, &self); err != nil {
+		return false
+	}
+	for _, permission := range self.Permissions {
+		if permission == PermissionHostForward {
+			return true
+		}
+	}
+	return false
 }
 
 var (
@@ -446,6 +471,10 @@ func HandleAppMeshRequest(w http.ResponseWriter, r *http.Request) {
 			}
 			if validation.HTTPStatus < http.StatusOK || validation.HTTPStatus >= http.StatusMultipleChoices {
 				writeForwardValidationResponse(w, validation)
+				return
+			}
+			if !forwardPermissionGranted(validation) {
+				utils.HTTPError(w, "forwarding requires the "+PermissionHostForward+" permission", http.StatusForbidden)
 				return
 			}
 		}

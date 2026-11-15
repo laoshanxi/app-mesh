@@ -181,6 +181,8 @@ WSS sends the bearer during the gateway upgrade. It also sends the bearer in eac
 
 The gateway validates a protected request before it opens a target connection. It removes `X-Target-Host` before it sends the request to the target. This rule prevents a forwarding loop.
 
+The gateway also requires the `host-forward` permission on the authenticated principal (both the Engine and the Go agent enforce it); without it the forward is rejected with 403. The packaged `appmesh-admin` role carries the permission, viewer/guest roles do not.
+
 The two public discovery requests can forward without a bearer:
 
 - `GET /.well-known/oauth-protected-resource`;

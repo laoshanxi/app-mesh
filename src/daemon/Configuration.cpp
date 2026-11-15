@@ -212,6 +212,9 @@ Json::Value Configuration::AsJson()
 	// Labels
 	result[JSON_KEY_Labels] = m_label->AsJson();
 
+	// Docker
+	result[JSON_KEY_Docker] = m_docker->AsJson();
+
 	// Build version
 	result[JSON_KEY_VERSION] = std::string(__MICRO_VAR__(BUILD_TAG));
 
@@ -260,6 +263,13 @@ std::shared_ptr<JsonDocker> JsonDocker::FromJson(const Json::Value &jsonValue)
 		LOG_WAR << "Configuration::JsonDocker::FromJson() ignored invalid HostSecurityPolicy <" << mode
 				<< ">, expected off | audit | enforce";
 	return docker;
+}
+
+Json::Value JsonDocker::AsJson() const
+{
+	Json::Value result = Json::Value(Json::objectValue);
+	result[JSON_KEY_Docker_HostSecurityPolicy] = m_hostSecurityPolicy;
+	return result;
 }
 
 std::string Configuration::getDockerHostSecurityPolicy()
@@ -578,6 +588,12 @@ bool Configuration::getCorsDisabled() const
 	return m_rest->m_corsDisabled;
 }
 
+std::set<std::string> Configuration::getCorsAllowOrigins() const
+{
+	std::lock_guard guard(m_hotupdateMutex);
+	return m_rest->m_corsAllowOrigins;
+}
+
 std::string Configuration::getRequestReplayProtection() const
 {
 	std::lock_guard guard(m_hotupdateMutex);
@@ -605,6 +621,11 @@ std::set<std::string> Configuration::getCsrfAllowedOrigins() const
 std::string Configuration::getFileAllowedBaseDir() const
 {
 	std::lock_guard guard(m_hotupdateMutex);
+	// Unset means the daemon's work directory tree, not the whole filesystem:
+	// the file API defaults closed (inside it the own-installation exclusion
+	// still applies, leaving work/tmp as the exchangeable scratch area).
+	if (m_rest->m_fileAllowedBaseDir.empty())
+		return getWorkDir();
 	return m_rest->m_fileAllowedBaseDir;
 }
 
@@ -1003,6 +1024,8 @@ void Configuration::hotUpdate(Json::Value &jsonValue)
 				SET_COMPARE(this->m_rest->m_restEnabled, newConfig->m_rest->m_restEnabled);
 			if (HAS_JSON_FIELD(rest, JSON_KEY_CorsDisabled))
 				SET_COMPARE(this->m_rest->m_corsDisabled, newConfig->m_rest->m_corsDisabled);
+			if (HAS_JSON_FIELD(rest, JSON_KEY_CorsAllowOrigins))
+				SET_COMPARE(this->m_rest->m_corsAllowOrigins, newConfig->m_rest->m_corsAllowOrigins);
 			if (HAS_JSON_FIELD(rest, JSON_KEY_CsrfAllowedOrigins))
 				SET_COMPARE(this->m_rest->m_csrfAllowedOrigins, newConfig->m_rest->m_csrfAllowedOrigins);
 			if (HAS_JSON_FIELD(rest, JSON_KEY_RequestReplayProtection))
@@ -1280,6 +1303,14 @@ std::shared_ptr<Configuration::JsonRest> Configuration::JsonRest::FromJson(const
 	rest->m_webSocketPort = GET_JSON_INT_VALUE(jsonValue, JSON_KEY_WebSocketPort);
 	SET_JSON_BOOL_VALUE(jsonValue, JSON_KEY_RestEnabled, rest->m_restEnabled);
 	SET_JSON_BOOL_VALUE(jsonValue, JSON_KEY_CorsDisabled, rest->m_corsDisabled);
+	if (HAS_JSON_FIELD(jsonValue, JSON_KEY_CorsAllowOrigins) && jsonValue[JSON_KEY_CorsAllowOrigins].isArray())
+	{
+		for (const auto &origin : jsonValue[JSON_KEY_CorsAllowOrigins])
+		{
+			if (origin.isString() && !origin.asString().empty())
+				rest->m_corsAllowOrigins.insert(origin.asString());
+		}
+	}
 	if (HAS_JSON_FIELD(jsonValue, JSON_KEY_CsrfAllowedOrigins) && jsonValue[JSON_KEY_CsrfAllowedOrigins].isArray())
 	{
 		for (const auto &origin : jsonValue[JSON_KEY_CsrfAllowedOrigins])
@@ -1407,6 +1438,9 @@ Json::Value Configuration::JsonRest::AsJson() const
 	result[JSON_KEY_TcpApiPort] = (m_tcpApiPort);
 	result[JSON_KEY_WebSocketPort] = (m_webSocketPort);
 	result[JSON_KEY_CorsDisabled] = (m_corsDisabled);
+	result[JSON_KEY_CorsAllowOrigins] = Json::Value(Json::arrayValue);
+	for (const auto &origin : m_corsAllowOrigins)
+		result[JSON_KEY_CorsAllowOrigins].append(origin);
 	result[JSON_KEY_CsrfAllowedOrigins] = Json::Value(Json::arrayValue);
 	for (const auto &origin : m_csrfAllowedOrigins)
 		result[JSON_KEY_CsrfAllowedOrigins].append(origin);

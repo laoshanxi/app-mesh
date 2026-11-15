@@ -4,7 +4,7 @@
 ##########################################################################
 project(test_security)
 
-add_executable(${PROJECT_NAME} main.cpp request_hardening.cpp)
+add_executable(${PROJECT_NAME} main.cpp configuration.cpp request_hardening.cpp)
 # RequestHardening reads Configuration, which only the daemon executable
 # compiles; pull the single source in directly instead of a library split.
 # Label.cpp comes with it (Configuration owns the label store).

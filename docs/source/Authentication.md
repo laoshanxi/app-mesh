@@ -565,7 +565,7 @@ processes must re-authenticate after the access token expires.
 
 | Role | Permissions |
 | --- | --- |
-| `appmesh-admin` | All 28 permissions, including `app-reg`, `app-run-task`, `file-delete`, `principal-set`, `role-set`, `workflow-admin` |
+| `appmesh-admin` | All 29 permissions, including `app-reg`, `app-run-task`, `file-delete`, `host-forward`, `principal-set`, `role-set`, `workflow-admin` |
 | `appmesh-maintenance` | `app-control`, `app-manage-all`, `app-view-all`, `host-resource-view` |
 | `appmesh-viewer` | `app-view-all`, `app-view`, `app-output-view`, `config-view`, `host-resource-view`, `label-view`, `role-view` |
 
