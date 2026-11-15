@@ -16,8 +16,8 @@ pub fn get_current_url(cli: &Cli) -> String {
 }
 
 pub fn get_current_endpoint(cli: &Cli) -> Result<String> {
-    let (host, port, _) = resolve_address_and_tls(cli)?;
-    Ok(canonical_endpoint(&host, port))
+    let (host, port, tls) = resolve_address_and_tls(cli)?;
+    Ok(canonical_endpoint(&host, port, tls.plain))
 }
 
 /// Attach the HMAC request signer when an API key pair is configured via
@@ -69,8 +69,8 @@ pub async fn build_client(cli: &Cli) -> Result<Arc<AppMeshClientWSS>> {
     apply_request_signer(&client, cli);
 
     // An explicitly passed endpoint becomes the remembered default only after a
-    // successful logon; a one-off or mistyped -H must not hijack later commands.
-    if cli.host_url.is_none() {
+    // successful logon; a plaintext endpoint is never remembered (no scheme).
+    if cli.host_url.is_none() && !tls.plain {
         config::save_last_host(&host, wss_port, None);
     }
     Ok(client)
@@ -81,6 +81,10 @@ pub async fn build_client(cli: &Cli) -> Result<Arc<AppMeshClientWSS>> {
 /// given at logon is remembered with the endpoint so later commands need no flag.
 pub fn remember_engine_endpoint(cli: &Cli) -> Result<()> {
     let (host, port, tls) = resolve_address_and_tls(cli)?;
+    // A plaintext endpoint is per-invocation; remembering it would later dial TLS.
+    if tls.plain {
+        return Ok(());
+    }
     // The local daemon resolves its own CA from its config on every run; remember
     // one only when it was named for this logon (--ca-cert).
     let ca_cert = if cli.ca_cert.is_some() { tls.ca_cert.as_deref() } else { None };
@@ -257,6 +261,12 @@ fn lock_known(known: &Mutex<TokenSet>) -> MutexGuard<'_, TokenSet> {
 }
 
 fn build_wss(host: String, port: u16, tls: &config::DaemonTlsConfig) -> Result<Arc<AppMeshClientWSS>> {
+    // Plain endpoint: no CA or client certificate applies.
+    if tls.plain {
+        let transport_host =
+            if host.contains(':') && !host.starts_with('[') { format!("[{}]", host) } else { host };
+        return ClientBuilderWSS::new().address(&transport_host, port).plain_transport(true).build().context("Failed to build WSS client");
+    }
     // Only skip verification when the daemon config explicitly disables it. With
     // no CA configured, leave ssl_ca_cert unset so the SDK's auto default applies
     // (App Mesh CA bundle if installed, else system CAs) — never silently disable.
@@ -278,16 +288,35 @@ fn build_wss(host: String, port: u16, tls: &config::DaemonTlsConfig) -> Result<A
 fn resolve_address_and_tls(cli: &Cli) -> Result<(String, u16, config::DaemonTlsConfig)> {
     let (daemon_addr, daemon_tls) = config::load_daemon_config();
 
-    let (host, port) = if let Some(ref url) = cli.host_url {
-        parse_url(url)?
-    } else if let Some((host, port)) = config::load_last_host() {
-        (host, port)
-    } else if let Some((host, port)) = daemon_addr.clone() {
-        (host, port)
-    } else {
-        ("127.0.0.1".to_string(), config::DEFAULT_WSS_PORT)
-    };
+    // A ws:// or http:// -H is a plaintext endpoint; local TLS never leaks in.
+    if let Some(ref url) = cli.host_url {
+        let (host, port) = parse_url(url)?;
+        if url_scheme_is_plain(url)? {
+            let mut tls = config::DaemonTlsConfig::default();
+            tls.plain = true;
+            return Ok((host, port, tls));
+        }
+        return resolve_tls_for(cli, host, port, daemon_addr, daemon_tls);
+    }
+    if let Some((host, port)) = config::load_last_host() {
+        return resolve_tls_for(cli, host, port, daemon_addr, daemon_tls);
+    }
+    if let Some((host, port)) = daemon_addr.clone() {
+        return Ok((host, port, daemon_tls));
+    }
+    Ok(("127.0.0.1".to_string(), config::DEFAULT_WSS_PORT, config::DaemonTlsConfig::default()))
+}
 
+/// TLS settings for a TLS endpoint: inherit the local daemon's only when the
+/// endpoint IS the local daemon; a remote endpoint trusts only its remembered CA.
+#[allow(clippy::too_many_arguments)]
+fn resolve_tls_for(
+    cli: &Cli,
+    host: String,
+    port: u16,
+    daemon_addr: Option<(String, u16)>,
+    daemon_tls: config::DaemonTlsConfig,
+) -> Result<(String, u16, config::DaemonTlsConfig)> {
     let mut tls = if daemon_addr.as_ref().is_some_and(|address| address == &(host.clone(), port)) {
         daemon_tls
     } else {
@@ -307,6 +336,16 @@ fn resolve_address_and_tls(cli: &Cli) -> Result<(String, u16, config::DaemonTlsC
     Ok((host, port, tls))
 }
 
+/// True for the plaintext schemes (the TLS-at-gateway deployment shape).
+fn url_scheme_is_plain(url: &str) -> Result<bool> {
+    let parsed = if url.contains("://") {
+        url::Url::parse(url).context("Invalid URL")?
+    } else {
+        url::Url::parse(&format!("wss://{}", url)).context("Invalid Engine address")?
+    };
+    Ok(matches!(parsed.scheme(), "ws" | "http"))
+}
+
 fn parse_url(url: &str) -> Result<(String, u16)> {
     if !url.contains("://") {
         if let Ok(address) = url.parse::<std::net::IpAddr>() {
@@ -322,25 +361,27 @@ fn parse_url(url: &str) -> Result<(String, u16)> {
 }
 
 fn validated_host_port(parsed: url::Url, default_port: u16) -> Result<(String, u16)> {
-    if !matches!(parsed.scheme(), "wss" | "https")
+    if !matches!(parsed.scheme(), "wss" | "https" | "ws" | "http")
         || !parsed.username().is_empty()
         || parsed.password().is_some()
         || (parsed.path() != "" && parsed.path() != "/")
         || parsed.query().is_some()
         || parsed.fragment().is_some()
     {
-        anyhow::bail!("Engine URL must be a WSS/HTTPS origin without credentials, path, query, or fragment");
+        anyhow::bail!("Engine URL must be a WSS/HTTPS (or WS/HTTP for plain transport) origin without credentials, path, query, or fragment");
     }
     let host = parsed.host_str().ok_or_else(|| anyhow::anyhow!("Engine URL is missing a host"))?.to_string();
     let port = parsed.port().unwrap_or(default_port);
     Ok((host, port))
 }
 
-fn canonical_endpoint(host: &str, port: u16) -> String {
+/// The scheme-aware canonical endpoint used as the sign-in session key.
+fn canonical_endpoint(host: &str, port: u16, plain: bool) -> String {
+    let scheme = if plain { "ws" } else { "wss" };
     if host.contains(':') && !host.starts_with('[') {
-        format!("wss://[{}]:{}", host, port)
+        format!("{}://[{}]:{}", scheme, host, port)
     } else {
-        format!("wss://{}:{}", host, port)
+        format!("{}://{}:{}", scheme, host, port)
     }
 }
 

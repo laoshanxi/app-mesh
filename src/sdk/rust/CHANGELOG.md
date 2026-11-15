@@ -1,5 +1,23 @@
 # Changelog
 
+## 3.0.18
+
+- Plain-transport opt-in for the TLS-at-gateway deployment shape (daemon
+  `SSL.SSLEnabled=false` behind a load balancer, API gateway, or service-mesh
+  sidecar on a trusted network): `ClientBuilderTCP`/`ClientBuilderWSS`
+  `.plain_transport(true)` (and the client constructors' `plain` argument) dial
+  the TCP frame port without TLS and `ws://` for the WebSocket transport, with
+  the WSS HTTPS file side channel on plain `http://`. TLS stays the default;
+  the flag never disables verification of a TLS endpoint.
+- CLI (crate 3.0.3): a `-H ws://host:port` (or `http://`) endpoint selects the
+  same plaintext shape for that invocation — no CA or client certificate
+  applies, and a plain endpoint is never remembered as the default (a later
+  bare `-H` would dial the same host over TLS). The local-daemon default
+  endpoint reads the daemon's `SSL.SSLEnabled` from its own config (work
+  overlay first, like the daemon), so a local plaintext daemon is dialed as
+  `ws://` with no flags.
+
+
 ## 3.0.17
 
 - Request signing (opt-in): `RequestSigner::new(key_id, secret)` produces the

@@ -54,6 +54,7 @@ class AppMeshClientTCP(TransportClientMixin, AppMeshClient):
         ssl_verify: Union[bool, str, None] = None,
         ssl_client_cert: Optional[Union[str, Tuple[str, str]]] = None,
         *,
+        plain_transport: bool = False,
         bearer_token: Optional[str] = None,
         token_provider: Optional[TokenProvider] = None,
         api_key: Optional[str] = None,
@@ -82,7 +83,9 @@ class AppMeshClientTCP(TransportClientMixin, AppMeshClient):
             unlike HTTP, which can retrieve intermediate certificates automatically.
         """
         ssl_verify = AppMeshClient._resolve_ssl_verify(ssl_verify)
-        self.tcp_transport = TCPTransport(address=tcp_address, ssl_verify=ssl_verify, ssl_client_cert=ssl_client_cert)
+        self.tcp_transport = TCPTransport(
+            address=tcp_address, ssl_verify=ssl_verify, ssl_client_cert=ssl_client_cert, plain_transport=plain_transport
+        )
         self._transport_client_addr = socket.gethostname()
         self._transport_name = "Socket"
         super().__init__(

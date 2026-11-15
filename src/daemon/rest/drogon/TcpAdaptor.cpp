@@ -26,7 +26,7 @@ namespace
 TcpAdaptor::~TcpAdaptor() = default;
 
 void TcpAdaptor::initialize(const std::string &host, uint16_t port, const std::string &cert, const std::string &key,
-							const std::string &ca, int ioThreads)
+							const std::string &ca, bool useTLS, int ioThreads)
 {
 	const static char fname[] = "TcpAdaptor::initialize() ";
 
@@ -36,6 +36,7 @@ void TcpAdaptor::initialize(const std::string &host, uint16_t port, const std::s
 	m_keyFile = key;
 	m_caFile = ca;
 	m_ioThreads = std::max(1, ioThreads);
+	m_useTLS = useTLS;
 
 	LOG_INF << fname << "initialized with " << m_ioThreads << " I/O threads on port " << m_port;
 }
@@ -61,9 +62,14 @@ void TcpAdaptor::start()
 
 	// TLS: PEM files, cipher hardening, and client-certificate verification
 	// when a CA is configured. "require" also rejects a client without a cert.
-	auto policy = trantor::TLSPolicy::defaultServerPolicy(m_certFile, m_keyFile);
-	policy->setConfCmds(dgn::tlsHardeningConf(m_caFile));
-	m_server->enableSSL(std::move(policy));
+	// useTLS=false serves plaintext frames for the TLS-at-gateway deployment
+	// shape; the certificate paths are then empty by contract.
+	if (m_useTLS)
+	{
+		auto policy = trantor::TLSPolicy::defaultServerPolicy(m_certFile, m_keyFile);
+		policy->setConfCmds(dgn::tlsHardeningConf(m_caFile));
+		m_server->enableSSL(std::move(policy));
+	}
 
 	// A bind/listen failure aborts the process (trantor logs and exits),
 	// keeping startup fail-fast.

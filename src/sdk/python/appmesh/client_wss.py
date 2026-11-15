@@ -55,6 +55,7 @@ class AppMeshClientWSS(TransportClientMixin, AppMeshClient):
         ssl_verify: Union[bool, str, None] = None,
         ssl_client_cert: Optional[Union[str, Tuple[str, str]]] = None,
         *,
+        plain_transport: bool = False,
         bearer_token: Optional[str] = None,
         token_provider: Optional[TokenProvider] = None,
         api_key: Optional[str] = None,
@@ -83,13 +84,18 @@ class AppMeshClientWSS(TransportClientMixin, AppMeshClient):
             unlike HTTP, which can retrieve intermediate certificates automatically.
         """
         ssl_verify = AppMeshClient._resolve_ssl_verify(ssl_verify)
-        self.wss_transport = WSSTransport(address=wss_address, ssl_verify=ssl_verify, ssl_client_cert=ssl_client_cert)
+        self.wss_transport = WSSTransport(
+            address=wss_address, ssl_verify=ssl_verify, ssl_client_cert=ssl_client_cert, plain_transport=plain_transport
+        )
         self._transport_client_addr = "wss-client"
         self._transport_name = "WebSocket"
-        # http and websocket share same address
+        # http and websocket share same address; the HTTPS file side channel
+        # follows the transport mode (plain_transport dials http://, like the
+        # Rust SDK's WSS client).
         host, port = wss_address
+        scheme = "http" if plain_transport else "https"
         super().__init__(
-            base_url=f"https://{host}:{port}",
+            base_url=f"{scheme}://{host}:{port}",
             ssl_verify=ssl_verify,
             ssl_client_cert=ssl_client_cert,
             bearer_token=bearer_token,

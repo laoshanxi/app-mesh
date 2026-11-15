@@ -221,7 +221,7 @@ namespace dgn
 }
 
 void DrogonAdaptor::initialize(const std::string &host, uint16_t port, const std::string &cert, const std::string &key,
-							   const std::string &ca, int ioThreads)
+							   const std::string &ca, bool useTLS, int ioThreads)
 {
 	const static char fname[] = "DrogonAdaptor::initialize() ";
 
@@ -231,6 +231,7 @@ void DrogonAdaptor::initialize(const std::string &host, uint16_t port, const std
 	m_keyFile = key;
 	m_caFile = ca;
 	m_ioThreads = std::max(1, ioThreads);
+	m_useTLS = useTLS;
 
 	trantor::Logger::setLogLevel(trantor::Logger::kWarn);
 	// trantor logs to stdout, which the service manager discards: forward them
@@ -392,8 +393,10 @@ void DrogonAdaptor::setupRoutes()
 
 	// TLS: PEM files, cipher hardening, and client-certificate verification
 	// when a CA is configured. "require" also rejects a client without a cert.
-	app.addListener(m_host, static_cast<uint16_t>(m_port), true, m_certFile, m_keyFile, false,
-					dgn::tlsHardeningConf(m_caFile));
+	// useTLS=false serves plaintext HTTP and WebSocket for the TLS-at-gateway
+	// deployment shape; the certificate paths are then empty by contract.
+	app.addListener(m_host, static_cast<uint16_t>(m_port), m_useTLS, m_certFile, m_keyFile, false,
+					m_useTLS ? dgn::tlsHardeningConf(m_caFile) : std::vector<std::pair<std::string, std::string>>{});
 
 	// Streaming file endpoints (exact routes take precedence over the regex
 	// catch-all below). The canonical routes are HTTP-native for plain-HTTP

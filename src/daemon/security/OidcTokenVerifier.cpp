@@ -336,11 +336,14 @@ Json::Value OidcTokenVerifier::publicConfig() const
 			scopes.append(scope);
 		result["scopes"] = scopes;
 	}
-	// An unconfigured entry defaults to this daemon's own HTTPS REST listener, so
+	// An unconfigured entry defaults to this daemon's own REST listener, so
 	// bare deployments and dev servers need no manual redirect registration.
+	// The scheme follows the listener's own TLS mode: the plaintext
+	// (TLS-at-gateway) shape must not advertise an unreachable https:// entry.
+	const auto scheme = Configuration::instance()->getSslEnabled() ? "https://" : "http://";
 	result["browser_entry"] = !m_config.browserEntry.empty()
 								  ? m_config.browserEntry
-								  : "https://" + Configuration::instance()->getRestListenAddress() + ":" +
+								  : scheme + Configuration::instance()->getRestListenAddress() + ":" +
 										std::to_string(Configuration::instance()->getRestListenPort());
 	Json::Value flows(Json::arrayValue);
 	flows.append("authorization_code_pkce");

@@ -103,13 +103,16 @@ bool TcpClientStream::connect(const ForwardingConnectOptions &options)
 					self->onMessage(conn, buf);
 			});
 
-		auto policy = std::make_shared<trantor::TLSPolicy>();
-		policy->setValidate(verifyPeer).setUseOldTLS(false).setUseSystemCertStore(false).setHostname(host);
-		if (verifyPeer && !ca.empty())
-			policy->setCaPath(ca);
-		if (!options.clientCert.empty() && !options.clientKey.empty())
-			policy->setCertPath(options.clientCert).setKeyPath(options.clientKey);
-		m_client->enableSSL(std::move(policy));
+		if (options.useTLS)
+		{
+			auto policy = std::make_shared<trantor::TLSPolicy>();
+			policy->setValidate(verifyPeer).setUseOldTLS(false).setUseSystemCertStore(false).setHostname(host);
+			if (verifyPeer && !ca.empty())
+				policy->setCaPath(ca);
+			if (!options.clientCert.empty() && !options.clientKey.empty())
+				policy->setCertPath(options.clientCert).setKeyPath(options.clientKey);
+			m_client->enableSSL(std::move(policy));
+		}
 		m_client->setSockOptCallback([](int fd) { tcpframe::enableKeepAlive(fd); });
 	}
 	catch (const std::exception &ex)

@@ -346,6 +346,15 @@ func setConfigValue(target interface{}, path []string, value string) error {
 		v = v.FieldByIndex(field.Index)
 	}
 
+	// Optional leaves (SSLConfig.SSLEnabled is a *bool: nil keeps the TLS
+	// default) allocate on first override, preserving absent-means-default.
+	if v.Kind() == reflect.Ptr {
+		if v.IsNil() {
+			v.Set(reflect.New(v.Type().Elem()))
+		}
+		v = v.Elem()
+	}
+
 	switch v.Kind() {
 	case reflect.String:
 		v.SetString(value)

@@ -287,20 +287,22 @@ impl AppMeshClientTCP {
         ssl_client_cert: Option<(String, String)>,
     ) -> Result<Arc<Self>> {
         let verify = crate::tls_config::resolve_ssl_verify(ssl_verify)?;
-        Self::new_with_verify(tcp_address, verify, ssl_client_cert)
+        Self::new_with_verify(tcp_address, verify, ssl_client_cert, false)
     }
 
     /// Create a TCP transport client with an explicit `SslVerify` mode (used by the
     /// builder so insecure mode is an explicit flag, never an empty-string sentinel).
+    /// `plain` selects the TLS-at-gateway shape: a plaintext TCP connection.
     pub(crate) fn new_with_verify(
         tcp_address: Option<(String, u16)>,
         verify: crate::tls_config::SslVerify,
         ssl_client_cert: Option<(String, String)>,
+        plain: bool,
     ) -> Result<Arc<Self>> {
         let tcp_address = tcp_address.unwrap_or_else(|| (DEFAULT_TCP_HOST.to_string(), DEFAULT_TCP_PORT));
         let client_cert = ssl_client_cert.map(|(cert, key)| ClientCert::Pair(cert, key));
 
-        let tcp_transport = Arc::new(Mutex::new(TCPTransport::new(tcp_address.clone(), verify, client_cert)));
+        let tcp_transport = Arc::new(Mutex::new(TCPTransport::new(tcp_address.clone(), verify, client_cert, plain)));
         let tcp_requester = TCPRequester::with_shared_transport(Arc::clone(&tcp_transport));
         let url = format!("tcp://{}:{}", tcp_address.0, tcp_address.1);
         let client = AppMeshClient::with_requester(Box::new(tcp_requester), url);

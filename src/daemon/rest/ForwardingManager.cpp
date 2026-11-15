@@ -360,23 +360,25 @@ std::shared_ptr<ForwardingConnection> ForwardingManager::getOrCreateConnection(c
 			m_connections.erase_if(key, [&weakConn](auto &entry) { return entry.second == weakConn.lock(); });
 		});
 
-	const bool verifyServer = Configuration::instance()->getSslVerifyServer();
+	const auto forwardConfig = Configuration::instance();
+	const bool verifyServer = forwardConfig->getSslVerifyServer();
 	ForwardingConnectOptions options;
 	options.host = host;
 	options.port = port;
+	// One transport mode cluster-wide: a plaintext node forwards plaintext.
+	options.useTLS = forwardConfig->getSslEnabled();
 	options.ca = verifyServer
 					 ? ClientSSLConfig::resolveAbsolutePath(Utility::getHomeDir(), Configuration::instance()->getSSLCaPath())
 					 : std::string();
 	options.verifyPeer = verifyServer;
 	options.bearer = bearer;
 	// A peer that requires client certificates cannot be reached without them.
-	auto config = Configuration::instance();
-	const auto clientCert = config->getSSLClientCertificateFile();
+	const auto clientCert = forwardConfig->getSSLClientCertificateFile();
 	if (!clientCert.empty())
 	{
 		options.clientCert = ClientSSLConfig::resolveAbsolutePath(Utility::getHomeDir(), clientCert);
 		options.clientKey =
-			ClientSSLConfig::resolveAbsolutePath(Utility::getHomeDir(), config->getSSLClientCertificateKeyFile());
+			ClientSSLConfig::resolveAbsolutePath(Utility::getHomeDir(), forwardConfig->getSSLClientCertificateKeyFile());
 	}
 	options.timeoutSeconds = FORWARD_CONNECT_TIMEOUT_SECONDS;
 	if (bearer.empty() && pinsPrincipal)

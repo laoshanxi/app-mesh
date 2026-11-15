@@ -17,6 +17,8 @@ struct ForwardingConnectOptions
 	std::string bearer;     // Authorization header value; empty when the request had none
 	std::string clientCert; // resolved client certificate for mTLS peers; empty when unconfigured
 	std::string clientKey;  // resolved private key of the client certificate
+	// False on a plaintext cluster (SSL.SSLEnabled=false): hop without TLS.
+	bool useTLS = true;
 	int timeoutSeconds = 10;
 };
 

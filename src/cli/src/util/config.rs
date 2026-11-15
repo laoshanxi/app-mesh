@@ -24,11 +24,13 @@ pub struct DaemonTlsConfig {
     pub client_cert: Option<PathBuf>,
     pub client_key: Option<PathBuf>,
     pub verify_server: bool,
+    // A ws:// or http:// endpoint: the daemon listener is plaintext.
+    pub plain: bool,
 }
 
 impl Default for DaemonTlsConfig {
     fn default() -> Self {
-        Self { ca_cert: None, client_cert: None, client_key: None, verify_server: true }
+        Self { ca_cert: None, client_cert: None, client_key: None, verify_server: true, plain: false }
     }
 }
 
@@ -417,6 +419,8 @@ pub fn load_daemon_config() -> (Option<(String, u16)>, DaemonTlsConfig) {
     let mut rest_address: Option<String> = None;
     let mut wss_port: Option<u16> = None;
     let mut verify_server = true;
+    // The daemon's SSLEnabled=false means the local listeners are plaintext.
+    let mut plain = false;
     let mut ca_cert: Option<PathBuf> = None;
     let mut client_cert: Option<PathBuf> = None;
     let mut client_key: Option<PathBuf> = None;
@@ -458,6 +462,7 @@ pub fn load_daemon_config() -> (Option<(String, u16)>, DaemonTlsConfig) {
                 "SSLClientCertificateFile" => client_cert = Some(PathBuf::from(value)),
                 "SSLClientCertificateKeyFile" => client_key = Some(PathBuf::from(value)),
                 "VerifyServer" => verify_server = value.eq_ignore_ascii_case("true"),
+                "SSLEnabled" => plain = value.eq_ignore_ascii_case("false"),
                 _ => {}
             }
         }
@@ -483,6 +488,7 @@ pub fn load_daemon_config() -> (Option<(String, u16)>, DaemonTlsConfig) {
         client_cert: client_cert.map(|p| resolve_path(&home, &p)),
         client_key: client_key.map(|p| resolve_path(&home, &p)),
         verify_server,
+        plain,
     };
 
     (address, tls)

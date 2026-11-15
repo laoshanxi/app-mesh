@@ -40,6 +40,8 @@ public:
 	{
 		static std::shared_ptr<JsonSsl> FromJson(const Json::Value &jsonObj);
 		Json::Value AsJson() const;
+		// False = plaintext listeners (TLS terminates at an upstream gateway).
+		bool m_sslEnabled;
 		bool m_sslVerifyServer;
 		bool m_sslVerifyClient;
 		std::string m_certFile;
@@ -144,6 +146,7 @@ public:
 	const std::string getWorkDir() const;
 	bool getSslVerifyClient() const;
 	bool getSslVerifyServer() const;
+	bool getSslEnabled() const;
 	std::string getSSLCertificateFile() const;
 	std::string getSSLCertificateKeyFile() const;
 	std::string getSSLCaPath() const;

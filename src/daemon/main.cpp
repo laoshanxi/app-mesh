@@ -405,12 +405,23 @@ void AppMeshDaemon::initializeRestService()
 		LOG_INF << fname << "REST service is disabled, skipping initialization";
 		return;
 	}
+	// TLS-at-gateway shape: an upstream LB/gateway/sidecar terminates TLS and
+	// forwards plaintext on a trusted network. Plaintext is always explicit.
+	const bool sslEnabled = config->getSslEnabled();
+	if (!sslEnabled)
+	{
+		LOG_WAR << fname << "SSL is disabled: the REST, WebSocket and TCP listeners accept PLAINTEXT. This is only "
+						 "for deployments where TLS terminates at an upstream gateway on a trusted network; keep "
+						 "the listeners bound to a private interface.";
+	}
 	const std::string homeDir = Utility::getHomeDir();
-	const bool verifyClient = Configuration::instance()->getSslVerifyClient();
-	const auto cert = ClientSSLConfig::resolveAbsolutePath(
-		homeDir, Configuration::instance()->getSSLCertificateFile()); // Server certificate (PEM, include intermediates)
-	const auto key =
-		ClientSSLConfig::resolveAbsolutePath(homeDir, Configuration::instance()->getSSLCertificateKeyFile()); // Private key
+	const bool verifyClient = sslEnabled && Configuration::instance()->getSslVerifyClient();
+	const auto cert = sslEnabled ? ClientSSLConfig::resolveAbsolutePath(
+									   homeDir, Configuration::instance()->getSSLCertificateFile()) // Server certificate (PEM, include intermediates)
+								 : std::string();
+	const auto key = sslEnabled ? ClientSSLConfig::resolveAbsolutePath(
+										  homeDir, Configuration::instance()->getSSLCertificateKeyFile()) // Private key
+								: std::string();
 	const auto ca = verifyClient ? ClientSSLConfig::resolveAbsolutePath(homeDir, Configuration::instance()->getSSLCaPath())
 								 : std::string(); // CA file or directory
 
@@ -433,7 +444,7 @@ void AppMeshDaemon::initializeRestService()
 	{
 		const trantor::InetAddress tcpAddr(listenIp, static_cast<uint16_t>(config->getTcpApiPort()), listenV6);
 		verifyListenerAddress(tcpAddr, "TCP");
-		TcpAdaptor::instance()->initialize(listenIp, config->getTcpApiPort(), cert, key, ca,
+		TcpAdaptor::instance()->initialize(listenIp, config->getTcpApiPort(), cert, key, ca, sslEnabled,
 										   static_cast<int>(Configuration::instance()->getTransportIoThreads()));
 		TcpAdaptor::instance()->start();
 		LOG_INF << fname << "TCP service initialized on <" << tcpAddr.toIp() << ":" << tcpAddr.toPort() << ">";
@@ -446,7 +457,8 @@ void AppMeshDaemon::initializeRestService()
 		verifyListenerAddress(wsAddr, "WebSocket");
 		// <IO> threads per transport + shared <WORKER> threads
 		int ioThreadNumber = static_cast<int>(Configuration::instance()->getTransportIoThreads());
-		DrogonAdaptor::instance()->initialize(listenIp, config->getWebSocketPort(), cert, key, ca, ioThreadNumber);
+		DrogonAdaptor::instance()->initialize(listenIp, config->getWebSocketPort(), cert, key, ca, sslEnabled,
+											  ioThreadNumber);
 		DrogonAdaptor::instance()->start();
 		LOG_INF << fname << "WebSocket service initialized on <" << wsAddr.toIp() << ":" << wsAddr.toPort() << ">";
 	}

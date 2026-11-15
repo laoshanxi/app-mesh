@@ -59,6 +59,57 @@ Reconnect after a token refresh. A WSS frame cannot change the pinned principal.
 
 File upload and download endpoints validate the bearer before file access. They also enforce the required file permission.
 
+## Deployment behind a TLS-terminating gateway
+
+Enterprise networks usually centralize TLS at an edge layer: a load balancer,
+API gateway, or service-mesh sidecar terminates TLS and forwards plaintext HTTP
+to the services behind it. App Mesh supports this shape explicitly.
+
+Set `REST.SSL.SSLEnabled: false` (default `true`). Every listener — the
+REST/WebSocket port and the TCP frame port — then accepts plaintext, and the
+certificate paths under `SSL` are ignored. The configuration is an explicit
+operator choice: a missing certificate file never silently degrades a TLS
+deployment to plaintext.
+
+Requirements for this shape:
+
+- The listeners must stay bound to a trusted network segment (a private
+  interface, a container overlay network, or a pod network). The gateway owns
+  the public surface and the certificate lifecycle.
+- The gateway must pass the `Authorization` header, the WebSocket upgrade, and
+  — once request signatures are enabled — the `X-Request-Key`, `X-Timestamp`,
+  `X-Nonce` and `X-Signature` headers through unchanged. Session affinity is
+  not required: every request carries its own bearer.
+- The framed TCP port is a custom protocol, not HTTP. A typical HTTP gateway
+  does not forward it; reach it directly on the trusted network (SDK clients
+  construct it with `plain_transport=True`), or front it with a plain TCP
+  proxy.
+- Apply one transport mode across the cluster. A follower pulls authorization
+  state from the owner over the same listener shape; a plaintext owner cannot
+  serve TLS followers (and vice versa). Forwarding follows the same mode: a
+  plaintext node forwards plaintext. SDK forward targets given as a bare host
+  default to TLS — name the scheme explicitly (`http://host`) on a plaintext
+  cluster.
+
+Clients:
+
+- To the gateway, clients keep using `https://` and `wss://` — nothing changes
+  for them; TLS ends at the gateway.
+- Direct connections to a plaintext daemon are opt-in per client: the CLI uses
+  a `ws://` or `http://` `-H` endpoint, the Python SDK passes
+  `plain_transport=True` to the TCP and WSS clients, the Rust SDK and CLI
+  builder use `.plain_transport(true)`, and the Go SDK dials
+  `TCPConnection.ConnectPlain` or a `ws://` URL. Every SDK keeps TLS as the
+  default; the Java and JavaScript SDKs have no plaintext opt-in (their REST
+  transports accept `http://` base URLs, their framed transports are
+  TLS-only).
+
+With transport protection moved upstream, enable the request signature layer
+(`REST.RequestSignature: enforce`) so tampering on the trusted segment is still
+detected: the HMAC signature covers the method, path, query, body hash,
+timestamp, and nonce of every request (see "Request replay protection and
+signatures").
+
 ## Principal and authorization model
 
 The principal ID is stable for one issuer and subject. The Engine does not use a username as an ownership key.

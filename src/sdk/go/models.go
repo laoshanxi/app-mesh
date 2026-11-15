@@ -188,6 +188,8 @@ func PrintOutputHandler(data string, position int64) {
 
 // SSLConfig represents the SSL configuration.
 type SSLConfig struct {
+	// Nil (key absent) keeps TLS on: no silent downgrade to plaintext.
+	SSLEnabled                  *bool  `yaml:"SSLEnabled"`
 	VerifyClient                bool   `yaml:"VerifyClient"`
 	VerifyServer                bool   `yaml:"VerifyServer"`
 	SSLCAPath                   string `yaml:"SSLCaPath"`
@@ -195,6 +197,11 @@ type SSLConfig struct {
 	SSLCertificateKeyFile       string `yaml:"SSLCertificateKeyFile"`
 	SSLClientCertificateFile    string `yaml:"SSLClientCertificateFile"`
 	SSLClientCertificateKeyFile string `yaml:"SSLClientCertificateKeyFile"`
+}
+
+// Enabled reports whether TLS is on. An absent SSLEnabled key means true.
+func (s SSLConfig) Enabled() bool {
+	return s.SSLEnabled == nil || *s.SSLEnabled
 }
 
 // Request represents the message sent over TCP.

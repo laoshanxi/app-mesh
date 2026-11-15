@@ -90,6 +90,11 @@ REST:
   FileAllowedBaseDir:
 
   SSL:
+    # TLS on every listener. Set false only when TLS terminates at an upstream
+    # gateway and the daemon runs on a trusted network: every listener then
+    # accepts plaintext and the certificate paths below are ignored.
+    SSLEnabled: true
+
     # Path to the Certificate Authority (CA) certificate.
     SSLCaPath: ssl/ca.pem
 

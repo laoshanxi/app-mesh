@@ -492,6 +492,12 @@ const std::string Configuration::getWorkDir() const
 		return (fs::path(Utility::getHomeDir()) / APPMESH_WORK_DIR).string();
 }
 
+bool Configuration::getSslEnabled() const
+{
+	std::lock_guard guard(m_hotupdateMutex);
+	return m_rest->m_ssl->m_sslEnabled;
+}
+
 bool Configuration::getSslVerifyClient() const
 {
 	std::lock_guard guard(m_hotupdateMutex);
@@ -1005,6 +1011,13 @@ void Configuration::hotUpdate(Json::Value &jsonValue)
 					SET_COMPARE(this->m_rest->m_ssl->m_sslVerifyServer, newConfig->m_rest->m_ssl->m_sslVerifyServer);
 				if (HAS_JSON_FIELD(ssl, JSON_KEY_SSLVerifyClient))
 					SET_COMPARE(this->m_rest->m_ssl->m_sslVerifyClient, newConfig->m_rest->m_ssl->m_sslVerifyClient);
+				if (HAS_JSON_FIELD(ssl, JSON_KEY_SSLEnabled) &&
+					newConfig->m_rest->m_ssl->m_sslEnabled != this->m_rest->m_ssl->m_sslEnabled)
+				{
+					LOG_WAR << fname << "REST.SSL.SSLEnabled is startup-only: the reload from <"
+							<< (newConfig->m_rest->m_ssl->m_sslEnabled ? "true" : "false") << "> is ignored, restart the "
+							<< "daemon to rebind the listeners";
+				}
 			}
 		}
 
@@ -1387,6 +1400,9 @@ Configuration::JsonRest::JsonRest()
 std::shared_ptr<Configuration::JsonSsl> Configuration::JsonSsl::FromJson(const Json::Value &jsonValue)
 {
 	auto ssl = std::make_shared<JsonSsl>();
+	// Absent key keeps TLS on, so an older config never degrades to plaintext.
+	ssl->m_sslEnabled = HAS_JSON_FIELD(jsonValue, JSON_KEY_SSLEnabled) ? Utility::jsonBoolField(jsonValue, JSON_KEY_SSLEnabled) : true;
+
 	SET_JSON_BOOL_VALUE(jsonValue, JSON_KEY_SSLVerifyServer, ssl->m_sslVerifyServer);
 	SET_JSON_BOOL_VALUE(jsonValue, JSON_KEY_SSLVerifyClient, ssl->m_sslVerifyClient);
 	ssl->m_certFile = GET_JSON_STR_VALUE(jsonValue, JSON_KEY_SSLCertificateFile);
@@ -1400,6 +1416,7 @@ std::shared_ptr<Configuration::JsonSsl> Configuration::JsonSsl::FromJson(const J
 Json::Value Configuration::JsonSsl::AsJson() const
 {
 	auto result = Json::Value(Json::objectValue);
+	result[JSON_KEY_SSLEnabled] = (m_sslEnabled);
 	result[JSON_KEY_SSLVerifyServer] = (m_sslVerifyServer);
 	result[JSON_KEY_SSLVerifyClient] = (m_sslVerifyClient);
 	result[JSON_KEY_SSLCertificateFile] = std::string(m_certFile);
@@ -1410,4 +1427,4 @@ Json::Value Configuration::JsonSsl::AsJson() const
 	return result;
 }
 
-Configuration::JsonSsl::JsonSsl() : m_sslVerifyServer(false), m_sslVerifyClient(false) {}
+Configuration::JsonSsl::JsonSsl() : m_sslEnabled(true), m_sslVerifyServer(false), m_sslVerifyClient(false) {}

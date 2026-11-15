@@ -296,8 +296,19 @@ func newAuthReverseProxy() (http.Handler, string, error) {
 	return proxy, issuerPath, nil
 }
 
-// StartHTTPSServer starts the HTTPS server with the provided router
+// StartHTTPSServer starts the REST server; plaintext when SSL.SSLEnabled=false.
 func StartHTTPSServer(ctx context.Context, restAgentAddr string, router *mux.Router) error {
+	if !config.ConfigData.REST.SSL.Enabled() {
+		logger.Warnf("<App Mesh Agent> SSL is disabled: serving PLAINTEXT on %s (TLS terminates upstream)", restAgentAddr)
+		server := &http.Server{
+			Addr:              restAgentAddr,
+			Handler:           router,
+			ReadHeaderTimeout: 15 * time.Second,
+			IdleTimeout:       2 * time.Minute,
+			MaxHeaderBytes:    64 << 10,
+		}
+		return servePlain(ctx, restAgentAddr, server)
+	}
 	// Load server certificate and key
 	serverCA, err := appmesh.LoadCertificatePair(config.ConfigData.REST.SSL.SSLCertificateFile,
 		config.ConfigData.REST.SSL.SSLCertificateKeyFile)
@@ -355,6 +366,27 @@ func StartHTTPSServer(ctx context.Context, restAgentAddr string, router *mux.Rou
 
 	// Start HTTPS server
 	return serveTLS(ctx, restAgentAddr, server)
+}
+
+// servePlain serves the server without TLS and shuts it down gracefully on ctx cancel.
+func servePlain(ctx context.Context, address string, server *http.Server) error {
+	ln, err := net.Listen("tcp", address)
+	if err != nil {
+		return fmt.Errorf("failed to listen on %s: %w", address, err)
+	}
+	go func() {
+		<-ctx.Done()
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		defer cancel()
+		if err := server.Shutdown(shutdownCtx); err != nil {
+			logger.Warnf("Graceful shutdown failed: %v", err)
+		}
+	}()
+	logger.Infof("<App Mesh Agent> Listening on %s", address)
+	if err := server.Serve(ln); err != nil && err != http.ErrServerClosed {
+		return fmt.Errorf("plain server error: %w", err)
+	}
+	return nil
 }
 
 // serveTLS serves the server over TLS and shuts it down gracefully on ctx cancel.

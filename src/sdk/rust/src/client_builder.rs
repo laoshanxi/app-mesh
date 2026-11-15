@@ -190,6 +190,7 @@ macro_rules !define_transport_builder
 							  ssl_client_cert : Option<PathBuf>,
 							  ssl_client_key : Option<PathBuf>,
 							  danger_accept_invalid_certs : bool,
+							  plain_transport : bool,
 							  request_signer : Option<RequestSigner>,
 						  }
 
@@ -250,6 +251,14 @@ pub fn danger_accept_invalid_certs(mut self, accept : bool) -> Self
 	self
 }
 
+/// Speak plaintext instead of TLS (opt-in), for a daemon running
+/// `SSL.SSLEnabled=false` behind a gateway on a trusted network.
+pub fn plain_transport(mut self, plain : bool) -> Self
+{
+	self.plain_transport = plain;
+	self
+}
+
 /// Attach an HMAC-SHA256 request signer (opt-in). Every framed request then
 /// carries `X-Request-Key`, `X-Timestamp`, `X-Nonce` (the framed uuid), and
 /// `X-Signature` per `docs/source/Security.md`.
@@ -272,10 +281,12 @@ pub fn build(self)
 
 	// Insecure mode is the explicit SslVerify::False flag; the
 	// legacy empty CA path form resolves to the same disable.
-	let verify = if self.danger_accept_invalid_certs { crate::tls_config::SslVerify::False }
+	// Plain transport applies no TLS material at all, so a leftover CA path
+	// must not fail the build.
+	let verify = if self.danger_accept_invalid_certs || self.plain_transport { crate::tls_config::SslVerify::False }
 	else {crate::tls_config::resolve_ssl_verify(self.ssl_ca_cert) ? };
 
-	let client = <$client>::new_with_verify(address, verify, ssl_client_cert) ? ;
+	let client = <$client>::new_with_verify(address, verify, ssl_client_cert, self.plain_transport) ? ;
 	if let Some(signer) = self.request_signer
 	{
 		client.set_request_signer(Some(signer));

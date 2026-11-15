@@ -388,10 +388,7 @@ function Install-Dex {
 
     Write-Host "Cloning the project fork's appmesh branch..." -ForegroundColor Yellow
     Remove-Item -Recurse -Force dex -ErrorAction SilentlyContinue
-    # The appmesh branch carries the refresh-token rotation SQLite deadlock
-    # fix, the upstream sync, and the pure-Go SQLite driver for CGO-free
-    # builds. Keep off the fork's master: it is the head of the upstream
-    # deadlock-fix PR and must stay clean.
+    # The appmesh branch is upstream/master plus the pure-Go SQLite driver patch.
     git clone --quiet --depth 1 -b appmesh https://github.com/laoshanxi/dex.git dex
     if ($LASTEXITCODE -ne 0) {
         throw "git clone failed for Dex"

@@ -66,11 +66,12 @@ impl WSSRequester {
         address: Option<(String, u16)>,
         verify: crate::tls_config::SslVerify,
         ssl_client_cert: Option<(String, String)>,
+        plain: bool,
     ) -> Result<Self, AppMeshError> {
         let address = address.unwrap_or_else(|| (DEFAULT_TCP_HOST.to_string(), DEFAULT_WSS_PORT));
         let client_cert = ssl_client_cert.map(|(cert, key)| ClientCert::Pair(cert, key));
 
-        let transport = WSSTransport::new(address, verify, client_cert);
+        let transport = WSSTransport::new(address, verify, client_cert, plain);
         let reader_handle = transport.reader_handle();
 
         Ok(Self {
@@ -313,34 +314,43 @@ impl AppMeshClientWSS {
         ssl_client_cert: Option<(String, String)>,
     ) -> Result<Arc<Self>, AppMeshError> {
         let verify = crate::tls_config::resolve_ssl_verify(ssl_verify)?;
-        Self::new_with_verify(address, verify, ssl_client_cert)
+        Self::new_with_verify(address, verify, ssl_client_cert, false)
     }
 
     /// Create a WSS transport client with an explicit `SslVerify` mode (used by the
     /// builder so insecure mode is an explicit flag, never an empty-string sentinel).
+    /// `plain` selects the TLS-at-gateway shape: ws:// and a plaintext HTTPS side
+    /// channel.
     pub(crate) fn new_with_verify(
         address: Option<(String, u16)>,
         verify: crate::tls_config::SslVerify,
         ssl_client_cert: Option<(String, String)>,
+        plain: bool,
     ) -> Result<Arc<Self>, AppMeshError> {
         let address_val = address.clone().unwrap_or_else(|| (DEFAULT_TCP_HOST.to_string(), DEFAULT_WSS_PORT));
 
-        let wss_requester = WSSRequester::new(address, verify.clone(), ssl_client_cert.clone())?;
+        let wss_requester = WSSRequester::new(address, verify.clone(), ssl_client_cert.clone(), plain)?;
         let transport = Arc::clone(&wss_requester.transport);
         let signer = Arc::clone(&wss_requester.signer);
 
-        let base_url = format!("https://{}:{}", address_val.0, address_val.1);
+        // The file side channel follows the transport: http:// when plain.
+        let scheme = if plain { "http" } else { "https" };
+        let base_url = format!("{}://{}:{}", scheme, address_val.0, address_val.1);
         let client = AppMeshClient::with_requester(Box::new(wss_requester), base_url.clone());
 
         // A pinned CA or no-verify mode must be preconfigured (see
         // configure_reqwest_tls); SslVerify::True keeps the platform roots.
         let side_cert = ssl_client_cert.clone().map(|(cert, key)| ClientCert::Pair(cert, key));
-        let client_builder = crate::tls_config::configure_reqwest_tls(
-            reqwest::Client::builder().timeout(std::time::Duration::from_secs(120)),
-            &verify,
-            side_cert.as_ref(),
-        )
-        .map_err(AppMeshError::ConfigurationError)?;
+        let client_builder = if plain {
+            reqwest::Client::builder().timeout(std::time::Duration::from_secs(120))
+        } else {
+            crate::tls_config::configure_reqwest_tls(
+                reqwest::Client::builder().timeout(std::time::Duration::from_secs(120)),
+                &verify,
+                side_cert.as_ref(),
+            )
+            .map_err(AppMeshError::ConfigurationError)?
+        };
 
         let http_client = client_builder
             .build()

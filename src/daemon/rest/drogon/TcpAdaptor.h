@@ -29,7 +29,7 @@ public:
 	}
 
 	void initialize(const std::string &host, uint16_t port, const std::string &cert, const std::string &key,
-					const std::string &ca, int ioThreads);
+					const std::string &ca, bool useTLS, int ioThreads);
 	void start();
 	void stop();
 
@@ -60,6 +60,8 @@ private:
 	std::string m_keyFile;
 	std::string m_caFile;
 	int m_ioThreads{1};
+	// False = plaintext listener for the TLS-at-gateway shape.
+	bool m_useTLS{true};
 
 	std::atomic<bool> m_running{false};
 	std::unique_ptr<trantor::EventLoopThread> m_acceptThread;

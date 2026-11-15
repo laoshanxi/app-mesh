@@ -316,5 +316,3 @@ appm ls -a hello -o
 - **全链路实测**：五语言 SDK 同一套集成测试矩阵（HTTP/TCP/WSS 三种传输、五百余项断言）、工作流引擎专项（DAG/重试/触发器/远程/并发）、四大参考集成（数字人/MQTT/MCP×2）用户视角端到端、负载下 fd/内存零泄漏验证
 - **默认安全**：密钥加密存储不回显、TLS 全链路、最小权限 RBAC、AI 工具集可收敛（去掉 Bash 只留只读）
 - **开源**：MIT 协议，文档齐全（[readthedocs](https://app-mesh.readthedocs.io)），镜像在 [Docker Hub](https://hub.docker.com/r/laoshanxi/appmesh)
-
-> 文档基于 App Mesh 3.0.1（2026-11）。所有示例均在六节点 compose 集群上实测通过。

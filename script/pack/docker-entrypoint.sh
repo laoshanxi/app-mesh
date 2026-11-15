@@ -55,7 +55,23 @@ publish_default_workflow() {
     rm -f "$temporary"
 }
 
+# True when the daemon listens in plaintext (TLS terminates upstream). The
+# explicit env override wins; otherwise the packaged config's SSLEnabled key
+# decides (absent = TLS, the same default the daemon applies).
+tls_disabled() {
+    [ "${APPMESH_REST_SSL_SSLEnabled:-}" = "false" ] && return 0
+    [ "${APPMESH_REST_SSL_SSLEnabled:-}" = "true" ] && return 1
+    [ -f "${PROG_HOME}/config/config.yaml" ] &&
+        grep -Eq '^[[:space:]]*SSLEnabled:[[:space:]]*"?false"?' "${PROG_HOME}/config/config.yaml"
+}
+
 prepare_tls() {
+    # Plaintext (TLS-at-gateway) deployments ignore certificate material
+    # entirely: nothing is required and nothing is generated.
+    if tls_disabled; then
+        log "SSL is disabled (SSLEnabled=false): skipping TLS material preparation"
+        return 0
+    fi
     ensure_private_directory "$TLS_DIR"
     local existing=0
     local path

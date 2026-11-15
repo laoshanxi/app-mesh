@@ -22,12 +22,54 @@ const TCP_MAX_BLOCK_SIZE: usize = 1024 * 1024 * 1024; // 1 GB
 
 pub type Result<T> = std::result::Result<T, TransportError>;
 
+/// TLS-wrapped, or plain for the TLS-at-gateway shape.
+enum ServerStream {
+    Tls(StreamOwned<rustls::ClientConnection, TcpStream>),
+    Plain(TcpStream),
+}
+
+impl std::io::Read for ServerStream {
+    fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+        match self {
+            ServerStream::Tls(stream) => stream.read(buf),
+            ServerStream::Plain(stream) => stream.read(buf),
+        }
+    }
+}
+
+impl std::io::Write for ServerStream {
+    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+        match self {
+            ServerStream::Tls(stream) => stream.write(buf),
+            ServerStream::Plain(stream) => stream.write(buf),
+        }
+    }
+
+    fn flush(&mut self) -> std::io::Result<()> {
+        match self {
+            ServerStream::Tls(stream) => stream.flush(),
+            ServerStream::Plain(stream) => stream.flush(),
+        }
+    }
+}
+
+impl ServerStream {
+    fn set_read_timeout(&self, timeout: Option<std::time::Duration>) -> std::io::Result<()> {
+        match self {
+            ServerStream::Tls(stream) => stream.sock.set_read_timeout(timeout),
+            ServerStream::Plain(stream) => stream.set_read_timeout(timeout),
+        }
+    }
+}
+
 /// Main TCP transport
 pub struct TCPTransport {
     address: (String, u16),
     ssl_verify: SslVerify,
     ssl_client_cert: Option<ClientCert>,
-    socket: Option<StreamOwned<rustls::ClientConnection, TcpStream>>,
+    // True = plain TCP (TLS-at-gateway shape).
+    plain: bool,
+    socket: Option<ServerStream>,
     receive_buffer: Vec<u8>,
 }
 
@@ -39,16 +81,28 @@ pub(crate) enum ReceivePoll {
 }
 
 impl TCPTransport {
-    pub fn new(address: (String, u16), ssl_verify: SslVerify, ssl_client_cert: Option<ClientCert>) -> Self {
+    pub fn new(
+        address: (String, u16),
+        ssl_verify: SslVerify,
+        ssl_client_cert: Option<ClientCert>,
+        plain: bool,
+    ) -> Self {
         crate::tls_config::ensure_crypto_provider();
-        Self { address, ssl_verify, ssl_client_cert, socket: None, receive_buffer: Vec::new() }
+        Self { address, ssl_verify, ssl_client_cert, plain, socket: None, receive_buffer: Vec::new() }
     }
 
-    /// Establishes a TCP+TLS connection.
+    /// Establishes a TCP+TLS connection, or a plain TCP connection when built
+    /// with `plain_transport(true)`.
     pub fn connect(&mut self) -> Result<()> {
         let tcp = TcpStream::connect((&self.address.0[..], self.address.1))
             .map_err(|e| TransportError::ConnectionFailed(e.to_string()))?;
         tcp.set_nodelay(true).map_err(|e| TransportError::ConnectionFailed(e.to_string()))?;
+
+        if self.plain {
+            self.socket = Some(ServerStream::Plain(tcp));
+            self.receive_buffer.clear();
+            return Ok(());
+        }
 
         let tls_config = build_rustls_client_config(&self.ssl_verify, self.ssl_client_cert.as_ref())?;
         let server_name = rustls::pki_types::ServerName::try_from(self.address.0.clone())
@@ -57,15 +111,17 @@ impl TCPTransport {
             .map_err(|e| TransportError::ConnectionFailed(e.to_string()))?;
         let tls_stream = StreamOwned::new(tls_conn, tcp);
 
-        self.socket = Some(tls_stream);
+        self.socket = Some(ServerStream::Tls(tls_stream));
         self.receive_buffer.clear();
         Ok(())
     }
 
     pub fn close(&mut self) {
         if let Some(mut socket) = self.socket.take() {
-            socket.conn.send_close_notify();
-            let _ = socket.conn.complete_io(&mut socket.sock);
+            if let ServerStream::Tls(tls) = &mut socket {
+                tls.conn.send_close_notify();
+                let _ = tls.conn.complete_io(&mut tls.sock);
+            }
         }
         self.receive_buffer.clear();
     }
@@ -105,7 +161,7 @@ impl TCPTransport {
             }
 
             let stream = self.socket.as_mut().ok_or(TransportError::NotConnected)?;
-            stream.sock.set_read_timeout(None)?;
+            stream.set_read_timeout(None)?;
             let mut chunk = [0u8; 16 * 1024];
             match stream.read(&mut chunk) {
                 Ok(0) => return Err(TransportError::ConnectionClosed),
@@ -124,10 +180,10 @@ impl TCPTransport {
         }
 
         let stream = self.socket.as_mut().ok_or(TransportError::NotConnected)?;
-        stream.sock.set_read_timeout(Some(timeout))?;
+        stream.set_read_timeout(Some(timeout))?;
         let mut chunk = [0u8; 16 * 1024];
         let read_result = stream.read(&mut chunk);
-        let reset_result = stream.sock.set_read_timeout(None);
+        let reset_result = stream.set_read_timeout(None);
         if let Err(error) = reset_result {
             return Err(TransportError::IoError(error));
         }

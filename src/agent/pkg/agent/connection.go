@@ -71,6 +71,8 @@ func getOrCreateConnection(tcpAddress net.Addr, verifyServer, allowError bool) (
 		closed:            make(chan struct{}),
 	}
 
+	// The TLS-at-gateway shape: dial the daemon's plaintext frame port.
+	plain := !config.ConfigData.REST.SSL.Enabled()
 	clientCert := config.ConfigData.REST.SSL.SSLClientCertificateFile
 	clientCertKey := config.ConfigData.REST.SSL.SSLClientCertificateKeyFile
 	caPath := config.ConfigData.REST.SSL.SSLCAPath
@@ -78,9 +80,15 @@ func getOrCreateConnection(tcpAddress net.Addr, verifyServer, allowError bool) (
 		caPath = ""
 	}
 
-	logger.Infof("Connecting to %s (CA: %q, Cert: %q, Key: %q)", tcpAddress, caPath, clientCert, clientCertKey)
-	if err := sConn.messageConnection.(*appmesh.TCPConnection).Connect(tcpAddress, clientCert, clientCertKey,
-		caPath); err != nil {
+	var err error
+	if plain {
+		logger.Infof("Connecting to %s (plain, TLS terminates upstream)", tcpAddress)
+		err = sConn.messageConnection.(*appmesh.TCPConnection).ConnectPlain(tcpAddress)
+	} else {
+		logger.Infof("Connecting to %s (CA: %q, Cert: %q, Key: %q)", tcpAddress, caPath, clientCert, clientCertKey)
+		err = sConn.messageConnection.(*appmesh.TCPConnection).Connect(tcpAddress, clientCert, clientCertKey, caPath)
+	}
+	if err != nil {
 		logger.Errorf("Failed to connect to %s: %v", tcpAddress, err)
 		return nil, fmt.Errorf("connect to %s: %w", tcpAddress, err)
 	}
@@ -190,8 +198,19 @@ func getOrCreateWSSConnection(wssHostPort string, verifyServer bool) (*Connectio
 		caPath = ""
 	}
 
-	wssURL := &url.URL{Scheme: "wss", Host: wssHostPort, Path: "/"}
-	logger.Infof("Connecting to %s (CA: %q, Cert: %q, Key: %q)", wssURL, caPath, clientCert, clientCertKey)
+	// ws:// when plain; a plain dial never touches certificate material.
+	plain := !config.ConfigData.REST.SSL.Enabled()
+	scheme := "wss"
+	if plain {
+		scheme = "ws"
+		clientCert, clientCertKey, caPath = "", "", ""
+	}
+	wssURL := &url.URL{Scheme: scheme, Host: wssHostPort, Path: "/"}
+	if plain {
+		logger.Infof("Connecting to %s (plain transport)", wssURL)
+	} else {
+		logger.Infof("Connecting to %s (CA: %q, Cert: %q, Key: %q)", wssURL, caPath, clientCert, clientCertKey)
+	}
 	if err := sConn.messageConnection.(*appmesh.WSSConnection).Connect(wssURL, clientCert, clientCertKey, caPath,
 		""); err != nil {
 		logger.Errorf("Failed to connect to %s: %v", wssURL, err)

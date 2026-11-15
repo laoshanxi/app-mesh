@@ -46,6 +46,24 @@ func (r *TCPConnection) currentConn() net.Conn {
 	return r.conn
 }
 
+// ConnectPlain dials the frame port without TLS (daemon SSL.SSLEnabled=false).
+func (r *TCPConnection) ConnectPlain(tcpAddr net.Addr) error {
+	// KeepAlive so a half-open peer (host crash / partition) is detected, not hung on forever.
+	dialer := net.Dialer{Timeout: tcpConnectTimeoutSeconds * time.Second, KeepAlive: 30 * time.Second}
+	conn, err := dialer.Dial("tcp", tcpAddr.String())
+	if err != nil {
+		return fmt.Errorf("failed to establish plain connection to %s: %w", tcpAddr, err)
+	}
+	// Set TCP_NODELAY for low-latency communication.
+	if err := setTCPNoDelay(conn); err != nil {
+		logf("warning: failed to set TCP_NODELAY: %v", err)
+	}
+	r.muConn.Lock()
+	r.conn = conn
+	r.muConn.Unlock()
+	return nil
+}
+
 // Connect establishes a secure TLS TCP connection to an App Mesh server.
 func (r *TCPConnection) Connect(tcpAddr net.Addr, sslClientCert string, sslClientCertKey string,
 	sslCAPath string) error {

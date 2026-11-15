@@ -1137,6 +1137,11 @@ void RestHandler::apiBasicConfigSet(const std::shared_ptr<HttpRequest> &message)
 		collectUnknownConfigKeys(json, current, "", unknown);
 		if (!unknown.empty())
 			throw std::invalid_argument("unknown configuration field(s): " + unknown);
+		// A hot update never rebinds a listener: reject instead of a fake 200.
+		if (json.get(JSON_KEY_REST, Json::Value())
+				.get(JSON_KEY_SSL, Json::Value())
+				.isMember(JSON_KEY_SSLEnabled))
+			throw std::invalid_argument("REST.SSL.SSLEnabled is startup-only: set it in config.yaml and restart the daemon");
 	}
 	Configuration::instance()->hotUpdateAndSave(json);
 

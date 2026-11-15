@@ -20,15 +20,22 @@ pub struct WSSTransport {
     address: (String, u16),
     ssl_verify: SslVerify,
     ssl_client_cert: Option<ClientCert>,
+    // True = dial ws:// without TLS (TLS-at-gateway shape).
+    plain: bool,
     writer: Option<SplitSink>,
     reader: Arc<Mutex<Option<SplitStream>>>,
     bearer_token: Option<String>,
 }
 
 impl WSSTransport {
-    pub fn new(address: (String, u16), ssl_verify: SslVerify, ssl_client_cert: Option<ClientCert>) -> Self {
+    pub fn new(
+        address: (String, u16),
+        ssl_verify: SslVerify,
+        ssl_client_cert: Option<ClientCert>,
+        plain: bool,
+    ) -> Self {
         crate::tls_config::ensure_crypto_provider();
-        Self { address, ssl_verify, ssl_client_cert, writer: None, reader: Arc::new(Mutex::new(None)), bearer_token: None }
+        Self { address, ssl_verify, ssl_client_cert, plain, writer: None, reader: Arc::new(Mutex::new(None)), bearer_token: None }
     }
 
     pub fn set_bearer_token(&mut self, token: Option<String>) {
@@ -36,7 +43,8 @@ impl WSSTransport {
     }
 
     pub async fn connect(&mut self) -> Result<(), AppMeshError> {
-        let url_str = format!("wss://{}:{}/", self.address.0, self.address.1);
+        let scheme = if self.plain { "ws" } else { "wss" };
+        let url_str = format!("{}://{}:{}/", scheme, self.address.0, self.address.1);
         let url = Url::parse(&url_str).map_err(|e| AppMeshError::ConfigurationError(e.to_string()))?;
 
         let mut request = url.to_string().into_client_request().map_err(|e| AppMeshError::ConnectionError(e.to_string()))?;
@@ -48,13 +56,18 @@ impl WSSTransport {
             request.headers_mut().insert("Authorization", value);
         }
 
-        let connector = build_rustls_connector(&self.ssl_verify, self.ssl_client_cert.as_ref())?;
+        // Plain mode dials ws:// with no TLS connector.
+        let connector = if self.plain {
+            None
+        } else {
+            Some(build_rustls_connector(&self.ssl_verify, self.ssl_client_cert.as_ref())?)
+        };
 
         // File transfer relays the whole payload as one message/frame; the tungstenite
         // defaults (64 MiB message / 16 MiB frame) reject large forwarded downloads.
         let config =
             WebSocketConfig::default().max_message_size(None).max_frame_size(None);
-        let (ws_stream, _) = connect_async_tls_with_config(request, Some(config), false, Some(connector))
+        let (ws_stream, _) = connect_async_tls_with_config(request, Some(config), false, connector)
             .await
             .map_err(map_connect_error)?;
 
