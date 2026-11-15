@@ -30,6 +30,10 @@ Implementation Details:
 - TLS encryption is handled by the agent's main HTTPS server
 - All Docker API operations are available through the /appmesh/docker prefix
 - Request/response formats follow the Docker Engine API specification
+- Responses are classified per request: live streams (pull progress, builds, a
+  following `logs?follow=1`, events) pass through unbuffered, while finite
+  documents — including non-following `/logs` — are buffered and
+  Content-Length framed so buffered HTTP clients read them reliably
 
 Reference:
 

@@ -2,6 +2,7 @@
 #include "Application.h"
 
 #include <algorithm>
+#include <cctype>
 #include <limits>
 #include <list>
 #include <optional>
@@ -37,7 +38,33 @@ namespace
 	// Gap before a periodic app's next self-armed spawn: the current run already started this
 	// second, so arm from the next second to avoid a same-second double computation.
 	constexpr std::chrono::seconds PERIODIC_RESPAWN_GAP{1};
-}
+
+	bool isAllDigits(const std::string &text)
+	{
+		return !text.empty() && std::all_of(text.begin(), text.end(), [](unsigned char c) { return std::isdigit(c); });
+	}
+
+	// "[hostIp:]hostPort:containerPort[/proto]" — the docker run -p spelling.
+	void validateDockerPortSpec(const std::string &spec)
+	{
+		const auto parts = Utility::splitString(spec, ":");
+		if (parts.size() < 2 || parts.size() > 3)
+			throw std::invalid_argument("docker_ports entry <" + spec +
+										"> must be [hostIp:]hostPort:containerPort[/protocol]");
+		const auto container = parts[parts.size() - 1];
+		const auto hostPort = parts[parts.size() - 2];
+		auto containerPort = container;
+		if (const auto slash = container.find('/'); slash != std::string::npos)
+		{
+			containerPort = container.substr(0, slash);
+			const auto proto = container.substr(slash + 1);
+			if (proto != "tcp" && proto != "udp" && proto != "sctp")
+				throw std::invalid_argument("docker_ports entry <" + spec + "> has an unknown protocol <" + proto + ">");
+		}
+		if (!isAllDigits(hostPort) || !isAllDigits(containerPort))
+			throw std::invalid_argument("docker_ports entry <" + spec + "> must carry numeric ports");
+	}
+} // namespace
 
 // C++11 requires an out-of-class definition when this static constexpr member
 // is ODR-used (for example by the startup-phase maps below).
@@ -402,6 +429,40 @@ void Application::FromJson(const std::shared_ptr<Application> &app, const Json::
 
 	app->m_dockerImage = GET_JSON_STR_VALUE(jsonObj, JSON_KEY_APP_docker_image);
 
+	// First-class container wiring, compiled into the Docker create request at
+	// launch (see compileDockerContainerFields): common needs stay readable
+	// fields while metadata remains the full Docker API passthrough.
+	if (HAS_JSON_FIELD(jsonObj, JSON_KEY_APP_docker_ports))
+	{
+		const auto &ports = jsonObj[JSON_KEY_APP_docker_ports];
+		if (!ports.isArray())
+			throw std::invalid_argument(std::string(JSON_KEY_APP_docker_ports) +
+										" must be an array of \"[hostIp:]hostPort:containerPort[/protocol]\" entries");
+		for (const auto &spec : ports)
+		{
+			if (!spec.isString())
+				throw std::invalid_argument(std::string(JSON_KEY_APP_docker_ports) + " entries must be strings");
+			validateDockerPortSpec(spec.asString());
+			app->m_dockerPorts.push_back(spec.asString());
+		}
+	}
+	if (HAS_JSON_FIELD(jsonObj, JSON_KEY_APP_docker_volumes))
+	{
+		const auto &volumes = jsonObj[JSON_KEY_APP_docker_volumes];
+		if (!volumes.isArray())
+			throw std::invalid_argument(std::string(JSON_KEY_APP_docker_volumes) + " must be an array of bind strings");
+		for (const auto &bind : volumes)
+		{
+			if (!bind.isString() || bind.asString().empty())
+				throw std::invalid_argument(std::string(JSON_KEY_APP_docker_volumes) + " entries must be non-empty strings");
+			app->m_dockerVolumes.push_back(bind.asString());
+		}
+	}
+	app->m_dockerNetwork = Utility::stdStringTrim(GET_JSON_STR_VALUE(jsonObj, JSON_KEY_APP_docker_network));
+	app->m_dockerBackend = Utility::stdStringTrim(GET_JSON_STR_VALUE(jsonObj, JSON_KEY_APP_docker_backend));
+	if (!app->m_dockerBackend.empty() && app->m_dockerBackend != "api" && app->m_dockerBackend != "cli")
+		throw std::invalid_argument(std::string(JSON_KEY_APP_docker_backend) + " must be \"api\" or \"cli\"");
+
 	if (HAS_JSON_FIELD(jsonObj, JSON_KEY_APP_pid))
 	{
 		app->attach(GET_JSON_INT_VALUE(jsonObj, JSON_KEY_APP_pid));
@@ -414,8 +475,10 @@ void Application::FromJson(const std::shared_ptr<Application> &app, const Json::
 
 	if (!app->m_dockerImage.empty())
 	{
-		// Docker app does not support reserve more output backup files
-		app->m_stdoutCacheNum = 0;
+		// Docker container names must start with an alphanumeric character.
+		if (app->m_name.empty() || !std::isalnum(static_cast<unsigned char>(app->m_name[0])))
+			throw std::invalid_argument("a Docker application name must start with a letter or digit "
+										"(Docker container name rules)");
 	}
 
 	// The epoch fields reject non-integer input with a message naming the field;
@@ -630,6 +693,24 @@ Json::Value Application::AsJson(bool returnRuntimeInfo, void *ptree)
 	if (!m_dockerImage.empty())
 	{
 		result[JSON_KEY_APP_docker_image] = std::string(m_dockerImage);
+		if (!m_dockerPorts.empty())
+		{
+			auto ports = Json::Value(Json::arrayValue);
+			for (const auto &spec : m_dockerPorts)
+				ports.append(spec);
+			result[JSON_KEY_APP_docker_ports] = std::move(ports);
+		}
+		if (!m_dockerVolumes.empty())
+		{
+			auto volumes = Json::Value(Json::arrayValue);
+			for (const auto &bind : m_dockerVolumes)
+				volumes.append(bind);
+			result[JSON_KEY_APP_docker_volumes] = std::move(volumes);
+		}
+		if (!m_dockerNetwork.empty())
+			result[JSON_KEY_APP_docker_network] = std::string(m_dockerNetwork);
+		if (!m_dockerBackend.empty())
+			result[JSON_KEY_APP_docker_backend] = std::string(m_dockerBackend);
 	}
 	if (m_startTime.time_since_epoch().count() && m_startTime != std::chrono::system_clock::time_point::min())
 	{
@@ -1161,7 +1242,9 @@ void Application::maintainRuntime(const std::chrono::system_clock::time_point &n
 		// Recovered processes and attached Docker containers have no child-process callback.
 		// Docker image pulls do: their empty container ID keeps the exact callback authoritative.
 		const bool lacksReactorExitCallback = process->isRecovered() || !process->containerId().empty();
-		return lacksReactorExitCallback && !process->running();
+		// An invisible host PID (daemon in a container) cannot gate on OS
+		// liveness; those runs take the docker-authoritative poll every tick.
+		return lacksReactorExitCallback && (!process->running() || process->needsAlwaysExitPoll());
 	};
 
 	std::shared_ptr<AppProcess> process;
@@ -1285,10 +1368,6 @@ std::string Application::startRun(bool onDemand, int timeoutSeconds, const std::
 	const static char fname[] = "Application::startRun() ";
 	if (onDemand && !isOneShot())
 		throw std::invalid_argument("runApp is only for on-demand run apps");
-	if (onDemand && !m_dockerImage.empty())
-	{
-		throw std::invalid_argument("Docker application does not support this API");
-	}
 	if (!onDemand && !isEnabled())
 		return {};
 
@@ -1396,8 +1475,13 @@ std::string Application::startRun(bool onDemand, int timeoutSeconds, const std::
 	}
 
 	LOG_INF << fname << "Starting application <" << m_name << "> with user <" << execUser << ">";
+	// First-class docker fields ride inside this launch-time metadata copy; the
+	// application definition keeps the user's original metadata untouched.
+	auto launchMetadata = m_metadata;
+	if (!m_dockerImage.empty())
+		compileDockerContainerFields(launchMetadata);
 	auto result = process->start(getCmdLine(), std::move(spawnUser), m_workdir, std::move(envMap), m_resourceLimit,
-								 m_stdoutFile, m_metadata, APP_STD_OUT_MAX_FILE_SIZE);
+								 m_stdoutFile, launchMetadata, APP_STD_OUT_MAX_FILE_SIZE);
 
 	if (processProof)
 		activateProcessProof(runId, processProof, result.accepted);
@@ -1669,7 +1753,10 @@ const std::string &Application::getCmdLine() const
 
 void Application::healthCheck()
 {
-	if (m_healthCheckCmd.empty())
+	// Container health is owned by the container verdict (image HEALTHCHECK or
+	// the in-container probe on the health worker's cadence); a per-tick
+	// phase-based write here would overwrite it between rounds.
+	if (m_healthCheckCmd.empty() && !isContainerized())
 	{
 		this->health(m_runtime->load().phase == Runtime::Run::Phase::Running);
 	}
@@ -1860,13 +1947,19 @@ std::shared_ptr<AppProcess> Application::createProcess(const std::string &docker
 	if (!dockerImage.empty())
 	{
 #if !defined(_WIN32)
-		if (m_envMap.count(ENV_APPMESH_DOCKER_PARAMS) == 0)
-		{
-			process = std::make_shared<DockerApiProcess>(weakSelf, appName, dockerImage);
-		}
+		// Explicit docker_backend wins; the legacy APP_DOCKER_OPTS env still
+		// selects the CLI backend so pre-field deployments keep working.
+		const auto backend = !m_dockerBackend.empty() ? m_dockerBackend
+													 : (m_envMap.count(ENV_APPMESH_DOCKER_PARAMS) ? "cli" : "api");
+		const auto containerName = DockerProcess::namespacedContainerName(appName);
+		if (backend == "cli")
+			process = std::make_shared<DockerProcess>(weakSelf, containerName, dockerImage);
 		else
 		{
-			process = std::make_shared<DockerProcess>(weakSelf, appName, dockerImage);
+			if (m_envMap.count(ENV_APPMESH_DOCKER_PARAMS))
+				LOG_WAR << "Application <" << appName << ">: " << ENV_APPMESH_DOCKER_PARAMS
+						<< " only applies to the cli docker_backend and is not forwarded into the container";
+			process = std::make_shared<DockerApiProcess>(weakSelf, containerName, dockerImage);
 		}
 #else
 		throw std::invalid_argument("Docker application does not support on Windows");
@@ -1877,6 +1970,96 @@ std::shared_ptr<AppProcess> Application::createProcess(const std::string &docker
 		process = std::make_shared<AppProcess>(weakSelf);
 	}
 	return process;
+}
+
+std::optional<int> Application::probeContainerHealth()
+{
+	const static char fname[] = "Application::probeContainerHealth() ";
+	if (m_dockerImage.empty())
+		return std::nullopt;
+	std::shared_ptr<AppProcess> process;
+	{
+		auto lock = m_process.synchronize();
+		process = *lock;
+	}
+	if (!process)
+		return std::nullopt;
+
+	// An image HEALTHCHECK means Docker already executes the probe on its own
+	// schedule: read the maintained verdict, never run a second probe of ours.
+	if (auto verdict = process->containerHealthVerdict())
+	{
+		if (!m_healthCheckCmd.empty())
+			LOG_INF << fname << "Application <" << m_name
+					<< ">: image HEALTHCHECK takes precedence, health_check_cmd is not executed";
+		return verdict;
+	}
+	if (m_healthCheckCmd.empty())
+		return std::nullopt; // nothing probes this container; leave health untouched
+	return process->execHealthProbe(m_healthCheckCmd);
+}
+
+void Application::compileDockerContainerFields(Json::Value &createBody) const
+{
+	// Shell-mode and session apps run a generated script; the container needs
+	// the same file the CLI backend mounts with -v, at the identical path the
+	// command line references.
+	std::string shellBind;
+	if (m_shellAppFile && Utility::isFileExist(m_shellAppFile->getShellFileName()))
+	{
+		const auto script = m_shellAppFile->getShellFileName();
+		shellBind = script + ":" + script + ":ro";
+	}
+
+	if (m_dockerPorts.empty() && m_dockerVolumes.empty() && m_dockerNetwork.empty() && shellBind.empty())
+		return;
+	if (!createBody.isObject())
+		createBody = Json::Value(Json::objectValue);
+	if (!createBody["HostConfig"].isObject())
+		createBody["HostConfig"] = Json::Value(Json::objectValue);
+	auto &hostConfig = createBody["HostConfig"];
+
+	if (!shellBind.empty())
+	{
+		if (!hostConfig["Binds"].isArray())
+			hostConfig["Binds"] = Json::Value(Json::arrayValue);
+		bool already = false;
+		for (const auto &bind : hostConfig["Binds"])
+			if (bind.isString() && bind.asString().rfind(shellBind, 0) == 0)
+				already = true;
+		if (!already)
+			hostConfig["Binds"].append(shellBind);
+	}
+
+	if (!m_dockerPorts.empty())
+	{
+		auto bindings = Json::Value(Json::objectValue);
+		for (const auto &spec : m_dockerPorts)
+		{
+			const auto parts = Utility::splitString(spec, ":");
+			const auto &container = parts[parts.size() - 1]; // port[/protocol]
+			const auto &hostPort = parts[parts.size() - 2];
+			const auto &hostIp = parts.size() == 3 ? parts[0] : "";
+
+			auto binding = Json::Value(Json::objectValue);
+			binding["HostPort"] = hostPort;
+			if (!hostIp.empty())
+				binding["HostIp"] = hostIp;
+			if (!bindings[container].isArray())
+				bindings[container] = Json::Value(Json::arrayValue);
+			bindings[container].append(std::move(binding));
+		}
+		hostConfig["PortBindings"] = std::move(bindings);
+	}
+	if (!m_dockerVolumes.empty())
+	{
+		auto binds = Json::Value(Json::arrayValue);
+		for (const auto &bind : m_dockerVolumes)
+			binds.append(bind);
+		hostConfig["Binds"] = std::move(binds);
+	}
+	if (!m_dockerNetwork.empty())
+		hostConfig["NetworkMode"] = std::string(m_dockerNetwork);
 }
 
 void Application::destroy()

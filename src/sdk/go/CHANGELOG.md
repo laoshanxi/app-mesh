@@ -1,5 +1,15 @@
 # Changelog
 
+## 3.0.3
+
+- `ResourceLimitation.Cpu` (fractional cores) mapped to container NanoCPUs.
+
+## 3.0.2
+
+- First-class Docker container wiring on the app model: `docker_ports` (docker
+  run -p spelling), `docker_volumes`, `docker_network` and `docker_backend`
+  ("api" default or "cli"), alongside the existing `docker_image`.
+
 ## 3.0.1
 
 - Plain-transport support for the TLS-at-gateway deployment shape (daemon

@@ -722,6 +722,10 @@ class AppMeshClient {
    *   working_dir: "",
    *   enabled: 1,
    *   docker_image: "",
+   *   docker_ports: [],       // docker run -p spelling: "[hostIp:]hostPort:containerPort[/protocol]"
+   *   docker_volumes: [],     // docker run -v spelling
+   *   docker_network: null,   // host, bridge, none or a network name
+   *   docker_backend: null,   // "api" (default) or "cli"
    *   stdout_backup_count: 3,
    *   start_time: "",
    *   end_time: "",
@@ -735,7 +739,7 @@ class AppMeshClient {
    *   env: {},
    *   secret_env: {},
    *   pid: null,
-   *   resource_limit: { cpu_shares: null, memory_mb: null, memory_virt_mb: null },
+   *   resource_limit: { cpu_shares: null, cpu: null, memory_mb: null, memory_virt_mb: null }, // cpu = fractional cores (NanoCPUs)
    *   behavior: { exit: "standby", exit_code_actions: { "0": "keepalive" } }
    * };
    * await client.addApp("ping", appConfig);

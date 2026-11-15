@@ -278,6 +278,11 @@ public:
 #define ENV_APPMESH_PROCESS_KEY "APP_MESH_PROCESS_KEY"
 #define ENV_APPMESH_DOCKER_PARAMS "APP_DOCKER_OPTS" // used to pass docker extra parameters to docker startup cmd
 #define ENV_APPMESH_DOCKER_IMG_PULL_TIMEOUT "APP_DOCKER_IMG_PULL_TIMEOUT" // app manager pull docker image timeout seconds
+// Private-registry credentials for the daemon-side image pull (X-Registry-Auth).
+// Never forwarded into the container environment.
+#define ENV_APPMESH_DOCKER_REGISTRY_SERVER "APP_DOCKER_REGISTRY_SERVER"
+#define ENV_APPMESH_DOCKER_REGISTRY_USER "APP_DOCKER_REGISTRY_USER"
+#define ENV_APPMESH_DOCKER_REGISTRY_PASSWORD "APP_DOCKER_REGISTRY_PASSWORD"
 #define ENV_APPMESH_PREFIX "APPMESH_"
 #define ENV_APPMESH_POSIX_TIMEZONE "APPMESH_POSIX_TIMEZONE"
 #define DEFAULT_TOKEN_EXPIRE_SECONDS int(7 * (60 * 60 * 24)) // default 7 days
@@ -305,6 +310,8 @@ public:
 #define REST_TEXT_MESSAGE_JSON_KEY "message"
 
 #define JSON_KEY_BaseConfig "BaseConfig"
+#define JSON_KEY_Docker "Docker"
+#define JSON_KEY_Docker_HostSecurityPolicy "HostSecurityPolicy"
 #define JSON_KEY_DefaultExecUser "DefaultExecUser"
 #define JSON_KEY_DisableExecUser "DisableExecUser"
 #define JSON_KEY_WorkingDirectory "WorkingDirectory"
@@ -374,6 +381,12 @@ public:
 #define JSON_KEY_APP_fd "fd" // open_file_descriptors
 #define JSON_KEY_APP_pstree "pstree"
 #define JSON_KEY_APP_docker_image "docker_image"
+// First-class container wiring; compiled into the Docker create request body
+// so common needs (ports/volumes/network) need no raw HostConfig knowledge.
+#define JSON_KEY_APP_docker_ports "docker_ports"
+#define JSON_KEY_APP_docker_volumes "docker_volumes"
+#define JSON_KEY_APP_docker_network "docker_network"
+#define JSON_KEY_APP_docker_backend "docker_backend"
 #define JSON_KEY_APP_last_error "last_error"
 #define JSON_KEY_APP_from_recover "from_recover"
 #define JSON_KEY_APP_starts "starts"
@@ -416,6 +429,7 @@ public:
 #define JSON_KEY_RESOURCE_LIMITATION_memory_mb "memory_mb"
 #define JSON_KEY_RESOURCE_LIMITATION_memory_virt_mb "memory_virt_mb"
 #define JSON_KEY_RESOURCE_LIMITATION_cpu_shares "cpu_shares"
+#define JSON_KEY_RESOURCE_LIMITATION_cpu "cpu" // CPU cores (fractional), compiled to NanoCPUs
 
 #define JSON_KEY_TIME_POSTFIX_STR "_TEXT"
 #define EMPTY_PLACEHOLDER "-"

@@ -20,6 +20,13 @@ class Application;
 /// <summary>
 /// Configuration file <config.yaml> parse/update
 /// </summary>
+struct JsonDocker
+{
+	// off | audit | enforce; anything else keeps off so a typo cannot weaken it.
+	std::string m_hostSecurityPolicy = "off";
+	static std::shared_ptr<JsonDocker> FromJson(const Json::Value &jsonValue);
+};
+
 class Configuration
 {
 public:
@@ -123,6 +130,8 @@ public:
 
 	int getScheduleInterval();
 	int getRestListenPort();
+	// Docker.HostSecurityPolicy: off (default) | audit | enforce, hot-reloaded.
+	std::string getDockerHostSecurityPolicy();
 	int getPromListenPort() const;
 	std::string getRestListenAddress();
 	int getTcpApiPort();
@@ -190,6 +199,7 @@ private:
 	mutable std::recursive_mutex m_appMutationMutex;
 	std::shared_ptr<BaseConfig> m_baseConfig;
 	std::shared_ptr<JsonRest> m_rest;
+	std::shared_ptr<JsonDocker> m_docker;
 	// Runtime exporter state is fixed at startup.
 	std::atomic<bool> m_runtimePrometheusEnabled = false; // read without m_hotupdateMutex
 

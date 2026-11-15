@@ -206,6 +206,23 @@ pub struct AddArgs {
     #[arg(short = 'I', long = "docker-image")]
     pub docker_image: Option<String>,
 
+    /// Publish a container port: [hostIp:]hostPort:containerPort[/protocol]
+    /// (repeatable, docker run -p spelling; requires --docker-image)
+    #[arg(long = "docker-port")]
+    pub docker_port: Vec<String>,
+
+    /// Bind-mount a volume (repeatable, docker run -v spelling)
+    #[arg(long = "docker-volume")]
+    pub docker_volume: Vec<String>,
+
+    /// Container network mode: host, bridge, none or a network name
+    #[arg(long = "docker-network")]
+    pub docker_network: Option<String>,
+
+    /// Container backend: api (default) or cli
+    #[arg(long = "docker-backend")]
+    pub docker_backend: Option<String>,
+
     /// Attach to existing process ID
     #[arg(short = 'P', long = "pid")]
     pub pid: Option<u32>,
@@ -382,6 +399,23 @@ pub struct RunArgs {
     /// Working directory
     #[arg(short = 'w', long = "working-dir")]
     pub working_dir: Option<String>,
+
+    /// Docker image: run the command inside a container of this image
+    #[arg(short = 'I', long = "docker-image")]
+    pub docker_image: Option<String>,
+
+    /// Publish a container port: [hostIp:]hostPort:containerPort[/protocol]
+    /// (repeatable, docker run -p spelling; requires --docker-image)
+    #[arg(long = "docker-port")]
+    pub docker_port: Vec<String>,
+
+    /// Bind-mount a volume (repeatable, docker run -v spelling)
+    #[arg(long = "docker-volume")]
+    pub docker_volume: Vec<String>,
+
+    /// Container network mode: host, bridge, none or a network name
+    #[arg(long = "docker-network")]
+    pub docker_network: Option<String>,
 
     /// Metadata input (passed to stdin, '@' for file)
     #[arg(short = 'm', long = "metadata")]

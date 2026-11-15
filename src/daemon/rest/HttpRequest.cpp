@@ -601,8 +601,8 @@ bool HttpRequestOutputView::onTimerResponse()
 				return false;
 			}
 
-			long pos = RestHandler::getHttpQueryValue(*this, HTTP_QUERY_KEY_stdout_position, 0, 0, 0);
-			int index = RestHandler::getHttpQueryValue(*this, HTTP_QUERY_KEY_stdout_index, 0, 0, 0);
+			long pos = RestHandler::getHttpQueryPosition(*this, HTTP_QUERY_KEY_stdout_position, 0, 0, 0);
+			int index = static_cast<int>(RestHandler::getHttpQueryPosition(*this, HTTP_QUERY_KEY_stdout_index, 0, 0, 0));
 			long maxSize = RestHandler::getHttpQueryValue(
 				*this, HTTP_QUERY_KEY_stdout_maxsize, APP_STD_OUT_VIEW_DEFAULT_SIZE, 1024, APP_STD_OUT_VIEW_DEFAULT_SIZE);
 			size_t timeout = 0;

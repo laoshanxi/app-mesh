@@ -7,6 +7,7 @@
 #include <map>
 #include <memory>
 #include <mutex>
+#include <optional>
 #include <string>
 #include <tuple>
 #include <utility>
@@ -50,7 +51,9 @@ public:
 							 int maxStdoutSize = APP_STD_OUT_MAX_FILE_SIZE);
 	void terminate();
 	void scheduleTermination(std::size_t timeoutSec, const std::string &from);
-	bool running() const;
+	// Virtual: backends with detached activities (API image pulls) stay alive
+	// without a PID.
+	virtual bool running() const;
 	// Wait for AppMesh finalization (stdout drained and Application exit state committed),
 	// not for OS reaping. Returns the run's native PID, 0 on timeout, or
 	// INVALID_PID when a finalized backend run never exposed a native PID.
@@ -68,6 +71,21 @@ public:
 	// Output and process metrics
 	virtual const std::string getOutputMsg(long *position = nullptr, int maxSize = APP_STD_OUT_VIEW_DEFAULT_SIZE,
 										   bool readLine = false);
+	// Health probe where the run actually lives: inside the container for
+	// Docker backends. Returns the probe exit code; nullopt when this backend
+	// cannot probe (the caller decides the fail-closed semantics).
+	virtual std::optional<int> execHealthProbe(const std::string &cmd) { return std::nullopt; }
+	// The image HEALTHCHECK verdict Docker already maintains (State.Health).
+	// 0 healthy / 1 unhealthy / nullopt when the image defines no HEALTHCHECK —
+	// read, never re-executed.
+	virtual std::optional<int> containerHealthVerdict() { return std::nullopt; }
+	// Container backends whose host PID is invisible from this process (the
+	// daemon itself runs in a container) cannot gate on PID liveness: they need
+	// the docker-authoritative exit poll on every scheduler tick.
+	virtual bool needsAlwaysExitPoll() const { return false; }
+	// Fetch the authoritative run state and report the exit when the run really
+	// ended; container backends override to consult Docker instead of the OS.
+	virtual void reportBackendExit();
 	std::tuple<bool, uint64_t, float, uint64_t, std::string, pid_t>
 	getProcessDetails(void *ptree = nullptr, bool includeTreeString = true, bool metricsSample = false);
 
@@ -84,7 +102,17 @@ protected:
 	// Container backends may prove that creation/start succeeded after the host PID
 	// has already disappeared. Preserve that accepted start, then report its exit.
 	void reportEarlyExit(int exitCode);
+	// Publish a run exit; backends without a child-wait callback (attached
+	// containers, detached API pulls) call this exactly once from their own thread.
+	// The exit-phase guard deduplicates every later report.
+	void onExit(int exitCode);
 	void setStartError(const std::string &error);
+	// The owning Application; expired after the application dropped the run.
+	std::weak_ptr<Application> owner() const { return m_owner; }
+	// Publish an accepted start; container backends without a PID use the same
+	// handshake as reportEarlyExit.
+	void resolveStart(bool accepted, pid_t pid);
+	bool isStartAccepted() const;
 
 private:
 	static constexpr int FORCED_TERMINATION_EXIT_CODE = 9;
@@ -101,10 +129,6 @@ private:
 	// codes need a blocking backend inspect and are fetched off the caller's thread.
 	void reportPolledExitAsync();
 
-	// Start/exit coordination
-	void resolveStart(bool accepted, pid_t pid);
-	bool isStartAccepted() const;
-	void onExit(int exitCode);
 	// Runs on the ProcessService thread: stdout teardown and application
 	// callbacks may block safely outside the exit-observation context.
 	void finalizeExit() noexcept;

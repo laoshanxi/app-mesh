@@ -138,6 +138,9 @@ impl DailyLimitation {
 /// CPU shares and memory limits applied to the process or container.
 pub struct ResourceLimitation {
     pub cpu_shares: Option<i32>,
+    /// CPU core limit (fractional); containers map it to NanoCPUs.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cpu: Option<f64>,
     pub memory_mb: Option<u64>,
     pub memory_virt_mb: Option<u64>,
 }
@@ -175,6 +178,18 @@ pub struct Application {
     pub enabled: Option<bool>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub docker_image: Option<String>,
+    /// Container port publishings, docker run -p spelling: "[hostIp:]hostPort:containerPort[/protocol]".
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub docker_ports: Option<Vec<String>>,
+    /// Container bind mounts, docker run -v spelling.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub docker_volumes: Option<Vec<String>>,
+    /// Container network mode (host, bridge, none or a network name).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub docker_network: Option<String>,
+    /// Container backend: "api" (default, Docker Engine API) or "cli".
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub docker_backend: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub stdout_backup_count: Option<u32>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -368,6 +383,30 @@ impl ApplicationBuilder {
         self
     }
 
+    /// Publishes container ports, docker run -p spelling: "[hostIp:]hostPort:containerPort[/protocol]".
+    pub fn docker_ports(mut self, ports: Vec<String>) -> Self {
+        self.app.docker_ports = Some(ports);
+        self
+    }
+
+    /// Bind-mounts volumes, docker run -v spelling.
+    pub fn docker_volumes(mut self, volumes: Vec<String>) -> Self {
+        self.app.docker_volumes = Some(volumes);
+        self
+    }
+
+    /// Sets the container network mode (host, bridge, none or a network name).
+    pub fn docker_network(mut self, network: &str) -> Self {
+        self.app.docker_network = Some(network.to_string());
+        self
+    }
+
+    /// Overrides the container backend: "api" (default) or "cli".
+    pub fn docker_backend(mut self, backend: &str) -> Self {
+        self.app.docker_backend = Some(backend.to_string());
+        self
+    }
+
     /// Number of rotated stdout files kept on disk.
     pub fn stdout_backup_count(mut self, num: u32) -> Self {
         self.app.stdout_backup_count = Some(num);
@@ -456,7 +495,7 @@ impl ApplicationBuilder {
 
     /// Set resource limits.
     pub fn resource_limit(mut self, cpu_shares: Option<i32>, memory_mb: Option<u64>, memory_virt_mb: Option<u64>) -> Self {
-        self.app.resource_limit = Some(ResourceLimitation { cpu_shares, memory_mb, memory_virt_mb });
+        self.app.resource_limit = Some(ResourceLimitation { cpu_shares, cpu: None, memory_mb, memory_virt_mb });
         self
     }
 

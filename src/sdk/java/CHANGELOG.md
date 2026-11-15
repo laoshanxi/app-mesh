@@ -1,5 +1,15 @@
 # Changelog
 
+## 3.0.14
+
+- Document `resource_limit.cpu` in the addApp contract (fractional cores, container NanoCPUs).
+
+## 3.0.13
+
+- Document the Docker application contract on `addApp`: `docker_image` with
+  first-class `docker_ports`/`docker_volumes`/`docker_network`/`docker_backend`
+  fields and the `metadata` full Docker create-body passthrough.
+
 ## 3.0.12
 
 - Opt-in HMAC request signing (`setRequestSignature(keyId, secret)` /

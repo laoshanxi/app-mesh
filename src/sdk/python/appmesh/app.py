@@ -132,6 +132,9 @@ class App:
             self.cpu_shares = _get_int(data, "cpu_shares")
             """CPU shares, relative weight of CPU usage."""
 
+            self.cpu = _get_number(data, "cpu")
+            """CPU core limit (fractional, e.g. 0.5); containers map it to NanoCPUs."""
+
             self.memory_mb = _get_int(data, "memory_mb")
             """Physical memory limit in MB."""
 
@@ -162,6 +165,14 @@ class App:
         """app enable flag: True for enabled, False for disabled"""
         self.docker_image = _get_str(data, "docker_image")
         """Docker image for containerized execution"""
+        self.docker_ports = data.get("docker_ports", []) if data else []
+        """container port publishings, docker run -p spelling (``[hostIp:]hostPort:containerPort[/protocol]``)"""
+        self.docker_volumes = data.get("docker_volumes", []) if data else []
+        """container bind mounts, docker run -v spelling"""
+        self.docker_network = _get_str(data, "docker_network")
+        """container network mode: host, bridge, none or a network name"""
+        self.docker_backend = _get_str(data, "docker_backend")
+        """container backend: "api" (default, Docker Engine API) or "cli" (docker/podman CLI)"""
         self.stdout_backup_count = _get_int(data, "stdout_backup_count")
         """maximum number of stdout log files to retain"""
         self.start_time = _get_int(data, "start_time")
@@ -187,8 +198,8 @@ class App:
         self.behavior = App.Behavior(_get_item(data, "behavior"))
 
         self.env = data.get("env", {}) if data else {}
-        """environment variables (e.g., -e env1=value1 -e env2=value2, APP_DOCKER_OPTS is used to input docker run """
-        """parameters)"""
+        """environment variables (e.g., -e env1=value1 -e env2=value2); registry credentials use """
+        """APP_DOCKER_REGISTRY_SERVER/USER/PASSWORD, APP_DOCKER_OPTS only applies to the cli docker_backend"""
         self.secret_env = data.get("secret_env", {}) if data else {}
         """security environment variables protected by Engine at rest"""
         self.pid = _get_int(data, "pid")

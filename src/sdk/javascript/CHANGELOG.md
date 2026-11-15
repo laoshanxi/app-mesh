@@ -1,5 +1,14 @@
 # Changelog
 
+## 3.1.15
+
+- Document `resource_limit.cpu` (fractional cores, container NanoCPUs).
+
+## 3.1.14
+
+- Document and accept first-class Docker container wiring fields on the app
+  config: `docker_ports`, `docker_volumes`, `docker_network`, `docker_backend`.
+
 ## 3.1.13
 
 - Opt-in HMAC request signing (Node.js only; `enableRequestSignature(keyId, secret)`,

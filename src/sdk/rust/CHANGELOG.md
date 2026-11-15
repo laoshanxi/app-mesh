@@ -1,5 +1,14 @@
 # Changelog
 
+## 3.0.20
+
+- `ResourceLimitation.cpu` (fractional cores) mapped to container NanoCPUs.
+
+## 3.0.19
+
+- Builder methods `docker_ports`, `docker_volumes`, `docker_network` and
+  `docker_backend` for first-class container wiring next to `docker_image`.
+
 ## 3.0.18
 
 - Plain-transport opt-in for the TLS-at-gateway deployment shape (daemon

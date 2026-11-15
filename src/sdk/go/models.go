@@ -115,6 +115,14 @@ type Application struct {
 	WaitingFor []string `json:"waiting_for,omitempty"`
 
 	DockerImage *string `json:"docker_image"`
+	// DockerPorts publishes container ports, docker run -p spelling.
+	DockerPorts []string `json:"docker_ports,omitempty"`
+	// DockerVolumes bind-mounts volumes, docker run -v spelling.
+	DockerVolumes []string `json:"docker_volumes,omitempty"`
+	// DockerNetwork is the container network mode: host, bridge, none or a network name.
+	DockerNetwork *string `json:"docker_network,omitempty"`
+	// DockerBackend selects "api" (default) or "cli".
+	DockerBackend *string `json:"docker_backend,omitempty"`
 
 	DailyLimit    *DailyLimitation    `json:"daily_limitation"`
 	ResourceLimit *ResourceLimitation `json:"resource_limit"`
@@ -152,6 +160,8 @@ type ResourceLimitation struct {
 	MemoryMb        int `json:"memory_mb"`
 	MemoryVirtualMb int `json:"memory_virt_mb"`
 	CpuShares       int `json:"cpu_shares"`
+	// Cpu is the CPU core limit (fractional), mapped to NanoCPUs for containers.
+	Cpu float64 `json:"cpu,omitempty"`
 }
 
 // AppOutput represents the result of an AppMeshClient.GetAppOutput call.

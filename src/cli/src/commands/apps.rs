@@ -134,6 +134,18 @@ fn build_app_from_args(args: &AddArgs) -> Result<Application> {
     if let Some(ref img) = args.docker_image {
         builder = builder.docker_image(img);
     }
+    if !args.docker_port.is_empty() {
+        builder = builder.docker_ports(args.docker_port.clone());
+    }
+    if !args.docker_volume.is_empty() {
+        builder = builder.docker_volumes(args.docker_volume.clone());
+    }
+    if let Some(ref network) = args.docker_network {
+        builder = builder.docker_network(network);
+    }
+    if let Some(ref backend) = args.docker_backend {
+        builder = builder.docker_backend(backend);
+    }
     if let Some(num) = args.stdout_backup_count {
         builder = builder.stdout_backup_count(num);
     }

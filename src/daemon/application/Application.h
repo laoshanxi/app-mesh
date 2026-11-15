@@ -8,6 +8,7 @@
 #include <map>
 #include <memory>
 #include <mutex>
+#include <optional>
 #include <string>
 #include <tuple>
 #include <vector>
@@ -56,6 +57,19 @@ public:
 	bool isOneShot() const;
 	/// True for cron and interval schedules (point-in-time runs).
 	bool isRecurring() const;
+	// stop_grace_period in seconds; 0 when unset. Container backends apply
+	// their own default when the owner did not configure one.
+	int stopGraceSeconds() const { return m_bufferTime; }
+	/// True when the app runs as a container (docker_image set).
+	bool isContainerized() const { return !m_dockerImage.empty(); }
+	/// Health verdict straight from the container: the image HEALTHCHECK status
+	/// Docker already maintains (read, never re-executed) when the image
+	/// defines one — an explicit health_check_cmd is then bypassed to avoid
+	/// duplicate probing; otherwise health_check_cmd executes inside the
+	/// container. nullopt when this app has no container-health semantics
+	/// (native apps, or a container app with neither an image HEALTHCHECK nor
+	/// health_check_cmd) or when the container channel failed.
+	std::optional<int> probeContainerHealth();
 	bool isEnabled() const;
 	bool isSystemProtected() const;
 	int startupPhase() const;
@@ -146,6 +160,9 @@ private:
 	std::string startRun(bool onDemand, int timeoutSeconds, const std::shared_ptr<HttpRequest> &completionRequest = nullptr,
 						 std::uint64_t lifecycleGeneration = 0);
 	std::shared_ptr<AppProcess> createProcess(const std::string &dockerImage, const std::string &appName);
+	// Merge docker_ports/docker_volumes/docker_network into a copy of the app
+	// metadata as the Docker create request body (PortBindings/Binds/NetworkMode).
+	void compileDockerContainerFields(Json::Value &createBody) const;
 	void terminate(std::shared_ptr<AppProcess> process);
 	void onStartAccepted(const std::string &runId, pid_t pid);
 	void recordStartFailure(const std::string &runId, const std::string &error, bool onDemand);
@@ -244,6 +261,13 @@ private:
 	std::map<std::string, std::string> m_envMap;
 	std::map<std::string, std::string> m_secEnvMap;
 	std::string m_dockerImage;
+	// First-class container wiring (docker run -p/-v/--network spelling),
+	// compiled into the Docker create request body at launch.
+	std::vector<std::string> m_dockerPorts;
+	std::vector<std::string> m_dockerVolumes;
+	std::string m_dockerNetwork;
+	// "api" (default, Docker Engine API) or "cli" (docker/podman CLI, legacy).
+	std::string m_dockerBackend;
 
 	// Runtime state
 	AppMeshProcess m_process;

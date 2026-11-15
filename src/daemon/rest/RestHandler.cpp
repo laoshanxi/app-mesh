@@ -106,6 +106,10 @@ namespace
 			JSON_KEY_APP_name,
 			JSON_KEY_APP_command,
 			JSON_KEY_APP_docker_image,
+			JSON_KEY_APP_docker_ports,
+			JSON_KEY_APP_docker_volumes,
+			JSON_KEY_APP_docker_network,
+			JSON_KEY_APP_docker_backend,
 			JSON_KEY_APP_description,
 			JSON_KEY_APP_working_dir,
 			JSON_KEY_APP_health_check_cmd,
@@ -705,6 +709,31 @@ long RestHandler::getHttpQueryValue(const HttpRequest &message, const std::strin
 		rt = DurationParse::parse(it->second);
 		// Negative is never valid for these params; fall back to default so it can't wrap
 		// into size_t or drive negative offsets/overflowing timers downstream.
+		if (rt < 0)
+			rt = defaultValue;
+		else if (min < max && (rt < min || rt > max))
+			rt = defaultValue;
+	}
+	return rt;
+}
+
+long RestHandler::getHttpQueryPosition(const HttpRequest &message, const std::string &key, long defaultValue,
+									   long min, long max)
+{
+	// Positions and indices are plain integers (byte offsets, nanosecond log
+	// cursors), not durations: the duration parser rejects values beyond int
+	// range, which a cursor legitimately exceeds.
+	long rt = defaultValue;
+	if (auto it = message.m_query.find(key); it != message.m_query.end())
+	{
+		try
+		{
+			rt = std::stoll(it->second);
+		}
+		catch (const std::exception &)
+		{
+			rt = defaultValue;
+		}
 		if (rt < 0)
 			rt = defaultValue;
 		else if (min < max && (rt < min || rt > max))

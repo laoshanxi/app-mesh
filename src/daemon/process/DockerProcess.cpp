@@ -2,6 +2,7 @@
 #include "DockerProcess.h"
 
 #include <charconv>
+#include <fstream>
 #include <chrono>
 #include <optional>
 #include <utility>
@@ -9,6 +10,7 @@
 #include "../../common/Utility.h"
 #include "../Configuration.h"
 #include "../ResourceLimitation.h"
+#include "../application/Application.h"
 
 namespace
 {
@@ -71,7 +73,7 @@ namespace
 		return result;
 	}
 
-	void launchDockerCleanup(const std::string &command)
+	void launchDockerCleanup(const std::string &command, std::size_t timeoutSeconds = 3)
 	{
 		const static char fname[] = "launchDockerCleanup() ";
 		auto process = std::make_shared<AppProcess>(std::weak_ptr<Application>());
@@ -84,14 +86,72 @@ namespace
 
 		// The termination timer owns the helper until it exits or reaches the timeout.
 		// Cleanup is best effort, so the caller never waits for Docker CLI completion.
-		process->scheduleTermination(3, fname);
+		process->scheduleTermination(timeoutSeconds, fname);
 	}
+}
+
+// High-risk host-facing settings the Docker.HostSecurityPolicy gate looks for.
+std::vector<std::string> dockerHostSecurityFindings(const Json::Value &createBody)
+{
+	std::vector<std::string> findings;
+	if (!createBody.isObject())
+		return findings;
+	const auto &hostConfig = createBody["HostConfig"];
+	if (!hostConfig.isObject())
+		return findings;
+	if (hostConfig["Privileged"].isBool() && hostConfig["Privileged"].asBool())
+		findings.push_back("privileged container");
+	const auto pidMode = GET_JSON_STR_VALUE(hostConfig, "PidMode");
+	if (pidMode == "host")
+		findings.push_back("host PID namespace (pid=host)");
+	if (hostConfig["Binds"].isArray())
+	{
+		for (const auto &bind : hostConfig["Binds"])
+		{
+			if (!bind.isString())
+				continue;
+			const auto source = bind.asString().substr(0, bind.asString().find(':'));
+			if (source == "/" || source.rfind("/var/run/docker.sock", 0) == 0)
+				findings.push_back("bind of host path <" + source + ">");
+		}
+	}
+	if (hostConfig["CapAdd"].isArray())
+	{
+		for (const auto &cap : hostConfig["CapAdd"])
+		{
+			if (cap.isString() && (cap.asString() == "SYS_ADMIN" || cap.asString() == "SYS_PTRACE"))
+				findings.push_back("CapAdd " + cap.asString());
+		}
+	}
+	return findings;
+}
+
+// Namespaced so an App Mesh container can never collide with an operator container.
+std::string DockerProcess::namespacedContainerName(const std::string &appName)
+{
+	return std::string("appmesh-").append(appName);
+}
+
+// SIGTERM grace before SIGKILL, docker's own default when the app sets none.
+int DockerProcess::stopGraceSeconds() const
+{
+	if (const auto ownerApplication = owner().lock())
+	{
+		const auto grace = ownerApplication->stopGraceSeconds();
+		if (grace > 0)
+			return grace;
+	}
+	return 10;
 }
 
 DockerProcess::DockerProcess(std::weak_ptr<Application> owner, const std::string &containerName,
 							 const std::string &dockerImage)
 	: AppProcess(std::move(owner)), m_containerName(containerName), m_dockerImage(dockerImage),
-	  m_containerEngine(CONTAINER_DOCKER)
+	  m_containerEngine(CONTAINER_DOCKER),
+	  // A namespaced name implies its pre-namespacing original; anything else
+	  // (direct constructions) keeps the name itself, a harmless duplicate.
+	  m_legacyContainerName(containerName.rfind("appmesh-", 0) == 0 ? containerName.substr(strlen("appmesh-"))
+																	: containerName)
 {
 	const static char fname[] = "DockerProcess::DockerProcess() ";
 	LOG_DBG << fname << "Entered";
@@ -130,17 +190,32 @@ void DockerProcess::terminateImpl()
 		return;
 	}
 
+	// SIGTERM grace first: docker stop returns as soon as the container exits,
+	// so the grace is only the upper bound of this bounded synchronous call.
+	const auto grace = stopGraceSeconds();
+	auto cmd = Utility::stringFormat("%s stop -t %d %s", containerEngine.c_str(), grace, containerId.c_str());
+	const auto stopResult = runDockerCli(cmd, grace + 5);
+	if (!stopResult.started || !stopResult.completed || stopResult.exitCode != 0)
+	{
+		LOG_WAR << "DockerProcess::terminateImpl() graceful stop of container <" << containerId
+				<< "> failed: " << stopResult.error;
+	}
+
+	// Persist the container's final logs before the delete removes them.
+	archiveContainerLogs(containerId);
+
 	// Clean docker container
-	auto cmd = Utility::stringFormat("%s rm -f %s", containerEngine.c_str(), containerId.c_str());
+	cmd = Utility::stringFormat("%s rm -f %s", containerEngine.c_str(), containerId.c_str());
 	launchDockerCleanup(cmd);
 
 	// Detach manually
 	this->detach();
 }
 
-pid_t DockerProcess::startContainer(const std::string &cmd, const std::string &workDir,
+pid_t DockerProcess::startContainer(const std::string &cmd, const std::string &execUser, const std::string &workDir,
 									const std::map<std::string, std::string> &envMap,
-									const std::shared_ptr<ResourceLimitation> &limit, const std::string &stdoutFile)
+									const std::shared_ptr<ResourceLimitation> &limit, const std::string &stdoutFile,
+									const Json::Value &createBody)
 {
 	const static char fname[] = "DockerProcess::startContainer() ";
 
@@ -153,6 +228,9 @@ pid_t DockerProcess::startContainer(const std::string &cmd, const std::string &w
 	// Step 0: Clean old docker container (containers may remain after host restart)
 	std::string dockerCommand = Utility::stringFormat("%s rm -f %s", containerEngine.c_str(), m_containerName.c_str());
 	runDockerCli(dockerCommand); // Best effort: docker run reports a name conflict if cleanup failed.
+	// Pre-namespacing name: a leftover from an older App Mesh version.
+	dockerCommand = Utility::stringFormat("%s rm -f %s", containerEngine.c_str(), m_legacyContainerName.c_str());
+	runDockerCli(dockerCommand); // Best effort, same failure reporting as above.
 
 	// Step 1: Check if docker image exists
 	dockerCommand =
@@ -179,24 +257,31 @@ pid_t DockerProcess::startContainer(const std::string &cmd, const std::string &w
 	}
 
 	// Step 2: Build docker start command line
-	dockerCommand = Utility::stringFormat("%s run -d --name %s ", containerEngine.c_str(), m_containerName.c_str());
+	dockerCommand = Utility::stringFormat("%s run -d --name %s --label %s=true --label %s=%s ", containerEngine.c_str(),
+										  m_containerName.c_str(), DOCKER_LABEL_MANAGED, DOCKER_LABEL_APP,
+										  m_legacyContainerName.c_str());
 
 	for (const auto &[key, value] : envMap)
 	{
 		if (key == ENV_APPMESH_DOCKER_PARAMS)
 		{
-			// Used for -p -v parameters
+			// Used for -p -v parameters; selects this CLI backend and is appended
+			// verbatim, so point operators at the structured alternative.
+			LOG_WAR << fname << ENV_APPMESH_DOCKER_PARAMS
+					<< " is appended verbatim to `docker run`; prefer the docker_ports/docker_volumes fields";
 			dockerCommand.append(" ").append(value);
+		}
+		else if (key == ENV_APPMESH_DOCKER_REGISTRY_SERVER || key == ENV_APPMESH_DOCKER_REGISTRY_USER ||
+				 key == ENV_APPMESH_DOCKER_REGISTRY_PASSWORD)
+		{
+			// Daemon-side registry credentials never reach the container.
+			continue;
 		}
 		else
 		{
-			const bool containSpace = (value.find(' ') != value.npos);
-			dockerCommand.append(" -e ").append(key).append("=");
-			if (containSpace)
-				dockerCommand.append("'");
-			dockerCommand.append(value);
-			if (containSpace)
-				dockerCommand.append("'");
+			// The daemon spawns without a shell: str2argv keeps quote-protected
+			// text as one token, so the quotes must wrap the whole value.
+			dockerCommand.append(" -e ").append(key).append("='").append(value).append("'");
 		}
 	}
 
@@ -209,6 +294,47 @@ pid_t DockerProcess::startContainer(const std::string &cmd, const std::string &w
 		{
 			dockerCommand.append(" -v ").append(scriptFileName).append(":").append(scriptFileName);
 		}
+	}
+
+	// Container user follows the application's execution_user; an explicit
+	// metadata User still wins (same rule as the API backend).
+	{
+		const auto containerUser = createBody.isObject() ? GET_JSON_STR_VALUE(createBody, "User") : std::string();
+		if (!containerUser.empty())
+			dockerCommand.append(" --user '").append(containerUser).append("'");
+		else if (execUser.length())
+			dockerCommand.append(" --user '").append(execUser).append("'");
+	}
+
+	// First-class wiring compiled by the application into HostConfig; translated
+	// back to their docker run spellings here.
+	if (createBody.isObject() && createBody["HostConfig"].isObject())
+	{
+		const auto &hostConfig = createBody["HostConfig"];
+		if (hostConfig["PortBindings"].isObject())
+		{
+			for (const auto &containerPort : hostConfig["PortBindings"].getMemberNames())
+			{
+				for (const auto &binding : hostConfig["PortBindings"][containerPort])
+				{
+					dockerCommand.append(" -p ");
+					if (HAS_JSON_FIELD(binding, "HostIp") && binding["HostIp"].isString() && binding["HostIp"].asString().length())
+						dockerCommand.append(binding["HostIp"].asString()).append(":");
+					dockerCommand.append(GET_JSON_STR_VALUE(binding, "HostPort")).append(":").append(containerPort);
+				}
+			}
+		}
+		if (hostConfig["Binds"].isArray())
+		{
+			for (const auto &bind : hostConfig["Binds"])
+			{
+				if (bind.isString() && bind.asString().length())
+					dockerCommand.append(" -v '").append(bind.asString()).append("'");
+			}
+		}
+		const auto networkMode = GET_JSON_STR_VALUE(hostConfig, "NetworkMode");
+		if (networkMode.length())
+			dockerCommand.append(" --network '").append(networkMode).append("'");
 	}
 
 	// Apply resource limitations
@@ -226,11 +352,45 @@ pid_t DockerProcess::startContainer(const std::string &cmd, const std::string &w
 		{
 			dockerCommand.append(" --cpu-shares ").append(std::to_string(limit->m_cpuShares));
 		}
+		if (limit->m_cpuCores > 0)
+		{
+			// docker --cpus takes fractional cores; keep two decimals
+			dockerCommand.append(" --cpus ").append(Utility::stringFormat("%.2f", limit->m_cpuCores));
+		}
 	}
 
 	// Docker container does not restrict container user
 	dockerCommand.append(" ").append(m_dockerImage).append(" ").append(cmd);
 	LOG_DBG << fname << "dockerCommand: " << dockerCommand;
+
+	// The CLI backend reaches the same risks through raw APP_DOCKER_OPTS flags.
+	{
+		const auto policy = Configuration::instance()->getDockerHostSecurityPolicy();
+		if (policy != "off")
+		{
+			const auto optsIt = envMap.find(ENV_APPMESH_DOCKER_PARAMS);
+			const auto opts = optsIt == envMap.end() ? std::string() : optsIt->second;
+			std::vector<std::string> hits;
+			if (opts.find("--privileged") != std::string::npos)
+				hits.push_back("privileged container");
+			if (opts.find("--pid=host") != std::string::npos || opts.find("--pid host") != std::string::npos)
+				hits.push_back("host PID namespace");
+			if (!hits.empty())
+			{
+				std::string joined;
+				for (const auto &h : hits)
+					joined += (joined.empty() ? "" : "; ") + h;
+				if (policy == "enforce")
+				{
+					setStartError("Docker.HostSecurityPolicy=enforce rejected the docker run options: " + joined);
+					LOG_WAR << fname << startError();
+					return INVALID_PID;
+				}
+				LOG_WAR << fname << "Docker.HostSecurityPolicy=audit: container <" << m_containerName << "> uses "
+						<< joined;
+			}
+		}
+	}
 
 	// Step 3: Start docker container
 	bool startSuccess = false;
@@ -305,6 +465,8 @@ pid_t DockerProcess::startContainer(const std::string &cmd, const std::string &w
 				if (runningText == "true" && hostPid > 1)
 				{
 					this->attach(hostPid);
+					m_hostPidVisible = AppProcess::running();
+					m_containerRunning.store(true, std::memory_order_release);
 					setContainerId(containerId);
 					LOG_INF << fname << "started pid <" << hostPid << "> for container: " << containerId;
 					return this->getpid();
@@ -368,6 +530,144 @@ pid_t DockerProcess::getpid() const
 		return INVALID_PID;
 	}
 	return AppProcess::getpid();
+}
+
+std::optional<int> DockerProcess::containerHealthVerdict()
+{
+	std::string containerId;
+	std::string containerEngine;
+	{
+		std::lock_guard guard(m_dockerMutex);
+		containerId = m_containerId;
+		containerEngine = m_containerEngine;
+	}
+	if (containerId.empty())
+		return std::nullopt;
+
+	// Empty output (or a non-zero exit) means the image defines no HEALTHCHECK.
+	const auto result = runDockerCli(
+		Utility::stringFormat("%s inspect -f '{{.State.Health.Status}}' %s", containerEngine.c_str(), containerId.c_str()),
+		15, 128, true);
+	if (!result.started || !result.completed || result.exitCode != 0)
+		return std::nullopt;
+	const auto status = Utility::stdStringTrim(result.output);
+	if (status == "healthy")
+		return 0;
+	if (status == "unhealthy")
+		return 1;
+	if (status == "starting")
+		return 0; // Docker's own start-period leniency
+	return std::nullopt;
+}
+
+bool DockerProcess::needsAlwaysExitPoll() const
+{
+	std::lock_guard guard(m_dockerMutex);
+	return !m_containerId.empty() && !m_hostPidVisible;
+}
+
+bool DockerProcess::running() const
+{
+	if (m_pullInFlight.load(std::memory_order_acquire))
+		return true;
+	{
+		std::lock_guard guard(m_dockerMutex);
+		if (!m_containerId.empty() && !m_hostPidVisible)
+			return m_containerRunning.load(std::memory_order_acquire);
+	}
+	return AppProcess::running();
+}
+
+void DockerProcess::reportBackendExit()
+{
+	std::string containerId;
+	std::string containerEngine;
+	{
+		std::lock_guard guard(m_dockerMutex);
+		containerId = m_containerId;
+		containerEngine = m_containerEngine;
+	}
+	if (containerId.empty())
+	{
+		// A pull child or native fallback: the OS answer is authoritative.
+		onExit(returnValue());
+		return;
+	}
+
+	// Docker decides: a still-running container only refreshes the cache.
+	const auto inspect = runDockerCli(
+		Utility::stringFormat("%s inspect -f '{{.State.Running}} {{.State.ExitCode}}' %s", containerEngine.c_str(),
+							  containerId.c_str()),
+		15, 256, true);
+	if (!inspect.started || !inspect.completed || inspect.exitCode != 0)
+	{
+		// Channel failure must not fabricate an exit; retry on the next tick.
+		LOG_WAR << "DockerProcess::reportBackendExit() inspect failed for <" << containerId << ">: " << inspect.error;
+		return;
+	}
+	std::istringstream stateStream(Utility::stdStringTrim(inspect.output));
+	std::string runningText;
+	int exitCode = DOCKER_COMMAND_ERROR;
+	if (stateStream >> runningText >> exitCode)
+	{
+		if (runningText == "true")
+		{
+			m_containerRunning.store(true, std::memory_order_release);
+			return;
+		}
+		m_containerRunning.store(false, std::memory_order_release);
+		onExit(exitCode);
+	}
+}
+
+std::optional<int> DockerProcess::execHealthProbe(const std::string &cmd)
+{
+	const static char fname[] = "DockerProcess::execHealthProbe() ";
+	std::string containerId;
+	std::string containerEngine;
+	{
+		std::lock_guard guard(m_dockerMutex);
+		containerId = m_containerId;
+		containerEngine = m_containerEngine;
+	}
+	if (containerId.empty() || cmd.empty())
+		return std::nullopt;
+
+	const auto result = runDockerCli(
+		Utility::stringFormat("%s exec %s %s", containerEngine.c_str(), containerId.c_str(), cmd.c_str()), 15, 512, true);
+	if (!result.started || !result.completed)
+	{
+		LOG_WAR << fname << "docker exec probe did not complete: " << result.error;
+		return std::nullopt;
+	}
+	return result.exitCode;
+}
+
+void DockerProcess::archiveContainerLogs(const std::string &containerId)
+{
+	const static char fname[] = "DockerProcess::archiveContainerLogs() ";
+	if (m_stdoutFile.empty() || containerId.empty())
+		return;
+	try
+	{
+		std::string containerEngine;
+		{
+			std::lock_guard guard(m_dockerMutex);
+			containerEngine = m_containerEngine;
+		}
+		const auto logs = runDockerCli(
+			Utility::stringFormat("%s logs --tail 2000 %s", containerEngine.c_str(), containerId.c_str()), 15,
+			256 * 1024, false);
+		if (logs.started && logs.completed && !logs.output.empty())
+		{
+			std::ofstream out(m_stdoutFile, std::ios::app);
+			out << logs.output;
+		}
+	}
+	catch (const std::exception &ex)
+	{
+		LOG_WAR << fname << "failed: " << ex.what();
+	}
 }
 
 std::string DockerProcess::containerId() const
@@ -446,8 +746,9 @@ pid_t DockerProcess::startImpl(std::string cmd, std::string execUser, std::strin
 		std::lock_guard guard(m_dockerMutex);
 		m_containerEngine = CONTAINER_PODMAN;
 	}
+	m_stdoutFile = stdoutFile;
 
-	return startContainer(cmd, workDir, envMap, limit, stdoutFile);
+	return startContainer(cmd, execUser, workDir, envMap, limit, stdoutFile, stdinFileContent);
 }
 
 const std::string DockerProcess::getOutputMsg(long *position, int maxSize, bool readLine)

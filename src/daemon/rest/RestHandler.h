@@ -21,6 +21,9 @@ public:
 	virtual ~RestHandler();
 
 	static long getHttpQueryValue(const HttpRequest &message, const std::string &key, long defaultValue, long min, long max);
+	// Position/index params parse as plain integers, never as durations.
+	static long getHttpQueryPosition(const HttpRequest &message, const std::string &key, long defaultValue, long min,
+										 long max);
 	static std::string getHttpQueryString(const HttpRequest &message, const std::string &key);
 
 	// Static content serving utilities

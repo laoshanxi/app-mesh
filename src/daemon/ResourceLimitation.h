@@ -24,6 +24,8 @@ public:
 	int m_memoryVirtMb;
 	bool m_memoryVirtSpecified;
 	int m_cpuShares;
+	// CPU cores (fractional) compiled to NanoCPUs; 0 = unspecified.
+	double m_cpuCores;
 
 	// runtime info
 	std::string m_name;

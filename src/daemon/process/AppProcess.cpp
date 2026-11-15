@@ -428,7 +428,7 @@ void AppProcess::reportPolledExitAsync()
 		{
 			try
 			{
-				self->onExit(self->returnValue());
+				self->reportBackendExit();
 			}
 			catch (...)
 			{
@@ -437,6 +437,11 @@ void AppProcess::reportPolledExitAsync()
 			}
 			self->m_lifecycle->exitPollInFlight.store(false, std::memory_order_release);
 		});
+}
+
+void AppProcess::reportBackendExit()
+{
+	onExit(returnValue());
 }
 
 void AppProcess::finalizeExit() noexcept

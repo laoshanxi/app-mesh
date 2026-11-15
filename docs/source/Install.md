@@ -30,7 +30,7 @@ The file applies only on the first boot. See [Authentication](Authentication.md)
 
 Persist `/opt/appmesh/work`. Back up this directory as one unit. It contains authentication state, authorization data, application definitions, and the master key for secured environment values.
 
-Mount `/var/run/docker.sock` only when App Mesh must manage Docker images. Grant the minimum required group access.
+Mount `/var/run/docker.sock` only when App Mesh must manage Docker applications. Docker operations (including image pulls) go through the Docker Engine API via the built-in agent, so the daemon needs no docker CLI — only the socket. Grant the minimum required group access.
 
 ## Linux installation
 

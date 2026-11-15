@@ -80,6 +80,7 @@ Configuration::Configuration()
 	m_baseConfig = std::make_shared<BaseConfig>();
 	m_label = std::make_unique<Label>();
 	m_rest = std::make_shared<JsonRest>();
+	m_docker = std::make_shared<JsonDocker>();
 }
 
 Configuration::~Configuration() {}
@@ -127,6 +128,12 @@ std::shared_ptr<Configuration> Configuration::FromJson(Json::Value &jsonValue, b
 	if (HAS_JSON_FIELD(jsonValue, JSON_KEY_REST))
 	{
 		config->m_rest = JsonRest::FromJson(jsonValue[JSON_KEY_REST]);
+	}
+
+	// Docker
+	if (HAS_JSON_FIELD(jsonValue, JSON_KEY_Docker))
+	{
+		config->m_docker = JsonDocker::FromJson(jsonValue[JSON_KEY_Docker]);
 	}
 
 	// Labels
@@ -240,6 +247,25 @@ int Configuration::getScheduleInterval()
 {
 	std::lock_guard guard(m_hotupdateMutex);
 	return m_baseConfig->m_scheduleInterval;
+}
+
+std::shared_ptr<JsonDocker> JsonDocker::FromJson(const Json::Value &jsonValue)
+{
+	auto docker = std::make_shared<JsonDocker>();
+	auto mode = GET_JSON_STR_VALUE(jsonValue, JSON_KEY_Docker_HostSecurityPolicy);
+	std::transform(mode.begin(), mode.end(), mode.begin(), [](unsigned char c) { return std::tolower(c); });
+	if (mode == "off" || mode == "audit" || mode == "enforce")
+		docker->m_hostSecurityPolicy = mode;
+	else if (!mode.empty())
+		LOG_WAR << "Configuration::JsonDocker::FromJson() ignored invalid HostSecurityPolicy <" << mode
+				<< ">, expected off | audit | enforce";
+	return docker;
+}
+
+std::string Configuration::getDockerHostSecurityPolicy()
+{
+	std::lock_guard guard(m_hotupdateMutex);
+	return m_docker ? m_docker->m_hostSecurityPolicy : std::string("off");
 }
 
 int Configuration::getRestListenPort()
@@ -959,6 +985,14 @@ void Configuration::hotUpdate(Json::Value &jsonValue)
 				SET_COMPARE(this->m_baseConfig->m_disableExecUser, newConfig->m_baseConfig->m_disableExecUser);
 			if (HAS_JSON_FIELD(baseConfig, JSON_KEY_WorkingDirectory))
 				SET_COMPARE(this->m_baseConfig->m_defaultWorkDir, newConfig->m_baseConfig->m_defaultWorkDir);
+		}
+
+		// Docker
+		if (HAS_JSON_FIELD(jsonValue, JSON_KEY_Docker))
+		{
+			auto docker = jsonValue[JSON_KEY_Docker];
+			if (HAS_JSON_FIELD(docker, JSON_KEY_Docker_HostSecurityPolicy))
+				SET_COMPARE(this->m_docker->m_hostSecurityPolicy, newConfig->m_docker->m_hostSecurityPolicy);
 		}
 
 		// REST

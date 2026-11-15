@@ -116,4 +116,14 @@ REST:
 # os_version labels at startup; list only custom labels here, e.g.
 #   Labels:
 #     env: production
+# Docker application policy. Hot-reloaded on SIGHUP like the rest of this file.
+Docker:
+  # Gate on high-risk host-facing container settings (privileged, pid=host,
+  # binds of / or the docker socket, CapAdd SYS_ADMIN/SYS_PTRACE) found in a
+  # container definition (metadata) or raw APP_DOCKER_OPTS flags.
+  # off     - no checks (default)
+  # audit   - log the findings, allow the start
+  # enforce - reject the start with a clear error
+  HostSecurityPolicy: "off"
+
 Labels: {}

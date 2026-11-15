@@ -14,36 +14,62 @@ void HealthCheckTask::doHealthCheck()
 	auto apps = Configuration::instance()->getApps();
 	for (auto &app : apps)
 	{
-		if (app->healthCheckCmd().empty())
+		// Native apps need an explicit command; container apps may rely on the
+		// image HEALTHCHECK alone.
+		if (!app->isContainerized() && app->healthCheckCmd().empty())
 			continue;
 		try
 		{
 			if (app->available())
 			{
-				auto proc = std::make_shared<AppProcess>(std::weak_ptr<Application>());
-				const auto pid = proc->start(app->healthCheckCmd(), "", "", {}, nullptr, "", EMPTY_STR_JSON, 0).pid;
 				int exitCode = 1;
-				pid_t waited = 0;
-				if (pid > 1)
+				// Container verdict first: the image HEALTHCHECK status Docker
+				// already maintains, else health_check_cmd executed inside the
+				// container. A channel failure is fail-closed (not provably
+				// healthy), never a host probe.
+				const auto containerVerdict = app->probeContainerHealth();
+				if (containerVerdict)
 				{
-					// Wait in slices so a shutdown request cannot ride out the
-					// full DEFAULT_HEALTH_CHECK_INTERVAL.
-					const auto deadline =
-						std::chrono::steady_clock::now() + std::chrono::seconds(DEFAULT_HEALTH_CHECK_INTERVAL);
-					do
-					{
-						waited = proc->wait(std::chrono::milliseconds(200), &exitCode);
-					} while (waited == 0 && !QuitHandler::instance()->shouldExit() &&
-							 std::chrono::steady_clock::now() < deadline);
+					exitCode = *containerVerdict;
+					LOG_DBG << fname << "Container health for <" << app->getName() << "> verdict <" << exitCode << ">";
 				}
-				if (pid > 1 && waited <= 0)
+				else if (!app->isContainerized())
 				{
-					proc->terminate();
-					exitCode = proc->returnValue();
+					auto proc = std::make_shared<AppProcess>(std::weak_ptr<Application>());
+					const auto pid = proc->start(app->healthCheckCmd(), "", "", {}, nullptr, "", EMPTY_STR_JSON, 0).pid;
+					pid_t waited = 0;
+					if (pid > 1)
+					{
+						// Wait in slices so a shutdown request cannot ride out the
+						// full DEFAULT_HEALTH_CHECK_INTERVAL.
+						const auto deadline =
+							std::chrono::steady_clock::now() + std::chrono::seconds(DEFAULT_HEALTH_CHECK_INTERVAL);
+						do
+						{
+							waited = proc->wait(std::chrono::milliseconds(200), &exitCode);
+						} while (waited == 0 && !QuitHandler::instance()->shouldExit() &&
+								 std::chrono::steady_clock::now() < deadline);
+					}
+					if (pid > 1 && waited <= 0)
+					{
+						proc->terminate();
+						exitCode = proc->returnValue();
+					}
+					LOG_DBG << fname << "Health check for <" << app->getName() << "> command <" << app->healthCheckCmd()
+							<< "> returned <" << exitCode << ">, last error: " << proc->startError();
+				}
+				else if (app->healthCheckCmd().empty())
+				{
+					// Container without an image HEALTHCHECK and without a command:
+					// no health semantics, leave the current state untouched.
+					continue;
+				}
+				else
+				{
+					LOG_WAR << fname << "Container health check for <" << app->getName()
+							<< "> could not reach the container; marking unhealthy";
 				}
 				app->health(0 == exitCode);
-				LOG_DBG << fname << "Health check for <" << app->getName() << "> command <" << app->healthCheckCmd()
-						<< "> returned <" << exitCode << ">, last error: " << proc->startError();
 			}
 			else
 			{
