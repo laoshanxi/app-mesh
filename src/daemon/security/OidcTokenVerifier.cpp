@@ -329,10 +329,13 @@ nlohmann::json OidcTokenVerifier::publicConfig() const
 	result["audience"] = m_config.resourceAudience;
 	result["public_client_id"] = m_config.publicClientId;
 	result["scopes"] = m_config.scopes;
-	// An unconfigured entry defaults to this daemon's own HTTPS REST listener, so
+	// An unconfigured entry defaults to this daemon's own REST listener, so
 	// bare deployments and dev servers need no manual redirect registration.
+	// The scheme follows the listener's own TLS mode: the plaintext
+	// (TLS-at-gateway) shape must not advertise an unreachable https:// entry.
+	const auto scheme = Configuration::instance()->getSslEnabled() ? "https://" : "http://";
 	result["browser_entry"] = !m_config.browserEntry.empty() ? m_config.browserEntry
-		: "https://" + Configuration::instance()->getRestListenAddress() + ":" + std::to_string(Configuration::instance()->getRestListenPort());
+		: scheme + Configuration::instance()->getRestListenAddress() + ":" + std::to_string(Configuration::instance()->getRestListenPort());
 	result["flows"] = nlohmann::json::array({"authorization_code_pkce", "device_code"});
 	result["refresh_token"] = m_config.refreshToken;
 	return result;

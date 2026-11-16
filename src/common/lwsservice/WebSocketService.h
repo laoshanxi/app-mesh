@@ -72,6 +72,8 @@ public:
 
     // Initialize with TLS
     bool initialize(ACE_INET_Addr addr, const std::string &cert_path, const std::string &key_path, const std::string &ca_path);
+    // REST.SSL.SSLEnabled=false: serve plaintext (TLS terminates at an upstream gateway).
+    bool initializePlain(ACE_INET_Addr addr);
 
     // Start event loop and worker threads
     bool start(int worker_count);
@@ -93,6 +95,7 @@ private:
 
     // Create/init lws_context
     bool createContext(const char *cert_path, const char *key_path, const char *ca_path);
+    bool createContextPlain();
 
     // HTTP and WebSocket callbacks (called from C)
     int handleHttpCallback(struct lws *wsi, enum lws_callback_reasons reason, void *user, void *in, size_t len);

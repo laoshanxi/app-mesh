@@ -216,6 +216,16 @@ std::shared_ptr<ForwardingConnection> ForwardingManager::getOrCreateConnection(c
 	// Phase 2: create connection outside lock (avoids holding map lock during connect)
 	// IMPORTANT: set callbacks BEFORE connect(), because connect() calls open() which
 	// registers with the reactor — after that, handle_input/handle_close can fire immediately.
+	if (!Configuration::instance()->getSslEnabled())
+	{
+		// The outbound hop is ACE_SSL-based on this tier and has no plaintext
+		// transport (same platform limitation as the TCP frame listener). Fail
+		// loud here instead of letting every forward die in a confusing TLS
+		// handshake against a plaintext peer.
+		LOG_ERR << fname << "Forwarding requires TLS on this platform tier; REST.SSL.SSLEnabled=false cannot reach plaintext peers <"
+				<< key << ">";
+		return nullptr;
+	}
 	conn = std::make_shared<ForwardingConnection>();
 	std::weak_ptr<ForwardingConnection> weakConn = conn;
 

@@ -397,6 +397,12 @@ bool WebSocketService::initialize(ACE_INET_Addr addr, const std::string &cert_pa
     return createContext(cert_path.c_str(), key_path.c_str(), ca_path.c_str());
 }
 
+bool WebSocketService::initializePlain(ACE_INET_Addr addr)
+{
+    m_addr = addr;
+    return createContextPlain();
+}
+
 // -------------------------------
 // Start / Shutdown
 // -------------------------------
@@ -1253,6 +1259,58 @@ bool WebSocketService::createContext(const char *cert_path, const char *key_path
         SSL_OP_CIPHER_SERVER_PREFERENCE;
 
     info.ssl_options_clear = SSL_OP_ALLOW_UNSAFE_LEGACY_RENEGOTIATION;
+
+    // TCP keepalive settings
+    info.ka_time = 60;
+    info.ka_probes = 3;
+    info.ka_interval = 5;
+
+    // Ping/pong and retry configuration
+    static lws_retry_bo_t retry = {};
+    retry.secs_since_valid_ping = 30;
+    retry.secs_since_valid_hangup = 35;
+    info.retry_and_idle_policy = &retry;
+
+    struct lws_context *ctx = lws_create_context(&info);
+    if (!ctx)
+    {
+        throw std::runtime_error("lws_create_context failed");
+    }
+
+    m_context.store(ctx);
+    LOG_INF << fname << "lws_context created";
+    return true;
+}
+
+bool WebSocketService::createContextPlain()
+{
+    const static char fname[] = "WebSocketService::createContext() ";
+
+    LOG_DBG << fname << "Initializing lws_context";
+
+    // per_session_data_size=0: HTTP state in opaque_user_data, WS state in m_sessions.
+    static struct lws_protocols protocols[] = {
+        {"http", &WebSocketService::staticHttpCallback, 0, 0, 0, nullptr, 0},
+        {"appmesh-ws", &WebSocketService::staticWebSocketCallback, 0, LWS_RX_BUFFER_SIZE, 0, nullptr, 0},
+        {nullptr, nullptr, 0, 0, 0, nullptr, 0}};
+
+    struct lws_context_creation_info info;
+    memset(&info, 0, sizeof(info));
+    info.port = m_addr.get_port_number();
+    info.iface = m_addr.get_host_addr();
+    info.protocols = protocols;
+    info.gid = -1;
+    info.uid = -1;
+
+    // Plaintext listeners: no SSL global init and no TLS material at all.
+    // Do NOT advertise h2 via ALPN: lws custom header APIs (lws_hdr_custom_length,
+    // lws_hdr_custom_copy, lws_hdr_custom_name_foreach) all return -1 for HTTP/2
+    // streams (mux_substream guard), and the HPACK decoder silently discards
+    // non-tokenized headers. File transfer depends on the custom X-File-Path header.
+    info.options = LWS_SERVER_OPTION_HTTP_HEADERS_SECURITY_BEST_PRACTICES_ENFORCE;
+
+    static const char *alpn_protos = "http/1.1";
+    info.alpn = alpn_protos;
 
     // TCP keepalive settings
     info.ka_time = 60;

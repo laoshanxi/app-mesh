@@ -362,6 +362,17 @@ void AppMeshDaemon::recoverApplications()
 	config->loadApps(fs::path(Utility::getHomeDir()) / APPMESH_APPLICATION_DIR);
 	// Validate the dependency graph once after both directories are loaded.
 	config->validateRecoveredDependencies();
+	// Startup sweep: run instances are one-shot registrations marked by the
+	// engine; drop any that recovered without a live process instead of leaving
+	// it until a manual delete (getApps() returns a copy, safe to mutate).
+	for (const auto &app : config->getApps())
+	{
+		if (app && app->isOneShot() && app->getpid() <= 1)
+		{
+			config->removeApp(app->getName());
+			LOG_INF << fname << "Removed dead run instance registration <" << app->getName() << ">";
+		}
+	}
 
 	LOG_INF << fname << "Applications recovered";
 }
@@ -440,14 +451,26 @@ void AppMeshDaemon::initializeRestService()
 		LOG_INF << fname << "REST service is disabled, skipping initialization";
 		return;
 	}
+	// TLS-at-gateway shape: an upstream LB/gateway/sidecar terminates TLS and
+	// forwards plaintext on a trusted network. Plaintext is always explicit.
+	const bool sslEnabled = config->getSslEnabled();
+	if (!sslEnabled)
+	{
+		LOG_WAR << fname << "SSL is disabled: the REST/WebSocket listener accepts PLAINTEXT. This is only "
+						 "for deployments where TLS terminates at an upstream gateway on a trusted network; keep "
+						 "the listener bound to a private interface.";
+	}
 	const std::string homeDir = Utility::getHomeDir();
-	const bool verifyClient = Configuration::instance()->getSslVerifyClient();
-	const auto cert = ClientSSLConfig::ResolveAbsolutePath(homeDir, Configuration::instance()->getSSLCertificateFile());					 // Server certificate (PEM, include intermediates)
-	const auto key = ClientSSLConfig::ResolveAbsolutePath(homeDir, Configuration::instance()->getSSLCertificateKeyFile());					 // Private key
+	const bool verifyClient = sslEnabled && Configuration::instance()->getSslVerifyClient();
+	const auto cert = sslEnabled ? ClientSSLConfig::ResolveAbsolutePath(homeDir, Configuration::instance()->getSSLCertificateFile()) : std::string();  // Server certificate (PEM, include intermediates)
+	const auto key = sslEnabled ? ClientSSLConfig::ResolveAbsolutePath(homeDir, Configuration::instance()->getSSLCertificateKeyFile()) : std::string(); // Private key
 	const auto ca = verifyClient ? ClientSSLConfig::ResolveAbsolutePath(homeDir, Configuration::instance()->getSSLCaPath()) : std::string(); // CA file or directory
 
-	// Initialize SSL for TCP server and client
-	SSLHelper::initServerSSL(ACE_SSL_Context::instance(), cert, key, ca);
+	if (sslEnabled)
+	{
+		// Initialize SSL for TCP server and client
+		SSLHelper::initServerSSL(ACE_SSL_Context::instance(), cert, key, ca);
+	}
 
 	// Client SSL context for forwarding requests to other App Mesh nodes.
 	const bool verifyServer = Configuration::instance()->getSslVerifyServer();
@@ -464,6 +487,14 @@ void AppMeshDaemon::initializeRestService()
 	// port would be bound instead (a random port nobody asked for).
 	if (config->getTcpApiPort() > 0)
 	{
+		if (!sslEnabled)
+		{
+			// The custom TCP frame acceptor is ACE_SSL-based; this line has no
+			// plaintext transport for it. Fail loud instead of silently serving
+			// TLS while the REST listener went plaintext.
+			throw std::runtime_error("REST.SSL.SSLEnabled=false does not support the custom TCP frame listener on this "
+									 "platform tier; set TcpApiPort to 0 or re-enable SSL");
+		}
 		ACE_INET_Addr tcpAddr(config->getTcpApiPort(), config->getRestListenAddress().c_str());
 		LOG_INF << fname << "Initializing TCP service on <" << tcpAddr.get_host_addr() << ":" << tcpAddr.get_port_number() << ">";
 
@@ -500,7 +531,10 @@ void AppMeshDaemon::initializeRestService()
 		ACE_INET_Addr addr(config->getWebSocketPort(), config->getRestListenAddress().c_str());
 		// 1 <IO> thread + shared <WORKER> threads
 		constexpr int workerThreadNumber = 0; // Use shared thread pool
-		WebSocketService::instance()->initialize(addr, cert, key, ca);
+		if (sslEnabled)
+			WebSocketService::instance()->initialize(addr, cert, key, ca);
+		else
+			WebSocketService::instance()->initializePlain(addr);
 		WebSocketService::instance()->start(workerThreadNumber);
 		LOG_INF << fname << "WebSocket service initialized on <" << addr.get_host_addr() << ":" << addr.get_port_number() << ">";
 	}
