@@ -232,6 +232,36 @@ pid_t DockerProcess::startContainer(const std::string &cmd, const std::string &w
 	dockerCommand.append(" ").append(m_dockerImage).append(" ").append(cmd);
 	LOG_DBG << fname << "dockerCommand: " << dockerCommand;
 
+	// The CLI backend reaches high-risk host-facing settings through raw
+	// APP_DOCKER_OPTS flags; Docker.HostSecurityPolicy gates them here.
+	{
+		const auto policy = Configuration::instance()->getDockerHostSecurityPolicy();
+		if (policy != "off")
+		{
+			const auto optsIt = envMap.find(ENV_APPMESH_DOCKER_PARAMS);
+			const auto opts = optsIt == envMap.end() ? std::string() : optsIt->second;
+			std::vector<std::string> hits;
+			if (opts.find("--privileged") != std::string::npos)
+				hits.push_back("privileged container");
+			if (opts.find("--pid=host") != std::string::npos || opts.find("--pid host") != std::string::npos)
+				hits.push_back("host PID namespace");
+			if (!hits.empty())
+			{
+				std::string joined;
+				for (const auto &h : hits)
+					joined += (joined.empty() ? "" : "; ") + h;
+				if (policy == "enforce")
+				{
+					setStartError("Docker.HostSecurityPolicy=enforce rejected the docker run options: " + joined);
+					LOG_WAR << fname << startError();
+					return ACE_INVALID_PID;
+				}
+				LOG_WAR << fname << "Docker.HostSecurityPolicy=audit: container <" << m_containerName << "> uses "
+						<< joined;
+			}
+		}
+	}
+
 	// Step 3: Start docker container
 	bool startSuccess = false;
 	std::string containerId;

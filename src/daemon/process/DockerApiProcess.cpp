@@ -1,6 +1,43 @@
 // src/daemon/process/DockerApiProcess.cpp
 #include "DockerApiProcess.h"
 
+// High-risk host-facing settings the Docker.HostSecurityPolicy gate looks for
+// in the container definition (API backend; the CLI backend checks its raw
+// docker run options instead).
+static std::vector<std::string> dockerHostSecurityFindings(const nlohmann::json &hostConfig)
+{
+	std::vector<std::string> findings;
+	if (!hostConfig.is_object())
+		return findings;
+	if (HAS_JSON_FIELD(hostConfig, "Privileged") && hostConfig.at("Privileged").is_boolean() &&
+		hostConfig.at("Privileged").get<bool>())
+		findings.push_back("privileged container");
+	const auto pidMode = GET_JSON_STR_VALUE(hostConfig, "PidMode");
+	if (pidMode == "host")
+		findings.push_back("host PID namespace (pid=host)");
+	if (HAS_JSON_FIELD(hostConfig, "Binds") && hostConfig.at("Binds").is_array())
+	{
+		for (const auto &bind : hostConfig.at("Binds"))
+		{
+			if (!bind.is_string())
+				continue;
+			const auto value = bind.get<std::string>();
+			const auto source = value.substr(0, value.find(':'));
+			if (source == "/" || source.rfind("/var/run/docker.sock", 0) == 0)
+				findings.push_back("bind of host path <" + source + ">");
+		}
+	}
+	if (HAS_JSON_FIELD(hostConfig, "CapAdd") && hostConfig.at("CapAdd").is_array())
+	{
+		for (const auto &cap : hostConfig.at("CapAdd"))
+		{
+			if (cap.is_string() && (cap.get<std::string>() == "SYS_ADMIN" || cap.get<std::string>() == "SYS_PTRACE"))
+				findings.push_back("CapAdd " + cap.get<std::string>());
+		}
+	}
+	return findings;
+}
+
 #include <cstdint>
 #include <limits>
 #include <utility>
@@ -210,6 +247,30 @@ pid_t DockerApiProcess::startImpl(std::string cmd, std::string execUser, std::st
 	// The next start or an explicit terminate removes it deterministically.
 	hostConfig["AutoRemove"] = false;
 	hostConfig["RestartPolicy"] = {{"Name", "no"}};
+
+	// Docker.HostSecurityPolicy: high-risk host-facing settings are audited or
+	// rejected (enforce) before the create request leaves the daemon.
+	{
+		const auto policy = Configuration::instance()->getDockerHostSecurityPolicy();
+		if (policy != "off")
+		{
+			const auto findings = dockerHostSecurityFindings(hostConfig);
+			if (!findings.empty())
+			{
+				std::string joined;
+				for (const auto &f : findings)
+					joined += (joined.empty() ? "" : "; ") + f;
+				if (policy == "enforce")
+				{
+					setStartError("Docker.HostSecurityPolicy=enforce rejected the container definition: " + joined);
+					LOG_WAR << fname << startError();
+					return ACE_INVALID_PID;
+				}
+				LOG_WAR << fname << "Docker.HostSecurityPolicy=audit: container <" << m_containerName << "> uses "
+						<< joined;
+			}
+		}
+	}
 	createBody["HostConfig"] = hostConfig;
 
 	// POST /containers/create

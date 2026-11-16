@@ -125,6 +125,17 @@ REST:
     # Verify certificates when App Mesh connects to a server; false accepts invalid/self-signed certificates.
     VerifyServer: false
 
+# Docker application policy. Hot-reloaded on SIGHUP like the rest of this file.
+Docker:
+  # Gate on high-risk host-facing container settings (privileged, pid=host,
+  # binds of / or the docker socket, CapAdd SYS_ADMIN/SYS_PTRACE) found in a
+  # container definition (API backend) or raw APP_DOCKER_OPTS flags (CLI
+  # backend: --privileged and --pid=host).
+  # off     - no checks (default)
+  # audit   - log the findings, allow the start
+  # enforce - reject the start with a clear error
+  HostSecurityPolicy: "off"
+
 # Node labels. The daemon adds the automatic host name, arch, and (on Linux)
 # os_version labels at startup; list only custom labels here, e.g.
 #   Labels:
