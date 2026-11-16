@@ -53,6 +53,9 @@ public:
 	bool isPersistAble() const;
 	bool isManaged() const;
 	bool isOneShot() const;
+	/// Engine-injected marker: the base application an on-demand run instance
+	/// was spawned from (generateRunAppName); empty for everything else.
+	const std::string &runBaseApp() const { return m_runBaseApp; }
 	/// True for cron and interval schedules (point-in-time runs).
 	bool isRecurring() const;
 	bool isEnabled() const;
@@ -195,6 +198,7 @@ private:
 	std::string m_commandLine;
 	std::string m_description;
 	std::string m_ownerPrincipalId;
+	std::string m_runBaseApp;
 	std::string m_executionUser;
 	int m_startupPhase;
 	std::vector<std::string> m_dependsOn;

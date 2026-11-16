@@ -22,6 +22,9 @@ public:
 	virtual ~RestHandler();
 
 	static long getHttpQueryValue(const HttpRequest &message, const std::string &key, long defaultValue, long min, long max);
+	// Position/index params parse as plain integers, never as durations.
+	static long getHttpQueryPosition(const HttpRequest &message, const std::string &key, long defaultValue, long min,
+									 long max);
 	static std::string getHttpQueryString(const HttpRequest &message, const std::string &key);
 
 	// Static content serving utilities
@@ -42,8 +45,11 @@ protected:
 		const std::map<std::string, std::function<void(const std::shared_ptr<HttpRequest> &)>> *preferredFunctions = nullptr) const;
 
 	void checkAppAccessPermission(const std::shared_ptr<HttpRequest> &message, const std::shared_ptr<Application> &app, bool requestWrite);
-	std::string regexSearch(const std::string &value, const char *regex);
-	std::tuple<std::string, std::string> regexSearch2(const std::string &value, const char *regex);
+	// Client-facing error defaults to a neutral message; callers may pass a
+	// resource-specific one (regex internals never reach the reply).
+	std::string regexSearch(const std::string &value, const char *regex, const char *clientError = "Invalid request path");
+	std::tuple<std::string, std::string> regexSearch2(const std::string &value, const char *regex,
+													  const char *clientError = "Invalid request path");
 
 	void apiAuthConfig(const std::shared_ptr<HttpRequest> &message);
 	void apiLogo(const std::shared_ptr<HttpRequest> &message);
@@ -98,6 +104,10 @@ protected:
 	void apiRolesView(const std::shared_ptr<HttpRequest> &message);
 	void apiRoleUpdate(const std::shared_ptr<HttpRequest> &message);
 	void apiRoleDelete(const std::shared_ptr<HttpRequest> &message);
+
+	void apiApiKeysView(const std::shared_ptr<HttpRequest> &message);
+	void apiApiKeyIssue(const std::shared_ptr<HttpRequest> &message);
+	void apiApiKeyDelete(const std::shared_ptr<HttpRequest> &message);
 
 	void apiHealth(const std::shared_ptr<HttpRequest> &message);
 	void apiRestMetrics(const std::shared_ptr<HttpRequest> &message);

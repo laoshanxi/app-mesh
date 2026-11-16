@@ -61,7 +61,18 @@ void FileTransferHandler::prepareTransfer(std::unique_ptr<Response> &resp, int c
 		const auto tempName = fileName + "." + Utility::shortID() + ".part";
 		const auto overwrite = resp->file_upload_request_headers.count(HTTP_HEADER_KEY_file_overwrite) != 0 &&
 							   resp->file_upload_request_headers.find(HTTP_HEADER_KEY_file_overwrite)->second == "true";
-		auto uploadInfo = std::make_unique<FileUploadInfo>(fileName, tempName, resp->file_upload_request_headers, overwrite);
+		auto uploadInfo = std::make_unique<FileUploadInfo>(fileName, tempName, resp->file_upload_request_headers, overwrite,
+														   Configuration::instance()->getFileAllowedBaseDir());
+		if (uploadInfo->m_rejected)
+		{
+			// The fd check saw the resolved temp location leave the jail: a
+			// component was swapped between validation and open.
+			auto msg = Utility::text2json("File path is not allowed").dump();
+			resp->http_status = web::http::status_codes::Forbidden;
+			resp->body = std::vector<std::uint8_t>(msg.begin(), msg.end());
+			LOG_ERR << fname << "Path traversal detected in upload | ClientID=" << clientId << " | FilePath=" << fileName;
+			return;
+		}
 		if (!uploadInfo->m_file.is_open())
 		{
 			auto msg = Utility::text2json("Failed open file").dump();
@@ -89,16 +100,30 @@ void FileTransferHandler::prepareTransfer(std::unique_ptr<Response> &resp, int c
 			return;
 		}
 
-		auto fileStream = std::make_unique<std::ifstream>(fileName, std::ios::binary);
-		if (!fileStream->is_open())
+		// Open-then-verify: the fd serves exactly the file whose resolved location
+		// passed the jail check, so a post-validation symlink swap cannot exfiltrate.
+		std::string resolvedPath;
+		bool jailRejected = false;
+		const int fd = Utility::openFileWithinJail(fileName, false, Configuration::instance()->getFileAllowedBaseDir(),
+												   resolvedPath, &jailRejected);
+		if (fd < 0)
 		{
+			if (jailRejected)
+			{
+				auto msg = Utility::text2json("File path is not allowed").dump();
+				resp->http_status = web::http::status_codes::Forbidden;
+				resp->body = std::vector<std::uint8_t>(msg.begin(), msg.end());
+				LOG_ERR << fname << "Path traversal detected in download | ClientID=" << clientId
+						<< " | FilePath=" << fileName;
+				return;
+			}
 			auto msg = Utility::text2json("Failed to open file for reading").dump();
 			resp->http_status = web::http::status_codes::InternalError;
 			resp->body = std::vector<std::uint8_t>(msg.begin(), msg.end());
 			LOG_ERR << fname << "Download file access failed | ClientID=" << clientId << " | FilePath=" << fileName;
 			return;
 		}
-		m_pendingDownload = std::move(fileStream);
+		m_pendingDownload = std::make_unique<FdFileStream>(fd);
 		LOG_INF << fname << "Download file transfer initiated | ClientID=" << clientId << " | FilePath=" << fileName;
 	}
 }
@@ -152,25 +177,20 @@ void FileTransferHandler::recvNextUploadChunk(std::vector<std::uint8_t> &data, i
 	}
 	else
 	{
-		// EOF: commit atomically. Temp and destination share a directory (same filesystem),
-		// so a successful rename publishes the complete file in one step; on failure the
-		// dtor removes the temp and the destination is left untouched.
+		// EOF: commit without replacing unless asked. A concurrent upload that won
+		// the destination keeps its file; the client's precheck already answered OK,
+		// so this side only logs. The pinned dirfd keeps the publish inside the
+		// verified directory even if a parent component was swapped meanwhile.
 		const auto dst = m_pendingUpload->m_filePath;
-		const auto tmp = m_pendingUpload->m_tempPath;
-		const auto overwrite = m_pendingUpload->m_overwrite;
-		m_pendingUpload->m_file.flush();
-		m_pendingUpload->m_file.close();
-		// rename() replaces the destination; without the overwrite flag a
-		// destination created after the precheck must not be silently replaced.
-		if (!overwrite && Utility::isFileExist(dst))
+		const auto result = m_pendingUpload->commit();
+		if (result == FileUploadInfo::CommitResult::Committed)
+		{
+			Utility::applyFilePermission(dst, m_pendingUpload->m_requestHeaders, m_pendingUpload->fd());
+			LOG_INF << fname << "File upload completed successfully | ClientID=" << clientId << " | Destination=" << dst;
+		}
+		else if (result == FileUploadInfo::CommitResult::AlreadyExists)
 		{
 			LOG_ERR << fname << "Destination already exists at commit time | ClientID=" << clientId << " | Destination=" << dst;
-		}
-		else if (std::rename(tmp.c_str(), dst.c_str()) == 0)
-		{
-			m_pendingUpload->m_committed = true; // already in place; dtor must not remove it
-			Utility::applyFilePermission(dst, m_pendingUpload->m_requestHeaders);
-			LOG_INF << fname << "File upload completed successfully | ClientID=" << clientId << " | Destination=" << dst;
 		}
 		else
 		{

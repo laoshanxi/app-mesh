@@ -54,21 +54,28 @@ bool Response::deserialize(const std::uint8_t *data, std::size_t dataSize)
 	return false;
 }
 
-void Response::applyCorsHeaders()
+void Response::applyCorsHeaders(const std::string &origin)
 {
 	if (Configuration::instance()->getCorsDisabled())
 		return;
+	// CORS is opt-in: no wildcard. Without a matching Origin allowlist entry
+	// no CORS headers are sent at all (the UI is a same-origin proxy).
+	if (origin.empty() || Configuration::instance()->getCorsAllowOrigins().count(origin) == 0)
+		return;
 
-	headers["Access-Control-Allow-Origin"] = "*";
-	headers["Access-Control-Allow-Methods"] = "GET, POST, PUT, DELETE, OPTIONS";
-	headers["Access-Control-Allow-Headers"] = "Authorization, Content-Type";
-	// Note: Removed Access-Control-Allow-Credentials as it conflicts with wildcard origin
+	headers[web::http::header_names::access_control_allow_origin] = origin;
+	headers[web::http::header_names::access_control_allow_methods] = "GET, POST, PUT, DELETE, OPTIONS";
+	headers[web::http::header_names::access_control_allow_headers] = "Authorization, Content-Type";
 }
 
 void Response::applySecurityHeaders()
 {
 	headers["X-Content-Type-Options"] = "nosniff";
 	headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains";
+	// Daemon-wide CSP. A handler-pinned policy (the OAuth relay page allows
+	// exactly its inline script hash) wins over this default.
+	if (headers.count(web::http::header_names::content_security_policy) == 0)
+		headers[web::http::header_names::content_security_policy] = "default-src 'none'";
 }
 
 std::string Request::serialize() const

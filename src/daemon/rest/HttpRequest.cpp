@@ -262,6 +262,12 @@ bool HttpRequest::reply(const std::string &requestUri, const std::string &uuid, 
 	if (requestUri == REST_PATH_UPLOAD)
 		response->file_upload_request_headers = m_headers;
 
+	// Security headers ride every response; the Origin-allowlist CORS echo
+	// replaces the old wildcard. A handler-set CSP (the OAuth relay page)
+	// survives — applySecurityHeaders only fills the default when absent.
+	response->applyCorsHeaders(m_headers.get(web::http::header_names::origin));
+	response->applySecurityHeaders();
+
 	if (m_tcpClientId > 0)
 	{
 		// TCP protocol
@@ -476,8 +482,8 @@ bool HttpRequestOutputView::onTimerResponse()
 				return false;
 			}
 
-			long pos = RestHandler::getHttpQueryValue(*this, HTTP_QUERY_KEY_stdout_position, 0, 0, 0);
-			int index = RestHandler::getHttpQueryValue(*this, HTTP_QUERY_KEY_stdout_index, 0, 0, 0);
+			long pos = RestHandler::getHttpQueryPosition(*this, HTTP_QUERY_KEY_stdout_position, 0, 0, 0);
+			int index = static_cast<int>(RestHandler::getHttpQueryPosition(*this, HTTP_QUERY_KEY_stdout_index, 0, 0, 0));
 			long maxSize = RestHandler::getHttpQueryValue(*this, HTTP_QUERY_KEY_stdout_maxsize, APP_STD_OUT_VIEW_DEFAULT_SIZE, 1024, APP_STD_OUT_VIEW_DEFAULT_SIZE);
 			size_t timeout = 0;
 			std::string processUuid = RestHandler::getHttpQueryString(*this, HTTP_QUERY_KEY_process_uuid);

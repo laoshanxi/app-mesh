@@ -281,6 +281,8 @@ void Application::FromJson(const std::shared_ptr<Application> &app, const nlohma
 			"legacy application owner cannot be mapped safely to an immutable OIDC Principal; "
 			"provision the corresponding principal and replace owner with owner_principal_id");
 	app->m_ownerPrincipalId = Utility::stdStringTrim(GET_JSON_STR_VALUE(jsonObj, JSON_KEY_APP_owner_principal_id));
+	// Engine-injected marker for on-demand run instances.
+	app->m_runBaseApp = GET_JSON_STR_VALUE(jsonObj, JSON_KEY_APP_run_base);
 	if (app->m_ownerPrincipalId.empty())
 		throw std::invalid_argument("application owner_principal_id is required");
 	app->m_executionUser = Utility::stdStringTrim(GET_JSON_STR_VALUE(jsonObj, JSON_KEY_APP_execution_user));
@@ -1523,6 +1525,8 @@ nlohmann::json Application::AsJson(bool returnRuntimeInfo, void *ptree)
 	if (!m_ownerPrincipalId.empty())
 	{
 		result[JSON_KEY_APP_owner_principal_id] = m_ownerPrincipalId;
+		if (!m_runBaseApp.empty())
+			result[JSON_KEY_APP_run_base] = m_runBaseApp;
 	}
 	if (!m_executionUser.empty())
 	{

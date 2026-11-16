@@ -49,7 +49,7 @@ public:
 	std::string serialize() const;
 	bool deserialize(const std::uint8_t *data, std::size_t dataSize);
 
-	void applyCorsHeaders();
+	void applyCorsHeaders(const std::string &origin);
 	void applySecurityHeaders();
 
 public:

@@ -168,6 +168,8 @@ constexpr auto REST_PATH_SEC_ROLE_VIEW_ALL = "/appmesh/roles";
 constexpr auto REST_PATH_SEC_ROLE_UPDATE = R"(/appmesh/role/([^/\*]+))";
 constexpr auto REST_PATH_SEC_ROLE_DELETE = R"(/appmesh/role/([^/\*]+))";
 constexpr auto REST_PATH_PRINCIPAL_PERMISSIONS = "/appmesh/principal/self/permissions";
+constexpr auto REST_PATH_SEC_API_KEYS = "/appmesh/security/apikeys";
+constexpr auto REST_PATH_SEC_API_KEY = R"(/appmesh/security/apikey/([^/\*]+))";
 constexpr auto REST_PATH_SEC_PERM_VIEW_ALL = "/appmesh/permissions";
 constexpr auto REST_PATH_PRINCIPALS = "/appmesh/principals";
 constexpr auto REST_PATH_PRINCIPAL = R"(/appmesh/principal/([^/\*]+))";
@@ -245,6 +247,12 @@ RestHandler::RestHandler() : m_metrics(std::make_shared<PrometheusRest>())
 	bindRestMethod(web::http::methods::POST, REST_PATH_SEC_ROLE_UPDATE, std::bind(&RestHandler::apiRoleUpdate, this, std::placeholders::_1));
 	bindRestMethod(web::http::methods::DEL, REST_PATH_SEC_ROLE_DELETE, std::bind(&RestHandler::apiRoleDelete, this, std::placeholders::_1));
 	bindRestMethod(web::http::methods::GET, REST_PATH_PRINCIPAL_PERMISSIONS, std::bind(&RestHandler::apiPrincipalPermissionsView, this, std::placeholders::_1));
+	bindRestMethod(web::http::methods::GET, REST_PATH_SEC_API_KEYS,
+				   std::bind(&RestHandler::apiApiKeysView, this, std::placeholders::_1));
+	bindRestMethod(web::http::methods::POST, REST_PATH_SEC_API_KEYS,
+				   std::bind(&RestHandler::apiApiKeyIssue, this, std::placeholders::_1));
+	bindRestMethod(web::http::methods::DEL, REST_PATH_SEC_API_KEY,
+				   std::bind(&RestHandler::apiApiKeyDelete, this, std::placeholders::_1));
 	bindRestMethod(web::http::methods::GET, REST_PATH_SEC_PERM_VIEW_ALL, std::bind(&RestHandler::apiPermissionsView, this, std::placeholders::_1));
 
 	// 10. metrics
@@ -491,13 +499,23 @@ constexpr auto OAUTH_CALLBACK_RELAY_HTML = R"HTML(<!DOCTYPE html>
 // the web UI origin carried in the state parameter, and only to the fixed
 // /oauth/callback path on that origin. PKCE keeps a relayed code useless to any
 // other origin. Public like the login page itself.
+// The relay page runs one pinned inline script; the daemon-wide
+// "default-src 'none'" CSP would block it, so this response overrides the
+// policy with the script's SHA-256 hash (base64 of the exact bytes between
+// <script> and </script>, leading and trailing newlines included). Byte-identical
+// copy in the Go agent (auth_relay.go); the hash must match on both sides.
+constexpr auto OAUTH_CALLBACK_RELAY_CSP =
+	"default-src 'none'; script-src 'sha256-WJHBkicVdWDq2OxtXiYCx4BCaK7EV2KyjwBP8/UzM6Q='; frame-ancestors 'none'";
+
 void RestHandler::apiOauthCallback(const std::shared_ptr<HttpRequest> &message)
 {
 	const static char fname[] = "RestHandler::apiOauthCallback() ";
 	LOG_DBG << fname << "Serving the OAuth callback relay page";
 
 	std::string content(OAUTH_CALLBACK_RELAY_HTML);
-	message->reply(web::http::status_codes::OK, content, CONTENT_TYPE_HTML);
+	std::map<std::string, std::string> headers;
+	headers[web::http::header_names::content_security_policy] = OAUTH_CALLBACK_RELAY_CSP;
+	message->reply(web::http::status_codes::OK, content, headers, CONTENT_TYPE_HTML);
 }
 
 void RestHandler::apiSwagger(const std::shared_ptr<HttpRequest> &message)
@@ -560,6 +578,30 @@ long RestHandler::getHttpQueryValue(const HttpRequest &message, const std::strin
 	// LOG_DBG << fname << key << "=" << rt;
 	return rt;
 }
+long RestHandler::getHttpQueryPosition(const HttpRequest &message, const std::string &key, long defaultValue,
+									   long min, long max)
+{
+	// Positions and indices are plain integers (byte offsets, nanosecond log
+	// cursors), not durations: the duration parser rejects values beyond int
+	// range, which a cursor legitimately exceeds.
+	long rt = defaultValue;
+	if (auto it = message.m_query.find(key); it != message.m_query.end())
+	{
+		try
+		{
+			rt = std::stoll(it->second);
+		}
+		catch (const std::exception &)
+		{
+			rt = defaultValue;
+		}
+		if (rt < 0)
+			rt = defaultValue;
+		else if (min < max && (rt < min || rt > max))
+			rt = defaultValue;
+	}
+	return rt;
+}
 
 std::string RestHandler::getHttpQueryString(const HttpRequest &message, const std::string &key)
 {
@@ -575,7 +617,7 @@ std::string RestHandler::getHttpQueryString(const HttpRequest &message, const st
 	return rt;
 }
 
-std::string RestHandler::regexSearch(const std::string &value, const char *expr)
+std::string RestHandler::regexSearch(const std::string &value, const char *expr, const char *clientError)
 {
 	const static char fname[] = "RestHandler::regexSearch() ";
 
@@ -599,11 +641,13 @@ std::string RestHandler::regexSearch(const std::string &value, const char *expr)
 			}
 		}
 	}
+	// The regex details stay in the log; the client sees a neutral message.
 	LOG_WAR << fname << "Failed to parse data from path <" << value << "> for regex expression: <" << expr << ">";
-	throw std::invalid_argument("Failed to search data from regex expression");
+	throw std::invalid_argument(clientError);
 }
 
-std::tuple<std::string, std::string> RestHandler::regexSearch2(const std::string &value, const char *expr)
+std::tuple<std::string, std::string> RestHandler::regexSearch2(const std::string &value, const char *expr,
+															   const char *clientError)
 {
 	const static char fname[] = "RestHandler::regexSearch2() ";
 
@@ -629,8 +673,9 @@ std::tuple<std::string, std::string> RestHandler::regexSearch2(const std::string
 			}
 		}
 	}
+	// The regex details stay in the log; the client sees a neutral message.
 	LOG_WAR << fname << "Failed to parse data pair from path <" << value << "> for regex expression: <" << expr << ">";
-	throw std::invalid_argument("Failed to search data from regex expression");
+	throw std::invalid_argument(clientError);
 }
 
 void RestHandler::apiAppEnable(const std::shared_ptr<HttpRequest> &message)
@@ -731,6 +776,12 @@ void RestHandler::apiAppDelete(const std::shared_ptr<HttpRequest> &message)
 			message->reply(web::http::status_codes::Conflict);
 			return;
 		}
+		// Cascade: deleting the base stops and removes its run instances; the
+		// delete permission on the base governs the cascade (the base owner
+		// controls its instances).
+		LOG_INF << "RestHandler::apiAppDelete() Principal <" << tokenUser << "> cascading run instances of <" << appName
+				<< ">";
+		config->removeRunInstances(appName);
 		message->reply(web::http::status_codes::OK, Utility::text2json(Utility::stringFormat("Application <%s> removed.", appName.c_str())));
 	}
 }
@@ -783,18 +834,41 @@ void RestHandler::apiFileDownload(const std::shared_ptr<HttpRequest> &message)
 
 	// A forwarded request has no socket to stream on: the file content is the
 	// response body (bounded; larger files need a streaming surface).
-	boost::system::error_code ec;
-	const auto fileSize = fs::file_size(file, ec);
-	if (ec || fileSize > MAX_HTTP_BODY_SIZE)
+	// Open-then-verify: the fd pins the inode that passed the jail check, so the
+	// body can only come from the validated file, never a swapped symlink component.
+	std::string resolvedPath;
+	bool jailRejected = false;
+	const int fd = Utility::openFileWithinJail(file, false, Configuration::instance()->getFileAllowedBaseDir(),
+											   resolvedPath, &jailRejected);
+	if (fd < 0)
 	{
-		message->reply(web::http::status_codes::RequestEntityTooLarge,
-					   Utility::text2json("file is too large for the buffered download surface"));
+		if (jailRejected)
+		{
+			LOG_ERR << fname << "Resolved file path is not allowed | FilePath=" << file;
+			message->reply(web::http::status_codes::Forbidden, Utility::text2json("File path is not allowed"));
+			return;
+		}
+		message->reply(web::http::status_codes::InternalError, Utility::text2json("failed to read file"));
 		return;
 	}
-	std::vector<std::uint8_t> content(fileSize);
+	std::vector<std::uint8_t> content;
 	{
-		std::ifstream input(file, std::ios::binary);
-		if (!input.is_open() || !input.read(reinterpret_cast<char *>(content.data()), static_cast<std::streamsize>(fileSize)))
+		FdFileStream input(fd); // owns the descriptor
+		char buf[64 * 1024];
+		for (;;)
+		{
+			const auto n = input.read(buf, sizeof(buf));
+			if (n <= 0)
+				break;
+			content.insert(content.end(), buf, buf + n);
+			if (content.size() > MAX_HTTP_BODY_SIZE)
+			{
+				message->reply(web::http::status_codes::RequestEntityTooLarge,
+							   Utility::text2json("file is too large for the buffered download surface"));
+				return;
+			}
+		}
+		if (!input.good())
 		{
 			message->reply(web::http::status_codes::InternalError, Utility::text2json("failed to read file"));
 			return;
@@ -853,31 +927,23 @@ void RestHandler::apiFileUpload(const std::shared_ptr<HttpRequest> &message)
 		if (message->m_body->size() > MAX_UPLOAD_SIZE)
 			throw std::invalid_argument("upload exceeds the size limit");
 		const auto tempFile = file + "." + Utility::shortID() + ".part";
-		FileUploadInfo upload(file, tempFile, message->m_headers, overwrite);
+		FileUploadInfo upload(file, tempFile, message->m_headers, overwrite,
+							  Configuration::instance()->getFileAllowedBaseDir());
+		if (upload.m_rejected)
+		{
+			// The fd check saw the resolved temp location leave the jail: a
+			// component was swapped between validation and open.
+			LOG_ERR << fname << "Resolved upload path is not allowed | FilePath=" << file;
+			message->reply(web::http::status_codes::Forbidden, Utility::text2json("File path is not allowed"));
+			return;
+		}
 		if (!upload.m_file.is_open())
 			throw std::runtime_error("failed to create the upload file");
 		upload.m_file.write(reinterpret_cast<const char *>(message->m_body->data()),
 							static_cast<std::streamsize>(message->m_body->size()));
-		if (!upload.m_file.good())
+		if (!upload.m_file.good() || upload.commit() == FileUploadInfo::CommitResult::Failed)
 			throw std::runtime_error("failed to write the upload file");
-		upload.m_file.flush();
-		upload.m_file.close();
-		// rename() replaces the destination atomically; re-check at commit so a
-		// destination created after the precheck is never silently replaced
-		// without the overwrite flag (the socket path checks the same way).
-		if (!overwrite && Utility::isFileExist(file))
-		{
-			Utility::removeFile(tempFile);
-			message->reply(web::http::status_codes::Conflict, Utility::text2json("file already exist"));
-			return;
-		}
-		if (std::rename(tempFile.c_str(), file.c_str()) != 0)
-		{
-			Utility::removeFile(tempFile);
-			throw std::runtime_error("failed to publish the upload file");
-		}
-		upload.m_committed = true;
-		Utility::applyFilePermission(file, message->m_headers);
+		Utility::applyFilePermission(file, message->m_headers, upload.fd());
 		LOG_INF << fname << "File uploaded successfully: " << file << " (" << message->m_body->size() << " bytes)";
 		nlohmann::json respJson;
 		respJson["status"] = "success";
@@ -943,7 +1009,7 @@ void RestHandler::apiLabelAdd(const std::shared_ptr<HttpRequest> &message)
 	const auto tokenUser = permissionCheck(message, PERMISSION_KEY_label_set);
 
 	const auto path = (curlpp::unescape(message->m_relative_uri));
-	auto labelKey = regexSearch(path, REST_PATH_LABEL_ADD);
+	auto labelKey = regexSearch(path, REST_PATH_LABEL_ADD, "Invalid label key");
 
 	auto querymap = message->m_query;
 	if (querymap.find((HTTP_QUERY_KEY_label_value)) != querymap.end())
@@ -969,7 +1035,7 @@ void RestHandler::apiLabelDel(const std::shared_ptr<HttpRequest> &message)
 	const auto tokenUser = permissionCheck(message, PERMISSION_KEY_label_delete);
 
 	const auto path = (curlpp::unescape(message->m_relative_uri));
-	auto labelKey = regexSearch(path, REST_PATH_LABEL_DELETE);
+	auto labelKey = regexSearch(path, REST_PATH_LABEL_DELETE, "Invalid label key");
 
 	Configuration::instance()->getLabel()->delLabel(labelKey);
 	Configuration::instance()->saveConfigToDisk();
@@ -1006,6 +1072,11 @@ void RestHandler::apiBasicConfigSet(const std::shared_ptr<HttpRequest> &message)
 	const auto tokenUser = permissionCheck(message, PERMISSION_KEY_config_set);
 
 	auto json = message->extractJson();
+	// A hot update never rebinds a listener: reject instead of a fake 200.
+	if (json.is_object() && json.contains(JSON_KEY_REST) && json.at(JSON_KEY_REST).is_object() &&
+		json.at(JSON_KEY_REST).contains(JSON_KEY_SSL) && json.at(JSON_KEY_REST).at(JSON_KEY_SSL).is_object() &&
+		json.at(JSON_KEY_REST).at(JSON_KEY_SSL).contains(JSON_KEY_SSLEnabled))
+		throw std::invalid_argument("REST.SSL.SSLEnabled is startup-only: set it in config.yaml and restart the daemon");
 	Configuration::instance()->hotUpdateAndSave(json);
 
 	LOG_INF << fname << "User <" << tokenUser << "> updated configuration";
@@ -1302,6 +1373,55 @@ void RestHandler::apiRolesView(const std::shared_ptr<HttpRequest> &message)
 	message->reply(web::http::status_codes::OK, Security::instance()->rolesJson());
 }
 
+void RestHandler::apiApiKeysView(const std::shared_ptr<HttpRequest> &message)
+{
+	const auto principalId = permissionCheck(message, "");
+	bool all = false;
+	if (message->m_query.count("all") != 0)
+	{
+		// Listing every principal's keys is the admin view of the policy.
+		permissionCheck(message, PERMISSION_KEY_principal_list);
+		all = true;
+	}
+	message->reply(web::http::status_codes::OK, Security::instance()->apiKeysJson(principalId, all));
+}
+
+void RestHandler::apiApiKeyIssue(const std::shared_ptr<HttpRequest> &message)
+{
+	const static char fname[] = "RestHandler::apiApiKeyIssue() ";
+	auto principalId = permissionCheck(message, "");
+	// An admin may issue a key for another principal; everyone else issues
+	// for themselves. The secret is returned exactly once, in this response.
+	auto target = principalId;
+	if (message->m_body && !message->m_body->empty())
+	{
+		const auto json = message->extractJson();
+		const auto requested = json.is_object() ? GET_JSON_STR_VALUE(json, "principal") : "";
+		if (!requested.empty() && requested != principalId)
+		{
+			permissionCheck(message, PERMISSION_KEY_principal_update);
+			target = requested;
+		}
+	}
+	const auto issued = Security::instance()->issueApiKey(target);
+	LOG_INF << fname << "API key <" << GET_JSON_STR_VALUE(issued, "key_id") << "> issued to <" << target << "> by <"
+			<< principalId << ">";
+	message->reply(web::http::status_codes::OK, issued);
+}
+
+void RestHandler::apiApiKeyDelete(const std::shared_ptr<HttpRequest> &message)
+{
+	const static char fname[] = "RestHandler::apiApiKeyDelete() ";
+	const auto principalId = permissionCheck(message, "");
+	const auto path = Utility::decodeURIComponent(message->m_relative_uri);
+	const auto keyId = regexSearch(path, REST_PATH_SEC_API_KEY);
+	const bool manageAll = Security::instance()->permissions(principalId).count(PERMISSION_KEY_principal_update) != 0;
+	if (!Security::instance()->deleteApiKey(keyId, principalId, manageAll))
+		throw NotFoundException("API key not found");
+	LOG_INF << fname << "API key <" << keyId << "> revoked by <" << principalId << ">";
+	message->reply(web::http::status_codes::NoContent);
+}
+
 void RestHandler::apiRoleUpdate(const std::shared_ptr<HttpRequest> &message)
 {
 	const static char fname[] = "RestHandler::apiRoleUpdate() ";
@@ -1360,8 +1480,14 @@ void RestHandler::apiRestMetrics(const std::shared_ptr<HttpRequest> &message)
 {
 	const static char fname[] = "RestHandler::apiRestMetrics() ";
 	LOG_DBG << fname << "Entered";
-	// No authentication, like a standard exporter endpoint: the port relies on
-	// network isolation instead, and the payload carries no version string.
+	// Metrics expose host/runtime internals (host name, PID, fd counts, per-route
+	// counters) like the config view, so require the same permission by default;
+	// REST.MetricsRequireAuth=false is the trusted-network scraper escape hatch.
+	if (Configuration::instance()->metricsRequireAuth())
+	{
+		const auto tokenUser = permissionCheck(message, PERMISSION_KEY_config_view);
+		LOG_DBG << fname << "Metrics scraped by principal <" << tokenUser << ">";
+	}
 
 	auto body = m_metrics->collectData();
 	message->reply(web::http::status_codes::OK, body, METRIC_CONTENT_TYPE);
@@ -1387,6 +1513,8 @@ std::shared_ptr<Application> RestHandler::parseAndRegRunApp(const std::shared_pt
 	auto jsonApp = message->extractJson();
 	// from_recover is a server-internal flag; never trust it from REST input.
 	jsonApp.erase(JSON_KEY_APP_from_recover);
+	// run_base is an engine-injected marker; never trust a client-provided one.
+	jsonApp.erase(JSON_KEY_APP_run_base);
 	if (GET_JSON_BOOL_VALUE(jsonApp, JSON_KEY_APP_system))
 		throw AuthorizationException("system applications cannot be registered through the application API");
 	auto clientProvideAppName = GET_JSON_STR_VALUE(jsonApp, JSON_KEY_APP_name);
@@ -1436,6 +1564,10 @@ std::shared_ptr<Application> RestHandler::parseAndRegRunApp(const std::shared_pt
 				existApp[JSON_KEY_APP_secret_env] = std::move(decrypted);
 			}
 			existApp[JSON_KEY_APP_name] = Configuration::instance()->generateRunAppName(clientProvideAppName);
+			// Engine-injected run_base marker: identifies the registration as a run
+			// instance of this base for cascade delete and exit GC (name-pattern
+			// matching would be ambiguous once base names contain '_').
+			existApp[JSON_KEY_APP_run_base] = clientProvideAppName;
 			existApp[JSON_KEY_APP_owner_principal_id] = callerPrincipalId;
 			// On-demand runs are explicit user actions and bypass the dependency gate.
 			existApp.erase(JSON_KEY_APP_depends_on);
@@ -1633,6 +1765,8 @@ void RestHandler::apiAppAdd(const std::shared_ptr<HttpRequest> &message)
 	}
 	// from_recover is a server-internal flag; never trust it from REST input.
 	jsonApp.erase(JSON_KEY_APP_from_recover);
+	// run_base is an engine-injected marker; never trust a client-provided one.
+	jsonApp.erase(JSON_KEY_APP_run_base);
 
 	// The body name is authoritative; a URL/body mismatch is a client bug that
 	// must not silently register a different application than the one addressed.

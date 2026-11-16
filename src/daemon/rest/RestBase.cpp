@@ -384,17 +384,10 @@ std::string RestBase::getBearerToken(const std::shared_ptr<HttpRequest> &message
     if (!message->m_headers.count(HTTP_HEADER_JWT_Authorization))
         throw std::domain_error("No authentication token provided");
 
-    const auto value = Utility::stdStringTrim(
+    const auto token = Utility::bearerCredential(
         message->m_headers.find(HTTP_HEADER_JWT_Authorization)->second);
-    const auto separator = value.find(' ');
-    if (separator == std::string::npos)
+    if (token.empty())
         throw std::domain_error("Authorization header must use the Bearer scheme");
-    auto scheme = value.substr(0, separator);
-    std::transform(scheme.begin(), scheme.end(), scheme.begin(),
-        [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
-    if (scheme != "bearer")
-        throw std::domain_error("Authorization header must use the Bearer scheme");
-    const auto token = Utility::stdStringTrim(value.substr(separator + 1));
     if (token.empty() || token.find_first_of(" \t\r\n") != std::string::npos)
         throw std::domain_error("Bearer token is empty or malformed");
     return token;
