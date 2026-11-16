@@ -95,7 +95,13 @@ else
     apt install -y python3-pip
     apt install -y uuid-dev #for drogon
 fi
-python3 -m pip install --upgrade pip || python3 -m pip install --break-system-packages --upgrade pip || true
+# Provision pip without ever uninstalling the distro copy: a debian-managed pip
+# has no RECORD and dies on "Cannot uninstall", and an in-place upgrade races
+# whatever module resolution runs next. --ignore-installed installs over, and
+# --break-system-packages is added only when this pip understands it.
+PIP_BREAK=""
+python3 -m pip install --help 2>/dev/null | grep -q -- --break-system-packages && PIP_BREAK="--break-system-packages"
+python3 -m pip install $PIP_BREAK --ignore-installed pip || true
 
 # -----------------------------------------------------------------------------
 # Toolchains: Go, Rust, OpenSSL, CMake
@@ -260,18 +266,36 @@ go install -ldflags="$LDFLAGS" $BUILDFLAGS github.com/cloudflare/cfssl/cmd/cfssl
 go install -ldflags="$LDFLAGS" $BUILDFLAGS github.com/goreleaser/nfpm/v2/cmd/nfpm@latest
 
 # Dex OIDC server: the fork's appmesh branch = upstream/master plus the
-# pure-Go SQLite driver patch for CGO-free builds.
-git clone --quiet --depth 1 -b appmesh https://github.com/laoshanxi/dex.git
-(cd dex && CGO_ENABLED=1 go build -trimpath -buildvcs=false -ldflags "-s -w" -o /usr/local/bin/dex ./cmd/dex)
+# pure-Go SQLite driver patch for CGO-free builds and the App Mesh hardening
+# (password lockout, ...). Both binaries come from ONE clone so the packaged
+# dex and dexuser are same-source, same-version, and the version stamp records
+# which fork commit was built.
+DEX_REPO="https://github.com/laoshanxi/dex.git"
+DEX_REF="${DEX_REF:-appmesh}"
+# The fork carries a dedicated version package (cmd/dex serves it from
+# version.Version; the old package-main variable is gone). Centralized here so
+# a fork-side move only changes this line.
+DEX_VERSION_SYM="github.com/dexidp/dex/version.Version"
+git init dex
+(cd dex &&
+    git remote add origin "${DEX_REPO}" &&
+    git fetch --quiet --depth 1 origin "${DEX_REF}" &&
+    git checkout --quiet FETCH_HEAD)
+DEX_VERSION="appmesh-$(git -C dex rev-parse --short=7 HEAD)-$(date -u +%Y%m%d)"
+echo "Building Dex ${DEX_VERSION} from ${DEX_REPO}@${DEX_REF}"
+DEX_LDFLAGS="-s -w -X ${DEX_VERSION_SYM}=${DEX_VERSION}"
+(cd dex && CGO_ENABLED=0 go build -trimpath -buildvcs=false -ldflags "${DEX_LDFLAGS}" -o /usr/local/bin/dex ./cmd/dex)
 # Dex administration web UI (the fork's examples/example-app, a separate Go
 # module): packaged as dexuser and run as the dexuser System App.
-(cd dex/examples && CGO_ENABLED=0 go build -trimpath -buildvcs=false -tags "netgo,osusergo" -ldflags "-s -w" -o /usr/local/bin/dexuser ./example-app)
+(cd dex/examples && CGO_ENABLED=0 go build -trimpath -buildvcs=false -tags "netgo,osusergo" -ldflags "${DEX_LDFLAGS}" -o /usr/local/bin/dexuser ./example-app)
+# After a fork change, re-run the ci-image-* workflows (workflow_dispatch) so
+# the build images pick up the new pair; `dex version` shows the baked stamp.
 
 # -----------------------------------------------------------------------------
 # Python SDK packages and SBOM tooling
 # -----------------------------------------------------------------------------
 PIP_PACKAGES="msgpack requests requests_toolbelt aniso8601 twine wheel"
-python3 -m pip install --upgrade $PIP_PACKAGES || python3 -m pip install --break-system-packages --upgrade --ignore-installed $PIP_PACKAGES
+python3 -m pip install $PIP_BREAK --ignore-installed $PIP_PACKAGES
 
 # syft for SBOM
 curl -sSfL https://raw.githubusercontent.com/anchore/syft/main/install.sh | sh -s -- -b /usr/local/bin

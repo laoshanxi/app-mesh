@@ -588,6 +588,12 @@ bool Configuration::getCorsDisabled() const
 	return m_rest->m_corsDisabled;
 }
 
+bool Configuration::metricsRequireAuth() const
+{
+	std::lock_guard guard(m_hotupdateMutex);
+	return m_rest->m_metricsRequireAuth;
+}
+
 std::set<std::string> Configuration::getCorsAllowOrigins() const
 {
 	std::lock_guard guard(m_hotupdateMutex);
@@ -1024,6 +1030,8 @@ void Configuration::hotUpdate(Json::Value &jsonValue)
 				SET_COMPARE(this->m_rest->m_restEnabled, newConfig->m_rest->m_restEnabled);
 			if (HAS_JSON_FIELD(rest, JSON_KEY_CorsDisabled))
 				SET_COMPARE(this->m_rest->m_corsDisabled, newConfig->m_rest->m_corsDisabled);
+			if (HAS_JSON_FIELD(rest, JSON_KEY_MetricsRequireAuth))
+				SET_COMPARE(this->m_rest->m_metricsRequireAuth, newConfig->m_rest->m_metricsRequireAuth);
 			if (HAS_JSON_FIELD(rest, JSON_KEY_CorsAllowOrigins))
 				SET_COMPARE(this->m_rest->m_corsAllowOrigins, newConfig->m_rest->m_corsAllowOrigins);
 			if (HAS_JSON_FIELD(rest, JSON_KEY_CsrfAllowedOrigins))
@@ -1265,6 +1273,43 @@ std::string Configuration::generateRunAppName(const std::string &provideAppName)
 	}
 }
 
+int Configuration::removeRunInstances(const std::string &baseName)
+{
+	const static char fname[] = "Configuration::removeRunInstances() ";
+	// Identified by the engine-injected run_base marker, never by parsing the
+	// `<base>_N` name (the suffix rule is ambiguous once base names contain '_').
+	// removeApp() stops the instance process and drops the registration atomically.
+	// A run instance registering while we delete would otherwise survive on the
+	// first snapshot, so rescan until none is left (bounded: a client looping
+	// registrations must not spin here forever).
+	static constexpr int MAX_RESWEEPS = 8;
+	int removed = 0;
+	for (int sweep = 0;; ++sweep)
+	{
+		std::vector<std::string> instanceNames;
+		for (const auto &app : getApps())
+		{
+			if (app && app->isOneShot() && app->runBaseApp() == baseName)
+				instanceNames.push_back(app->getName());
+		}
+		if (instanceNames.empty())
+			break;
+		for (const auto &name : instanceNames)
+		{
+			if (removeApp(name))
+				++removed;
+		}
+		if (sweep >= MAX_RESWEEPS)
+		{
+			LOG_WAR << fname << "Run instances of <" << baseName << "> keep re-registering; giving up after "
+					<< MAX_RESWEEPS << " resweeps";
+			break;
+		}
+	}
+	LOG_INF << fname << "Removed <" << removed << "> run instance(s) of base application <" << baseName << ">";
+	return removed;
+}
+
 const Json::Value Configuration::getAgentAppJson() const
 {
 	const static char fname[] = "Configuration::getAgentAppJson() ";
@@ -1303,6 +1348,8 @@ std::shared_ptr<Configuration::JsonRest> Configuration::JsonRest::FromJson(const
 	rest->m_webSocketPort = GET_JSON_INT_VALUE(jsonValue, JSON_KEY_WebSocketPort);
 	SET_JSON_BOOL_VALUE(jsonValue, JSON_KEY_RestEnabled, rest->m_restEnabled);
 	SET_JSON_BOOL_VALUE(jsonValue, JSON_KEY_CorsDisabled, rest->m_corsDisabled);
+	// Absent key keeps the secure default (auth required).
+	SET_JSON_BOOL_VALUE(jsonValue, JSON_KEY_MetricsRequireAuth, rest->m_metricsRequireAuth);
 	if (HAS_JSON_FIELD(jsonValue, JSON_KEY_CorsAllowOrigins) && jsonValue[JSON_KEY_CorsAllowOrigins].isArray())
 	{
 		for (const auto &origin : jsonValue[JSON_KEY_CorsAllowOrigins])
@@ -1438,6 +1485,7 @@ Json::Value Configuration::JsonRest::AsJson() const
 	result[JSON_KEY_TcpApiPort] = (m_tcpApiPort);
 	result[JSON_KEY_WebSocketPort] = (m_webSocketPort);
 	result[JSON_KEY_CorsDisabled] = (m_corsDisabled);
+	result[JSON_KEY_MetricsRequireAuth] = (m_metricsRequireAuth);
 	result[JSON_KEY_CorsAllowOrigins] = Json::Value(Json::arrayValue);
 	for (const auto &origin : m_corsAllowOrigins)
 		result[JSON_KEY_CorsAllowOrigins].append(origin);
@@ -1455,11 +1503,12 @@ Json::Value Configuration::JsonRest::AsJson() const
 }
 
 Configuration::JsonRest::JsonRest()
-	: m_restEnabled(false), m_corsDisabled(false), m_workerThreads(DEFAULT_WORKER_THREADS),
-	  m_transportIoThreads(DEFAULT_TRANSPORT_IO_THREADS), m_restListenPort(DEFAULT_REST_LISTEN_PORT),
-	  m_promListenPort(DEFAULT_PROM_LISTEN_PORT), m_tcpApiPort(DEFAULT_TCP_REST_LISTEN_PORT),
+	: m_restEnabled(false), m_corsDisabled(false), m_metricsRequireAuth(true),
 	  m_requestReplayProtection("off"), m_requestSignature("off"),
 	  m_requestReplayWindowSeconds(DEFAULT_REQUEST_REPLAY_WINDOW_SECONDS),
+	  m_workerThreads(DEFAULT_WORKER_THREADS), m_transportIoThreads(DEFAULT_TRANSPORT_IO_THREADS),
+	  m_restListenPort(DEFAULT_REST_LISTEN_PORT), m_promListenPort(DEFAULT_PROM_LISTEN_PORT),
+	  m_tcpApiPort(DEFAULT_TCP_REST_LISTEN_PORT),
 	  m_webSocketPort(DEFAULT_WEB_SOCKET_PORT)
 {
 	m_ssl = std::make_shared<JsonSsl>();

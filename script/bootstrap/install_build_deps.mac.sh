@@ -81,12 +81,25 @@ go install -ldflags="$LDFLAGS" $BUILDFLAGS github.com/cloudflare/cfssl/cmd/cfssl
 go install -ldflags="$LDFLAGS" $BUILDFLAGS github.com/goreleaser/nfpm/v2/cmd/nfpm@latest
 
 # Dex OIDC server: the fork's appmesh branch = upstream/master plus the
-# pure-Go SQLite driver patch for CGO-free builds.
-git clone --quiet --depth 1 -b appmesh https://github.com/laoshanxi/dex.git
-(cd dex && CGO_ENABLED=1 go build -trimpath -buildvcs=false -ldflags "-s -w" -o /usr/local/bin/dex ./cmd/dex)
+# pure-Go SQLite driver patch for CGO-free builds and the App Mesh hardening
+# (password lockout, ...). Both binaries come from ONE clone so the packaged
+# dex and dexuser are same-source, same-version, and the version stamp records
+# which fork commit was built. Mirrors install_build_deps.sh (Linux).
+DEX_REPO="https://github.com/laoshanxi/dex.git"
+DEX_REF="${DEX_REF:-appmesh}"
+DEX_VERSION_SYM="github.com/dexidp/dex/version.Version"
+git init dex
+(cd dex &&
+    git remote add origin "${DEX_REPO}" &&
+    git fetch --quiet --depth 1 origin "${DEX_REF}" &&
+    git checkout --quiet FETCH_HEAD)
+DEX_VERSION="appmesh-$(git -C dex rev-parse --short=7 HEAD)-$(date -u +%Y%m%d)"
+echo "Building Dex ${DEX_VERSION} from ${DEX_REPO}@${DEX_REF}"
+DEX_LDFLAGS="-s -w -X ${DEX_VERSION_SYM}=${DEX_VERSION}"
+(cd dex && CGO_ENABLED=0 go build -trimpath -buildvcs=false -ldflags "${DEX_LDFLAGS}" -o /usr/local/bin/dex ./cmd/dex)
 # Dex administration web UI (the fork's examples/example-app, a separate Go
 # module): packaged as dexuser and run as the dexuser System App.
-(cd dex/examples && CGO_ENABLED=0 go build -trimpath -buildvcs=false -tags "netgo,osusergo" -ldflags "-s -w" -o /usr/local/bin/dexuser ./example-app)
+(cd dex/examples && CGO_ENABLED=0 go build -trimpath -buildvcs=false -tags "netgo,osusergo" -ldflags "${DEX_LDFLAGS}" -o /usr/local/bin/dexuser ./example-app)
 
 echo "Installing spdlog from source (pinned to v1.17.0)..."
 cd ${TMP_DIR}

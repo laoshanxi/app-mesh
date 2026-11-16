@@ -6,6 +6,7 @@
 #include "../../src/common/json.h"
 #include "../../src/common/os/proc.h"
 #include "../../src/daemon/rest/EventTypes.h"
+#include <atomic>
 #include <boost/algorithm/string_regex.hpp>
 #include <catch.hpp>
 #include <chrono>
@@ -20,6 +21,9 @@
 #include <ws2tcpip.h>
 #else
 #include <arpa/inet.h>
+#include <fcntl.h>
+#include <sys/stat.h>
+#include <unistd.h>
 #endif
 
 void init()
@@ -116,6 +120,7 @@ TEST_CASE("Utility Test", "[Utility]")
 #endif
 	}
 
+
 	SECTION("string operation function test")
 	{
 		const std::string testStr = "hello word";
@@ -154,6 +159,246 @@ TEST_CASE("Utility Test", "[Utility]")
 	}
 	// teardown
 }
+
+// The fd jail closes the validate-to-open TOCTOU: an accepted descriptor can
+// only ever serve content whose RESOLVED location passed the full gate.
+#if !defined(_WIN32)
+TEST_CASE("openFileWithinJail fd verification", "[Utility][security]")
+{
+	init();
+	const std::string home = Utility::getHomeDir();
+	const std::string scratch = home + "/work/tmp";
+	const std::string jail = home + "/work"; // mirrors the daemon's unset-FileAllowedBaseDir default
+	REQUIRE(Utility::createDirectory(scratch));
+	std::error_code ec;
+
+	SECTION("regular file in the scratch area opens and reads back")
+	{
+		const std::string path = scratch + "/fd_plain.txt";
+		{
+			std::ofstream f(path, std::ios::binary | std::ios::trunc);
+			f << "BENIGN";
+		}
+		std::string resolved;
+		bool rejected = false;
+		const int fd = Utility::openFileWithinJail(path, false, jail, resolved, &rejected);
+		REQUIRE(fd >= 0);
+		REQUIRE_FALSE(rejected);
+		REQUIRE(resolved == fs::canonical(path, ec).string());
+		char buf[16] = {0};
+		REQUIRE(::read(fd, buf, sizeof(buf) - 1) == 6);
+		REQUIRE(std::string(buf) == "BENIGN");
+		::close(fd);
+		fs::remove(path, ec);
+	}
+
+	SECTION("final component swapped to a symlink into the auth tree is rejected")
+	{
+		fs::create_directories(home + "/work/auth", ec);
+		const std::string secret = home + "/work/auth/dex.db";
+		{
+			std::ofstream f(secret, std::ios::binary | std::ios::trunc);
+			f << "SECRETS";
+		}
+		const std::string link = scratch + "/fd_final_link";
+		fs::remove(link, ec);
+		fs::create_symlink(secret, link, ec);
+		std::string resolved;
+		bool rejected = false;
+		REQUIRE(Utility::openFileWithinJail(link, false, jail, resolved, &rejected) == -1);
+		REQUIRE(rejected);
+		fs::remove(link, ec);
+		fs::remove(secret, ec);
+	}
+
+	SECTION("directory component swapped to a symlink outside the jail is rejected")
+	{
+		const std::string dirLink = scratch + "/fd_dir_link";
+		fs::remove(dirLink, ec);
+		fs::create_symlink("/etc", dirLink, ec);
+		std::string resolved;
+		bool rejected = false;
+		REQUIRE(Utility::openFileWithinJail(dirLink + "/hosts", false, jail, resolved, &rejected) == -1);
+		REQUIRE(rejected);
+		fs::remove(dirLink, ec);
+	}
+
+	SECTION("pseudo filesystems are rejected at open time")
+	{
+		std::string resolved;
+		bool rejected = false;
+#if defined(__linux__)
+		REQUIRE(Utility::openFileWithinJail("/proc/self/environ", false, "/", resolved, &rejected) == -1);
+		REQUIRE(rejected);
+#endif
+		REQUIRE(Utility::openFileWithinJail("/dev/null", false, "/", resolved, &rejected) == -1);
+		REQUIRE(rejected);
+	}
+
+	SECTION("an explicit jail applies to the resolved fd location")
+	{
+		const std::string exchange = scratch + "/exchange";
+		fs::create_directories(exchange, ec);
+		const std::string inside = exchange + "/in.txt";
+		const std::string outside = scratch + "/out.txt";
+		for (const auto &path : {inside, outside})
+		{
+			std::ofstream f(path, std::ios::binary | std::ios::trunc);
+			f << "X";
+		}
+		std::string resolved;
+		bool rejected = false;
+		REQUIRE(Utility::openFileWithinJail(inside, false, exchange, resolved, &rejected) >= 0);
+		REQUIRE(Utility::openFileWithinJail(outside, false, exchange, resolved, &rejected) == -1);
+		REQUIRE(rejected);
+	}
+
+	SECTION("upload temp files are exclusive (O_EXCL) and jail-checked")
+	{
+		const std::string temp = scratch + "/fd_temp.part";
+		fs::remove(temp, ec);
+		std::string resolved;
+		bool rejected = false;
+		const int fd = Utility::openFileWithinJail(temp, true, jail, resolved, &rejected);
+		REQUIRE(fd >= 0);
+		REQUIRE_FALSE(rejected);
+		REQUIRE(fs::is_regular_file(temp, ec)); // the exclusive create made it
+		REQUIRE(::write(fd, "abc", 3) == 3);
+		::close(fd);
+		// A second create of the same name must fail exclusively (IO error, not rejection).
+		REQUIRE(Utility::openFileWithinJail(temp, true, jail, resolved, &rejected) == -1);
+		REQUIRE_FALSE(rejected);
+		fs::remove(temp, ec);
+
+		// A temp path whose directory component is a symlink out of the jail is
+		// rejected and leaves nothing behind at the escape location.
+		const std::string escDir = "/tmp/appmesh_fd_esc_dir";
+		fs::remove_all(escDir, ec);
+		fs::create_directories(escDir, ec);
+		const std::string dirLink = scratch + "/fd_updir_link";
+		fs::remove(dirLink, ec);
+		fs::create_symlink(escDir, dirLink, ec);
+		REQUIRE(Utility::openFileWithinJail(dirLink + "/t.part", true, jail, resolved, &rejected) == -1);
+		REQUIRE(rejected);
+		REQUIRE(fs::is_empty(escDir, ec)); // a created temp (if any) was dropped again
+		fs::remove(dirLink, ec);
+		fs::remove_all(escDir, ec);
+	}
+
+	SECTION("directories are not transferable payloads")
+	{
+		std::string resolved;
+		bool rejected = false;
+		REQUIRE(Utility::openFileWithinJail(scratch, false, jail, resolved, &rejected) == -1);
+		REQUIRE_FALSE(rejected);
+	}
+
+	SECTION("symlink spray against a concurrent downloader never yields the secret")
+	{
+		fs::create_directories(home + "/work/auth", ec);
+		const std::string secret = home + "/work/auth/spray.db";
+		const std::string benign = scratch + "/benign.txt";
+		{
+			std::ofstream f(secret, std::ios::binary | std::ios::trunc);
+			f << "SECRETS";
+			std::ofstream g(benign, std::ios::binary | std::ios::trunc);
+			g << "BENIGN";
+		}
+		const std::string target = scratch + "/spray.txt";
+		const std::string flip = scratch + "/spray.flip";
+
+		// Attacker: atomically flip the final component between an in-jail file
+		// and a symlink to the secret - the validate-to-open window the helper
+		// must close (each accepted fd may only ever read BENIGN).
+		std::atomic<bool> stop{false};
+		std::thread sprayer([&] {
+			while (!stop.load())
+			{
+				fs::remove(flip, ec);
+				fs::create_symlink(benign, flip, ec);
+				fs::rename(flip, target, ec);
+				fs::remove(flip, ec);
+				fs::create_symlink(secret, flip, ec);
+				fs::rename(flip, target, ec);
+			}
+		});
+		int accepted = 0, rejectedCount = 0;
+		for (int i = 0; i < 1000; ++i)
+		{
+			std::string resolved;
+			bool rejected = false;
+			const int fd = Utility::openFileWithinJail(target, false, jail, resolved, &rejected);
+			if (fd < 0)
+			{
+				if (rejected)
+					++rejectedCount;
+				continue;
+			}
+			++accepted;
+			char buf[16] = {0};
+			REQUIRE(::read(fd, buf, sizeof(buf) - 1) == 6);
+			REQUIRE(std::string(buf) == "BENIGN"); // never "SECRETS"
+			::close(fd);
+		}
+		stop.store(true);
+		sprayer.join();
+		REQUIRE(accepted > 0);
+		REQUIRE(rejectedCount > 0);
+		fs::remove(target, ec);
+		fs::remove(benign, ec);
+		fs::remove(secret, ec);
+	}
+
+	SECTION("upload temp creation survives a directory-component spray")
+	{
+		const std::string escDir = "/tmp/appmesh_fd_updir_esc";
+		fs::remove_all(escDir, ec);
+		fs::create_directories(escDir, ec);
+		const std::string entry = scratch + "/spray_updir_entry";
+		fs::remove_all(entry, ec);
+
+		// Attacker: flip a directory component between a real in-jail directory
+		// and a symlink to an escape directory; a leaked or accepted out-of-jail
+		// temp file is exactly the upload escape.
+		std::atomic<bool> stop{false};
+		std::thread sprayer([&] {
+			while (!stop.load())
+			{
+				fs::remove_all(entry, ec);
+				fs::create_directory(entry, ec);
+				fs::remove_all(entry, ec);
+				fs::create_symlink(escDir, entry, ec);
+			}
+		});
+		int accepted = 0, rejectedCount = 0;
+		for (int i = 0; i < 1000; ++i)
+		{
+			std::string resolved;
+			bool rejected = false;
+			const int fd = Utility::openFileWithinJail(entry + "/t" + std::to_string(i) + ".part", true, jail, resolved,
+													   &rejected);
+			if (fd < 0)
+			{
+				if (rejected)
+					++rejectedCount;
+				continue;
+			}
+			++accepted;
+			// The verified location of an accepted temp file must be inside the jail.
+			REQUIRE(Utility::startWith(resolved, jail + "/"));
+			REQUIRE(::write(fd, "PAYLOAD", 7) == 7);
+			::close(fd);
+			REQUIRE(fs::is_empty(escDir, ec)); // nothing ever lands (or stays) outside
+		}
+		stop.store(true);
+		sprayer.join();
+		REQUIRE(accepted > 0);
+		REQUIRE(rejectedCount > 0);
+		fs::remove_all(entry, ec);
+		fs::remove_all(escDir, ec);
+	}
+}
+#endif
 
 TEST_CASE("packaged authorization policy roles", "[Utility]")
 {

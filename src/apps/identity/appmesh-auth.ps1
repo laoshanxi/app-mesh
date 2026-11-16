@@ -708,6 +708,11 @@ function Start-AdminUi {
     $listen = if ($env:APPMESH_AUTH_ADMIN_LISTEN) { $env:APPMESH_AUTH_ADMIN_LISTEN } else { "127.0.0.1:6064" }
     $issuer = Get-AuthEnvironmentOrYaml "APPMESH_AUTH_ISSUER" $OidcConfig "issuer" "http://127.0.0.1:6062/auth"
     $grpcListen = if ($env:APPMESH_AUTH_GRPC_LISTEN) { $env:APPMESH_AUTH_GRPC_LISTEN } else { "127.0.0.1:5557" }
+    # dexuser authentication contract: the runtime issuer it must validate
+    # sessions against, the same value rendered into dex.yaml above. Audience
+    # (appmesh-api) and session TTL keep dexuser defaults unless the operator
+    # sets APP_MESH_DEXUSER_AUDIENCE / APP_MESH_DEXUSER_SESSION_TTL himself.
+    $env:APP_MESH_DEXUSER_ISSUER = $issuer
     & $AdminUiExecutable --listen "http://$listen" --issuer $issuer --grpc-addr $grpcListen --grpc-ca $GrpcTlsClientCA --grpc-client-cert $GrpcClientCert --grpc-client-key $GrpcClientKey
     exit $LASTEXITCODE
 }

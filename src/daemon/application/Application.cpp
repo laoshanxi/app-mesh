@@ -268,6 +268,9 @@ void Application::FromJson(const std::shared_ptr<Application> &app, const Json::
 	app->m_ownerPrincipalId = Utility::stdStringTrim(GET_JSON_STR_VALUE(jsonObj, JSON_KEY_APP_owner_principal_id));
 	if (app->m_ownerPrincipalId.empty())
 		throw std::invalid_argument("application owner_principal_id is required");
+	// Engine-injected marker for on-demand run instances; REST input validation
+	// (unknownApplicationFields) keeps clients from setting it.
+	app->m_runBaseApp = GET_JSON_STR_VALUE(jsonObj, JSON_KEY_APP_run_base);
 	app->m_executionUser = Utility::stdStringTrim(GET_JSON_STR_VALUE(jsonObj, JSON_KEY_APP_execution_user));
 	if (GET_JSON_BOOL_VALUE(jsonObj, JSON_KEY_APP_system))
 	{
@@ -2142,6 +2145,11 @@ void Application::recordProcessExit(int code, bool naturalExit, AppProcess *repo
 			setLastError(exitError);
 		health(false);
 		m_task.terminate();
+		// Run instances are one-shot: deregister shortly after the process exits
+		// (the grace keeps output readable for late pollers, SDKs do an exit
+		// backfill). Managed apps keep their registration by design.
+		if (isOneShot())
+			scheduleRemoval(RUN_INSTANCE_EXIT_GRACE_SECONDS);
 	}
 
 	EventDispatcher::instance()->flushStdout(m_name, reporter, stdoutDispatchedBytes);

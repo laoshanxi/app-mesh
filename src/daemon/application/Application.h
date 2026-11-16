@@ -55,6 +55,9 @@ public:
 	bool isPersistAble() const;
 	bool isManaged() const;
 	bool isOneShot() const;
+	/// Base application name this on-demand run instance was spawned from
+	/// (empty for unnamed/new-app runs); the engine-injected run_base marker.
+	const std::string &runBaseApp() const { return m_runBaseApp; }
 	/// True for cron and interval schedules (point-in-time runs).
 	bool isRecurring() const;
 	// stop_grace_period in seconds; 0 when unset. Container backends apply
@@ -217,6 +220,9 @@ private:
 	std::string m_name;
 	std::string m_commandLine;
 	std::string m_description;
+	// run_base marker: non-empty only for run instances copied from an existing
+	// app (RestHandler::parseAndRegRunApp); never client-writable.
+	std::string m_runBaseApp;
 	std::string m_ownerPrincipalId;
 	std::string m_executionUser;
 	int m_startupPhase;

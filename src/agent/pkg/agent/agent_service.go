@@ -220,16 +220,32 @@ func ListenAndServeREST(ctx context.Context) error {
 	}
 	logger.Infof("Established REST connection to daemon via <%s>", localConn)
 
+	// CORS is opt-in by allowlist, the daemon semantics: with the default empty
+	// REST.CorsAllowOrigins no CORS header is sent at all. CorsDisabled is kept
+	// as the explicit off switch for older configurations; an empty allowlist
+	// already implies the same zero-header behavior.
 	corsDisabled := config.ConfigData.REST.CORSDisabled
 	utils.EnableGlobalCORS(!corsDisabled)
-	logger.Infof("CORS enabled: %v", !corsDisabled)
+	corsConfig := utils.DefaultCORSConfig
+	corsConfig.AllowedOrigins = config.ConfigData.REST.CorsAllowOrigins
+	logger.Infof("CORS enabled: %v, allowlisted origins: %d", !corsDisabled, len(corsConfig.AllowedOrigins))
 
 	// HTTP router using gorilla/mux
 	router := mux.NewRouter()
 
+	// Every agent response opts out of MIME sniffing. Proxied HTML surfaces
+	// (Grafana, docker, the authentication service, the relay page) get no
+	// further restriction here: a restrictive default-src would break their UI.
+	router.Use(func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("X-Content-Type-Options", "nosniff")
+			next.ServeHTTP(w, r)
+		})
+	})
+
 	// Apply CORS globally
 	if !corsDisabled {
-		router.Use(utils.Cors(utils.DefaultCORSConfig))
+		router.Use(utils.Cors(corsConfig))
 	}
 
 	// Grafana
@@ -442,6 +458,13 @@ func serveTLS(ctx context.Context, address string, server *http.Server) error {
 
 // HandleAppMeshRequest processes AppMesh requests
 func HandleAppMeshRequest(w http.ResponseWriter, r *http.Request) {
+	// The App Mesh API serves JSON and files, never active content, so the
+	// daemon's lock-down CSP applies with no functional side effects. Proxied
+	// surfaces (Grafana, docker, the authentication service) do not pass here
+	// and keep only the global nosniff header. Daemon replies overwrite this
+	// with their identical value.
+	w.Header().Set("Content-Security-Policy", "default-src 'none'; frame-ancestors 'none'")
+
 	stripInternalClientProof(r)
 
 	localConn, err := getLocalConnection()
@@ -552,6 +575,29 @@ func HandleAppMeshRequest(w http.ResponseWriter, r *http.Request) {
 		case RestPathUpload:
 			request.Headers[HTTPHeaderKeyXSendFileSocket] = "true"
 		}
+	} else if request.RequestURI == RestPathDownload || request.RequestURI == RestPathUpload {
+		// TOCTOU: the daemon precheck validates the path and pins the file with
+		// open-then-verify; re-opening the client-supplied path on this side
+		// would race a swapped symlink component and bypass the jail. Route
+		// local file transfers through the daemon's socket file channel on a
+		// dedicated connection instead, so the bytes come from (download) or
+		// land in (upload) the daemon's verified fd. This side then only ever
+		// touches its own uuid-named temp file.
+		transferConn, dialErr := openLocalFileTransferConnection()
+		if dialErr != nil {
+			logger.Errorf("Failed to open a file transfer connection to the local daemon: %v", dialErr)
+			utils.HTTPError(w, "failed to connect to local service", http.StatusBadGateway)
+			return
+		}
+		defer transferConn.close()
+		targetConnection = transferConn
+		request.Headers[HTTPUserAgentHeaderName] = UserAgentAppmeshTCP
+		switch request.RequestURI {
+		case RestPathDownload:
+			request.Headers[HTTPHeaderKeyXRecvFileSocket] = "true"
+		case RestPathUpload:
+			request.Headers[HTTPHeaderKeyXSendFileSocket] = "true"
+		}
 	}
 
 	resp, sendErr := targetConnection.sendRequestDataWithContext(r.Context(), request)
@@ -629,10 +675,11 @@ func ForwardAppMeshRequest(w http.ResponseWriter, r *http.Request, forwardingHos
 	}
 }
 
-// decodeFilePathHeader decodes the percent-encoded X-File-Path header into the local
-// path. The daemon decodes the same header for its own checks; the agent reads and
-// writes the file itself, so a client that percent-encodes the separators ("%2F")
-// must reach the same file here. Path semantics apply: a '+' stays literal, and an
+// decodeFilePathHeader decodes the percent-encoded X-File-Path header into the
+// local path. The daemon decodes the same header and authorizes that path; the
+// agent forwards the header unchanged and uses the decoded value only for the
+// download's display filename, never to open a file (transfers stream through
+// the daemon's verified fd). Path semantics apply: a '+' stays literal, and an
 // invalid escape keeps the raw value so an unencoded path still works.
 func decodeFilePathHeader(value string) string {
 	if !strings.Contains(value, "%") {
@@ -665,52 +712,50 @@ func HandleRESTFile(w http.ResponseWriter, r *http.Request, data *Response) erro
 // Rejected upload/download paths that are not plain I/O failures.
 var errInvalidFileName = errors.New("file path is not allowed")
 
-// HandleDownload processes file download requests
-func HandleDownload(w http.ResponseWriter, r *http.Request, data *Response, filePath string) error {
-	if data.TempDownloadFilePath != "" {
-		filePath = data.TempDownloadFilePath
-		defer os.Remove(data.TempDownloadFilePath)
-	}
+// errNoArmedTransfer: the daemon precheck answered OK without arming the
+// socket file transfer, so no verified fd backs this transfer. This side never
+// falls back to opening the client-supplied path (TOCTOU on a swapped
+// component); the request fails closed instead.
+var errNoArmedTransfer = errors.New("the service did not arm a verified file transfer")
 
-	// The daemon authorizes every transfer path; only transport-level sanity stays here.
-	if filePath == "" || strings.ContainsAny(filePath, "\x00") {
+// HandleDownload processes file download requests. The bytes can only come
+// from the daemon-armed temp file — the agent's uuid-named copy of what the
+// daemon streamed from its open-then-verify fd — never from a path this side
+// re-opens. The client-supplied path survives only as the display filename.
+func HandleDownload(w http.ResponseWriter, r *http.Request, data *Response, requestedPath string) error {
+	if data.TempDownloadFilePath == "" {
+		return errNoArmedTransfer
+	}
+	defer os.Remove(data.TempDownloadFilePath)
+
+	_, fileName := filepath.Split(requestedPath)
+	if fileName == "" || strings.ContainsAny(fileName, "\x00") {
 		return errInvalidFileName
 	}
-
-	_, fileName := filepath.Split(filePath)
 	SetDownloadHeaders(w, fileName)
 
 	logger.Debugf("Serving file: %s", fileName)
-	http.ServeFile(w, r, filePath)
-	logger.Infof("Download file %s finished", filePath)
+	http.ServeFile(w, r, data.TempDownloadFilePath)
+	logger.Infof("Download file %s finished", requestedPath)
 	return nil
 }
 
-// HandleUpload processes file upload requests
-func HandleUpload(w http.ResponseWriter, r *http.Request, data *Response, filePath string) error {
-	if data.TempUploadFilePath != "" {
-		filePath = data.TempUploadFilePath
+// HandleUpload processes file upload requests. The client body is staged into
+// the agent's uuid-named temp file and streamed to the daemon's verified fd;
+// the destination path is opened only by the daemon (open-then-verify), never
+// on this side.
+func HandleUpload(w http.ResponseWriter, r *http.Request, data *Response, requestedPath string) error {
+	if data.TempUploadFilePath == "" {
+		return errNoArmedTransfer
 	}
-	logger.Debugf("Uploading file: %s", filePath)
+	logger.Debugf("Uploading file: %s", requestedPath)
 
-	// The daemon authorized the path on the precheck request; a local write beyond
-	// that still fails on file-system permissions, matching the direct transport.
-	if filePath == "" || strings.ContainsAny(filePath, "\x00") {
-		return errInvalidFileName
-	}
-
-	if err := SaveUploadedFile(w, r, filePath); err != nil {
+	if err := SaveUploadedFile(w, r, data.TempUploadFilePath); err != nil {
 		return fmt.Errorf("save file failed with error: %w", err)
 	}
 
-	if data.TempUploadFilePath == "" {
-		logger.Infof("File saved: %s", filePath)
-		err := appmesh.ApplyFileAttributes(filePath, r.Header)
-		if err != nil {
-			logger.Warnf("Failed to set file attributes for %s: %v", filePath, err)
-		}
-	}
-
+	// File attributes (X-File-Mode/User/Group) ride on the request headers:
+	// the daemon applies them when committing its verified destination.
 	return nil
 }
 

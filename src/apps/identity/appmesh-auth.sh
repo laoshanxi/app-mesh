@@ -812,6 +812,11 @@ admin_ui() {
     listen=${APPMESH_AUTH_ADMIN_LISTEN:-127.0.0.1:6064}
     issuer=${APPMESH_AUTH_ISSUER:-$(oidc_value issuer http://127.0.0.1:6062/auth)}
     grpc_listen=${APPMESH_AUTH_GRPC_LISTEN:-127.0.0.1:5557}
+    # dexuser authentication contract: the runtime issuer it must validate
+    # sessions against, the same value rendered into dex.yaml above. Audience
+    # (appmesh-api) and session TTL keep dexuser defaults unless the operator
+    # exports APP_MESH_DEXUSER_AUDIENCE / APP_MESH_DEXUSER_SESSION_TTL himself.
+    export APP_MESH_DEXUSER_ISSUER="${issuer}"
     exec "${ADMIN_UI_BIN}" \
         --listen "http://${listen}" \
         --issuer "${issuer}" \

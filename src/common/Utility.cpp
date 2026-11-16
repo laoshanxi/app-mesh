@@ -22,11 +22,18 @@
 #endif
 #include <thread>
 #if defined(_WIN32)
+#include <fcntl.h>
+#include <io.h>
+#include <sys/stat.h>
 #include <winsock2.h>
 #include <ws2tcpip.h>
 #else
 #include <arpa/inet.h>
+#include <fcntl.h>
+#include <limits.h>
 #include <netdb.h>
+#include <sys/stat.h>
+#include <unistd.h>
 #endif
 #if defined(__APPLE__)
 #include <crt_externs.h> // For getprogname
@@ -290,6 +297,127 @@ bool Utility::validateFilePath(const std::string &filePath, const std::string &a
 	if (!resolveEc && isPseudoFsPath(resolvedPath.string()))
 		return false;
 	return true;
+}
+
+int Utility::openFileWithinJail(const std::string &filePath, bool forWrite, const std::string &allowedBaseDir,
+								std::string &resolvedOut, bool *rejectedOut, int *dirFdOut)
+{
+	const static char fname[] = "Utility::openFileWithinJail() ";
+	resolvedOut.clear();
+	if (rejectedOut)
+		*rejectedOut = false;
+	if (dirFdOut)
+		*dirFdOut = -1;
+	// Cheap lexical precheck keeps the caller's validate-then-403 log semantics.
+	if (!validateFilePath(filePath, allowedBaseDir))
+	{
+		if (rejectedOut)
+			*rejectedOut = true;
+		return -1;
+	}
+
+#if defined(_WIN32)
+	// Windows offers no fd-to-path reflection, so the lexical check above is the
+	// whole gate there (platform limitation; behavior matches the pre-fix code).
+	const int fd = ::_open(filePath.c_str(),
+						   forWrite ? (_O_WRONLY | _O_CREAT | _O_EXCL | _O_BINARY) : (_O_RDONLY | _O_BINARY),
+						   _S_IREAD | _S_IWRITE);
+	if (fd < 0)
+		return -1;
+	resolvedOut = filePath;
+	struct _stat st
+	{
+	};
+	if (forWrite || (_fstat(fd, &st) == 0 && (st.st_mode & _S_IFMT) == _S_IFREG))
+		return fd;
+	::_close(fd);
+	return -1;
+#else
+	int fd = -1;
+	int dirFd = -1;
+	std::string exclusiveName; // the O_EXCL name inside the pinned dirFd (cleanup on reject)
+	if (forWrite)
+	{
+		// Create the unique temp name inside its parent directory through a pinned
+		// dirfd: the exclusive name then lives in the directory actually walked, so a
+		// rejected jail check can drop exactly the file this call just created.
+		const fs::path temp(filePath);
+		exclusiveName = temp.filename().string();
+		dirFd = ::open(temp.parent_path().c_str(), O_RDONLY | O_DIRECTORY | O_CLOEXEC);
+		if (dirFd < 0 || exclusiveName.empty() || exclusiveName == "." || exclusiveName == "..")
+		{
+			if (dirFd >= 0)
+				::close(dirFd);
+			return -1;
+		}
+		fd = ::openat(dirFd, exclusiveName.c_str(), O_WRONLY | O_CREAT | O_EXCL | O_CLOEXEC, 0644);
+		if (fd < 0)
+		{
+			::close(dirFd);
+			return -1;
+		}
+	}
+	else
+	{
+		fd = ::open(filePath.c_str(), O_RDONLY | O_CLOEXEC);
+		if (fd < 0)
+			return -1;
+		struct stat st
+		{
+		};
+		if (::fstat(fd, &st) != 0 || !S_ISREG(st.st_mode))
+		{
+			// Directories (and anything non-regular) are not transferable payloads.
+			::close(fd);
+			return -1;
+		}
+	}
+
+	// Resolve what the descriptor ACTUALLY landed on and re-run the full jail
+	// rules there: the fd pins the inode, so a component swapped to a symlink
+	// between the check above and the open cannot hide behind the original name.
+	std::string resolved;
+#if defined(__APPLE__)
+	char realPath[4096] // F_GETPATH wants a MAXPATHLEN-sized buffer; larger is fine
+	{
+	};
+	if (::fcntl(fd, F_GETPATH, realPath) == 0)
+		resolved = realPath;
+#else
+	char fdLink[32];
+	char target[PATH_MAX];
+	::snprintf(fdLink, sizeof(fdLink), "/proc/self/fd/%d", fd);
+	const auto len = ::readlink(fdLink, target, sizeof(target) - 1);
+	if (len > 0)
+	{
+		target[len] = '\0';
+		resolved = target;
+	}
+#endif
+	if (resolved.empty() || !validateFilePath(resolved, allowedBaseDir))
+	{
+		LOG_ERR << fname << "Resolved location <" << resolved << "> of <" << filePath
+				<< "> is outside the allowed jail; rejecting the transfer";
+		if (rejectedOut)
+			*rejectedOut = true;
+		if (forWrite && !exclusiveName.empty() && ::unlinkat(dirFd, exclusiveName.c_str(), 0) != 0)
+			LOG_ERR << fname << "Failed to unlink rejected temp file <" << exclusiveName << ">: " << last_error_msg();
+		::close(fd);
+		if (dirFd >= 0)
+			::close(dirFd);
+		return -1;
+	}
+	resolvedOut = resolved;
+	if (dirFd >= 0)
+	{
+		// Hand the pinned parent to an upload commit; otherwise it has no further use.
+		if (dirFdOut != nullptr)
+			*dirFdOut = dirFd;
+		else
+			::close(dirFd);
+	}
+	return fd;
+#endif
 }
 
 bool Utility::createDirectory(const std::string &path, fs::perms perms)
@@ -1260,7 +1388,7 @@ std::map<std::string, std::string> Utility::fileAttributeHeaders(const std::stri
 	return headers;
 }
 
-void Utility::applyFilePermission(const std::string &file, HttpHeaderMap headers)
+void Utility::applyFilePermission(const std::string &file, HttpHeaderMap headers, int fd)
 {
 	const static char fname[] = "Utility::applyFilePermission() ";
 
@@ -1304,7 +1432,12 @@ void Utility::applyFilePermission(const std::string &file, HttpHeaderMap headers
 				throw std::out_of_range("file mode must be between 0 and 0777");
 			if (Utility::runningInContainer())
 				mode |= 0400; // Keep uploads readable by the fixed daemon owner.
-			os::fileChmod(file, static_cast<uint16_t>(mode));
+#if !defined(_WIN32)
+			if (fd >= 0)
+				os::fileChmodFd(fd, static_cast<uint16_t>(mode));
+			else
+#endif
+				os::fileChmod(file, static_cast<uint16_t>(mode));
 		}
 		catch (...)
 		{

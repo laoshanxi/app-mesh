@@ -41,6 +41,14 @@ REST:
   # To enable metrics collection, set to a specific port (e.g., 9091).
   PrometheusExporterListenPort: 0
 
+  # Require bearer authentication (and the config-view permission) on the
+  # /appmesh/metrics and /metrics endpoints. The payload exposes host name,
+  # PID, file-descriptor counts and per-route request counters, so the default
+  # is secure. Set false ONLY for a trusted-network Prometheus scraper that
+  # cannot send a token: the metrics are then readable by anyone who can reach
+  # the port (hot-reloadable, also via APPMESH_REST_MetricsRequireAuth).
+  MetricsRequireAuth: true
+
   # Threads that process requests for every transport. This is the main
   # concurrency control: all HTTP, WebSocket and TCP requests share this pool.
   # 0 derives from the CPUs the daemon may use (cgroup limits honored),

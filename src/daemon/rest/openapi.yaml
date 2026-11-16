@@ -678,27 +678,34 @@ paths:
     get:
       tags: [Observability]
       summary: Get Prometheus metrics
-      description: No authentication, like a standard exporter endpoint. Keep the port on a trusted network.
-      security: []
+      description: >-
+        Requires the config-view permission by default (the payload exposes host
+        name, PID, fd counts and per-route counters). REST.MetricsRequireAuth
+        false disables authentication for a trusted-network scraper.
       responses:
         "200":
           description: Prometheus text exposition.
           content:
             text/plain:
               schema: { type: string }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
 
   /metrics:
     get:
       tags: [Observability]
       summary: Get Prometheus metrics
-      description: Compatibility alias for /appmesh/metrics. No authentication either.
-      security: []
+      description: >-
+        Compatibility alias for /appmesh/metrics; same REST.MetricsRequireAuth
+        authentication behavior.
       responses:
         "200":
           description: Prometheus text exposition.
           content:
             text/plain:
               schema: { type: string }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
 
 components:
   securitySchemes:

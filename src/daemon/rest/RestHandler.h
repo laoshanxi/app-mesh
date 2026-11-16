@@ -48,8 +48,11 @@ protected:
 
 	void checkAppAccessPermission(const std::shared_ptr<HttpRequest> &message, const std::shared_ptr<Application> &app,
 								  bool requestWrite);
-	std::string regexSearch(const std::string &value, const char *regex);
-	std::tuple<std::string, std::string> regexSearch2(const std::string &value, const char *regex);
+	// Client-facing error defaults to a neutral message; callers may pass a
+	// resource-specific one (regex internals never reach the reply).
+	std::string regexSearch(const std::string &value, const char *regex, const char *clientError = "Invalid request path");
+	std::tuple<std::string, std::string> regexSearch2(const std::string &value, const char *regex,
+													  const char *clientError = "Invalid request path");
 
 	void apiAuthConfig(const std::shared_ptr<HttpRequest> &message);
 	void apiLogo(const std::shared_ptr<HttpRequest> &message);

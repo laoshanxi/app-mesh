@@ -64,8 +64,27 @@ func getOrCreateConnection(tcpAddress net.Addr, verifyServer, allowError bool) (
 		return conn.(*Connection), nil
 	}
 
+	sConn, err := dialTCPConnection(tcpAddress, verifyServer)
+	if err != nil {
+		return nil, err
+	}
+
+	remoteConnections.Store(key, sConn)
+
+	go func() {
+		logger.Infof("Monitoring response from: %s", tcpAddress)
+		MonitorConnectionResponse(sConn, allowError)
+	}()
+
+	return sConn, nil
+}
+
+// dialTCPConnection creates and connects a new TCP Connection (not pooled).
+// The caller owns it: pooled callers store and monitor it, one-shot callers
+// close it when their transfer finishes.
+func dialTCPConnection(tcpAddress net.Addr, verifyServer bool) (*Connection, error) {
 	sConn := &Connection{
-		key:               key,
+		key:               "tcp://" + tcpAddress.String(),
 		messageConnection: appmesh.NewTCPConnection(),
 		pending:           make(map[string]chan *Response),
 		closed:            make(chan struct{}),
@@ -92,13 +111,6 @@ func getOrCreateConnection(tcpAddress net.Addr, verifyServer, allowError bool) (
 		logger.Errorf("Failed to connect to %s: %v", tcpAddress, err)
 		return nil, fmt.Errorf("connect to %s: %w", tcpAddress, err)
 	}
-
-	remoteConnections.Store(key, sConn)
-
-	go func() {
-		logger.Infof("Monitoring response from: %s", tcpAddress)
-		MonitorConnectionResponse(sConn, allowError)
-	}()
 
 	return sConn, nil
 }
@@ -184,8 +196,30 @@ func getOrCreateWSSConnection(wssHostPort string, verifyServer bool) (*Connectio
 		return conn.(*Connection), nil
 	}
 
+	sConn, err := dialWSSConnection(wssHostPort, verifyServer)
+	if err != nil {
+		return nil, err
+	}
+
+	remoteConnections.Store(key, sConn)
+
+	go func() {
+		logger.Infof("Monitoring response from: %s", wssHostPort)
+		MonitorConnectionResponse(sConn, false)
+	}()
+
+	wss := sConn.messageConnection.(*appmesh.WSSConnection)
+	go keepWSSAlive(sConn, &url.URL{Scheme: wssScheme(), Host: wssHostPort, Path: "/"}, key, wssPingInterval, wss.Ping)
+
+	return sConn, nil
+}
+
+// dialWSSConnection creates and connects a new WSS Connection (not pooled).
+// The caller owns it: pooled callers store, monitor, and ping it; one-shot
+// callers close it when their transfer finishes.
+func dialWSSConnection(wssHostPort string, verifyServer bool) (*Connection, error) {
 	sConn := &Connection{
-		key:               key,
+		key:               wssPoolKey(wssHostPort),
 		messageConnection: appmesh.NewWSSConnection(),
 		pending:           make(map[string]chan *Response),
 		closed:            make(chan struct{}),
@@ -217,17 +251,57 @@ func getOrCreateWSSConnection(wssHostPort string, verifyServer bool) (*Connectio
 		return nil, fmt.Errorf("connect to %s: %w", wssURL, err)
 	}
 
-	remoteConnections.Store(key, sConn)
-
-	go func() {
-		logger.Infof("Monitoring response from: %s", wssURL)
-		MonitorConnectionResponse(sConn, false)
-	}()
-
-	wss := sConn.messageConnection.(*appmesh.WSSConnection)
-	go keepWSSAlive(sConn, wssURL, key, wssPingInterval, wss.Ping)
-
 	return sConn, nil
+}
+
+// wssScheme mirrors the pooled WSS dialer's scheme choice (ws:// when TLS is
+// terminated upstream).
+func wssScheme() string {
+	if !config.ConfigData.REST.SSL.Enabled() {
+		return "ws"
+	}
+	return "wss"
+}
+
+// openLocalFileTransferConnection dials a dedicated, non-pooled connection to
+// the local daemon for one socket file transfer (TCP first, WSS fallback) and
+// starts its reader loop. The socket file-streaming protocol is exclusive per
+// connection and speaks raw frames after the precheck reply, so it must not
+// share the multiplexed pooled connection: concurrent responses would be
+// swallowed as file chunks. The caller closes the connection when the
+// transfer finishes.
+func openLocalFileTransferConnection() (*Connection, error) {
+	if localTCPAddr == nil {
+		return nil, fmt.Errorf("local daemon address not initialized")
+	}
+	conn, err := dialTCPConnection(localTCPAddr, config.ConfigData.REST.SSL.VerifyServer)
+	if err == nil {
+		markFileTransferConnection(conn)
+		go MonitorConnectionResponse(conn, false)
+		return conn, nil
+	}
+	// Mirror the pooled path's fallback and its throttled warning.
+	if last := lastTCPDialWarnNs.Load(); last == 0 || time.Since(time.Unix(0, last)) > time.Minute {
+		lastTCPDialWarnNs.Store(time.Now().UnixNano())
+		logger.Warnf("TCP connect to local daemon <%s> failed (%v), trying WSS <%s>", localTCPAddr, err, localWSSAddr)
+	} else {
+		logger.Debugf("TCP connect to local daemon <%s> failed (%v), using WSS <%s>", localTCPAddr, err, localWSSAddr)
+	}
+	conn, err = dialWSSConnection(localWSSAddr, config.ConfigData.REST.SSL.VerifyServer)
+	if err != nil {
+		return nil, err
+	}
+	markFileTransferConnection(conn)
+	go MonitorConnectionResponse(conn, false)
+	return conn, nil
+}
+
+// markFileTransferConnection renames a one-shot transfer connection's pool key
+// so it cannot collide with the pooled local entry: error paths call
+// deleteConnection on the connection they used, and a colliding key would
+// evict (and close) the shared pooled connection instead of this private one.
+func markFileTransferConnection(conn *Connection) {
+	conn.key = "file-transfer+" + conn.key
 }
 
 func (c *Connection) String() string {

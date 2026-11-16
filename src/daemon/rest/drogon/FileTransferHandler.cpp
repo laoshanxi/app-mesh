@@ -56,7 +56,18 @@ void FileTransferHandler::prepareTransfer(Response &resp, int clientId)
 		const auto tempName = fileName + "." + Utility::shortID() + ".part";
 		const auto overwrite = resp.file_upload_request_headers.count(HTTP_HEADER_KEY_file_overwrite) != 0 &&
 							   resp.file_upload_request_headers.find(HTTP_HEADER_KEY_file_overwrite)->second == "true";
-		auto uploadInfo = std::make_unique<FileUploadInfo>(fileName, tempName, resp.file_upload_request_headers, overwrite);
+		auto uploadInfo = std::make_unique<FileUploadInfo>(fileName, tempName, resp.file_upload_request_headers, overwrite,
+														   Configuration::instance()->getFileAllowedBaseDir());
+		if (uploadInfo->m_rejected)
+		{
+			// The fd check saw the resolved temp location leave the jail: a
+			// component was swapped between validation and open.
+			auto msg = JSON::dump(Utility::text2json("File path is not allowed"));
+			resp.http_status = web::http::status_codes::Forbidden;
+			resp.body = std::vector<std::uint8_t>(msg.begin(), msg.end());
+			LOG_ERR << fname << "Path traversal detected in upload | ClientID=" << clientId << " | FilePath=" << fileName;
+			return;
+		}
 		if (!uploadInfo->m_file.is_open())
 		{
 			auto msg = JSON::dump(Utility::text2json("Failed open file"));
@@ -83,16 +94,30 @@ void FileTransferHandler::prepareTransfer(Response &resp, int clientId)
 			return;
 		}
 
-		auto fileStream = std::make_unique<std::ifstream>(fileName, std::ios::binary);
-		if (!fileStream->is_open())
+		// Open-then-verify: the fd serves exactly the file whose resolved location
+		// passed the jail check, so a post-validation symlink swap cannot exfiltrate.
+		std::string resolvedPath;
+		bool jailRejected = false;
+		const int fd = Utility::openFileWithinJail(fileName, false, Configuration::instance()->getFileAllowedBaseDir(),
+												   resolvedPath, &jailRejected);
+		if (fd < 0)
 		{
+			if (jailRejected)
+			{
+				auto msg = JSON::dump(Utility::text2json("File path is not allowed"));
+				resp.http_status = web::http::status_codes::Forbidden;
+				resp.body = std::vector<std::uint8_t>(msg.begin(), msg.end());
+				LOG_ERR << fname << "Path traversal detected in download | ClientID=" << clientId
+						<< " | FilePath=" << fileName;
+				return;
+			}
 			auto msg = JSON::dump(Utility::text2json("Failed to open file for reading"));
 			resp.http_status = web::http::status_codes::InternalError;
 			resp.body = std::vector<std::uint8_t>(msg.begin(), msg.end());
 			LOG_ERR << fname << "Download file access failed | ClientID=" << clientId << " | FilePath=" << fileName;
 			return;
 		}
-		m_pendingDownload = std::move(fileStream);
+		m_pendingDownload = std::make_unique<FdFileStream>(fd);
 		LOG_INF << fname << "Download file transfer initiated | ClientID=" << clientId << " | FilePath=" << fileName;
 	}
 }
@@ -106,7 +131,7 @@ void FileTransferHandler::startDownload(const trantor::TcpConnectionPtr &conn, i
 
 	// Generator node: refilled as the socket drains (backpressure), framed per
 	// chunk itself; an empty body frame ends the transfer.
-	std::shared_ptr<std::ifstream> stream = std::move(m_pendingDownload);
+	std::shared_ptr<FdFileStream> stream = std::move(m_pendingDownload);
 	auto terminatorSent = std::make_shared<bool>(false);
 	conn->sendStream(
 		[stream, terminatorSent](char *buf, std::size_t size) -> std::size_t
@@ -168,7 +193,7 @@ void FileTransferHandler::recvNextUploadChunk(const std::string &data, int clien
 		const auto result = m_pendingUpload->commit();
 		if (result == FileUploadInfo::CommitResult::Committed)
 		{
-			Utility::applyFilePermission(dst, m_pendingUpload->m_requestHeaders);
+			Utility::applyFilePermission(dst, m_pendingUpload->m_requestHeaders, m_pendingUpload->fd());
 			LOG_INF << fname << "File upload completed successfully | ClientID=" << clientId << " | Destination=" << dst;
 		}
 		else if (result == FileUploadInfo::CommitResult::AlreadyExists)

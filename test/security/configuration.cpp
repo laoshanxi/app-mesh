@@ -50,3 +50,31 @@ TEST_CASE("CorsAllowOrigins defaults to empty and hot-reloads", "[security][conf
 	// Leave a default configuration behind for any later test.
 	Configuration::instance(std::make_shared<Configuration>());
 }
+
+// The metrics endpoints expose host internals (host name, PID, fd counts,
+// per-route counters); an unauthenticated default would leak them to anyone
+// who can reach the port (S-4).
+TEST_CASE("MetricsRequireAuth defaults to true and hot-reloads", "[security][config]")
+{
+	Configuration::instance(std::make_shared<Configuration>());
+	SECTION("default requires bearer auth + config-view on both metrics paths")
+	{
+		REQUIRE(Configuration::instance()->metricsRequireAuth() == true);
+	}
+	SECTION("the config view echoes the key so PUT /appmesh/config accepts it")
+	{
+		const auto view = Configuration::instance()->AsJson();
+		REQUIRE(view["REST"]["MetricsRequireAuth"].asBool() == true);
+	}
+	SECTION("a trusted-network scraper disables it through the same hot-update SIGHUP uses")
+	{
+		Json::Value rest;
+		rest["MetricsRequireAuth"] = false;
+		Json::Value root;
+		root["REST"] = rest;
+		Configuration::instance()->hotUpdate(root);
+		REQUIRE(Configuration::instance()->metricsRequireAuth() == false);
+	}
+	// Leave a default configuration behind for any later test.
+	Configuration::instance(std::make_shared<Configuration>());
+}

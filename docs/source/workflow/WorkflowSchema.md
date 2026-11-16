@@ -495,6 +495,11 @@ Value fields (`command`, `env`, `with`, ...) accept a plain reference inside `${
 full expression inside the braces — operators, status functions and literals, for
 example `if: "${{ steps.build.exit_code >= 0 }}"` or `if: "${{ !failure() }}"` —
 with the same operator set as the bare form documented under Operators.
+Conditions may group sub-expressions with parentheses (for example
+`if: "(steps.build.exit_code == 0 && steps.test.exit_code == 0) || always()"`);
+parentheses inside quoted literals are data. An unbalanced parenthesis is a
+definition error: the step or job fails with the parser message instead of
+being silently skipped.
 
 ### How values reach a shell command
 

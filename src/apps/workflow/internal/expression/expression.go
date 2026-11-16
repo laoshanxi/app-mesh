@@ -529,7 +529,10 @@ func substituteExpr(expr string, ctx *Context, jobName, orig string) string {
 	return resolved
 }
 
-func EvalConditionForJob(expr string, ctx *Context, jobName string) bool {
+// EvalConditionForJob evaluates a job/step condition. An error means the
+// condition is malformed (for example unbalanced parentheses) and must be
+// reported, never silently treated as false.
+func EvalConditionForJob(expr string, ctx *Context, jobName string) (bool, error) {
 	return evalCondition(expr, ctx, jobName, nil)
 }
 
@@ -538,14 +541,14 @@ type statusFuncs struct {
 	failure func() bool
 }
 
-func EvalConditionForJobWithStatus(expr string, ctx *Context, jobName string, successFn, failureFn func() bool) bool {
+func EvalConditionForJobWithStatus(expr string, ctx *Context, jobName string, successFn, failureFn func() bool) (bool, error) {
 	return evalCondition(expr, ctx, jobName, &statusFuncs{success: successFn, failure: failureFn})
 }
 
-func evalCondition(expr string, ctx *Context, jobName string, status *statusFuncs) bool {
+func evalCondition(expr string, ctx *Context, jobName string, status *statusFuncs) (bool, error) {
 	expr = strings.TrimSpace(expr)
 	if expr == "" {
-		return true
+		return true, nil
 	}
 
 	// Unwrap ${{ }} to its inner expression text so operators inside the
@@ -561,49 +564,82 @@ func evalCondition(expr string, ctx *Context, jobName string, status *statusFunc
 		})
 		expr = strings.TrimSpace(expr)
 		if expr == "" {
-			return true
+			return true, nil
+		}
+	}
+
+	// Parentheses are author grouping. Unbalanced ones are an author mistake:
+	// answer with an error instead of silently evaluating to false.
+	if err := checkBalancedParens(expr); err != nil {
+		return false, err
+	}
+	// Recursively drop pairs that wrap the whole expression, so a grouped
+	// condition like "(a == 'x')" evaluates like "a == 'x'" instead of being
+	// read as one opaque (truthy) operand.
+	original := expr
+	for {
+		inner, unwrapped := unwrapParens(expr)
+		if !unwrapped {
+			break
+		}
+		expr = strings.TrimSpace(inner)
+		if expr == "" {
+			return false, fmt.Errorf("empty parentheses in condition %q", original)
 		}
 	}
 
 	switch expr {
 	case "always()":
-		return true
+		return true, nil
 	case "success()":
 		if status != nil && status.success != nil {
-			return status.success()
+			return status.success(), nil
 		}
-		return allStepsSucceeded(ctx, jobName)
+		return allStepsSucceeded(ctx, jobName), nil
 	case "failure()":
 		if status != nil && status.failure != nil {
-			return status.failure()
+			return status.failure(), nil
 		}
-		return !allStepsSucceeded(ctx, jobName)
+		return !allStepsSucceeded(ctx, jobName), nil
 	}
 
 	// Handle || before && so && binds tighter (standard precedence).
-	// splitTopLevel ignores operators inside quotes or ${{ }} blocks, so a value
-	// interpolated into an operand cannot inject a new operator (see coerce).
+	// splitTopLevel ignores operators inside quotes, ${{ }} blocks, or
+	// parentheses, so a value interpolated into an operand cannot inject a new
+	// operator (see coerce) and grouped operands stay together.
 	if parts := splitTopLevel(expr, "||"); len(parts) > 1 {
 		for _, part := range parts {
-			if evalCondition(strings.TrimSpace(part), ctx, jobName, status) {
-				return true
+			met, err := evalCondition(strings.TrimSpace(part), ctx, jobName, status)
+			if err != nil {
+				return false, err
+			}
+			if met {
+				return true, nil
 			}
 		}
-		return false
+		return false, nil
 	}
 	if parts := splitTopLevel(expr, "&&"); len(parts) > 1 {
 		for _, part := range parts {
-			if !evalCondition(strings.TrimSpace(part), ctx, jobName, status) {
-				return false
+			met, err := evalCondition(strings.TrimSpace(part), ctx, jobName, status)
+			if err != nil {
+				return false, err
+			}
+			if !met {
+				return false, nil
 			}
 		}
-		return true
+		return true, nil
 	}
 	if strings.HasPrefix(expr, "!") {
-		return !evalCondition(strings.TrimPrefix(expr, "!"), ctx, jobName, status)
+		met, err := evalCondition(strings.TrimSpace(strings.TrimPrefix(expr, "!")), ctx, jobName, status)
+		if err != nil {
+			return false, err
+		}
+		return !met, nil
 	}
 
-	return evalComparison(expr, ctx, jobName)
+	return evalComparison(expr, ctx, jobName), nil
 }
 
 func substituteInline(expr string, ctx *Context, jobName string) string {
@@ -648,91 +684,164 @@ var cmpOps = []cmpOp{
 	{"<", func(a, b float64) bool { return a < b }},
 }
 
+// conditionScanner is the shared condition lexer state: single/double-quoted
+// literals and ${{ }} expression spans are transparent to operators, and
+// parentheses nest on top (an operator inside parentheses belongs to the
+// sub-expression, so splits and symbol searches stop at depth 0).
+type conditionScanner struct {
+	inSingle   bool
+	inDouble   bool
+	tmpl       int
+	parenDepth int
+	negParens  bool // a ')' appeared with no matching '('
+}
+
+// step consumes s[i] (and a whole ${{ or }} token when present), returning
+// the next index and whether i sits at the top level: outside quotes and
+// ${{ }} spans, and at parenthesis depth 0.
+func (cs *conditionScanner) step(s string, i int) (int, bool) {
+	if cs.tmpl == 0 && !cs.inSingle && !cs.inDouble && strings.HasPrefix(s[i:], "${{") {
+		cs.tmpl++
+		return i + 3, false
+	}
+	if cs.tmpl > 0 && strings.HasPrefix(s[i:], "}}") {
+		cs.tmpl--
+		return i + 2, false
+	}
+	if cs.tmpl > 0 {
+		return i + 1, false
+	}
+	switch c := s[i]; c {
+	case '\'':
+		if !cs.inDouble {
+			cs.inSingle = !cs.inSingle
+		}
+	case '"':
+		if !cs.inSingle {
+			cs.inDouble = !cs.inDouble
+		}
+	case '(':
+		// Parentheses are grouping only outside quoted literals.
+		if !cs.inSingle && !cs.inDouble {
+			cs.parenDepth++
+		}
+	case ')':
+		if !cs.inSingle && !cs.inDouble {
+			cs.parenDepth--
+			if cs.parenDepth < 0 {
+				cs.negParens = true
+			}
+		}
+	}
+	return i + 1, !cs.inSingle && !cs.inDouble && cs.parenDepth == 0
+}
+
 // splitTopLevel splits s on sep, ignoring occurrences inside single/double
-// quotes or inside ${{ }} blocks. This keeps an interpolated operand value from
-// injecting boolean operators that would restructure the condition.
+// quotes, inside ${{ }} blocks, or inside parentheses. This keeps an
+// interpolated operand value from injecting boolean operators that would
+// restructure the condition, and lets grouped operands like
+// `a && (b || c)` split on the top-level operator only.
 func splitTopLevel(s, sep string) []string {
 	var parts []string
 	var buf strings.Builder
-	var inSingle, inDouble bool
-	tmpl := 0
+	var scanner conditionScanner
 	for i := 0; i < len(s); {
-		if tmpl == 0 && !inSingle && !inDouble && strings.HasPrefix(s[i:], "${{") {
-			tmpl++
-			buf.WriteString("${{")
-			i += 3
+		next, topLevel := scanner.step(s, i)
+		if topLevel && strings.HasPrefix(s[i:], sep) {
+			parts = append(parts, buf.String())
+			buf.Reset()
+			// The separator bytes carry no lexer state (only quotes,
+			// parentheses, and ${{ }} do); skip the whole token.
+			i += len(sep)
 			continue
 		}
-		if tmpl > 0 && strings.HasPrefix(s[i:], "}}") {
-			tmpl--
-			buf.WriteString("}}")
-			i += 2
-			continue
-		}
-		if tmpl == 0 {
-			c := s[i]
-			if !inDouble && c == '\'' {
-				inSingle = !inSingle
-			} else if !inSingle && c == '"' {
-				inDouble = !inDouble
-			}
-			if !inSingle && !inDouble && strings.HasPrefix(s[i:], sep) {
-				parts = append(parts, buf.String())
-				buf.Reset()
-				i += len(sep)
-				continue
-			}
-		}
-		buf.WriteByte(s[i])
-		i++
+		buf.WriteString(s[i:next])
+		i = next
 	}
 	parts = append(parts, buf.String())
 	return parts
 }
 
 // indexTopLevel returns the index of the first occurrence of sym in s that is
-// not inside quotes or a ${{ }} block, or -1 if none.
+// not inside quotes, a ${{ }} block, or parentheses, or -1 if none.
 func indexTopLevel(s, sym string) int {
-	var inSingle, inDouble bool
-	tmpl := 0
+	var scanner conditionScanner
 	for i := 0; i < len(s); {
-		if tmpl == 0 && !inSingle && !inDouble && strings.HasPrefix(s[i:], "${{") {
-			tmpl++
-			i += 3
-			continue
+		next, topLevel := scanner.step(s, i)
+		if topLevel && strings.HasPrefix(s[i:], sym) {
+			return i
 		}
-		if tmpl > 0 && strings.HasPrefix(s[i:], "}}") {
-			tmpl--
-			i += 2
-			continue
-		}
-		if tmpl == 0 {
-			c := s[i]
-			if !inDouble && c == '\'' {
-				inSingle = !inSingle
-				i++
-				continue
-			}
-			if !inSingle && c == '"' {
-				inDouble = !inDouble
-				i++
-				continue
-			}
-			if !inSingle && !inDouble && strings.HasPrefix(s[i:], sym) {
-				return i
-			}
-		}
-		i++
+		i = next
 	}
 	return -1
 }
 
+// indexOutsideQuotes returns the first index of sym in s that is not inside a
+// quoted literal or a ${{ }} block; parentheses do not hide it. Used for
+// status-function detection, which must see through author grouping like
+// `(success() || always())`.
+func indexOutsideQuotes(s, sym string) int {
+	var scanner conditionScanner
+	for i := 0; i < len(s); {
+		inSpan := scanner.tmpl > 0
+		next, _ := scanner.step(s, i)
+		if !inSpan && !scanner.inSingle && !scanner.inDouble && strings.HasPrefix(s[i:], sym) {
+			return i
+		}
+		i = next
+	}
+	return -1
+}
+
+// checkBalancedParens reports an error when the condition's parentheses do not
+// balance outside quoted literals and ${{ }} spans. An unbalanced condition is
+// an author mistake and must surface, never silently evaluate to false.
+func checkBalancedParens(s string) error {
+	var scanner conditionScanner
+	for i := 0; i < len(s); {
+		next, _ := scanner.step(s, i)
+		i = next
+	}
+	if scanner.negParens {
+		return fmt.Errorf("unbalanced ')' in condition %q", s)
+	}
+	if scanner.parenDepth > 0 {
+		return fmt.Errorf("missing %d closing ')' in condition %q", scanner.parenDepth, s)
+	}
+	return nil
+}
+
+// unwrapParens strips one pair of parentheses that encloses the whole string —
+// "(a && b)" → "a && b", including across ${{ }} spans. The pair must be
+// balanced against the rest of the expression, so "(a) && b" stays unchanged.
+// Parentheses inside quoted literals are lexer-transparent and never match.
+func unwrapParens(s string) (string, bool) {
+	if !strings.HasPrefix(s, "(") {
+		return s, false
+	}
+	var scanner conditionScanner
+	for i := 0; i < len(s); {
+		next, _ := scanner.step(s, i)
+		if scanner.parenDepth == 0 {
+			// i (inclusive) .. next (exclusive) consumed the ')' that closes
+			// the leading '(': only a trailing position unwraps.
+			if s[next-1] == ')' && next == len(s) {
+				return s[1 : next-1], true
+			}
+			return s, false
+		}
+		i = next
+	}
+	return s, false // unbalanced; the caller reports it via checkBalancedParens
+}
+
 // HasStatusFunction reports whether the condition references one of the status
 // functions always()/success()/failure() outside quoted operands and ${{ }}
-// blocks, so literal text like `== 'success()'` does not count.
+// blocks, so literal text like `== 'success()'` does not count. Author
+// grouping parentheses do not hide the call.
 func HasStatusFunction(condition string) bool {
 	for _, fn := range []string{"always()", "success()", "failure()"} {
-		if indexTopLevel(condition, fn) >= 0 {
+		if indexOutsideQuotes(condition, fn) >= 0 {
 			return true
 		}
 	}
@@ -792,6 +901,18 @@ func coerce(token string, ctx *Context, jobName string) any {
 	// prevents an interpolated value from injecting into the condition.
 	if strings.Contains(token, "${{") {
 		token = strings.TrimSpace(substituteInline(token, ctx, jobName))
+	}
+	// Author grouping around an operand, as in `(a) == (b)`: unwrap before the
+	// value is read, mirroring the whole-condition unwrap in evalCondition.
+	for {
+		inner, unwrapped := unwrapParens(token)
+		if !unwrapped {
+			break
+		}
+		token = strings.TrimSpace(inner)
+		if token == "" {
+			return token
+		}
 	}
 	if (strings.HasPrefix(token, `"`) && strings.HasSuffix(token, `"`)) ||
 		(strings.HasPrefix(token, `'`) && strings.HasSuffix(token, `'`)) {

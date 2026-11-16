@@ -359,6 +359,17 @@ void AppMeshDaemon::recoverApplications()
 	config->loadApps(fs::path(Utility::getHomeDir()) / APPMESH_APPLICATION_DIR);
 	// Validate the dependency graph once after both directories are loaded.
 	config->validateRecoveredDependencies();
+	// Startup sweep: run instances are one-shot registrations marked by the
+	// engine; drop any that recovered without a live process instead of leaving
+	// it until a manual delete (getApps() returns a copy, safe to mutate).
+	for (const auto &app : config->getApps())
+	{
+		if (app && app->isOneShot() && app->getpid() <= 1)
+		{
+			config->removeApp(app->getName());
+			LOG_INF << fname << "Removed dead run instance registration <" << app->getName() << ">";
+		}
+	}
 
 	LOG_INF << fname << "Applications recovered";
 }

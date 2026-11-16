@@ -508,6 +508,9 @@ void DrogonAdaptor::setupRoutes()
 	// unless the negotiated protocol is echoed on the 101 response.
 	// The same single funnel stamps the CSP on every REST response: the API
 	// serves JSON and files, never active content, so 'none' has no side effects.
+	// A handler-set CSP (the OAuth relay page's pinned script hash) wins over
+	// the default; drogon headers are one value per key, so addHeader would
+	// otherwise overwrite it.
 	app.registerPostHandlingAdvice(
 		[](const drogon::HttpRequestPtr &req, const drogon::HttpResponsePtr &resp)
 		{
@@ -515,8 +518,9 @@ void DrogonAdaptor::setupRoutes()
 				return;
 			if (resp->statusCode() != drogon::k101SwitchingProtocols)
 			{
-				resp->addHeader(web::http::header_names::content_security_policy,
-								"default-src 'none'; frame-ancestors 'none'");
+				if (resp->getHeader(web::http::header_names::content_security_policy).empty())
+					resp->addHeader(web::http::header_names::content_security_policy,
+									"default-src 'none'; frame-ancestors 'none'");
 				return;
 			}
 			const auto accepted =
@@ -744,16 +748,37 @@ void DrogonAdaptor::handleDownload(const drogon::HttpRequestPtr &req, drogon::Ad
 		disposition += "; filename*=UTF-8''" + extValue;
 	}
 
-	auto resp = drogon::HttpResponse::newFileResponse(filePathStr, "", drogon::CT_APPLICATION_OCTET_STREAM, "", req);
-	// newFileResponse answers an unreadable file with a 404 page, not a null pointer.
-	if (!resp || resp->statusCode() != drogon::k200OK)
+	// Open-then-verify: the fd pins the inode whose resolved location passed the
+	// jail check; the stream callback below serves only that file, closing the
+	// validate-to-open race a swapped symlink component could otherwise win.
+	std::string resolvedPath;
+	bool jailRejected = false;
+	const int fd = Utility::openFileWithinJail(filePathStr, false, Configuration::instance()->getFileAllowedBaseDir(),
+											   resolvedPath, &jailRejected);
+	if (fd < 0)
 	{
-		LOG_ERR << fname << "newFileResponse failed for: " << filePathStr;
+		LOG_ERR << fname << (jailRejected ? "resolved path escaped the jail: " : "cannot open file: ") << filePathStr;
+		callback(plainResponse(jailRejected ? drogon::k403Forbidden : drogon::k500InternalServerError,
+							   jailRejected ? "File path is not allowed" : "Cannot open file for reading"));
+		return;
+	}
+	auto stream = std::make_shared<FdFileStream>(fd);
+	auto resp = drogon::HttpResponse::newStreamResponse(
+		[stream](char *buf, std::size_t size) -> std::size_t
+		{
+			if (buf == nullptr)
+				return 0; // drogon releasing the stream; the shared_ptr closes the fd
+			return static_cast<std::size_t>(stream->read(buf, size));
+		},
+		"", drogon::CT_APPLICATION_OCTET_STREAM, "", req);
+	if (!resp)
+	{
+		LOG_ERR << fname << "newStreamResponse failed for: " << filePathStr;
 		callback(plainResponse(drogon::k500InternalServerError, "Cannot open file for reading"));
 		return;
 	}
 	resp->addHeader(web::http::header_names::content_disposition, disposition);
-	for (const auto &[name, value] : Utility::fileAttributeHeaders(filePathStr))
+	for (const auto &[name, value] : Utility::fileAttributeHeaders(resolvedPath.empty() ? filePathStr : resolvedPath))
 		resp->addHeader(name, value);
 	addCors(resp, req->getHeader(web::http::header_names::origin));
 	callback(resp);
@@ -858,7 +883,16 @@ void DrogonAdaptor::handleUpload(const drogon::HttpRequestPtr &req, drogon::Requ
 	// Stream into a temp file beside the destination and publish it on success
 	// (atomically; an overwrite replaces, otherwise an existing destination stays).
 	const std::string tempPath = fullPath + ".appmesh-upload-" + Utility::uuid();
-	auto upload = std::make_shared<FileUploadInfo>(fullPath, tempPath, attrHeaders, overwrite);
+	auto upload = std::make_shared<FileUploadInfo>(fullPath, tempPath, attrHeaders, overwrite,
+												   Configuration::instance()->getFileAllowedBaseDir());
+	if (upload->m_rejected)
+	{
+		// The fd check saw the resolved temp location leave the jail: a
+		// component was swapped between validation and open.
+		LOG_ERR << fname << "Resolved upload path escaped the jail: " << fullPath;
+		callback(plainResponse(drogon::k403Forbidden, "File path is not allowed"));
+		return;
+	}
 	if (!upload->m_file.is_open())
 	{
 		LOG_ERR << fname << "Failed to open file for writing: " << tempPath;
@@ -914,7 +948,7 @@ void DrogonAdaptor::handleUpload(const drogon::HttpRequestPtr &req, drogon::Requ
 
 			// Apply caller-supplied POSIX attributes after the file commits,
 			// mirroring the REST upload path.
-			Utility::applyFilePermission(upload->m_filePath, upload->m_requestHeaders);
+			Utility::applyFilePermission(upload->m_filePath, upload->m_requestHeaders, upload->fd());
 
 			Json::Value respJson;
 			respJson["status"] = "success";

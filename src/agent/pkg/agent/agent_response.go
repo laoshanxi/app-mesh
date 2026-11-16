@@ -143,6 +143,10 @@ func (r *Response) writeToHTTPResponse(w http.ResponseWriter, req *http.Request)
 			switch {
 			case errors.Is(err, errInvalidFileName):
 				status = http.StatusForbidden
+			case errors.Is(err, errNoArmedTransfer):
+				// The daemon's answer lacked the armed transfer — an upstream
+				// protocol problem, not the client's.
+				status = http.StatusBadGateway
 			case errors.Is(err, os.ErrNotExist), errors.Is(err, syscall.EISDIR), errors.Is(err, syscall.ENOTDIR):
 				status = http.StatusBadRequest
 			}

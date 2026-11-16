@@ -8,8 +8,10 @@ import sys
 import threading
 import time
 
+import requests
+
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..")))  # -> src/sdk/python
-from appmesh import App, AppMeshAuthError, AppMeshRequestError, print_output_handler
+from appmesh import App, AppMeshAuthError, AppMeshClient, AppMeshRequestError, print_output_handler
 from _support import config
 
 
@@ -108,16 +110,22 @@ class ProtocolTestMixin:
     def test_08_app_list_and_get(self):
         """List applications and inspect one."""
         config.attach_test_bearer(self.client)
-        apps = self.client.list_apps()
-        self.assertGreater(len(apps), 0)
-        first_app = apps[0].name
-        fetched = self.client.get_app(first_app)
-        self.assertEqual(fetched.name, first_app)
-        for app in apps:
-            self.assertTrue(hasattr(app, "name"))
-            self.assertTrue(hasattr(app, "shell"))
-        self.assertIsInstance(self.client.check_app_health(first_app), bool)
-        self.client.get_app_output(first_app)
+        # Self-contained: run instances deregister after their process exits, so
+        # leftover apps from earlier tests cannot be relied on.
+        self.client.add_app(App({"command": "sleep 1000", "name": "SDK_LIST_08"}))
+        try:
+            apps = self.client.list_apps()
+            self.assertGreater(len(apps), 0)
+            first_app = apps[0].name
+            fetched = self.client.get_app(first_app)
+            self.assertEqual(fetched.name, first_app)
+            for app in apps:
+                self.assertTrue(hasattr(app, "name"))
+                self.assertTrue(hasattr(app, "shell"))
+            self.assertIsInstance(self.client.check_app_health(first_app), bool)
+            self.client.get_app_output(first_app)
+        finally:
+            self.client.delete_app("SDK_LIST_08")
 
     def test_09_app_add_enable_disable_delete(self):
         """Full lifecycle: add -> disable -> enable -> delete."""
@@ -167,6 +175,20 @@ class ProtocolTestMixin:
         self.assertIn("appmesh_metrics_scrapes_total", self.client.get_metrics())
         self.assertEqual(self.client.set_log_level("INFO"), "INFO")
         self.assertEqual(self.client.set_log_level("DEBUG"), "DEBUG")
+
+    def test_13b_metrics_require_auth_switch(self):
+        """REST.MetricsRequireAuth=false is the trusted-scraper escape hatch."""
+        config.attach_test_bearer(self.client)
+        entry = config.BASE_URL or "https://127.0.0.1:6060"
+        self.assertTrue(self.client.get_config()["REST"]["MetricsRequireAuth"])
+        self.client.set_config({"REST": {"MetricsRequireAuth": False}})
+        try:
+            scraped = requests.get(entry + "/metrics", timeout=10,
+                                   verify=AppMeshClient._resolve_ssl_verify(None))
+            self.assertEqual(200, scraped.status_code)
+        finally:
+            self.client.set_config({"REST": {"MetricsRequireAuth": True}})
+        self.assertTrue(self.client.get_config()["REST"]["MetricsRequireAuth"])
 
     def test_14_get_config_roundtrip(self):
         """get_config / set_config roundtrip."""

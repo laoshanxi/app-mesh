@@ -1,6 +1,8 @@
 package agent
 
 import (
+	"crypto/sha256"
+	"encoding/base64"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -28,12 +30,33 @@ func TestAuthRelayRoute(t *testing.T) {
 	if contentType := recorder.Header().Get("Content-Type"); contentType != "text/html; charset=utf-8" {
 		t.Fatalf("expected text/html content type, got %q", contentType)
 	}
+	// The relay page is HTML with an inline script: its CSP denies everything
+	// except that exact script (pinned by hash, identical on the daemon side)
+	// and forbids framing. A tampered page must fail closed in the browser.
+	csp := recorder.Header().Get("Content-Security-Policy")
+	wantCSP := "default-src 'none'; script-src 'sha256-" + authRelayScriptHash + "'; frame-ancestors 'none'"
+	if csp != wantCSP {
+		t.Fatalf("expected relay CSP %q, got %q", wantCSP, csp)
+	}
+	// The hash must keep matching the served bytes — over the full text node
+	// between the tags, newlines included, exactly as the browser hashes it —
+	// or the browser blocks the (only) script and the page stops working.
+	body := recorder.Body.String()
+	scriptStart := strings.Index(body, "<script>")
+	scriptEnd := strings.Index(body, "</script>")
+	if scriptStart < 0 || scriptEnd < scriptStart {
+		t.Fatal("relay page script element not found")
+	}
+	digest := sha256.Sum256([]byte(body[scriptStart+len("<script>") : scriptEnd]))
+	if got := base64.StdEncoding.EncodeToString(digest[:]); got != authRelayScriptHash {
+		t.Fatalf("authRelayScriptHash is stale: script content hashes to %q, constant says %q", got,
+			authRelayScriptHash)
+	}
 	// The relay is a client-side redirect inside static HTML, never a server
 	// redirect: code and state must reach the page untouched.
 	if location := recorder.Header().Get("Location"); location != "" {
 		t.Fatalf("expected no Location header, got %q", location)
 	}
-	body := recorder.Body.String()
 	if !strings.Contains(body, `payload.o`) {
 		t.Fatal("the relay page must decode the target origin from the state parameter")
 	}

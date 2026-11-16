@@ -166,6 +166,15 @@ public:
 	static bool isFileExist(const std::string &path);
 	static bool isPathTraversalSafe(const std::string &baseDir, const std::string &filePath);
 	static bool validateFilePath(const std::string &filePath, const std::string &allowedBaseDir);
+	// Open-then-verify: opens the file (O_EXCL create for the upload temp name) and
+	// runs the full validateFilePath rules against the fd's RESOLVED location, so a
+	// path component swapped to a symlink between validation and open cannot escape.
+	// Returns an owned fd (caller closes) or -1; *rejectedOut=true marks a jail
+	// violation (callers answer 403) versus a plain open failure. dirFdOut (write
+	// path, POSIX only) receives the pinned parent dirfd (caller closes) so the
+	// later publish can stay relative to the verified directory.
+	static int openFileWithinJail(const std::string &filePath, bool forWrite, const std::string &allowedBaseDir,
+								  std::string &resolvedOut, bool *rejectedOut = nullptr, int *dirFdOut = nullptr);
 	static bool createDirectory(const std::string &path, fs::perms perms = fs::perms::owner_all | fs::perms::group_all |
 																		   fs::perms::others_read | fs::perms::others_exec);
 	static bool createRecursiveDirectory(const std::string &path,
@@ -217,7 +226,11 @@ public:
 	static unsigned long long getThreadId();
 	static void setThreadName(const std::string &name);
 	static std::map<std::string, std::string> fileAttributeHeaders(const std::string &file);
-	static void applyFilePermission(const std::string &file, HttpHeaderMap headers);
+	// fd >= 0 (a committed upload) applies the mode change to that still-open
+	// descriptor, so a symlink swapped onto the name after commit cannot take
+	// the chmod outside the jail; ownership already rides lchown and stays on
+	// the path.
+	static void applyFilePermission(const std::string &file, HttpHeaderMap headers, int fd = -1);
 	static std::string getenv(const std::string &envName, const std::string &defaultValue = "");
 	static std::map<std::string, std::string> getenvs();
 
@@ -298,6 +311,10 @@ public:
 #define DEFAULT_RUN_APP_LIFECYCLE_SECONDS int((60 * 60 * 24) * 2.5) // run app max lifecycle 2.5 days
 #define MAX_RUN_APP_TIMEOUT_SECONDS int((60 * 60 * 24) * 3)         // run app max timeout 3 days
 #define DEFAULT_RUN_TASK_TIMEOUT_SECONDS int(300)                   // run_task (sync message) default 5 min
+// A run instance is deregistered this long after its process exits: late
+// output readers (SDK exit backfill) still reach the registration, but the
+// entry no longer lingers for the whole run lifecycle.
+#define RUN_INSTANCE_EXIT_GRACE_SECONDS int(60)
 #define MAX_OUTPUT_VIEW_TIMEOUT_SECONDS int(300) // output long-poll max wait; a dropped client is held this long
 #define CONSUL_SESSION_DEFAULT_TTL 30
 #define APP_STD_OUT_MAX_FILE_SIZE 1024 * 1024 * 100   // 100M
@@ -324,6 +341,7 @@ public:
 #define JSON_KEY_FileAllowedBaseDir "FileAllowedBaseDir"
 #define JSON_KEY_CorsDisabled "CorsDisabled"
 #define JSON_KEY_CorsAllowOrigins "CorsAllowOrigins"
+#define JSON_KEY_MetricsRequireAuth "MetricsRequireAuth"
 #define JSON_KEY_CsrfAllowedOrigins "CsrfAllowedOrigins"
 #define JSON_KEY_RequestReplayProtection "RequestReplayProtection"
 #define JSON_KEY_RequestSignature "RequestSignature"
@@ -390,6 +408,9 @@ public:
 #define JSON_KEY_APP_docker_backend "docker_backend"
 #define JSON_KEY_APP_last_error "last_error"
 #define JSON_KEY_APP_from_recover "from_recover"
+// Engine-injected marker: the base application an on-demand run instance was
+// spawned from (generateRunAppName); never accepted from client input.
+#define JSON_KEY_APP_run_base "run_base"
 #define JSON_KEY_APP_starts "starts"
 #define JSON_KEY_APP_waiting_for "waiting_for"
 #define REST_PATH_UPLOAD "/appmesh/file/upload"

@@ -68,6 +68,9 @@ public:
 
 		bool m_restEnabled;
 		bool m_corsDisabled;
+		// Metrics endpoints require bearer auth + config-view; false is an escape
+		// hatch for a trusted-network Prometheus scraper (exposes host internals).
+		bool m_metricsRequireAuth;
 		// CORS: Origins echoed in Access-Control-Allow-Origin. Empty (default)
 		// sends no CORS headers at all — the UI is a same-origin proxy.
 		std::set<std::string> m_corsAllowOrigins;
@@ -145,6 +148,10 @@ public:
 	std::shared_ptr<Application> getApp(const void *app) const;
 	bool isAppExist(const std::string &appName);
 	std::string generateRunAppName(const std::string &provideAppName);
+	/// Stops and removes the on-demand run instances spawned from `baseName`
+	/// (their `<base>_N` registrations). Used by base-app delete; the delete
+	/// permission check on the base governs the cascade.
+	int removeRunInstances(const std::string &baseName);
 	/// Disables an application; false on a stale disable. Status flip and save
 	/// under the mutation lock, termination outside it.
 	bool disableApp(const std::string &appName, const Application *expected = nullptr);
@@ -167,6 +174,7 @@ public:
 	std::string getSSLClientCertificateKeyFile() const;
 	bool getRestEnabled() const;
 	bool getCorsDisabled() const;
+	bool metricsRequireAuth() const;
 	std::set<std::string> getCorsAllowOrigins() const;
 	std::string getRequestReplayProtection() const;
 	std::string getRequestSignature() const;

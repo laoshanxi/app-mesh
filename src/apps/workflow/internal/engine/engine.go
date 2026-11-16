@@ -336,6 +336,24 @@ func skipJob(job *models.Job, ectx *expression.Context, statusMu *sync.RWMutex, 
 	return true
 }
 
+// failJob records a job that never ran steps because its own condition could
+// not be parsed: the reason carries the full parser error so the run log shows
+// why, instead of a bare SKIPPED with an opaque condition text.
+func failJob(job *models.Job, ectx *expression.Context, statusMu *sync.RWMutex, opts *Options, log logger.Log,
+	reason string) bool {
+	statusMu.Lock()
+	job.Status = models.StatusFailure
+	statusMu.Unlock()
+	ectx.SetJobStatusForJob(job.Name, models.StatusFailure)
+	ectx.SetJobResult(job.Name, ectx.SnapshotJobSteps(job.Name), models.StatusFailure)
+	log.Error(fmt.Sprintf("JOB %s FAILED: %s", job.Name, reason))
+	log.JobCompleted(job.Name, models.StatusFailure)
+	if opts.OnJobDone != nil {
+		opts.OnJobDone(job.Name, models.StatusFailure, "", nil)
+	}
+	return false
+}
+
 func runJob(job *models.Job, exec *executor.StepExecutor, ectx *expression.Context, wf *models.Workflow,
 	statusMu *sync.RWMutex, opts *Options, log logger.Log) bool {
 	// Mark message steps upfront so substitution can report a plain-text outputs miss.
@@ -377,9 +395,16 @@ func runJob(job *models.Job, exec *executor.StepExecutor, ectx *expression.Conte
 		if !needsSucceeded && !expression.HasStatusFunction(job.Condition) {
 			return skipJob(job, ectx, statusMu, opts, log, depReason)
 		}
-		if !expression.EvalConditionForJobWithStatus(job.Condition, ectx, job.Name, func() bool { return needsSucceeded },
+		met, condErr := expression.EvalConditionForJobWithStatus(job.Condition, ectx, job.Name,
+			func() bool { return needsSucceeded },
 			func() bool { return needsFailed },
-		) {
+		)
+		if condErr != nil {
+			// A malformed condition is an author error: fail the job loudly
+			// instead of silently skipping it.
+			return failJob(job, ectx, statusMu, opts, log, "invalid condition: "+condErr.Error())
+		}
+		if !met {
 			return skipJob(job, ectx, statusMu, opts, log, "condition: "+job.Condition)
 		}
 	} else if !needsSucceeded {
@@ -502,7 +527,23 @@ func markStepsSkipped(steps []models.Step, ectx *expression.Context, jobName, re
 func runStep(step *models.Step, exec *executor.StepExecutor, ectx *expression.Context, env, secretEnv map[string]string,
 	jobName string, opts *Options, log logger.Log) bool {
 	if step.Condition != "" {
-		if !expression.EvalConditionForJob(step.Condition, ectx, jobName) {
+		met, condErr := expression.EvalConditionForJob(step.Condition, ectx, jobName)
+		if condErr != nil {
+			// A malformed condition is an author error: fail the step loudly
+			// with the parser error as the reason; skipping would hide it.
+			exitCode := 1
+			reason := "invalid condition: " + condErr.Error()
+			step.Result.Status = models.StatusFailure
+			step.Result.ExitCode = &exitCode
+			step.Result.Stdout = reason
+			step.Result.Response = reason
+			ectx.SetStepResult(jobName, step.Name, reason, exitCode, models.StatusFailure, reason, nil)
+			persistStep(opts, jobName, step.Name, reason, exitCode, models.StatusFailure, reason, nil)
+			log.StepFailed(step.Name, exitCode, 0)
+			log.Error(fmt.Sprintf("STEP %s FAILED: %s", step.Name, reason))
+			return false
+		}
+		if !met {
 			step.Result.Status = models.StatusSkipped
 			exitCode := 0
 			step.Result.ExitCode = &exitCode
