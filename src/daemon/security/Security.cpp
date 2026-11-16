@@ -32,15 +32,9 @@ Principal Security::authenticateBearerAuthorization(const std::string &authoriza
 	const auto value = Utility::stdStringTrim(authorization);
 	if (value.size() > 8 * 1024)
 		throw std::domain_error("Authorization header is too large");
-	const auto separator = value.find(' ');
-	if (separator == std::string::npos)
+	const auto token = Utility::bearerCredential(value);
+	if (token.empty())
 		throw std::domain_error("Authorization header must use the Bearer scheme");
-	auto scheme = value.substr(0, separator);
-	std::transform(scheme.begin(), scheme.end(), scheme.begin(),
-		[](unsigned char c) { return static_cast<char>(std::tolower(c)); });
-	if (scheme != "bearer")
-		throw std::domain_error("Authorization header must use the Bearer scheme");
-	const auto token = Utility::stdStringTrim(value.substr(separator + 1));
 	if (token.empty() || token.find_first_of(" \t\r\n") != std::string::npos)
 		throw std::domain_error("Bearer token is empty or malformed");
 	return instance()->authenticate(token);

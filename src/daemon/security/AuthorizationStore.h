@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstdint>
 #include <map>
 #include <memory>
 #include <mutex>
@@ -68,9 +69,27 @@ public:
 	void deleteRole(const std::string &role);
 	void save() const;
 
+	/// Request-signing API keys. The secret is returned by issueApiKey exactly
+	/// once and is stored in the authorization file (0600) so an externally
+	/// copied policy stays verifiable on other nodes.
+	nlohmann::json issueApiKey(const std::string &principalId);
+	nlohmann::json apiKeysJson(const std::string &principalId, bool all) const;
+	/// Owner or a manage-all caller (PERMISSION_KEY_principal_update) may revoke.
+	/// Returns false when the key does not exist.
+	bool deleteApiKey(const std::string &keyId, const std::string &requestingPrincipalId, bool manageAll);
+	bool apiKeySecret(const std::string &keyId, std::string &principalId, std::string &secret) const;
+
 	static const std::string &systemPrincipalId();
 
 private:
+	/// A request-signing API key issued to one principal.
+	struct ApiKey
+	{
+		std::string keyId;
+		std::string principalId;
+		std::string secret;
+		std::int64_t createdAt = 0;
+	};
 	void load(const nlohmann::json &root);
 	void initializeFirstAdminEnrollment();
 	bool hasFirstAdminLocked() const;
@@ -89,6 +108,7 @@ private:
 	mutable std::recursive_mutex m_mutex;
 	std::map<std::string, std::shared_ptr<AuthorizationPrincipal>> m_principals;
 	std::map<std::string, std::set<std::string>> m_roles;
+	std::map<std::string, ApiKey> m_apiKeys;
 	std::string m_provisioningMode;
 	std::string m_firstAdminRole;
 	std::string m_firstAdminSubject;

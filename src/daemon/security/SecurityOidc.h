@@ -26,6 +26,10 @@ public:
 	void deletePrincipal(const std::string &principalId) override;
 	void updateRole(const std::string &role, const nlohmann::json &permissions) override;
 	void deleteRole(const std::string &role) override;
+	nlohmann::json issueApiKey(const std::string &principalId) override;
+	nlohmann::json apiKeysJson(const std::string &principalId, bool all) const override;
+	bool deleteApiKey(const std::string &keyId, const std::string &requestingPrincipalId, bool manageAll) override;
+	bool apiKeySecret(const std::string &keyId, std::string &principalId, std::string &secret) const override;
 
 private:
 	OidcTokenVerifier m_verifier;

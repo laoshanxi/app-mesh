@@ -20,6 +20,14 @@ class Application;
 /// <summary>
 /// Configuration file <config.yaml> parse/update
 /// </summary>
+struct JsonDocker
+{
+	// off | audit | enforce; anything else keeps off so a typo cannot weaken it.
+	std::string m_hostSecurityPolicy = "off";
+	static std::shared_ptr<JsonDocker> FromJson(const nlohmann::json &jsonValue);
+	nlohmann::json AsJson() const;
+};
+
 class Configuration
 {
 public:
@@ -40,6 +48,8 @@ public:
 	{
 		static std::shared_ptr<JsonSsl> FromJson(const nlohmann::json &jsonObj);
 		nlohmann::json AsJson() const;
+		// False = plaintext listeners (TLS terminates at an upstream gateway).
+		bool m_sslEnabled;
 		bool m_sslVerifyServer;
 		bool m_sslVerifyClient;
 		std::string m_certFile;
@@ -58,7 +68,19 @@ public:
 
 		bool m_restEnabled;
 		bool m_corsDisabled;
+		// Metrics endpoints require bearer auth + config-view; false is an escape
+		// hatch for a trusted-network Prometheus scraper (exposes host internals).
+		bool m_metricsRequireAuth;
+		// CORS: Origins echoed in Access-Control-Allow-Origin. Empty (default)
+		// sends no CORS headers at all — the UI is a same-origin proxy.
+		std::set<std::string> m_corsAllowOrigins;
 		std::set<std::string> m_csrfAllowedOrigins; // CSRF: Origins allowed for cookie-auth state-changing requests
+		// Request hardening: nonce replay protection and HMAC request signature,
+		// each one of off | audit | enforce; window bounds both the nonce memory
+		// and the accepted X-Timestamp skew (10..3600s).
+		std::string m_requestReplayProtection;
+		std::string m_requestSignature;
+		int m_requestReplayWindowSeconds;
 		std::string m_fileAllowedBaseDir;
 		int m_workerThreads;
 		int m_transportIoThreads;
@@ -113,6 +135,8 @@ public:
 
 	int getScheduleInterval();
 	int getRestListenPort();
+	// Docker.HostSecurityPolicy: off (default) | audit | enforce, hot-reloaded.
+	std::string getDockerHostSecurityPolicy();
 	int getPromListenPort() const;
 	std::string getRestListenAddress();
 	int getTcpApiPort();
@@ -122,6 +146,10 @@ public:
 	std::shared_ptr<Application> getApp(const void *app) const;
 	bool isAppExist(const std::string &appName);
 	std::string generateRunAppName(const std::string &provideAppName);
+	/// Stops and removes the on-demand run instances spawned from `baseName`
+	/// (their `<base>_N` registrations). Used by base-app delete; the delete
+	/// permission check on the base governs the cascade.
+	int removeRunInstances(const std::string &baseName);
 	/// Flips the status to DISABLED and persists it under the mutation lock;
 	/// stopping the runs happens outside the lock (a slow Docker backend must
 	/// not stall other application management). Returns false on a stale
@@ -138,11 +166,17 @@ public:
 	const std::string getWorkDir() const;
 	bool getSslVerifyClient() const;
 	bool getSslVerifyServer() const;
+	bool getSslEnabled() const;
 	std::string getSSLCertificateFile() const;
 	std::string getSSLCertificateKeyFile() const;
 	std::string getSSLCaPath() const;
 	bool getRestEnabled() const;
 	bool getCorsDisabled() const;
+	bool metricsRequireAuth() const;
+	std::set<std::string> getCorsAllowOrigins() const;
+	std::string getRequestReplayProtection() const;
+	std::string getRequestSignature() const;
+	int getRequestReplayWindowSeconds() const;
 	std::set<std::string> getCsrfAllowedOrigins() const;
 	std::string getFileAllowedBaseDir() const;
 	std::size_t getWorkerThreads() const;
@@ -169,6 +203,7 @@ private:
 	mutable std::recursive_mutex m_appMutationMutex;
 	std::shared_ptr<BaseConfig> m_baseConfig;
 	std::shared_ptr<JsonRest> m_rest;
+	std::shared_ptr<JsonDocker> m_docker;
 	// Runtime exporter state is fixed at startup.
 	bool m_runtimePrometheusEnabled = false;
 

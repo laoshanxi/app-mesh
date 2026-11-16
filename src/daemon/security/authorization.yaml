@@ -73,6 +73,9 @@ Authorization:
       - file-download
       - file-upload
       - file-delete
+      # X-Target-Host forwarding turns the node into an outbound connector;
+      # viewer/guest roles deliberately do not get it (blind port-scan oracle).
+      - host-forward
       - host-resource-view
       - label-delete
       - label-set

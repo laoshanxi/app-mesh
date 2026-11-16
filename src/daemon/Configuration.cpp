@@ -77,6 +77,7 @@ Configuration::Configuration()
 	m_baseConfig = std::make_shared<BaseConfig>();
 	m_label = std::make_unique<Label>();
 	m_rest = std::make_shared<JsonRest>();
+	m_docker = std::make_shared<JsonDocker>();
 }
 
 Configuration::~Configuration()
@@ -129,6 +130,12 @@ std::shared_ptr<Configuration> Configuration::FromJson(nlohmann::json &jsonValue
 	if (HAS_JSON_FIELD(jsonValue, JSON_KEY_REST))
 	{
 		config->m_rest = JsonRest::FromJson(jsonValue.at(JSON_KEY_REST));
+	}
+
+	// Docker
+	if (HAS_JSON_FIELD(jsonValue, JSON_KEY_Docker))
+	{
+		config->m_docker = JsonDocker::FromJson(jsonValue.at(JSON_KEY_Docker));
 	}
 
 	// Labels
@@ -201,6 +208,9 @@ nlohmann::json Configuration::AsJson()
 	// REST
 	result[JSON_KEY_REST] = m_rest->AsJson();
 
+	// Docker
+	result[JSON_KEY_Docker] = m_docker->AsJson();
+
 	// Labels
 	result[JSON_KEY_Labels] = m_label->AsJson();
 
@@ -237,6 +247,32 @@ int Configuration::getScheduleInterval()
 {
 	std::lock_guard<std::recursive_mutex> guard(m_hotupdateMutex);
 	return m_baseConfig->m_scheduleInterval;
+}
+
+std::shared_ptr<Configuration::JsonDocker> JsonDocker::FromJson(const nlohmann::json &jsonValue)
+{
+	auto docker = std::make_shared<JsonDocker>();
+	auto mode = GET_JSON_STR_VALUE(jsonValue, JSON_KEY_Docker_HostSecurityPolicy);
+	std::transform(mode.begin(), mode.end(), mode.begin(), [](unsigned char c) { return std::tolower(c); });
+	if (mode == "off" || mode == "audit" || mode == "enforce")
+		docker->m_hostSecurityPolicy = mode;
+	else if (!mode.empty())
+		LOG_WAR << "Configuration::JsonDocker::FromJson() ignored invalid HostSecurityPolicy <" << mode
+				<< ">, expected off | audit | enforce";
+	return docker;
+}
+
+nlohmann::json JsonDocker::AsJson() const
+{
+	auto result = nlohmann::json::object();
+	result[JSON_KEY_Docker_HostSecurityPolicy] = m_hostSecurityPolicy;
+	return result;
+}
+
+std::string Configuration::getDockerHostSecurityPolicy()
+{
+	std::lock_guard<std::recursive_mutex> guard(m_hotupdateMutex);
+	return m_docker ? m_docker->m_hostSecurityPolicy : std::string("off");
 }
 
 int Configuration::getRestListenPort()
@@ -496,6 +532,12 @@ bool Configuration::getSslVerifyServer() const
 	return m_rest->m_ssl->m_sslVerifyServer;
 }
 
+bool Configuration::getSslEnabled() const
+{
+	std::lock_guard<std::recursive_mutex> guard(m_hotupdateMutex);
+	return m_rest->m_ssl->m_sslEnabled;
+}
+
 std::string Configuration::getSSLCertificateFile() const
 {
 	std::lock_guard<std::recursive_mutex> guard(m_hotupdateMutex);
@@ -526,6 +568,36 @@ bool Configuration::getCorsDisabled() const
 	return m_rest->m_corsDisabled;
 }
 
+bool Configuration::metricsRequireAuth() const
+{
+	std::lock_guard<std::recursive_mutex> guard(m_hotupdateMutex);
+	return m_rest->m_metricsRequireAuth;
+}
+
+std::set<std::string> Configuration::getCorsAllowOrigins() const
+{
+	std::lock_guard<std::recursive_mutex> guard(m_hotupdateMutex);
+	return m_rest->m_corsAllowOrigins;
+}
+
+std::string Configuration::getRequestReplayProtection() const
+{
+	std::lock_guard<std::recursive_mutex> guard(m_hotupdateMutex);
+	return m_rest->m_requestReplayProtection;
+}
+
+std::string Configuration::getRequestSignature() const
+{
+	std::lock_guard<std::recursive_mutex> guard(m_hotupdateMutex);
+	return m_rest->m_requestSignature;
+}
+
+int Configuration::getRequestReplayWindowSeconds() const
+{
+	std::lock_guard<std::recursive_mutex> guard(m_hotupdateMutex);
+	return m_rest->m_requestReplayWindowSeconds;
+}
+
 std::set<std::string> Configuration::getCsrfAllowedOrigins() const
 {
 	std::lock_guard<std::recursive_mutex> guard(m_hotupdateMutex);
@@ -535,6 +607,11 @@ std::set<std::string> Configuration::getCsrfAllowedOrigins() const
 std::string Configuration::getFileAllowedBaseDir() const
 {
 	std::lock_guard<std::recursive_mutex> guard(m_hotupdateMutex);
+	// Unset means the daemon's work directory tree, not the whole filesystem:
+	// the file API defaults closed (inside it the own-installation exclusion
+	// still applies, leaving work/tmp as the exchangeable scratch area).
+	if (m_rest->m_fileAllowedBaseDir.empty())
+		return getWorkDir();
 	return m_rest->m_fileAllowedBaseDir;
 }
 
@@ -909,6 +986,14 @@ void Configuration::hotUpdate(nlohmann::json &jsonValue)
 				SET_COMPARE(this->m_baseConfig->m_defaultWorkDir, newConfig->m_baseConfig->m_defaultWorkDir);
 		}
 
+		// Docker
+		if (HAS_JSON_FIELD(jsonValue, JSON_KEY_Docker))
+		{
+			auto docker = jsonValue.at(JSON_KEY_Docker);
+			if (HAS_JSON_FIELD(docker, JSON_KEY_Docker_HostSecurityPolicy))
+				SET_COMPARE(this->m_docker->m_hostSecurityPolicy, newConfig->m_docker->m_hostSecurityPolicy);
+		}
+
 		// REST
 		if (HAS_JSON_FIELD(jsonValue, JSON_KEY_REST))
 		{
@@ -917,8 +1002,18 @@ void Configuration::hotUpdate(nlohmann::json &jsonValue)
 				SET_COMPARE(this->m_rest->m_restEnabled, newConfig->m_rest->m_restEnabled);
 			if (HAS_JSON_FIELD(rest, JSON_KEY_CorsDisabled))
 				SET_COMPARE(this->m_rest->m_corsDisabled, newConfig->m_rest->m_corsDisabled);
+			if (HAS_JSON_FIELD(rest, JSON_KEY_MetricsRequireAuth))
+				SET_COMPARE(this->m_rest->m_metricsRequireAuth, newConfig->m_rest->m_metricsRequireAuth);
+			if (HAS_JSON_FIELD(rest, JSON_KEY_CorsAllowOrigins))
+				SET_COMPARE(this->m_rest->m_corsAllowOrigins, newConfig->m_rest->m_corsAllowOrigins);
 			if (HAS_JSON_FIELD(rest, JSON_KEY_CsrfAllowedOrigins))
 				SET_COMPARE(this->m_rest->m_csrfAllowedOrigins, newConfig->m_rest->m_csrfAllowedOrigins);
+			if (HAS_JSON_FIELD(rest, JSON_KEY_RequestReplayProtection))
+				SET_COMPARE(this->m_rest->m_requestReplayProtection, newConfig->m_rest->m_requestReplayProtection);
+			if (HAS_JSON_FIELD(rest, JSON_KEY_RequestSignature))
+				SET_COMPARE(this->m_rest->m_requestSignature, newConfig->m_rest->m_requestSignature);
+			if (HAS_JSON_FIELD(rest, JSON_KEY_RequestReplayWindowSeconds))
+				SET_COMPARE(this->m_rest->m_requestReplayWindowSeconds, newConfig->m_rest->m_requestReplayWindowSeconds);
 			if (HAS_JSON_FIELD(rest, JSON_KEY_FileAllowedBaseDir))
 				SET_COMPARE(this->m_rest->m_fileAllowedBaseDir, newConfig->m_rest->m_fileAllowedBaseDir);
 			if (HAS_JSON_FIELD(rest, JSON_KEY_RestListenPort))
@@ -965,6 +1060,13 @@ void Configuration::hotUpdate(nlohmann::json &jsonValue)
 					SET_COMPARE(this->m_rest->m_ssl->m_sslVerifyServer, newConfig->m_rest->m_ssl->m_sslVerifyServer);
 				if (HAS_JSON_FIELD(ssl, JSON_KEY_SSLVerifyClient))
 					SET_COMPARE(this->m_rest->m_ssl->m_sslVerifyClient, newConfig->m_rest->m_ssl->m_sslVerifyClient);
+				if (HAS_JSON_FIELD(ssl, JSON_KEY_SSLEnabled) &&
+					newConfig->m_rest->m_ssl->m_sslEnabled != this->m_rest->m_ssl->m_sslEnabled)
+				{
+					LOG_WAR << fname << "REST.SSL.SSLEnabled is startup-only: the reload from <"
+							<< (newConfig->m_rest->m_ssl->m_sslEnabled ? "true" : "false") << "> is ignored, restart the "
+							<< "daemon to rebind the listeners";
+				}
 			}
 
 		}
@@ -1144,6 +1246,42 @@ std::string Configuration::generateRunAppName(const std::string &provideAppName)
 	}
 }
 
+int Configuration::removeRunInstances(const std::string &baseName)
+{
+	const static char fname[] = "Configuration::removeRunInstances() ";
+	// Identified by the engine-injected run_base marker, never by parsing the
+	// `<base>_N` name (the suffix rule is ambiguous once base names contain '_').
+	// removeApp() stops the instance process and drops the registration atomically.
+	// A run instance registering while we delete would otherwise survive on the
+	// first snapshot, so rescan until none is left (bounded).
+	static constexpr int MAX_RESWEEPS = 8;
+	int removed = 0;
+	for (int sweep = 0;; ++sweep)
+	{
+		std::vector<std::string> instanceNames;
+		for (const auto &app : getApps())
+		{
+			if (app && app->isOneShot() && app->runBaseApp() == baseName)
+				instanceNames.push_back(app->getName());
+		}
+		if (instanceNames.empty())
+			break;
+		for (const auto &name : instanceNames)
+		{
+			if (removeApp(name))
+				++removed;
+		}
+		if (sweep >= MAX_RESWEEPS)
+		{
+			LOG_WAR << fname << "Run instances of <" << baseName << "> keep re-registering; giving up after "
+					<< MAX_RESWEEPS << " resweeps";
+			break;
+		}
+	}
+	LOG_INF << fname << "Removed <" << removed << "> run instance(s) of base application <" << baseName << ">";
+	return removed;
+}
+
 const nlohmann::json Configuration::getAgentAppJson() const
 {
 	const static char fname[] = "Configuration::getAgentAppJson() ";
@@ -1178,6 +1316,35 @@ std::shared_ptr<Configuration::JsonRest> Configuration::JsonRest::FromJson(const
 	rest->m_webSocketPort = GET_JSON_INT_VALUE(jsonValue, JSON_KEY_WebSocketPort);
 	SET_JSON_BOOL_VALUE(jsonValue, JSON_KEY_RestEnabled, rest->m_restEnabled);
 	SET_JSON_BOOL_VALUE(jsonValue, JSON_KEY_CorsDisabled, rest->m_corsDisabled);
+	// Absent key keeps the secure default (auth required).
+	SET_JSON_BOOL_VALUE(jsonValue, JSON_KEY_MetricsRequireAuth, rest->m_metricsRequireAuth);
+	if (HAS_JSON_FIELD(jsonValue, JSON_KEY_CorsAllowOrigins) && jsonValue.at(JSON_KEY_CorsAllowOrigins).is_array())
+	{
+		for (const auto &origin : jsonValue.at(JSON_KEY_CorsAllowOrigins))
+		{
+			if (origin.is_string() && !origin.get<std::string>().empty())
+				rest->m_corsAllowOrigins.insert(origin.get<std::string>());
+		}
+	}
+	// Request hardening modes: unknown values fall back to "off" so a typo
+	// cannot silently enable enforcement.
+	const auto normalizeMode = [&jsonValue, &fname](const char *key, std::string &target) {
+		target = GET_JSON_STR_VALUE(jsonValue, key);
+		std::transform(target.begin(), target.end(), target.begin(), [](unsigned char c) { return std::tolower(c); });
+		if (target != "off" && target != "audit" && target != "enforce")
+		{
+			if (!target.empty())
+				LOG_WAR << fname << "ignored invalid " << key << " <" << target << ">, expected off | audit | enforce";
+			target = "off";
+		}
+	};
+	normalizeMode(JSON_KEY_RequestReplayProtection, rest->m_requestReplayProtection);
+	normalizeMode(JSON_KEY_RequestSignature, rest->m_requestSignature);
+	rest->m_requestReplayWindowSeconds = GET_JSON_INT_VALUE(jsonValue, JSON_KEY_RequestReplayWindowSeconds);
+	if (rest->m_requestReplayWindowSeconds < 10 || rest->m_requestReplayWindowSeconds > 3600)
+	{
+		rest->m_requestReplayWindowSeconds = DEFAULT_REQUEST_REPLAY_WINDOW_SECONDS;
+	}
 	if (HAS_JSON_FIELD(jsonValue, JSON_KEY_CsrfAllowedOrigins) && jsonValue.at(JSON_KEY_CsrfAllowedOrigins).is_array())
 	{
 		for (const auto &origin : jsonValue.at(JSON_KEY_CsrfAllowedOrigins))
@@ -1277,7 +1444,12 @@ nlohmann::json Configuration::JsonRest::AsJson() const
 	result[JSON_KEY_TcpApiPort] = (m_tcpApiPort);
 	result[JSON_KEY_WebSocketPort] = (m_webSocketPort);
 	result[JSON_KEY_CorsDisabled] = (m_corsDisabled);
+	result[JSON_KEY_MetricsRequireAuth] = (m_metricsRequireAuth);
+	result[JSON_KEY_CorsAllowOrigins] = m_corsAllowOrigins;
 	result[JSON_KEY_CsrfAllowedOrigins] = m_csrfAllowedOrigins;
+	result[JSON_KEY_RequestReplayProtection] = std::string(m_requestReplayProtection);
+	result[JSON_KEY_RequestSignature] = std::string(m_requestSignature);
+	result[JSON_KEY_RequestReplayWindowSeconds] = (m_requestReplayWindowSeconds);
 	result[JSON_KEY_FileAllowedBaseDir] = std::string(m_fileAllowedBaseDir);
 	// SSL
 	result[JSON_KEY_SSL] = m_ssl->AsJson();
@@ -1286,7 +1458,10 @@ nlohmann::json Configuration::JsonRest::AsJson() const
 }
 
 Configuration::JsonRest::JsonRest()
-	: m_restEnabled(false), m_corsDisabled(false), m_workerThreads(DEFAULT_WORKER_THREADS),
+	: m_restEnabled(false), m_corsDisabled(false), m_metricsRequireAuth(true),
+	  m_requestReplayProtection("off"), m_requestSignature("off"),
+	  m_requestReplayWindowSeconds(DEFAULT_REQUEST_REPLAY_WINDOW_SECONDS),
+	  m_workerThreads(DEFAULT_WORKER_THREADS),
 	  m_transportIoThreads(DEFAULT_TRANSPORT_IO_THREADS),
 	  m_restListenPort(DEFAULT_REST_LISTEN_PORT), m_promListenPort(DEFAULT_PROM_LISTEN_PORT),
 	  m_tcpApiPort(DEFAULT_TCP_REST_LISTEN_PORT), m_webSocketPort(0)
@@ -1297,6 +1472,8 @@ Configuration::JsonRest::JsonRest()
 std::shared_ptr<Configuration::JsonSsl> Configuration::JsonSsl::FromJson(const nlohmann::json &jsonValue)
 {
 	auto ssl = std::make_shared<JsonSsl>();
+	// Absent key keeps TLS on, so an older config never degrades to plaintext.
+	ssl->m_sslEnabled = HAS_JSON_FIELD(jsonValue, JSON_KEY_SSLEnabled) ? jsonValue.at(JSON_KEY_SSLEnabled).get<bool>() : true;
 	SET_JSON_BOOL_VALUE(jsonValue, JSON_KEY_SSLVerifyServer, ssl->m_sslVerifyServer);
 	SET_JSON_BOOL_VALUE(jsonValue, JSON_KEY_SSLVerifyClient, ssl->m_sslVerifyClient);
 	ssl->m_certFile = GET_JSON_STR_VALUE(jsonValue, JSON_KEY_SSLCertificateFile);
@@ -1310,6 +1487,7 @@ std::shared_ptr<Configuration::JsonSsl> Configuration::JsonSsl::FromJson(const n
 nlohmann::json Configuration::JsonSsl::AsJson() const
 {
 	auto result = nlohmann::json::object();
+	result[JSON_KEY_SSLEnabled] = (m_sslEnabled);
 	result[JSON_KEY_SSLVerifyServer] = (m_sslVerifyServer);
 	result[JSON_KEY_SSLVerifyClient] = (m_sslVerifyClient);
 	result[JSON_KEY_SSLCertificateFile] = std::string(m_certFile);
@@ -1321,6 +1499,6 @@ nlohmann::json Configuration::JsonSsl::AsJson() const
 }
 
 Configuration::JsonSsl::JsonSsl()
-	: m_sslVerifyServer(false), m_sslVerifyClient(false)
+	: m_sslEnabled(true), m_sslVerifyServer(false), m_sslVerifyClient(false)
 {
 }

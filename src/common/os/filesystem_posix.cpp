@@ -112,6 +112,28 @@ namespace os
 		}
 	}
 
+	bool fileChmodFd(const int fd, uint16_t mode)
+	{
+		const static char fname[] = "fileChmodFd() ";
+
+		constexpr uint16_t MAX_FILE_MODE = 0777;
+		if (mode > MAX_FILE_MODE)
+		{
+			LOG_WAR << fname << "Invalid mode value <" << mode << "> for fchmod <fd " << fd << ">";
+			return false;
+		}
+
+		if (::fchmod(fd, mode) == 0)
+		{
+			return true;
+		}
+		else
+		{
+			LOG_WAR << fname << "Failed fchmod <fd " << fd << "> with error: " << last_error_msg();
+			return false;
+		}
+	}
+
 	std::string createTmpFile(const std::string &fileName, const std::string &content, uint16_t mode)
 	{
 		const char *fname = "os::createTmpFile() ";

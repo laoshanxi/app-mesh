@@ -32,6 +32,7 @@ namespace os
 
 	/// Change file permissions using a numeric mode value.
 	bool fileChmod(const std::string &path, uint16_t mode);
+	bool fileChmodFd(int fd, uint16_t mode);
 
 	/// Change file permissions using a numeric shorthand value (e.g., 755).
 	bool chmod(const std::string &path, uint16_t mode);

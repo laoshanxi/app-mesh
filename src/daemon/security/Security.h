@@ -51,6 +51,12 @@ public:
 	virtual void deletePrincipal(const std::string &principalId) = 0;
 	virtual void updateRole(const std::string &role, const nlohmann::json &permissions) = 0;
 	virtual void deleteRole(const std::string &role) = 0;
+	/// Request-signing API keys (REST.RequestSignature). The secret is returned
+	/// by issueApiKey exactly once and is looked up per request by key id.
+	virtual nlohmann::json issueApiKey(const std::string &principalId) = 0;
+	virtual nlohmann::json apiKeysJson(const std::string &principalId, bool all) const = 0;
+	virtual bool deleteApiKey(const std::string &keyId, const std::string &requestingPrincipalId, bool manageAll) = 0;
+	virtual bool apiKeySecret(const std::string &keyId, std::string &principalId, std::string &secret) const = 0;
 
 	static void init();
 	static std::shared_ptr<Security> instance();

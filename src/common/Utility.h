@@ -146,6 +146,7 @@ std::shared_ptr<T> make_shared_array(size_t size)
 #define DEFAULT_REST_LISTEN_PORT 6060
 #define DEFAULT_TCP_REST_LISTEN_PORT 6059
 #define DEFAULT_SCHEDULE_INTERVAL 2
+#define DEFAULT_REQUEST_REPLAY_WINDOW_SECONDS 300
 #define DEFAULT_WORKER_THREADS 0		  // 0 = derive from the CPUs the daemon may use
 #define DEFAULT_TRANSPORT_IO_THREADS 0	  // 0 = derive from the CPUs the daemon may use
 #define MIN_WORKER_THREADS 2
@@ -194,8 +195,17 @@ public:
 	static bool isFileExist(const std::string &path);
 	static bool isPathTraversalSafe(const std::string &baseDir, const std::string &filePath);
 	static bool validateFilePath(const std::string &filePath, const std::string &allowedBaseDir);
-	static bool createDirectory(const std::string &path, fs::perms perms = fs::perms::owner_all | fs::perms::group_all | fs::perms::others_read | fs::perms::others_exe);
-	static bool createRecursiveDirectory(const std::string &path, fs::perms perms = fs::perms::owner_all | fs::perms::group_all | fs::perms::others_read | fs::perms::others_exe);
+	// Open-then-verify: opens the file (O_EXCL create for the upload temp name) and
+	// runs the full validateFilePath rules against the fd's RESOLVED location, so a
+	// path component swapped to a symlink between validation and open cannot escape.
+	// Returns an owned fd (caller closes) or -1; *rejectedOut=true marks a jail
+	// violation (callers answer 403) versus a plain open failure. dirFdOut (write
+	// path, POSIX only) receives the pinned parent dirfd (caller closes) so the
+	// later publish can stay relative to the verified directory.
+	static int openFileWithinJail(const std::string &filePath, bool forWrite, const std::string &allowedBaseDir,
+								  std::string &resolvedOut, bool *rejectedOut = nullptr, int *dirFdOut = nullptr);
+	static bool createDirectory(const std::string &path, fs::perms perms = fs::perms::owner_all | fs::perms::group_all | fs::perms::others_read | fs::perms::others_exec);
+	static bool createRecursiveDirectory(const std::string &path, fs::perms perms = fs::perms::owner_all | fs::perms::group_all | fs::perms::others_read | fs::perms::others_exec);
 	static bool removeDir(const std::string &path);
 	static void removeFile(const std::string &path);
 	static bool runningInContainer();
@@ -204,6 +214,8 @@ public:
 	static bool isNumber(const std::string &str);
 	static bool isDouble(const std::string &str);
 	static std::string stdStringTrim(const std::string &str);
+	// The credential after a case-insensitive "Bearer" scheme; empty when absent.
+	static std::string bearerCredential(const std::string &authorization);
 	static std::string stdStringTrim(const std::string &str, char trimChar, bool leftTrim = true, bool rightTrim = true);
 	static std::string stdStringTrim(const std::string &str, const std::string &trimChars, bool leftTrim = true, bool rightTrim = true);
 	static std::vector<std::string> splitString(const std::string &s, const std::string &c);
@@ -228,7 +240,12 @@ public:
 	static unsigned long long getThreadId();
 	static void setThreadName(const std::string &name);
 	static void getEnvironmentSize(const std::map<std::string, std::string> &envMap, int &totalEnvSize, int &totalEnvArgs);
-	static void applyFilePermission(const std::string &file, HttpHeaderMap headers);
+	static std::map<std::string, std::string> fileAttributeHeaders(const std::string &file);
+	// fd >= 0 (a committed upload) applies the mode change to that still-open
+	// descriptor, so a symlink swapped onto the name after commit cannot take
+	// the chmod outside the jail; ownership already rides lchown and stays on
+	// the path.
+	static void applyFilePermission(const std::string &file, HttpHeaderMap headers, int fd = -1);
 	static std::string getenv(const std::string &envName, const std::string &defaultValue = "");
 	static std::map<std::string, std::string> getenvs();
 
@@ -267,6 +284,7 @@ public:
 
 	// Constant-time string comparison to prevent timing attacks
 	static bool secureCompare(const std::string &a, const std::string &b);
+	static std::string toHex(const unsigned char *data, size_t size);
 };
 
 #define PID_FILE "appmesh.pid"
@@ -275,6 +293,11 @@ public:
 #define ENV_APPMESH_PROCESS_KEY "APP_MESH_PROCESS_KEY"
 #define ENV_APPMESH_DOCKER_PARAMS "APP_DOCKER_OPTS"						  // used to pass docker extra parameters to docker startup cmd
 #define ENV_APPMESH_DOCKER_IMG_PULL_TIMEOUT "APP_DOCKER_IMG_PULL_TIMEOUT" // app manager pull docker image timeout seconds
+// Private-registry credentials for the daemon-side image pull (X-Registry-Auth).
+// Never forwarded into the container environment.
+#define ENV_APPMESH_DOCKER_REGISTRY_SERVER "APP_DOCKER_REGISTRY_SERVER"
+#define ENV_APPMESH_DOCKER_REGISTRY_USER "APP_DOCKER_REGISTRY_USER"
+#define ENV_APPMESH_DOCKER_REGISTRY_PASSWORD "APP_DOCKER_REGISTRY_PASSWORD"
 #define ENV_APPMESH_PREFIX "APPMESH_"
 #define ENV_APPMESH_POSIX_TIMEZONE "APPMESH_POSIX_TIMEZONE"
 #define DEFAULT_TOKEN_EXPIRE_SECONDS int(7 * (60 * 60 * 24))		// default 7 days
@@ -287,9 +310,14 @@ public:
 #define JWT_CLOCK_LEEWAY_SECONDS 60									// tolerate up to 60s of clock skew on exp/nbf/iat verification
 #define DEFAULT_RUN_APP_TIMEOUT_SECONDS int((60 * 60 * 24) * 2)		// run app default timeout 2 days
 #define DEFAULT_RUN_APP_LIFECYCLE_SECONDS int((60 * 60 * 24) * 2.5) // run app max lifecycle 2.5 days
-#define MAX_RUN_APP_TIMEOUT_SECONDS int((60 * 60 * 24) * 3)			// run app max timeout 3 days
+#define MAX_RUN_APP_TIMEOUT_SECONDS int((60 * 60 * 24) * 3)		// run app max timeout 3 days
 #define DEFAULT_RUN_TASK_TIMEOUT_SECONDS int(300)					// run_task (sync message) default 5 min
 #define SECURIRE_USER_KEY "******"
+// A run instance is deregistered this long after its process exits: late
+// output readers (SDK exit backfill) still reach the registration, but the
+// entry no longer lingers for the whole run lifecycle.
+#define RUN_INSTANCE_EXIT_GRACE_SECONDS int(60)
+#define MAX_OUTPUT_VIEW_TIMEOUT_SECONDS int(300) // output long-poll max wait; a dropped client is held this long
 #define CONSUL_SESSION_DEFAULT_TTL 30
 #define APP_STD_OUT_MAX_FILE_SIZE 1024 * 1024 * 100	  // 100M
 #define APP_STD_OUT_VIEW_DEFAULT_SIZE 1024 * 1024 * 3 // 3M
@@ -300,6 +328,8 @@ public:
 #define REST_TEXT_MESSAGE_JSON_KEY "message"
 
 #define JSON_KEY_BaseConfig "BaseConfig"
+#define JSON_KEY_Docker "Docker"
+#define JSON_KEY_Docker_HostSecurityPolicy "HostSecurityPolicy"
 #define JSON_KEY_DefaultExecUser "DefaultExecUser"
 #define JSON_KEY_DisableExecUser "DisableExecUser"
 #define JSON_KEY_WorkingDirectory "WorkingDirectory"
@@ -311,7 +341,12 @@ public:
 #define JSON_KEY_TcpApiPort "TcpApiPort"
 #define JSON_KEY_FileAllowedBaseDir "FileAllowedBaseDir"
 #define JSON_KEY_CorsDisabled "CorsDisabled"
+#define JSON_KEY_CorsAllowOrigins "CorsAllowOrigins"
+#define JSON_KEY_MetricsRequireAuth "MetricsRequireAuth"
 #define JSON_KEY_CsrfAllowedOrigins "CsrfAllowedOrigins"
+#define JSON_KEY_RequestReplayProtection "RequestReplayProtection"
+#define JSON_KEY_RequestSignature "RequestSignature"
+#define JSON_KEY_RequestReplayWindowSeconds "RequestReplayWindowSeconds"
 #define JSON_KEY_WebSocketPort "WebSocketPort"
 #define JSON_KEY_PrometheusExporterListenPort "PrometheusExporterListenPort"
 
@@ -320,6 +355,8 @@ public:
 #define JSON_KEY_PosixTimezone "PosixTimezone"
 
 #define JSON_KEY_SSL "SSL"
+// False = every listener accepts plaintext (TLS terminates at an upstream gateway).
+#define JSON_KEY_SSLEnabled "SSLEnabled"
 #define JSON_KEY_SSLVerifyServer "VerifyServer"
 #define JSON_KEY_SSLVerifyClient "VerifyClient"
 #define JSON_KEY_SSLCertificateFile "SSLCertificateFile"
@@ -360,8 +397,17 @@ public:
 #define JSON_KEY_APP_fd "fd" // open_file_descriptors
 #define JSON_KEY_APP_pstree "pstree"
 #define JSON_KEY_APP_docker_image "docker_image"
+// First-class container wiring; compiled into the Docker create request body
+// so common needs (ports/volumes/network) need no raw HostConfig knowledge.
+#define JSON_KEY_APP_docker_ports "docker_ports"
+#define JSON_KEY_APP_docker_volumes "docker_volumes"
+#define JSON_KEY_APP_docker_network "docker_network"
+#define JSON_KEY_APP_docker_backend "docker_backend"
 #define JSON_KEY_APP_last_error "last_error"
 #define JSON_KEY_APP_from_recover "from_recover"
+// Engine-injected marker: the base application an on-demand run instance was
+// spawned from (generateRunAppName); never accepted from client input.
+#define JSON_KEY_APP_run_base "run_base"
 #define JSON_KEY_APP_starts "starts"
 #define JSON_KEY_APP_waiting_for "waiting_for"
 #define REST_PATH_UPLOAD "/appmesh/file/upload"
@@ -402,6 +448,7 @@ public:
 #define JSON_KEY_RESOURCE_LIMITATION_memory_mb "memory_mb"
 #define JSON_KEY_RESOURCE_LIMITATION_memory_virt_mb "memory_virt_mb"
 #define JSON_KEY_RESOURCE_LIMITATION_cpu_shares "cpu_shares"
+#define JSON_KEY_RESOURCE_LIMITATION_cpu "cpu" // CPU cores (fractional), compiled to NanoCPUs
 
 #define JSON_KEY_TIME_POSTTIX_STR "_TEXT"
 #define EMPTY_PLACEHOLDER "-"
@@ -424,6 +471,13 @@ public:
 #define HTTP_HEADER_KEY_X_LWS_Protocol "x-lws-protocol"
 #define HTTP_HEADER_VALUE_X_LWS_Protocol_HTTP "HTTP"
 #define HTTP_HEADER_KEY_X_APPMESH_PROCESS_KEY "X-AppMesh-Process-Key"
+#define HTTP_HEADER_KEY_X_Request_Key "X-Request-Key"
+#define HTTP_HEADER_KEY_X_Timestamp "X-Timestamp"
+#define HTTP_HEADER_KEY_X_Nonce "X-Nonce"
+#define HTTP_HEADER_KEY_X_Signature "X-Signature"
+#define HTTP_HEADER_KEY_X_App_Name "X-App-Name"
+#define HTTP_HEADER_KEY_X_Event_Type "X-Event-Type"
+#define HTTP_HEADER_KEY_X_Subscription_Id "X-Subscription-Id"
 
 #define HTTP_QUERY_KEY_stdout_position "stdout_position"
 #define HTTP_QUERY_KEY_stdout_index "stdout_index"
@@ -456,6 +510,7 @@ public:
 #define PERMISSION_KEY_file_download "file-download"
 #define PERMISSION_KEY_file_upload "file-upload"
 #define PERMISSION_KEY_file_delete "file-delete"
+#define PERMISSION_KEY_host_forward "host-forward"
 #define PERMISSION_KEY_label_view "label-view"
 #define PERMISSION_KEY_label_set "label-set"
 #define PERMISSION_KEY_label_delete "label-delete"

@@ -11,9 +11,11 @@
 #include "../../common/Password.h"
 #include "../../common/Utility.h"
 
+constexpr const char *InternalCapability::PREFIX;
+
 namespace
 {
-	constexpr const char *CAPABILITY_PREFIX = "amcap1.";
+	constexpr const char *CAPABILITY_PREFIX = InternalCapability::PREFIX;
 	constexpr std::size_t MAX_CAPABILITY_SIZE = 8192;
 	constexpr std::int64_t MAX_CAPABILITY_TTL_SECONDS = 300;
 	constexpr std::int64_t MAX_CLOCK_SKEW_SECONDS = 30;

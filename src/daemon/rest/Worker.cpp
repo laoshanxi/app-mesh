@@ -7,6 +7,7 @@
 #include "../../common/Utility.h"
 #include "../Configuration.h"
 #include "../security/HMACVerifier.h"
+#include "../security/RequestHardening.h"
 #include "../security/Security.h"
 #include "Data.h"
 #include "ForwardingManager.h"
@@ -38,6 +39,52 @@ namespace
 		return path == "/appmesh/subscribe" ||
 			(path.size() > 10 && path.compare(path.size() - 10, 10, "/subscribe") == 0) ||
 			request->m_query.count("subscribe_events") != 0;
+	}
+
+	// Request hardening (replay protection + signature) shared by every
+	// transport that funnels through the worker pool.
+	bool enforceRequestHardening(const std::shared_ptr<HttpRequest> &request)
+	{
+		const static char fname[] = "enforceRequestHardening() ";
+		RequestHardening::Input input;
+		input.method = request->m_method;
+		const auto queryAt = request->m_relative_uri.find('?');
+		input.path = queryAt == std::string::npos ? request->m_relative_uri
+												  : request->m_relative_uri.substr(0, queryAt);
+		input.query = request->m_query;
+		if (request->m_body && !request->m_body->empty())
+		{
+			input.body = request->m_body->data();
+			input.bodySize = request->m_body->size();
+		}
+		// File routes verify against the documented exemption: the "/ws"
+		// channel suffix is stripped and the body hashes empty, so a signed
+		// request verifies identically direct and through forwarding.
+		input.path = RequestHardening::canonicalFileRoute(input.path, input.body, input.bodySize);
+		input.bearer = request->m_headers.get(HTTP_HEADER_JWT_Authorization);
+		input.transportPrincipal = request->transportPrincipalId();
+		input.persistentTransport = request->isPersistentClientTransport();
+		input.fallbackNonce = request->m_uuid;
+		input.keyId = request->m_headers.get(HTTP_HEADER_KEY_X_Request_Key);
+		input.timestamp = request->m_headers.get(HTTP_HEADER_KEY_X_Timestamp);
+		input.nonce = request->m_headers.get(HTTP_HEADER_KEY_X_Nonce);
+		input.signature = request->m_headers.get(HTTP_HEADER_KEY_X_Signature);
+
+		const auto decision = RequestHardening::instance().evaluate(input);
+		if (decision.audit)
+		{
+			LOG_WAR << fname << "tolerated request hardening violation from <" << request->m_remote_address << ">: "
+					<< decision.reason;
+		}
+		if (decision.action == RequestHardening::Decision::Action::Reject)
+		{
+			LOG_WAR << fname << "rejected request from <" << request->m_remote_address << "> path <"
+					<< request->m_relative_uri << ">: " << decision.reason;
+			request->reply(static_cast<web::http::status_code>(decision.status),
+						   Utility::text2json(decision.reason));
+			return false;
+		}
+		return true;
 	}
 
 	// Extract the request uuid without decoding the full message, so an
@@ -313,6 +360,12 @@ bool Worker::process(const std::shared_ptr<HttpRequest> &request)
 		return true;
 	}
 
+	// Replay protection and request signature run after CSRF and before
+	// forwarding: the entry node decides, and the four signature headers stay
+	// on the forwarded request so the target node can re-verify.
+	if (!enforceRequestHardening(request))
+		return true;
+
 	if (request->m_headers.contains(HTTP_HEADER_KEY_Forwarding_Host))
 	{
 		if (request->isManagedWorkerTransport() ||
@@ -352,6 +405,29 @@ bool Worker::process(const std::shared_ptr<HttpRequest> &request)
 			{
 				request->reply(web::http::status_codes::Unauthorized, Utility::text2json(e.what()),
 					{{"WWW-Authenticate", "Bearer realm=\"appmesh\", error=\"invalid_token\""}});
+				return true;
+			}
+		}
+		// The outbound connection itself is a capability: without this gate any
+		// authenticated principal could probe the network through open/closed/
+		// timeout answers (blind port-scan oracle).
+		if (!publicRequest)
+		{
+			std::string gatewayPrincipalId = request->transportPrincipalId();
+			try
+			{
+				if (gatewayPrincipalId.empty())
+					gatewayPrincipalId = Security::authenticateBearerAuthorization(
+						request->m_headers.get(HTTP_HEADER_JWT_Authorization))
+											 .id();
+				Security::requirePermission(gatewayPrincipalId, PERMISSION_KEY_host_forward);
+			}
+			catch (const std::exception &e)
+			{
+				// AuthorizationException, or the principal vanished after the
+				// bearer check above; either way fail closed.
+				LOG_WAR << fname << "Rejected forward, principal <" << gatewayPrincipalId << ">: " << e.what();
+				request->reply(web::http::status_codes::Forbidden, Utility::text2json(e.what()));
 				return true;
 			}
 		}

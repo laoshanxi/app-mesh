@@ -1,5 +1,7 @@
 #include "AuthorizationStore.h"
 
+#include "../../common/Password.h"
+
 #include "../../common/Utility.h"
 #include "../../common/os/filesystem.h"
 #include "../Configuration.h"
@@ -9,6 +11,7 @@
 #include <ace/OS.h>
 
 #include <algorithm>
+#include <chrono>
 #include <cctype>
 #include <cstdlib>
 #include <stdexcept>
@@ -47,6 +50,7 @@ namespace
 			PERMISSION_KEY_file_download,
 			PERMISSION_KEY_file_upload,
 			PERMISSION_KEY_file_delete,
+			PERMISSION_KEY_host_forward,
 			PERMISSION_KEY_label_view,
 			PERMISSION_KEY_label_set,
 			PERMISSION_KEY_label_delete,
@@ -250,6 +254,33 @@ void AuthorizationStore::load(const nlohmann::json &root)
 	if (m_principals.count(SYSTEM_PRINCIPAL_ID) == 0)
 		m_principals[SYSTEM_PRINCIPAL_ID] = std::make_shared<AuthorizationPrincipal>(
 			SYSTEM_PRINCIPAL_ID, Principal::Kind::System, "appmesh-internal", "appmesh");
+
+	m_apiKeys.clear();
+	if (authorization.contains("api_keys"))
+	{
+		if (!authorization.at("api_keys").is_object())
+			throw std::invalid_argument("Authorization.api_keys must be an object");
+		for (const auto &entry : authorization.at("api_keys").items())
+		{
+			const auto &definition = entry.value();
+			const auto principalId = GET_JSON_STR_VALUE(definition, "principal");
+			const auto secret = GET_JSON_STR_VALUE(definition, "secret");
+			// Dangling keys (principal removed by an external policy edit) are
+			// dropped with a warning instead of failing the whole policy load.
+			if (principalId.empty() || secret.empty() || m_principals.count(principalId) == 0)
+			{
+				LOG_WAR << "AuthorizationStore::load() dropped request-signing API key <" << entry.key()
+						<< ">: principal is missing or the secret is empty";
+				continue;
+			}
+			ApiKey key;
+			key.keyId = entry.key();
+			key.principalId = principalId;
+			key.secret = secret;
+			key.createdAt = GET_JSON_INT64_VALUE(definition, "created_at");
+			m_apiKeys[entry.key()] = std::move(key);
+		}
+	}
 }
 
 std::shared_ptr<AuthorizationPrincipal> AuthorizationStore::resolve(const Principal &principal)
@@ -541,6 +572,19 @@ void AuthorizationStore::deletePrincipal(const std::string &principalId)
 	// Keep the immutable issuer/subject binding as a durable tombstone. Erasing
 	// it would let explicit-or-minimal provisioning recreate the same subject as
 	// a new Principal and would destroy the authorization audit boundary.
+	// The principal's request-signing API keys are credentials of the removed
+	// identity and must not outlive it.
+	std::map<std::string, ApiKey> removedKeys;
+	for (auto it = m_apiKeys.begin(); it != m_apiKeys.end();)
+	{
+		if (it->second.principalId == principalId)
+		{
+			removedKeys.insert(*it);
+			it = m_apiKeys.erase(it);
+		}
+		else
+			++it;
+	}
 	const auto previous = found->second;
 	auto tombstone = std::make_shared<AuthorizationPrincipal>(*previous);
 	tombstone->updatePolicy(nlohmann::json{
@@ -555,9 +599,12 @@ void AuthorizationStore::deletePrincipal(const std::string &principalId)
 	catch (...)
 	{
 		m_principals[principalId] = previous;
+		for (const auto &removedKey : removedKeys)
+			m_apiKeys.insert(removedKey);
 		throw;
 	}
-	LOG_INF << fname << "tombstoned principal <" << principalId << ">";
+	LOG_INF << fname << "tombstoned principal <" << principalId << "> and revoked its <" << removedKeys.size()
+			<< "> API key(s)";
 }
 
 void AuthorizationStore::updateRole(const std::string &role, const nlohmann::json &permissions)
@@ -631,6 +678,106 @@ void AuthorizationStore::deleteRole(const std::string &role)
 	LOG_INF << fname << "deleted role <" << role << ">";
 }
 
+nlohmann::json AuthorizationStore::issueApiKey(const std::string &principalId)
+{
+	const static char fname[] = "AuthorizationStore::issueApiKey() ";
+	std::lock_guard<std::recursive_mutex> guard(m_mutex);
+	auto found = m_principals.find(principalId);
+	if (found == m_principals.end() || !found->second->active())
+		throw NotFoundException("active principal not found");
+	std::size_t owned = 0;
+	for (const auto &entry : m_apiKeys)
+		if (entry.second.principalId == principalId)
+			++owned;
+	if (owned >= MAX_API_KEYS_PER_PRINCIPAL)
+		throw AuthorizationException("principal already holds the maximum of " +
+									 std::to_string(MAX_API_KEYS_PER_PRINCIPAL) +
+									 " API keys; revoke one first");
+
+	ApiKey key;
+	key.principalId = principalId;
+	key.secret = generatePassword(48, true, true, true, true);
+	key.createdAt = std::chrono::duration_cast<std::chrono::seconds>(
+						std::chrono::system_clock::now().time_since_epoch())
+						.count();
+	do
+	{
+		key.keyId = "ak-" + generatePassword(12, true, false, true, false);
+	} while (m_apiKeys.count(key.keyId) != 0);
+	m_apiKeys[key.keyId] = key;
+	try
+	{
+		saveLocked();
+	}
+	catch (...)
+	{
+		m_apiKeys.erase(key.keyId);
+		throw;
+	}
+	LOG_INF << fname << "issued API key <" << key.keyId << "> for principal <" << principalId << ">";
+
+	// The secret is returned exactly once; apiKeysJson never includes it.
+	nlohmann::json result;
+	result["key_id"] = key.keyId;
+	result["principal"] = key.principalId;
+	result["secret"] = key.secret;
+	result["created_at"] = key.createdAt;
+	return result;
+}
+
+nlohmann::json AuthorizationStore::apiKeysJson(const std::string &principalId, bool all) const
+{
+	std::lock_guard<std::recursive_mutex> guard(m_mutex);
+	nlohmann::json list = nlohmann::json::array();
+	for (const auto &entry : m_apiKeys)
+	{
+		if (!all && entry.second.principalId != principalId)
+			continue;
+		nlohmann::json item;
+		item["key_id"] = entry.first;
+		item["principal"] = entry.second.principalId;
+		item["created_at"] = entry.second.createdAt;
+		list.push_back(std::move(item));
+	}
+	return list;
+}
+
+bool AuthorizationStore::deleteApiKey(const std::string &keyId, const std::string &requestingPrincipalId, bool manageAll)
+{
+	const static char fname[] = "AuthorizationStore::deleteApiKey() ";
+	std::lock_guard<std::recursive_mutex> guard(m_mutex);
+	auto found = m_apiKeys.find(keyId);
+	if (found == m_apiKeys.end())
+		return false;
+	if (!manageAll && found->second.principalId != requestingPrincipalId)
+		throw AuthorizationException("an API key can only be revoked by its owner or with the " +
+									 std::string(PERMISSION_KEY_principal_update) + " permission");
+	const auto removed = found->second;
+	m_apiKeys.erase(found);
+	try
+	{
+		saveLocked();
+	}
+	catch (...)
+	{
+		m_apiKeys[keyId] = removed;
+		throw;
+	}
+	LOG_INF << fname << "revoked API key <" << keyId << "> at the request of <" << requestingPrincipalId << ">";
+	return true;
+}
+
+bool AuthorizationStore::apiKeySecret(const std::string &keyId, std::string &principalId, std::string &secret) const
+{
+	std::lock_guard<std::recursive_mutex> guard(m_mutex);
+	auto found = m_apiKeys.find(keyId);
+	if (found == m_apiKeys.end())
+		return false;
+	principalId = found->second.principalId;
+	secret = found->second.secret;
+	return true;
+}
+
 void AuthorizationStore::save() const
 {
 	std::lock_guard<std::recursive_mutex> guard(m_mutex);
@@ -684,6 +831,28 @@ void AuthorizationStore::mergeDiskPolicyLocked()
 				LOG_INF << fname << "adopted on-disk principal binding <" << entry.key() << ">";
 			}
 		}
+		// Same rule for request-signing keys: entries added on disk by an
+		// external writer are adopted; in-memory state (and revocations) wins.
+		if (authorization.contains("api_keys") && authorization.at("api_keys").is_object())
+		{
+			for (const auto &entry : authorization.at("api_keys").items())
+			{
+				if (m_apiKeys.count(entry.key()) != 0)
+					continue;
+				const auto &definition = entry.value();
+				const auto principalId = GET_JSON_STR_VALUE(definition, "principal");
+				const auto secret = GET_JSON_STR_VALUE(definition, "secret");
+				if (principalId.empty() || secret.empty() || m_principals.count(principalId) == 0)
+					continue;
+				ApiKey key;
+				key.keyId = entry.key();
+				key.principalId = principalId;
+				key.secret = secret;
+				key.createdAt = GET_JSON_INT64_VALUE(definition, "created_at");
+				m_apiKeys[entry.key()] = std::move(key);
+				LOG_INF << fname << "adopted on-disk API key <" << entry.key() << ">";
+			}
+		}
 	}
 	catch (const std::exception &e)
 	{
@@ -702,6 +871,18 @@ void AuthorizationStore::saveLocked() const
 	authorization["first_admin_enrolled"] = m_firstAdminEnrolled;
 	authorization["roles"] = rolesJson();
 	authorization["principals"] = principalsJson();
+	{
+		nlohmann::json apiKeys = nlohmann::json::object();
+		for (const auto &entry : m_apiKeys)
+		{
+			nlohmann::json item;
+			item["principal"] = entry.second.principalId;
+			item["secret"] = entry.second.secret;
+			item["created_at"] = entry.second.createdAt;
+			apiKeys[entry.first] = std::move(item);
+		}
+		authorization["api_keys"] = std::move(apiKeys);
+	}
 	nlohmann::json root;
 	root["Authorization"] = std::move(authorization);
 

@@ -32,6 +32,10 @@ public:
 
 	static InternalCapability &instance();
 
+	/// Wire prefix of every issued capability; shared with the request
+	/// dispatch path that recognizes capability bearers.
+	static constexpr const char *PREFIX = "amcap1.";
+
 	std::string issue(Audience audience, const std::string &workflowId,
 		const std::string &runId, const std::string &ownerPrincipalId,
 		const std::string &processUuid, const std::set<std::string> &operations,

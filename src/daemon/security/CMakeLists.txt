@@ -7,6 +7,9 @@ set(SRC_LIST
   InternalCapability.cpp
   OidcTokenVerifier.cpp
   Principal.cpp
+  ReplayGuard.cpp
+  RequestHardening.cpp
+  RequestSignature.cpp
   SecretProtector.cpp
   Security.cpp
   SecurityOidc.cpp
@@ -19,6 +22,7 @@ add_library(${PROJECT_NAME}::security ALIAS security)
 target_link_libraries(security
   PRIVATE
     ${CRYPTOPP_TARGET}
+    crypto
 )
 
 target_link_libraries(security
