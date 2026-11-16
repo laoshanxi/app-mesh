@@ -50,6 +50,18 @@ pub async fn run(cli: &Cli, args: &RunArgs) -> Result<i32> {
     if let Some(ref dir) = args.working_dir {
         app.working_dir = Some(dir.clone());
     }
+    if let Some(ref image) = args.docker_image {
+        app.docker_image = Some(image.clone());
+        if !args.docker_port.is_empty() {
+            app.docker_ports = Some(args.docker_port.clone());
+        }
+        if !args.docker_volume.is_empty() {
+            app.docker_volumes = Some(args.docker_volume.clone());
+        }
+        if let Some(ref network) = args.docker_network {
+            app.docker_network = Some(network.clone());
+        }
+    }
     app.shell = Some(args.shell);
     app.session_login = Some(args.session_login);
 

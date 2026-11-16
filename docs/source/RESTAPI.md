@@ -32,6 +32,11 @@ endpoints, requests use an OAuth access token in the
 | POST | `/appmesh/role/{role}` | Create or replace a role |
 | DELETE | `/appmesh/role/{role}` | Delete an unused role |
 | GET | `/appmesh/permissions` | List available permission identifiers |
+| POST | `/appmesh/security/apikeys` | Issue a request-signing API key for the caller; an administrator may pass `{"principal": "<id>"}` in the body to issue for another principal. The response contains the secret exactly once |
+| GET | `/appmesh/security/apikeys` | List the caller's request-signing API keys; `?all=1` lists all keys and needs the `principal-list` permission. Secrets are never returned |
+| DELETE | `/appmesh/security/apikey/{key_id}` | Revoke a request-signing API key. The key owner or the `principal-set` permission may revoke |
+
+`X-Target-Host` forwarding (cluster requests, `-F <node>` in the CLI) requires the `host-forward` permission on the authenticated principal; both the Engine and the Go agent reject a forward without it with 403. The packaged `appmesh-admin` role carries it, viewer/guest roles do not.
 
 ## Applications
 
@@ -44,10 +49,61 @@ endpoints, requests use an OAuth access token in the
 | POST | `/appmesh/app/{name}/enable` | Enable a non-system application |
 | POST | `/appmesh/app/{name}/disable` | Disable a non-system application |
 | GET | `/appmesh/app/{name}/output` | Read application output |
+
+### Application field notes
+
+- `permission` — share bits `<other><group>` (1 deny, 2 read, 3 write; `0` = everyone full access). When the field is omitted the application is registered **owner-only** (`11`); pass `0` explicitly to open it to every principal.
+- `stdout_backup_count` — output files kept per application across restarts (default `0`: each start replaces the previous run's output). Ignored (with a warning) for Docker applications: their output is fetched from the container, not rotated files.
+- `daily_limitation.daily_start` / `daily_end` — seconds since UTC midnight (integers).
+- An application whose `end_time` is in the past, or whose `interval` is not a positive duration, is rejected with `400`.
 | GET | `/appmesh/app/{name}/health` | Get application health |
 
 Applications use `owner_principal_id`; REST input cannot create
 `system: true` applications or choose an arbitrary process user.
+
+`PUT /appmesh/app/{name}` takes the application name from the request body.
+The name in the URI must match it; a mismatch or a missing body name is
+rejected with 400. Time fields such as `start_time` and `end_time` are
+epoch seconds; other formats are rejected.
+
+### Docker applications
+
+Set `docker_image` to run the application as a container instead of a host
+process. The container Cmd comes from `command`; the container name is
+`appmesh-<application name>` (the application name must therefore start with
+a letter or digit, per Docker container name rules) and every container is
+labeled `appmesh.managed=true` and `appmesh.app=<application name>`: cleanup
+only ever deletes containers carrying those labels, never a foreign container
+that merely shares a name.
+
+Common wiring is a first-class field, using the `docker run` spelling:
+
+| Field | Meaning |
+|---|---|
+| `docker_ports` | Array of `[hostIp:]hostPort:containerPort[/protocol]`, compiled into `HostConfig.PortBindings` |
+| `docker_volumes` | Array of bind strings (`/host:/container:rw`), compiled into `HostConfig.Binds` |
+| `docker_network` | `host`, `bridge`, `none` or a network name, compiled into `HostConfig.NetworkMode` |
+| `docker_backend` | `api` (default: Docker Engine API through the agent) or `cli` (docker/podman CLI; also selected by the legacy `APP_DOCKER_OPTS` env) |
+
+`metadata` remains the full-power channel: it is merged into the Docker
+create request body, so any Docker field (including `User`, `Entrypoint`,
+`Labels`, `HostConfig`) can be set directly. Merge order: daemon-forced keys
+(`AutoRemove=false`, `RestartPolicy=no`, the ownership labels) > application
+fields (`Cmd`, `Image`, `Env`, `WorkingDir`, resource limits, the first-class
+wiring above) > `metadata`. The container `User` follows the principal-bound
+`execution_user` unless `metadata.User` overrides it.
+
+Lifecycle semantics:
+
+- A missing image is pulled through the Docker Engine API (`POST /images/create`) — the daemon needs no docker CLI and no docker socket of its own. Registry credentials for private registries come from `secret_env` as `APP_DOCKER_REGISTRY_SERVER`, `APP_DOCKER_REGISTRY_USER` and `APP_DOCKER_REGISTRY_PASSWORD`; they never reach the container environment or the logs. `APP_DOCKER_IMG_PULL_TIMEOUT` (default 300 s) bounds the pull.
+- Stopping sends SIGTERM first (`stop_grace_period`, default 10 s like `docker stop`) and SIGKILL only after the grace; the container is then removed deterministically.
+- `health_check_cmd` runs **inside the container** (via the exec API); a channel failure marks the application unhealthy rather than probing the host. When the image defines a HEALTHCHECK, App Mesh reads the verdict Docker already maintains instead and bypasses `health_check_cmd` — the probe is never executed twice.
+- Output is fetched from the container log; the `X-Output-Position` cursor is a nanosecond timestamp of the newest delivered line, so incremental reads never duplicate lines.
+- Restart means a fresh container: the previous container is removed and re-created (no state carry-over).
+- `Docker.HostSecurityPolicy` (daemon config, hot-reloaded): `off` (default) / `audit` (log) / `enforce` (reject) for high-risk container settings (privileged, pid=host, binds of `/` or the Docker socket, CapAdd SYS_ADMIN/SYS_PTRACE).
+- `resource_limit.cpu` (fractional cores) maps to container `NanoCPUs` alongside `memory_mb`/`memory_virt_mb`/`cpu_shares`.
+- On-demand runs (`/appmesh/app/run`, `syncrun`) support Docker applications: the run starts the container, streams its output and reports the container exit code. The image must exist locally — an on-demand run never pulls (register the application to pull first).
+- On daemon start, labeled containers whose application no longer exists are logged as orphans; set `APPMESH_DOCKER_ORPHAN_SWEEP=delete` in the daemon environment to remove them.
 
 ## Run and tasks
 
@@ -75,6 +131,16 @@ Applications use `owner_principal_id`; REST input cannot create
 |---|---|---|
 | GET | `/appmesh/file/download` | Download a file |
 | POST | `/appmesh/file/upload` | Upload a file |
+| DELETE | `/appmesh/file/delete` | Delete a file (guarded by the dedicated file-delete permission) |
+
+### File transfer notes
+
+- `X-File-Path` must be absolute; `X-File-Mode` is the **decimal** file mode (for example `493` for `0755`), matching the `st_mode` convention used by the SDKs. A value outside `0..511` (for example the octal digits `"755"`) is ignored on every transport — the file keeps its default mode; it is never masked.
+- Uploads never overwrite by default: an existing destination returns `409`. Send `X-File-Overwrite: true` to replace it (the new content is published atomically).
+- `DELETE /appmesh/file/delete` removes one regular file named by `X-File-Path` under its own `file-delete` permission (independent of `file-upload`); a missing file returns `404`, a directory or anything else is refused.
+- The daemon's own installation tree (the directory that holds `bin/`, `ssl/`, `config/`, `script/` and `work/`, for example `/opt/appmesh`) is refused on both directions regardless of `REST.FileAllowedBaseDir`; symbolic links into it are resolved before the check. The `work/tmp` scratch subtree inside it is the one exchangeable exception.
+- An unset `REST.FileAllowedBaseDir` (the packaged default) jails transfers to the daemon's work directory tree (`BaseConfig.WorkingDirectory`, `/opt/appmesh/work` by default). Combined with the installation-tree exclusion above, the exchangeable default is the `work/tmp` scratch area. Set the option to an absolute path to allow transfers in another tree; every absolute path outside the jail is refused for download, upload, and delete.
+- Pseudo filesystems (`/proc`, `/sys`, `/dev`) are refused on every transfer: their files stat as regular size-0 files and would otherwise download as empty `200` bodies.
 | GET | `/appmesh/labels` | List host labels |
 | PUT | `/appmesh/label/{label}` | Set a host label |
 | DELETE | `/appmesh/label/{label}` | Delete a host label |
@@ -88,6 +154,11 @@ Applications use `owner_principal_id`; REST input cannot create
 | GET | `/appmesh/resources` | Get host resources |
 | GET | `/appmesh/metrics` | Get Prometheus metrics |
 | GET | `/metrics` | Get Prometheus metrics |
+
+## Response headers
+
+- CORS is opt-in: the Engine sends `Access-Control-Allow-Origin` only by echoing a request `Origin` listed in `REST.CorsAllowOrigins`. With the default empty list no CORS headers are sent at all (the UI is a same-origin proxy and needs none).
+- Every REST response carries `Content-Security-Policy: default-src 'none'; frame-ancestors 'none'`. The API serves JSON/files, never active content, so the policy has no functional side effects.
 
 ## Out of scope
 

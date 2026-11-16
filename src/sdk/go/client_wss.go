@@ -134,6 +134,12 @@ func (c *AppMeshClientWSS) DownloadFileContext(ctx context.Context, remoteFile, 
 	if target := c.forwardTarget(); target != "" {
 		req.Header.Set(headerTargetHost, target)
 	}
+	// The /ws file endpoints enforce the same request-signature hardening as
+	// every other route; sign the side-channel request too (empty-body hash,
+	// the streamed file content is exempt by design).
+	if err := signHTTPRequest(req, nil, c.wssReq.getRequestSigner()); err != nil {
+		return err
+	}
 
 	resp, err := httpConn.Do(req)
 	if err != nil {
@@ -238,6 +244,11 @@ func (c *AppMeshClientWSS) UploadFileContext(ctx context.Context, localFile, rem
 	req.Header.Set("Content-Type", "application/octet-stream")
 	if target := c.forwardTarget(); target != "" {
 		req.Header.Set(headerTargetHost, target)
+	}
+	// Same request-signature hardening as the download side channel; the
+	// streamed file content is exempt (empty-body hash) by design.
+	if err := signHTTPRequest(req, nil, c.wssReq.getRequestSigner()); err != nil {
+		return err
 	}
 
 	resp, err := httpConn.Do(req)

@@ -107,6 +107,12 @@ public class AppMeshClientTCP extends AppMeshClient {
             return this;
         }
 
+        /** Enable HMAC request signing (opt-in) with an API key pair, same contract as the HTTP builder. */
+        public Builder requestSignature(String keyId, String secret) {
+            base.requestSignature(keyId, secret);
+            return this;
+        }
+
         /** Connection timeout in milliseconds for HTTPS side-channel requests. */
         public Builder connectTimeoutMs(int ms) {
             base.connectTimeoutMs(ms);
@@ -192,6 +198,12 @@ public class AppMeshClientTCP extends AppMeshClient {
                 else
                     req.body = body.toString().getBytes(StandardCharsets.UTF_8);
             }
+
+            // Request signature (opt-in): the frame carries the four headers; the body
+            // hash covers the exact frame body (the streamed file endpoints sign the
+            // empty-string hash). Signed exactly as framed: method and URI as sent,
+            // query map values as decoded on the daemon side.
+            applyRequestSignature(req.headers, req.httpMethod, req.requestUri, req.query, req.body);
 
             byte[] data = req.serialize();
 

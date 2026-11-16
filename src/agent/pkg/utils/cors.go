@@ -14,20 +14,23 @@ func EnableGlobalCORS(enabled bool) {
 
 /*
 To use this middleware, you can do something like this:
-	http.HandleFunc("/api", Cors(DefaultCORSConfig)(yourHandlerFunc))
+	http.HandleFunc("/api", Cors(corsConfig)(yourHandlerFunc))
 
-Or with custom config:
-	customConfig := CORSConfig{
+With the origins allowed by the allowlist:
+	corsConfig := CORSConfig{
 		AllowedOrigins: []string{"https://example.com", "https://api.example.com"},
 		AllowedMethods: []string{"GET", "POST"},
 		AllowedHeaders: []string{"Content-Type", "Authorization"},
 		MaxAge:         3600,
 		AllowCredentials: true,
 	}
-	http.HandleFunc("/api", Cors(customConfig)(yourHandlerFunc))
+	http.HandleFunc("/api", Cors(corsConfig)(yourHandlerFunc))
 */
 
-// allowedHeaders defines the list of allowed headers for CORS
+// allowedHeaders defines the list of allowed headers for CORS preflight
+// answers. Agent-internal headers (X-Target-Host forwarding and the pooled
+// file-socket proof headers) are deliberately absent: browsers never send
+// them, so advertising them would only widen the preflight surface.
 var allowedHeaders = []string{
 	// Standard Headers
 	"Content-Type",
@@ -37,11 +40,7 @@ var allowedHeaders = []string{
 	"DNT",
 	"Cache-Control",
 	"Authorization",
-	// Proxy header
-	"X-Target-Host",
 	// File headers
-	"X-Send-File-Socket",
-	"X-Recv-File-Socket",
 	"X-File-Path",
 	"X-File-Mode",
 	"X-File-User",
@@ -58,10 +57,13 @@ type CORSConfig struct {
 	AllowCredentials bool
 }
 
-// DefaultCORSConfig provides a default configuration for CORS
+// DefaultCORSConfig provides a default configuration for CORS. The origin
+// allowlist starts empty, matching the daemon (REST.CorsAllowOrigins): with no
+// matching entry no CORS header is ever sent, because the UI is a same-origin
+// proxy and needs none.
 var DefaultCORSConfig = CORSConfig{
-	AllowedOrigins: []string{"*"},
-	AllowedMethods: []string{"GET", "POST", "PUT", "DELETE", "OPTIONS", "HEAD"},
+	AllowedOrigins: []string{},
+	AllowedMethods: []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"},
 	AllowedHeaders: allowedHeaders,
 	ExposedHeaders: []string{"X-Exit-Code", "X-Output-Position", "X-File-Mode", "X-File-User", "X-File-Group",
 		"Content-Type"},
@@ -69,8 +71,13 @@ var DefaultCORSConfig = CORSConfig{
 	AllowCredentials: false,
 }
 
-// Cors is a middleware that handles CORS for HTTP requests
-// Cors returns a middleware compatible with http.Handler (and thus mux.Router.Use).
+// Cors returns a middleware that applies the daemon's CORS semantics to every
+// response: opt-in by allowlist, never a wildcard. A request without an Origin
+// header (plain API clients) and a request whose Origin is not listed both get
+// no CORS headers at all; only a listed Origin is echoed back. A "*" entry in
+// the allowlist matches only a literal "*" Origin, which browsers never send,
+// so wildcard configurations fail closed.
+// The returned middleware is compatible with http.Handler (and thus mux.Router.Use).
 func Cors(config CORSConfig) func(http.Handler) http.Handler {
 	if !globalCORSEnabled {
 		return func(next http.Handler) http.Handler {
@@ -78,49 +85,50 @@ func Cors(config CORSConfig) func(http.Handler) http.Handler {
 		}
 	}
 
-	// Preprocess the configuration to improve performance
-	allowAllOrigins := false
+	// Preprocess the allowlist to improve performance
 	originsMap := make(map[string]struct{}, len(config.AllowedOrigins))
 	for _, origin := range config.AllowedOrigins {
-		if origin == "*" {
-			allowAllOrigins = true
-			break
-		}
 		originsMap[origin] = struct{}{}
 	}
 
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			// Set CORS headers
+			// Without a matching allowlist entry no CORS header is sent at all;
+			// the request simply proceeds like a same-origin one.
 			origin := r.Header.Get("Origin")
-			if origin != "" {
-				if allowAllOrigins {
-					// When allowing all origins, respond with the actual origin rather than the wildcard
-					// This is safer and complies with the standard
-					w.Header().Set("Access-Control-Allow-Origin", origin)
-				} else if _, exists := originsMap[origin]; exists {
-					w.Header().Set("Access-Control-Allow-Origin", origin)
-				}
+			if origin == "" {
+				next.ServeHTTP(w, r)
+				return
+			}
+			if _, allowed := originsMap[origin]; !allowed {
+				next.ServeHTTP(w, r)
+				return
 			}
 
-			w.Header().Set("Access-Control-Allow-Methods", strings.Join(config.AllowedMethods, ", "))
-			w.Header().Set("Access-Control-Allow-Headers", strings.Join(config.AllowedHeaders, ", "))
-
-			if len(config.ExposedHeaders) > 0 {
-				w.Header().Set("Access-Control-Expose-Headers", strings.Join(config.ExposedHeaders, ", "))
-			}
-
-			w.Header().Set("Access-Control-Max-Age", strconv.Itoa(config.MaxAge))
-
-			// Only add credentials support when enabled in config
+			w.Header().Set("Access-Control-Allow-Origin", origin)
 			if config.AllowCredentials {
 				w.Header().Set("Access-Control-Allow-Credentials", "true")
 			}
 
-			// Handle preflight requests
-			if r.Method == http.MethodOptions {
+			// A preflight is an OPTIONS request that announces the real request
+			// with Access-Control-Request-Method; only it gets the 204 answer
+			// with the preflight headers. A plain OPTIONS request falls through
+			// to the routed handler.
+			if r.Method == http.MethodOptions && r.Header.Get("Access-Control-Request-Method") != "" {
+				w.Header().Set("Access-Control-Allow-Methods", strings.Join(config.AllowedMethods, ", "))
+				w.Header().Set("Access-Control-Allow-Headers", strings.Join(config.AllowedHeaders, ", "))
+				if config.MaxAge > 0 {
+					w.Header().Set("Access-Control-Max-Age", strconv.Itoa(config.MaxAge))
+				}
 				w.WriteHeader(http.StatusNoContent)
 				return
+			}
+
+			// Actual (non-preflight) cross-origin response: echo the origin and,
+			// when configured, expose the non-simple response headers to the
+			// browser. Allow-Methods/Allow-Headers/Max-Age are preflight-only.
+			if len(config.ExposedHeaders) > 0 {
+				w.Header().Set("Access-Control-Expose-Headers", strings.Join(config.ExposedHeaders, ", "))
 			}
 
 			// Call the next handler

@@ -15,24 +15,28 @@ func TestAppmeshTCPFile(t *testing.T) {
 
 	client.SetToken(requireBearerToken(t))
 
-	// The daemon's own install tree is refused by the file API; any ordinary
-	// readable file exercises the transfer path.
-	var remotePath, localFile, tempFile string
+	// With FileAllowedBaseDir unset the file API jails transfers to the daemon
+	// work tree, and inside it only work/tmp is exchangeable: upload to that
+	// scratch, then download back and compare.
+	var scratch string
 	if runtime.GOOS == "windows" {
-		remotePath = `C:\Windows\System32\drivers\etc\hosts`
-		localFile = "hosts"
-		tempFile = filepath.Join(os.TempDir(), "hosts.copy")
+		scratch = `C:\local\appmesh\work\tmp`
 	} else {
-		remotePath = "/etc/hosts"
-		localFile = "hosts"
-		tempFile = "/tmp/hosts.copy"
+		scratch = "/opt/appmesh/work/tmp"
 	}
+	localFile := "go_file_test"
+	tempFile := filepath.Join(os.TempDir(), "go_file_test.copy")
+	remotePath := filepath.Join(scratch, "go_file_test.txt")
 
 	_ = os.Remove(localFile)
 	_ = os.Remove(tempFile)
+	require.Nil(t, os.WriteFile(localFile, []byte("go_file_roundtrip"), 0o644))
 
-	require.Nil(t, client.DownloadFile(remotePath, localFile, true))
-	// require.Nil(t, client.UploadFile(localFile, tempFile, true))
+	require.Nil(t, client.UploadFile(localFile, remotePath, true))
+	require.Nil(t, client.DownloadFile(remotePath, tempFile, true))
+	content, err := os.ReadFile(tempFile)
+	require.Nil(t, err)
+	require.Equal(t, "go_file_roundtrip", string(content))
 
 	_ = os.Remove(localFile)
 	_ = os.Remove(tempFile)

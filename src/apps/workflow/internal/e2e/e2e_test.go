@@ -241,7 +241,11 @@ func TestE2E_ExpressionFullPipeline(t *testing.T) {
 		{"steps.test.exit_code > 0", true},
 	}
 	for _, tc := range condCases {
-		got := expression.EvalConditionForJob(tc.expr, ctx, "test")
+		got, err := expression.EvalConditionForJob(tc.expr, ctx, "test")
+		if err != nil {
+			t.Errorf("EvalConditionForJob(%q) returned error: %v", tc.expr, err)
+			continue
+		}
 		if got != tc.want {
 			t.Errorf("EvalConditionForJob(%q) = %v, want %v", tc.expr, got, tc.want)
 		}
@@ -417,10 +421,10 @@ jobs:
 	ctx.SetStepResult("test", "flaky-step", "", 1, "failure", "", nil)
 	ctx.SetStepResult("test", "always-runs", "still here", 0, "success", "", nil)
 
-	if !expression.EvalConditionForJob("steps.flaky-step.exit_code != 0", ctx, "test") {
+	if ok, err := expression.EvalConditionForJob("steps.flaky-step.exit_code != 0", ctx, "test"); err != nil || !ok {
 		t.Error("conditional step should execute when flaky failed")
 	}
-	if expression.EvalConditionForJob("steps.flaky-step.exit_code == 0", ctx, "test") {
+	if ok, err := expression.EvalConditionForJob("steps.flaky-step.exit_code == 0", ctx, "test"); err != nil || ok {
 		t.Error("verify step should NOT execute when flaky failed")
 	}
 }

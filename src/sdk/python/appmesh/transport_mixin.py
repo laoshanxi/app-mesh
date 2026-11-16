@@ -18,6 +18,7 @@ from .app import App
 from .app_run import OutputHandler
 from .client_http import AppMeshClient
 from .exceptions import AppMeshAppRemovedError, AppMeshAuthError, AppMeshConnectionError, AppMeshRequestError
+from . import request_signature
 from .subscribe import (
     EVENT_TYPE_DISCONNECTED,
     AppEvent,
@@ -156,6 +157,23 @@ class TransportClientMixin:
                     # JSON bodies carry their type unless the caller set one
                     # (mirrors the HTTP transport and the other SDKs).
                     appmesh_request.headers["Content-Type"] = "application/json"
+
+            if self._request_signature_enabled():
+                # Signature headers ride in the framed header map; the framed
+                # message uuid serves as the nonce (Security.md, "Signature
+                # format"). Applied after the uuid, headers, query and body are
+                # final and before serialization, with a fresh uuid per attempt.
+                appmesh_request.headers.update(
+                    request_signature.signed_headers(
+                        self._api_key,
+                        self._api_secret,
+                        method.value,
+                        path,
+                        appmesh_request.query,
+                        body_bytes,
+                        nonce=appmesh_request.uuid,
+                    )
+                )
 
             data = appmesh_request.serialize()
             if self._demuxer and self._demuxer._running:

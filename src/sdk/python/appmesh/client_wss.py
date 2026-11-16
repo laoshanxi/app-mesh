@@ -55,8 +55,11 @@ class AppMeshClientWSS(TransportClientMixin, AppMeshClient):
         ssl_verify: Union[bool, str, None] = None,
         ssl_client_cert: Optional[Union[str, Tuple[str, str]]] = None,
         *,
+        plain_transport: bool = False,
         bearer_token: Optional[str] = None,
         token_provider: Optional[TokenProvider] = None,
+        api_key: Optional[str] = None,
+        api_secret: Optional[str] = None,
     ):
         """Construct a WSS transport client that reuses the standard App Mesh client API.
 
@@ -72,23 +75,33 @@ class AppMeshClientWSS(TransportClientMixin, AppMeshClient):
               - tuple: (cert_path, key_path)
             bearer_token: Caller-owned access token.
             token_provider: Provider that supplies and refreshes access tokens.
+            api_key: API key id for opt-in HMAC request signing (see
+              ``AppMeshClient.enable_request_signature``); requires ``api_secret``.
+            api_secret: API key secret. Signing activates only when both are set.
 
         Note:
             WSS connections require an explicit full-chain CA specification for certificate validation,
             unlike HTTP, which can retrieve intermediate certificates automatically.
         """
         ssl_verify = AppMeshClient._resolve_ssl_verify(ssl_verify)
-        self.wss_transport = WSSTransport(address=wss_address, ssl_verify=ssl_verify, ssl_client_cert=ssl_client_cert)
+        self.wss_transport = WSSTransport(
+            address=wss_address, ssl_verify=ssl_verify, ssl_client_cert=ssl_client_cert, plain_transport=plain_transport
+        )
         self._transport_client_addr = "wss-client"
         self._transport_name = "WebSocket"
-        # http and websocket share same address
+        # http and websocket share same address; the HTTPS file side channel
+        # follows the transport mode (plain_transport dials http://, like the
+        # Rust SDK's WSS client).
         host, port = wss_address
+        scheme = "http" if plain_transport else "https"
         super().__init__(
-            base_url=f"https://{host}:{port}",
+            base_url=f"{scheme}://{host}:{port}",
             ssl_verify=ssl_verify,
             ssl_client_cert=ssl_client_cert,
             bearer_token=bearer_token,
             token_provider=token_provider,
+            api_key=api_key,
+            api_secret=api_secret,
         )
 
     @property
@@ -147,6 +160,10 @@ class AppMeshClientWSS(TransportClientMixin, AppMeshClient):
         if self.forward_to:
             header[AppMeshClient._HTTP_HEADER_KEY_X_TARGET_HOST] = self.forward_to
         path = "/appmesh/file/download/ws"
+        # The /ws file endpoints enforce the same request-signature hardening as
+        # every other route; sign the side-channel request too (empty-body hash,
+        # the streamed file content is exempt by design).
+        self._append_signature_headers(header, "GET", path)
         rest_url = parse.urljoin(self.base_url, path)
         r = self.session.get(url=rest_url, stream=True, timeout=self.request_timeout, headers=header,
             cert=self.ssl_client_cert, verify=self.ssl_verify)
@@ -198,6 +215,9 @@ class AppMeshClientWSS(TransportClientMixin, AppMeshClient):
             header[AppMeshClient._HTTP_HEADER_KEY_X_TARGET_HOST] = self.forward_to
         if preserve_permissions:
             header.update(AppMeshClient._get_file_attributes(local_path))
+        # Same request-signature hardening as the download side channel; the
+        # streamed file content is exempt (empty-body hash) by design.
+        self._append_signature_headers(header, "POST", path)
         rest_url = parse.urljoin(self.base_url, path)
 
         with local_path.open("rb") as fp:

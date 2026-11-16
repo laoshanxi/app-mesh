@@ -248,5 +248,3 @@ Want the full cluster? `docker compose up -d` with `script/docker/docker-compose
 - **Verified end to end**: five SDKs against one integration matrix (HTTP/TCP/WSS transports, 500+ assertions), dedicated workflow-engine testing (DAG/retries/triggers/remote/concurrency), all four reference integrations (digital human/MQTT/MCP×2) tested from the user's perspective, zero fd/memory leaks under load
 - **Secure by default**: credentials encrypted and never echoed, TLS everywhere, least-privilege RBAC, AI toolsets can be narrowed (read-only, no Bash)
 - **Open source**: MIT licensed, full docs at [readthedocs](https://app-mesh.readthedocs.io), images on [Docker Hub](https://hub.docker.com/r/laoshanxi/appmesh)
-
-> Based on App Mesh 3.0.1 (2026-11). Every example here was executed on a live six-node compose cluster.

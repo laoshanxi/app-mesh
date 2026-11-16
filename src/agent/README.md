@@ -2,6 +2,24 @@
 
 The agent provides access to Docker daemon through two methods:
 
+## Response headers
+
+The agent is the browser entry origin for the App Mesh UI, so its headers follow
+the daemon's rules:
+
+- CORS is opt-in: `Access-Control-Allow-Origin` echoes a request `Origin` only
+  when it is listed in `REST.CorsAllowOrigins` in the shared `config.yaml`
+  (comma-separated `APPMESH_REST_CorsAllowOrigins` works too). With the default
+  empty list — or a non-listed Origin, or a request without an `Origin` — the
+  agent sends no CORS header at all. `REST.CorsDisabled: true` stays available
+  as the explicit off switch and reproduces the same zero-header behavior.
+- Every response carries `X-Content-Type-Options: nosniff`, including proxied
+  surfaces (Grafana data source, docker proxy, authentication service).
+- App Mesh API responses (the catch-all forwarded to the daemon) additionally
+  carry `Content-Security-Policy: default-src 'none'; frame-ancestors 'none'`;
+  the API serves JSON and files, never active content. The `/oauth/callback`
+  relay page carries its own CSP that pins its inline script by SHA-256 hash.
+
 ## AppMesh agent Docker REST API
 
 ### Docker API Proxy (/appmesh/docker/\*)
@@ -30,6 +48,10 @@ Implementation Details:
 - TLS encryption is handled by the agent's main HTTPS server
 - All Docker API operations are available through the /appmesh/docker prefix
 - Request/response formats follow the Docker Engine API specification
+- Responses are classified per request: live streams (pull progress, builds, a
+  following `logs?follow=1`, events) pass through unbuffered, while finite
+  documents — including non-following `/logs` — are buffered and
+  Content-Length framed so buffered HTTP clients read them reliably
 
 Reference:
 

@@ -10,6 +10,7 @@ use crate::client_tcp::AppMeshClientTCP;
 use crate::client_wss::AppMeshClientWSS;
 use crate::constants::*;
 use crate::error::AppMeshError;
+use crate::request_signature::RequestSigner;
 
 type Result<T> = std::result::Result<T, AppMeshError>;
 
@@ -37,6 +38,7 @@ pub struct ClientBuilder {
     timeout: Option<Duration>,
     danger_accept_invalid_certs: bool,
     provider_auto_refresh: bool,
+    request_signer: Option<RequestSigner>,
 }
 
 impl ClientBuilder {
@@ -91,6 +93,15 @@ impl ClientBuilder {
         self
     }
 
+    /// Attach an HMAC-SHA256 request signer (opt-in). Every request then
+    /// carries `X-Request-Key`, `X-Timestamp`, `X-Nonce`, and `X-Signature`
+    /// per `docs/source/Security.md`; the streamed file endpoints sign the
+    /// empty-string body hash.
+    pub fn request_signer(mut self, signer: RequestSigner) -> Self {
+        self.request_signer = Some(signer);
+        self
+    }
+
     /// Set a JWT token directly without server verification (no network call).
     pub fn jwt_token(mut self, token: impl Into<String>) -> Self {
         self.jwt_token = Some(token.into());
@@ -131,6 +142,10 @@ impl ClientBuilder {
         let client =
             AppMeshClient::new(self.url, self.ssl_ca_cert, ssl_client_cert, self.timeout, self.danger_accept_invalid_certs)?;
 
+        if let Some(signer) = self.request_signer {
+            client.set_request_signer(Some(signer));
+        }
+
         if let Some(token) = &self.jwt_token {
             client.set_token(token);
         }
@@ -168,14 +183,16 @@ macro_rules !define_transport_builder
 	($(#[$outer:meta]) * $name : ident, $default_port : expr,
 	 $client : ty) =>{$(#[$outer]) *
 #[derive(Default)]
-					  pub struct $name{
-						  host : Option<String>,
-						  port : Option<u16>,
-						  ssl_ca_cert : Option<String>,
-						  ssl_client_cert : Option<PathBuf>,
-						  ssl_client_key : Option<PathBuf>,
-						  danger_accept_invalid_certs : bool,
-					  }
+						  pub struct $name{
+							  host : Option<String>,
+							  port : Option<u16>,
+							  ssl_ca_cert : Option<String>,
+							  ssl_client_cert : Option<PathBuf>,
+							  ssl_client_key : Option<PathBuf>,
+							  danger_accept_invalid_certs : bool,
+							  plain_transport : bool,
+							  request_signer : Option<RequestSigner>,
+						  }
 
 					  impl $name{/// Create a builder for this transport client.
 								 pub fn new ()
@@ -234,6 +251,23 @@ pub fn danger_accept_invalid_certs(mut self, accept : bool) -> Self
 	self
 }
 
+/// Speak plaintext instead of TLS (opt-in), for a daemon running
+/// `SSL.SSLEnabled=false` behind a gateway on a trusted network.
+pub fn plain_transport(mut self, plain : bool) -> Self
+{
+	self.plain_transport = plain;
+	self
+}
+
+/// Attach an HMAC-SHA256 request signer (opt-in). Every framed request then
+/// carries `X-Request-Key`, `X-Timestamp`, `X-Nonce` (the framed uuid), and
+/// `X-Signature` per `docs/source/Security.md`.
+pub fn request_signer(mut self, signer : RequestSigner) -> Self
+{
+	self.request_signer = Some(signer);
+	self
+}
+
 fn validate(&self)
 	->Result<()>{validate_client_cert_pair(&self.ssl_client_cert, &self.ssl_client_key)}
 
@@ -247,10 +281,17 @@ pub fn build(self)
 
 	// Insecure mode is the explicit SslVerify::False flag; the
 	// legacy empty CA path form resolves to the same disable.
-	let verify = if self.danger_accept_invalid_certs { crate::tls_config::SslVerify::False }
+	// Plain transport applies no TLS material at all, so a leftover CA path
+	// must not fail the build.
+	let verify = if self.danger_accept_invalid_certs || self.plain_transport { crate::tls_config::SslVerify::False }
 	else {crate::tls_config::resolve_ssl_verify(self.ssl_ca_cert) ? };
 
-	<$client>::new_with_verify(address, verify, ssl_client_cert)
+	let client = <$client>::new_with_verify(address, verify, ssl_client_cert, self.plain_transport) ? ;
+	if let Some(signer) = self.request_signer
+	{
+		client.set_request_signer(Some(signer));
+	}
+	Ok(client)
 }
 }
 }

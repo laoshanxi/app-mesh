@@ -19,6 +19,14 @@ pub const HTTP_HEADER_CONTENT_TYPE: &str = "Content-Type";
 pub const HTTP_HEADER_KEY_X_SEND_FILE_SOCKET: &str = "X-Send-File-Socket";
 pub const HTTP_HEADER_KEY_X_RECV_FILE_SOCKET: &str = "X-Recv-File-Socket";
 
+// HMAC request signature headers (docs/source/Security.md,
+// "Request replay protection and signatures"); names match the daemon's
+// HTTP_HEADER_KEY_X_* definitions.
+pub const HTTP_HEADER_KEY_X_REQUEST_KEY: &str = "X-Request-Key";
+pub const HTTP_HEADER_KEY_X_TIMESTAMP: &str = "X-Timestamp";
+pub const HTTP_HEADER_KEY_X_NONCE: &str = "X-Nonce";
+pub const HTTP_HEADER_KEY_X_SIGNATURE: &str = "X-Signature";
+
 // Query parameters
 pub const HTTP_QUERY_KEY_STDOUT_INDEX: &str = "stdout_index";
 pub const HTTP_QUERY_KEY_STDOUT_POSITION: &str = "stdout_position";

@@ -51,6 +51,13 @@ oauth2:
   # APPMESH_AUTH_PASSWORD_FLOW), dropping the "password" grant; browser sign-in
   # of local password users keeps working either way.
   grantTypes: ["authorization_code", "refresh_token", "urn:ietf:params:oauth:grant-type:device_code", "password", "client_credentials"]
+  # PKCE is mandatory for the authorization-code flow: every first-party client
+  # (browser web UI, CLI) sends an S256 code_challenge, and OAuth 2.1 / the MCP
+  # specification require third-party MCP clients to implement PKCE as well.
+  # "plain" is deprecated and no longer accepted; S256 only.
+  pkce:
+    enforce: true
+    codeChallengeMethodsSupported: ["S256"]
 
 expiry:
   signingKeys: 6h

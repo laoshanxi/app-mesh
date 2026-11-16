@@ -59,14 +59,31 @@ const authRelayHTML = `<!DOCTYPE html>
 </html>
 `
 
+// authRelayScriptHash pins the page's inline script (SHA-256, base64) in the
+// CSP below. It is the hash of the exact 982-byte text node between <script>
+// and </script> (leading and trailing newlines included, as the browser hashes
+// it) in authRelayHTML — which is byte-identical to the daemon copy
+// (OAUTH_CALLBACK_RELAY_HTML in RestHandler.cpp). The daemon side owns the
+// value; keep both sides identical when the page changes:
+//
+//	python3 -c "import hashlib,base64,re;s=open('auth_relay.go','rb').read();\
+//	  m=re.search(rb'<script>(.*?)</script>',s,re.S);\
+//	  print(base64.b64encode(hashlib.sha256(m.group(1)).digest()).decode())"
+const authRelayScriptHash = "WJHBkicVdWDq2OxtXiYCx4BCaK7EV2KyjwBP8/UzM6Q="
+
 // The browser lands on /oauth/callback on this entry origin after the
 // authorization-code flow. The page is static and needs no server state: it
 // hands the unchanged query string to the web UI origin carried in the state
 // parameter, and only to the fixed /oauth/callback path on that origin.
-// Registered before the catch-all that forwards the rest to the daemon.
+// Registered before the catch all that forwards the rest to the daemon.
 func RegisterAuthRelayRoutes(router *mux.Router) {
 	router.Path("/oauth/callback").Handler(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		// The page is HTML with one inline script: everything else is denied.
+		// The script hash lets exactly the relay logic run, so the query string
+		// (code/state) can never reach injected content.
+		w.Header().Set("Content-Security-Policy",
+			"default-src 'none'; script-src 'sha256-"+authRelayScriptHash+"'; frame-ancestors 'none'")
 		_, _ = w.Write([]byte(authRelayHTML))
 	}))
 }

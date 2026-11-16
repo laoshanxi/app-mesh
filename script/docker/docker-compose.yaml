@@ -16,6 +16,9 @@
 # Point --auth-access-url at a proxy entry (agent, or the published web UI at
 # https://127.0.0.1/auth) instead to get the same login page the browser sees,
 # logo included; the raw Dex port serves no login assets.
+# The optional docker-compose.vault.yaml layer replaces the self-signed
+# generation with central issuance: every node's leaf certificates come from
+# the Vault PKI engine (APPMESH_SSL_SOURCE=vault).
 name: appmesh_cluster
 services:
   appmesh_master:

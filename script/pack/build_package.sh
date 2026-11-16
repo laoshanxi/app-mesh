@@ -21,31 +21,17 @@ export GOARCH
 GOARCH=$(go env GOARCH)
 
 ################################################################################
-# Copy the Dex server binary into the main package. Dex is installed like the
-# other Go tools (cfssl/nfpm) by script/bootstrap/install_build_deps*.sh; the
-# passhash helper is repo-native (src/apps/identity) and already staged by cmake.
+# Copy the Dex server binaries into the main package. install_build_deps.sh
+# installs dex/dexuser into /usr/local/bin; the passhash helper is repo-native
+# (src/apps/identity) and already staged by cmake.
 ################################################################################
 copy_dex() {
-    local dex_bin
-    dex_bin="$(command -v dex || true)"
-    if [[ -z "$dex_bin" ]]; then
-        dex_bin="$(go env GOPATH 2>/dev/null)/bin/dex"
-    fi
-    [[ -n "$dex_bin" && -x "$dex_bin" ]] ||         die "Dex binary not found in PATH"
-    install -m 755 "$dex_bin" "${PACKAGE_HOME}/bin/dex"
-    info "Copied Dex server binary ${dex_bin} into the main package"
-
-    # Dex administration web UI (built from the fork's examples/example-app by
-    # install_build_deps*.sh), packaged under the same dexuser name the retired
-    # gRPC helper used.
-    local dexuser_bin
-    dexuser_bin="$(command -v dexuser || true)"
-    if [[ -z "$dexuser_bin" ]]; then
-        dexuser_bin="$(go env GOPATH 2>/dev/null)/bin/dexuser"
-    fi
-    [[ -n "$dexuser_bin" && -x "$dexuser_bin" ]] ||         die "dexuser (Dex admin UI) binary not found in PATH"
-    install -m 755 "$dexuser_bin" "${PACKAGE_HOME}/bin/dexuser"
-    info "Copied Dex admin UI binary ${dexuser_bin} into the main package"
+    local bin
+    for bin in /usr/local/bin/dex /usr/local/bin/dexuser; do
+        [[ -x "$bin" ]] || die "Dex binary not found at ${bin} (install_build_deps.sh installs it there)"
+        install -m 755 "$bin" "${PACKAGE_HOME}/bin/$(basename "$bin")"
+        info "Copied $(basename "$bin") into the main package ($("$bin" version 2>/dev/null || echo 'version unknown'))"
+    done
 }
 
 info "Packaging contents of: ${PACKAGE_HOME}"

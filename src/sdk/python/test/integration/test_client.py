@@ -369,7 +369,7 @@ class TestUnauthenticatedSurface(TestCase):
     )
 
     def setUp(self):
-        self.client = AppMeshClient()
+        self.client = AppMeshClient(base_url=config.BASE_URL or "https://127.0.0.1:6060")
         config.attach_test_bearer(self.client)
 
     def tearDown(self):
@@ -415,12 +415,12 @@ class TestUnauthenticatedSurface(TestCase):
                 self.assertNotIn(version, surface, "product version on " + where)
 
     def test_metrics_need_no_token(self):
-        """A standard exporter scrape: /metrics answers without a bearer."""
+        """S-4: metrics expose host internals, so both scrape paths require a bearer."""
         for entry in self._entries():
             for path in ("/metrics", "/appmesh/metrics"):
                 response = self._request("GET", entry, path)
                 self.assertEqual(
-                    200, response.status_code,
+                    401, response.status_code,
                     "{} without a token -> {}".format(entry + path, response.status_code))
 
 

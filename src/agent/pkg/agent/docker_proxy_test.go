@@ -1,6 +1,7 @@
 package agent
 
 import (
+	"net/url"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -21,13 +22,15 @@ func TestIsStreamingDockerEndpoint(t *testing.T) {
 		"/images/load",
 		"/containers/abc123/archive",
 		// Endpoints the suffix list missed.
-		"/images/create", // the actual pull endpoint
 		"/build",
 		"/exec/abc123/start",
 	}
+	follow := url.Values{"follow": {"1"}}
 	for _, path := range streaming {
-		require.Truef(t, isStreamingDockerEndpoint(path), "%s must stay unbuffered", path)
+		require.Truef(t, isStreamingDockerEndpoint(path, follow), "%s must stay unbuffered", path)
 	}
+	// A live log follow stays a stream even without other query flags.
+	require.True(t, isStreamingDockerEndpoint("/containers/abc123/logs", url.Values{"follow": {"true"}}))
 
 	buffered := []string{
 		// Daemon control plane; must stay buffered for Content-Length framing.
@@ -44,7 +47,14 @@ func TestIsStreamingDockerEndpoint(t *testing.T) {
 		"/version",
 		"/info",
 	}
+	noFollow := url.Values{}
 	for _, path := range buffered {
-		require.Falsef(t, isStreamingDockerEndpoint(path), "%s must stay buffered", path)
+		require.Falsef(t, isStreamingDockerEndpoint(path, noFollow), "%s must stay buffered", path)
 	}
+	// Non-following logs and one-shot stats are finite documents: they must be
+	// buffered and length-framed for buffered HTTP clients.
+	require.False(t, isStreamingDockerEndpoint("/containers/abc123/logs", noFollow))
+	// A pull reply is one finite NDJSON document: buffered like non-follow logs.
+	require.False(t, isStreamingDockerEndpoint("/images/create", noFollow))
+	require.False(t, isStreamingDockerEndpoint("/containers/abc123/stats", url.Values{"stream": {"0"}}))
 }

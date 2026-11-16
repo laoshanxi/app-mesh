@@ -11,6 +11,7 @@ import AppMeshClient, {
   AppMeshError, AppRemovedError, TransportDisconnectedError, DEFAULT_CA_FILE,
   _resolveUid, _resolveGid, _resolveUserName, _resolveGroupName,
 } from './appmesh.js'
+import { canonicalQuery } from './request_signature.js'
 
 // Constants
 const TCP_BLOCK_SIZE = 16 * 1024 - 128 // TLS-optimized chunk size
@@ -626,6 +627,16 @@ class AppMeshClientTCP extends AppMeshClient {
       } else if (Buffer.isBuffer(body)) {
         request.body = body
       }
+    }
+
+    // Opt-in request signature (REST.RequestSignature hardening): the frame
+    // carries the four headers; the hash covers the exact frame body (the
+    // streamed file endpoints sign the empty-string hash). Signed exactly as
+    // framed: method and URI as sent, query map values as decoded on the daemon side.
+    if (this._requestSigner) {
+      await this._requestSigner.attach(
+        request.headers, request.httpMethod, request.requestUri,
+        canonicalQuery(request.query), request.body)
     }
 
     // Send request

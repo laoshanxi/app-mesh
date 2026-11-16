@@ -20,6 +20,7 @@ Welcome to AppMesh's documentation!
    RESTAPI.md
    SDKContract.md
    Install.md
+   Docker.md
    Loki.md
    PROMETHEUS.md
    Coverity.md

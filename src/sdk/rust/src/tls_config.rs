@@ -52,6 +52,11 @@ pub(crate) fn configure_reqwest_tls(
     ssl_verify: &SslVerify,
     ssl_client_cert: Option<&ClientCert>,
 ) -> Result<reqwest::ClientBuilder, String> {
+    // Every branch builds a rustls-backed client, and reqwest carries the
+    // `rustls-no-provider` feature: without an installed process default the
+    // builder panics at build(). The platform-roots branch configures no
+    // custom TLS, so the install has to happen before it returns.
+    ensure_crypto_provider();
     if matches!(ssl_verify, SslVerify::True) {
         if let Some(cert) = ssl_client_cert {
             let pem = read_client_identity_pem(cert)?;
@@ -61,7 +66,6 @@ pub(crate) fn configure_reqwest_tls(
         }
         return Ok(builder);
     }
-    ensure_crypto_provider();
     let config = build_rustls_client_config(ssl_verify, ssl_client_cert)?;
     Ok(builder.use_preconfigured_tls(config))
 }

@@ -2,6 +2,9 @@
 import axios from 'axios';
 import { StaticAccessTokenProvider } from './token_provider.js';
 import { RefreshTokenProvider } from './refresh_token_provider.js';
+import {
+  RequestSigner, canonicalQueryFromEncoded, serializeQueryPurePercent, isEmptyBodyExemptPath,
+} from './request_signature.js';
 
 // Lazy-resolved Node.js https/fs modules (null in browser)
 let _https = null;
@@ -21,8 +24,45 @@ const CONSTANTS = Object.freeze({
 
 // Environment detection
 const ENV = Object.freeze({
-  isNode: !(typeof window !== 'undefined' && typeof window.document !== 'undefined')
+  isNode: !(typeof window !== 'undefined' && window.document !== 'undefined')
 });
+
+// Same absolute-URL test as axios's helpers/isAbsoluteURL.js: "<scheme>://" or
+// a protocol-relative "//" URL bypasses baseURL combination.
+const _ABSOLUTE_URL_RE = /^([a-z][a-z\d+\-.]*:)?\/\//i;
+
+/**
+ * The encoded request path exactly as axios puts it on the wire: axios combines
+ * baseURL + url by concatenation (core/buildFullPath.js + helpers/combineURLs.js
+ * — a baseURL path PREFIX stays in the path), then the Node adapter parses the
+ * result with `new URL(fullPath)` and sends `parsed.pathname`. Signing this
+ * value (instead of the caller-supplied raw url) makes the signed path the wire
+ * path: a space or non-ASCII character is percent-encoded on the wire and in
+ * the signature alike, and a baseURL path prefix is included.
+ * @private
+ */
+function _wireRequestPath(baseURL, url) {
+  const base = String(baseURL || '');
+  const rel = String(url || '');
+  let fullPath = rel;
+  if (base && !_ABSOLUTE_URL_RE.test(rel)) {
+    // combineURLs: strip trailing '/' from the base, leading '/' from the url.
+    let end = base.length;
+    while (end > 0 && base.charCodeAt(end - 1) === 47 /* / */) end--;
+    fullPath = rel ? base.slice(0, end) + '/' + rel.replace(/^\/+/, '') : base;
+  }
+  try {
+    return new URL(fullPath).pathname;
+  } catch (_) {
+    try {
+      // Path-only url (no baseURL, no scheme): axios supplies a synthetic base
+      // for such URLs; mirror that so the pathname is still computed.
+      return new URL(fullPath, 'http://localhost').pathname;
+    } catch (_e) {
+      return rel;
+    }
+  }
+}
 
 /**
  * Custom error for AppMesh with enhanced debugging
@@ -367,6 +407,9 @@ class AppMeshClient {
     // Host to forward requests to
     this.forwardingHost = null;
 
+    // Opt-in HMAC request signer (REST.RequestSignature hardening); null when disabled
+    this._requestSigner = null;
+
     // Token provider: single source of truth for the access token; transports
     // read from it via _getAccessToken()
     this._tokenProvider = null;
@@ -461,6 +504,118 @@ class AppMeshClient {
     this._tokenProvider = null;
   }
 
+  /**
+   * Enable HMAC request signing on every subsequent request (opt-in) with a
+   * per-principal API key (`POST /appmesh/security/apikeys`). Each request then
+   * carries the `X-Request-Key`, `X-Timestamp`, `X-Nonce` and `X-Signature`
+   * headers (Node.js only). The signature is an integrity layer on top of the
+   * bearer, not a replacement for it. The secret is kept in memory only and
+   * never logged.
+   * @param {string} keyId - API key id
+   * @param {string} secret - API key secret
+   */
+  enableRequestSignature(keyId, secret) {
+    this._requestSigner = new RequestSigner(keyId, secret);
+  }
+
+  /** Disable request signing; subsequent requests carry no signature headers. */
+  disableRequestSignature() {
+    this._requestSigner = null;
+  }
+
+  /** Whether `enableRequestSignature` is currently active on this client. */
+  isRequestSignatureEnabled() {
+    return this._requestSigner !== null;
+  }
+
+  /**
+   * Attach the four signature headers to a prepared axios request config.
+   * The path is signed exactly as axios puts it on the wire (`_wireRequestPath`:
+   * percent-encoded, baseURL path prefix included) and the canonical query is
+   * derived from the exact wire query: signing forces a pure percent-encoded
+   * params serialization so the daemon's %-only decode yields exactly the
+   * signed values. The body is serialized the way axios will put it on the
+   * wire. The streamed file endpoints sign the empty-string hash (the WSS
+   * data-channel "/ws" routes sign the stripped route, canonicalSigningPath).
+   * @private
+   */
+  async _applyRequestSignature(config) {
+    const signer = this._requestSigner;
+    if (!signer || !config) return;
+
+    // Sign the wire path, not the caller's raw url: axios re-quotes the path
+    // (space → %20) and keeps the baseURL path prefix, so the daemon verifies
+    // a different path than the raw one whenever either differs.
+    const path = _wireRequestPath(config.baseURL || this._client.defaults.baseURL || this.baseURL, config.url);
+    let canonicalQuery = '';
+    if (config.params && typeof config.params === 'object' && Object.keys(config.params).length > 0) {
+      // Deterministic wire form: pure percent encoding, null/undefined skipped.
+      config.paramsSerializer = serializeQueryPurePercent;
+      canonicalQuery = canonicalQueryFromEncoded(serializeQueryPurePercent(config.params));
+    }
+
+    const contentType = this._headerValue(config.headers, 'content-type');
+    const bodyBytes = isEmptyBodyExemptPath(path)
+      ? Buffer.alloc(0)
+      : this._wireBodyBytes(config.data, contentType);
+
+    const method = String(config.method || 'get').toUpperCase();
+    const headers = {};
+    await signer.attach(headers, method, path, canonicalQuery, bodyBytes);
+    for (const [name, value] of Object.entries(headers)) {
+      if (config.headers && typeof config.headers.set === 'function') {
+        config.headers.set(name, value);
+      } else {
+        config.headers = { ...config.headers, [name]: value };
+      }
+    }
+  }
+
+  /**
+   * Case-insensitive lookup on a plain header object or AxiosHeaders.
+   * @private
+   */
+  _headerValue(headers, name) {
+    if (!headers) return undefined;
+    if (typeof headers.get === 'function') return headers.get(name);
+    const key = Object.keys(headers).find(k => k.toLowerCase() === name.toLowerCase());
+    return key === undefined ? undefined : headers[key];
+  }
+
+  /**
+   * The body bytes as axios will serialize them for the wire, mirroring the
+   * default transformRequest: plain objects (and JSON-typed strings) become
+   * JSON, other strings pass through, buffers pass through. A body that cannot
+   * be replayed byte-for-byte (stream, File, FormData) cannot be signed.
+   * @private
+   */
+  _wireBodyBytes(data, contentType) {
+    if (data === null || data === undefined) {
+      return Buffer.alloc(0);
+    }
+    if (typeof data === 'string') {
+      if (String(contentType || '').toLowerCase().includes('application/json')) {
+        // axios trims a JSON-parseable string body and re-encodes a non-JSON one.
+        try {
+          JSON.parse(data);
+          return Buffer.from(data.trim(), 'utf8');
+        } catch (error) {
+          if (error.name !== 'SyntaxError') throw error;
+          return Buffer.from(JSON.stringify(data), 'utf8');
+        }
+      }
+      return Buffer.from(data, 'utf8');
+    }
+    if (Buffer.isBuffer(data) || data instanceof Uint8Array || data instanceof ArrayBuffer) {
+      return Buffer.from(data);
+    }
+    if (typeof data === 'object') {
+      return Buffer.from(JSON.stringify(data), 'utf8');
+    }
+    throw new AppMeshError(
+      'cannot sign a streaming request body; only the /appmesh/file/* endpoints accept unbound bodies');
+  }
+
   /** Return the current in-memory access token from the attached provider. */
   async _getAccessToken() {
     return this._tokenProvider ? await this._tokenProvider.getAccessToken() : null;
@@ -502,6 +657,11 @@ class AppMeshClient {
       config.headers.set(CONSTANTS.HTTP_HEADER_KEY_AUTH, authorization);
     } else {
       config.headers = { ...config.headers, [CONSTANTS.HTTP_HEADER_KEY_AUTH]: authorization };
+    }
+    // The retry is a new request: it needs a fresh signature (a replayed nonce
+    // would be rejected by the daemon's replay protection).
+    if (this._requestSigner) {
+      await this._applyRequestSignature(config);
     }
     return this._client(config);
   }
@@ -562,6 +722,10 @@ class AppMeshClient {
    *   working_dir: "",
    *   enabled: 1,
    *   docker_image: "",
+   *   docker_ports: [],       // docker run -p spelling: "[hostIp:]hostPort:containerPort[/protocol]"
+   *   docker_volumes: [],     // docker run -v spelling
+   *   docker_network: null,   // host, bridge, none or a network name
+   *   docker_backend: null,   // "api" (default) or "cli"
    *   stdout_backup_count: 3,
    *   start_time: "",
    *   end_time: "",
@@ -575,7 +739,7 @@ class AppMeshClient {
    *   env: {},
    *   secret_env: {},
    *   pid: null,
-   *   resource_limit: { cpu_shares: null, memory_mb: null, memory_virt_mb: null },
+   *   resource_limit: { cpu_shares: null, cpu: null, memory_mb: null, memory_virt_mb: null }, // cpu = fractional cores (NanoCPUs)
    *   behavior: { exit: "standby", exit_code_actions: { "0": "keepalive" } }
    * };
    * await client.addApp("ping", appConfig);
@@ -1183,6 +1347,11 @@ class AppMeshClient {
         requestConfig.data = body;
       }
 
+      // Opt-in request signature: attach the four headers to this exact request.
+      if (this._requestSigner) {
+        await this._applyRequestSignature(requestConfig);
+      }
+
       const response = await this._client(requestConfig);
       if (response.status < 200 || response.status >= 300) {
         const errMsg = this._extractErrorMessage(response.data);
@@ -1328,7 +1497,7 @@ class AppRun {
 // Export the main classes
 export {
   AppMeshClient, AppOutput, AppRun, AppMeshError, AppRemovedError, TransportDisconnectedError,
-  DEFAULT_CA_FILE, StaticAccessTokenProvider, RefreshTokenProvider
+  DEFAULT_CA_FILE, StaticAccessTokenProvider, RefreshTokenProvider, RequestSigner
 };
 // Exported for the TCP client (Node.js only); not part of the browser-facing API
 export { _resolveUid, _resolveGid, _resolveUserName, _resolveGroupName };

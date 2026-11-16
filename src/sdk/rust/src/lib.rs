@@ -10,6 +10,7 @@ mod error;
 mod models;
 mod oauth;
 mod requester;
+mod request_signature;
 mod response_ext;
 mod subscribe;
 mod tcp_transport;
@@ -26,6 +27,7 @@ pub use client_http::AppMeshClient;
 pub use client_tcp::AppMeshClientTCP;
 pub use client_wss::AppMeshClientWSS;
 pub use error::{AppMeshError, TransportError};
+pub use request_signature::RequestSigner;
 pub use models::{
     print_output_handler, AppEvent, AppOutput, AppRun, Application, ApplicationBuilder, Behavior, DailyLimitation,
     ExitAction, OutputFn, OutputHandler, Permission, ResourceLimitation, SubscriptionResult,

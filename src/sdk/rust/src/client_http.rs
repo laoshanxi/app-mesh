@@ -19,6 +19,7 @@ use crate::constants::*;
 use crate::error::AppMeshError;
 use crate::models::*;
 use crate::oauth::TokenProvider;
+use crate::request_signature::{is_file_endpoint, new_nonce, RequestSigner};
 use crate::requester::Requester;
 use crate::response_ext::ResponseExt;
 use crate::subscribe::EventCallback;
@@ -55,6 +56,7 @@ pub struct HTTPRequester {
     client: ReqwestClient,
     access_token: Arc<RwLock<Option<String>>>,
     forward_to: Arc<Mutex<Option<String>>>,
+    signer: RwLock<Option<RequestSigner>>,
 }
 
 impl HTTPRequester {
@@ -88,6 +90,7 @@ impl HTTPRequester {
             client: client_builder.build()?,
             access_token: Arc::new(RwLock::new(None)),
             forward_to: Arc::new(Mutex::new(None)),
+            signer: RwLock::new(None),
         })
     }
 
@@ -125,7 +128,47 @@ impl HTTPRequester {
         }
     }
 
+    /// The body hash to sign with, or `None` when no signer is configured.
+    /// Applies the file-endpoint exemption (those endpoints sign the empty
+    /// string regardless of the streamed/buffered body).
+    fn signing_body_sha(&self, path: &str, body: Option<&[u8]>) -> Option<String> {
+        self.signer
+            .read()
+            .unwrap_or_else(|e| e.into_inner())
+            .as_ref()
+            .map(|_| RequestSigner::body_sha256_hex(path, body))
+    }
+
+    /// Merge caller headers with the common ones and, when a signer is
+    /// installed, the four signature headers (which take precedence, so a
+    /// caller cannot override a fresh signature with a stale one).
+    fn build_request_headers(
+        &self,
+        method: &Method,
+        path: &str,
+        headers: Option<HashMap<String, String>>,
+        query: Option<&HashMap<String, String>>,
+        signed_body_sha256: Option<String>,
+    ) -> HashMap<String, String> {
+        let mut all_headers = headers.unwrap_or_default();
+        self.add_common_headers(&mut all_headers);
+        if let Some(body_sha256) = signed_body_sha256 {
+            if let Some(signer) = self.signer.read().unwrap_or_else(|e| e.into_inner()).as_ref() {
+                // Fresh timestamp and nonce per request: a retry after a token
+                // refresh must never replay a nonce.
+                let signature_headers =
+                    signer.sign_request_with_body_hash(method.as_str(), path, query, &body_sha256, &new_nonce());
+                for (k, v) in signature_headers {
+                    all_headers.insert(k, v);
+                }
+            }
+        }
+        all_headers
+    }
+
     /// Execute a request and return the raw `reqwest::Response` without buffering the body.
+    // Private two-caller helper; the shapes mirror the Requester::send signature.
+    #[allow(clippy::too_many_arguments)]
     async fn execute(
         &self,
         method: Method,
@@ -134,14 +177,35 @@ impl HTTPRequester {
         headers: Option<HashMap<String, String>>,
         query: Option<HashMap<String, String>>,
         fail_on_error: bool,
+        signed_body_sha256: Option<String>,
     ) -> Result<reqwest::Response> {
-        let url = format!("{}{}", self.url, path);
+        // Signed requests carry a percent-only encoded query on the wire
+        // (space → %20, never '+'): reqwest's `.query()` form-encodes a space
+        // as '+', which the daemon keeps literal, so the daemon-visible decoded
+        // values would differ from the signed ones. Unsigned requests keep the
+        // library-default `.query()` serialization untouched.
+        let signing = signed_body_sha256.is_some();
+        // Sign and send the wire path, not the caller's raw string: the url
+        // crate normalizes escapes to uppercase and percent-encodes invalid
+        // characters, so the daemon would otherwise verify a different path
+        // than the one signed (Python/JS/Go already sign their wire form).
+        let wire_path = reqwest::Url::parse(&self.url)
+            .ok()
+            .and_then(|base| base.join(path).ok())
+            .map(|url| url.path().to_string())
+            .unwrap_or_else(|| path.to_string());
+        let mut url = format!("{}{}", self.url, wire_path);
+        if signing {
+            if let Some(encoded) = query.as_ref().and_then(crate::request_signature::encode_query) {
+                url.push('?');
+                url.push_str(&encoded);
+            }
+        }
         debug!("{} {} {}", method, path, url);
 
         let mut req = self.client.request(method.clone(), &url);
 
-        let mut all_headers = headers.unwrap_or_default();
-        self.add_common_headers(&mut all_headers);
+        let all_headers = self.build_request_headers(&method, &wire_path, headers, query.as_ref(), signed_body_sha256);
         for (k, v) in all_headers {
             req = req.header(k, v);
         }
@@ -150,8 +214,10 @@ impl HTTPRequester {
             req = req.body(body)
         }
 
-        if let Some(query) = query {
-            req = req.query(&query);
+        if !signing {
+            if let Some(query) = query {
+                req = req.query(&query);
+            }
         }
 
         let resp = req.send().await?;
@@ -178,8 +244,9 @@ impl Requester for HTTPRequester {
         query: Option<HashMap<String, String>>,
         fail_on_error: bool,
     ) -> Result<http::Response<Bytes>> {
+        let signed_body_sha256 = self.signing_body_sha(path, body);
         let body = body.map(|b| reqwest::Body::from(b.to_vec()));
-        let resp = self.execute(method, path, body, headers, query, fail_on_error).await?;
+        let resp = self.execute(method, path, body, headers, query, fail_on_error, signed_body_sha256).await?;
         Self::to_http_response(resp).await
     }
 
@@ -192,7 +259,28 @@ impl Requester for HTTPRequester {
         query: Option<HashMap<String, String>>,
         fail_on_error: bool,
     ) -> Result<Option<reqwest::Response>> {
-        Ok(Some(self.execute(method, path, body, headers, query, fail_on_error).await?))
+        // A streaming body cannot be hashed without buffering it. The streamed
+        // file endpoints are exempt (empty-string hash); a body-less request
+        // hashes the empty string; anything else cannot be signed.
+        let signed_body_sha256 = {
+            let signer = self.signer.read().unwrap_or_else(|e| e.into_inner());
+            match signer.as_ref() {
+                None => None,
+                Some(_) if body.is_none() || is_file_endpoint(path) => {
+                    Some(RequestSigner::body_sha256_hex(path, None))
+                }
+                Some(_) => {
+                    return Err(AppMeshError::ConfigurationError(
+                        "a streamed request body cannot be HMAC-signed; use a buffered body or a file endpoint".into(),
+                    ))
+                }
+            }
+        };
+        Ok(Some(self.execute(method, path, body, headers, query, fail_on_error, signed_body_sha256).await?))
+    }
+
+    fn set_request_signer(&self, signer: Option<RequestSigner>) {
+        *self.signer.write().unwrap_or_else(|e| e.into_inner()) = signer;
     }
 
     fn set_forward_to(&self, url: Option<String>) {
@@ -306,6 +394,15 @@ impl AppMeshClient {
     /// Set the cluster forwarding host.
     pub fn set_forward_to(&self, url: Option<String>) {
         self.req.set_forward_to(url);
+    }
+
+    /// Install or remove the HMAC-SHA256 request signer (opt-in).
+    ///
+    /// When set, every request carries `X-Request-Key`, `X-Timestamp`,
+    /// `X-Nonce`, and `X-Signature` per `docs/source/Security.md`. The secret
+    /// stays in memory and is never logged. Pass `None` to stop signing.
+    pub fn set_request_signer(&self, signer: Option<RequestSigner>) {
+        self.req.set_request_signer(signer);
     }
 
     /// Get the cluster forwarding host.
@@ -1530,6 +1627,180 @@ mod tests {
         // Principal IDs keep their separators encoded, never mangled.
         assert_eq!(encode_path_segment("system:appmesh"), "system%3Aappmesh");
         assert_eq!(encode_path_segment("oidc:ab@cd"), "oidc%3Aab%40cd");
+    }
+
+    // -- Request signing ------------------------------------------------------
+
+    #[test]
+    fn test_signer_attaches_signature_headers_to_built_request() {
+        use crate::request_signature::{canonical_query, canonical_string};
+
+        let requester =
+            HTTPRequester::new("https://127.0.0.1:6060".to_string(), None, None, None, false).expect("requester");
+        assert!(requester.signing_body_sha("/appmesh/app/example", Some(b"body")).is_none());
+
+        requester.set_request_signer(Some(RequestSigner::new("ak-http", "test-secret")));
+        let body = br#"{"command":"echo hi"}"#;
+        let mut query = HashMap::new();
+        query.insert("b".to_string(), "2".to_string());
+        query.insert("a".to_string(), "1".to_string());
+
+        let headers = requester.build_request_headers(
+            &Method::PUT,
+            "/appmesh/app/example",
+            None,
+            Some(&query),
+            requester.signing_body_sha("/appmesh/app/example", Some(body)),
+        );
+
+        let signer = RequestSigner::new("ak-http", "test-secret");
+        assert_eq!(headers.get(HTTP_HEADER_KEY_X_REQUEST_KEY).unwrap(), "ak-http");
+        let timestamp = headers.get(HTTP_HEADER_KEY_X_TIMESTAMP).unwrap();
+        let nonce = headers.get(HTTP_HEADER_KEY_X_NONCE).unwrap();
+        let signature = headers.get(HTTP_HEADER_KEY_X_SIGNATURE).unwrap();
+        assert!(timestamp.chars().all(|c| c.is_ascii_digit()));
+        assert_eq!(nonce.len(), 32);
+
+        // The attached signature must verify over the exact canonical string.
+        let canonical = canonical_string(
+            "PUT",
+            "/appmesh/app/example",
+            &canonical_query(&query),
+            &crate::request_signature::sha256_hex(body),
+            timestamp,
+            nonce,
+        );
+        assert!(signer.verify(&canonical, signature));
+
+        // A caller-supplied stale signature header must not survive: the
+        // signer's fresh headers take precedence.
+        let mut hostile = HashMap::new();
+        hostile.insert(HTTP_HEADER_KEY_X_SIGNATURE.to_string(), "deadbeef".to_string());
+        let headers = requester.build_request_headers(
+            &Method::PUT,
+            "/appmesh/app/example",
+            Some(hostile),
+            Some(&query),
+            requester.signing_body_sha("/appmesh/app/example", Some(body)),
+        );
+        assert_ne!(headers.get(HTTP_HEADER_KEY_X_SIGNATURE).unwrap(), "deadbeef");
+
+        // Without a signer, no signature headers are attached at all.
+        requester.set_request_signer(None);
+        let plain = requester.build_request_headers(
+            &Method::GET,
+            "/appmesh/applications",
+            None,
+            None,
+            requester.signing_body_sha("/appmesh/applications", None),
+        );
+        assert!(!plain.contains_key(HTTP_HEADER_KEY_X_SIGNATURE));
+
+        // Streamed file endpoints hash the empty string even with a body.
+        requester.set_request_signer(Some(RequestSigner::new("ak-http", "test-secret")));
+        assert_eq!(
+            requester.signing_body_sha("/appmesh/file/upload", Some(b"file-bytes")).unwrap(),
+            crate::request_signature::sha256_hex(b"")
+        );
+    }
+
+    /// Wire-derived signing test: a raw loopback HTTP server captures the exact
+    /// request bytes, and an independent mini-verifier (ring HMAC + hand-built
+    /// canonical string, NOT this crate's canonical builder) recomputes the
+    /// signature the daemon would check. A space-valued query value pins the
+    /// percent-only wire encoding: reqwest's default `.query()` form-encoding
+    /// (space → '+') would fail here, because the daemon keeps '+' literal.
+    #[tokio::test]
+    async fn test_signed_request_wire_form_verifies_with_independent_verifier() {
+        use ring::hmac::{self, Key};
+        use sha2::{Digest, Sha256};
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+        fn hex(bytes: &[u8]) -> String {
+            bytes.iter().map(|b| format!("{:02x}", b)).collect()
+        }
+
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        let server = tokio::spawn(async move {
+            let (mut socket, _) = listener.accept().await.expect("client connect");
+            let mut raw = Vec::new();
+            let mut chunk = [0u8; 2048];
+            let header_end = loop {
+                let n = socket.read(&mut chunk).await.expect("read headers");
+                assert!(n > 0, "client closed before sending a full request");
+                raw.extend_from_slice(&chunk[..n]);
+                if let Some(pos) = raw.windows(4).position(|w| w == b"\r\n\r\n") {
+                    break pos;
+                }
+            };
+            let header_block = String::from_utf8_lossy(&raw[..header_end]).into_owned();
+            let content_length = header_block
+                .lines()
+                .find(|l| l.split(':').next().unwrap_or("").eq_ignore_ascii_case("content-length"))
+                .and_then(|l| l.split(':').nth(1))
+                .and_then(|v| v.trim().parse::<usize>().ok())
+                .unwrap_or(0);
+            while raw.len() - header_end - 4 < content_length {
+                let n = socket.read(&mut chunk).await.expect("read body");
+                assert!(n > 0, "client closed before sending the full body");
+                raw.extend_from_slice(&chunk[..n]);
+            }
+            socket
+                .write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\n{}")
+                .await
+                .expect("write response");
+            raw
+        });
+
+        let requester =
+            HTTPRequester::new(format!("http://{}", addr), None, None, None, false).expect("requester");
+        requester.set_request_signer(Some(RequestSigner::new("ak-wire", "wire-secret")));
+
+        let body = br#"{"command":"echo hi"}"#.to_vec();
+        let mut query = HashMap::new();
+        query.insert("q".to_string(), "two words".to_string());
+        let resp = requester
+            .send(Method::PUT, "/appmesh/app/example", Some(&body), None, Some(query), true)
+            .await
+            .expect("request succeeds");
+        assert_eq!(resp.status(), 200);
+
+        let raw = server.await.expect("server finished");
+        let text = String::from_utf8_lossy(&raw).into_owned();
+        let mut lines = text.split("\r\n");
+        let request_line = lines.next().expect("request line");
+        let mut parts = request_line.split(' ');
+        assert_eq!(parts.next().unwrap(), "PUT");
+        let wire_target = parts.next().expect("request target");
+        let (wire_path, wire_query) = wire_target.split_once('?').expect("query on the wire");
+        assert_eq!(wire_path, "/appmesh/app/example", "the wire path is the signed path");
+        assert!(!wire_query.contains('+'), "space must be %20 on the wire, never '+': {}", wire_query);
+        assert!(wire_query.contains("q=two%20words"));
+
+        let header = |name: &str| -> String {
+            text.split("\r\n")
+                .skip(1)
+                .take_while(|l| !l.is_empty())
+                .find(|l| l.split(':').next().unwrap_or("").eq_ignore_ascii_case(name))
+                .and_then(|l| l.splitn(2, ':').nth(1))
+                .map(|v| v.trim().to_string())
+                .unwrap_or_else(|| panic!("header {} missing", name))
+        };
+        assert_eq!(header("x-request-key"), "ak-wire");
+        let timestamp = header("x-timestamp");
+        let nonce = header("x-nonce");
+        let signature = header("x-signature");
+
+        let body_bytes = &raw[raw.len() - body.len()..];
+        assert_eq!(body_bytes, &body[..], "the signed body is the wire body");
+
+        // Independent daemon-side verification: canonical string built by hand
+        // (decoded query, sha256 of the wire body), HMAC recomputed with ring.
+        let body_hash = hex(&Sha256::digest(body_bytes));
+        let canonical = format!("PUT\n{}\nq=two words\n{}\n{}\n{}", wire_path, body_hash, timestamp, nonce);
+        let expected = hex(hmac::sign(&Key::new(hmac::HMAC_SHA256, b"wire-secret"), canonical.as_bytes()).as_ref());
+        assert_eq!(signature, expected, "signature must verify against the wire-derived canonical string");
     }
 
     #[test]

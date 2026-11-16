@@ -265,11 +265,13 @@ seed_builtin_principals() {
         return 1
     }
 
-    local issuer issuer_yaml automation_id guest_id source temporary
+    local issuer issuer_yaml automation_id guest_id guest_name_yaml guest_email_yaml source temporary
     local retired_id="" stripped=""
     local add_automation=1 add_guest=1 add_role=1
     issuer=${APPMESH_AUTH_ISSUER:-$(oidc_value issuer http://127.0.0.1:6062/auth)}
     issuer_yaml=$(yaml_quote "${issuer}") || return 1
+    guest_name_yaml=$(yaml_quote "${DEX_INITIAL_GUEST_USERNAME}") || return 1
+    guest_email_yaml=$(yaml_quote "${DEX_INITIAL_GUEST_EMAIL}") || return 1
     automation_id=$(stable_principal_id "${issuer}" "${DEX_AUTOMATION_SUBJECT}") || {
         echo "failed to derive the automation Principal ID" >&2
         return 1
@@ -339,6 +341,8 @@ seed_builtin_principals() {
         -v issuer="${issuer_yaml}" \
         -v automation_subject="${DEX_AUTOMATION_SUBJECT}" \
         -v guest_subject="${DEX_INITIAL_GUEST_SUBJECT}" \
+        -v guest_name="${guest_name_yaml}" \
+        -v guest_email="${guest_email_yaml}" \
         -v role="${DEX_AUTOMATION_ROLE}" '
             $0 == "  principals:" && (add_automation == 1 || add_guest == 1) {
                 print
@@ -357,6 +361,8 @@ seed_builtin_principals() {
                     print "      kind: user"
                     print "      issuer: " issuer
                     print "      subject: " guest_subject
+                    print "      display_name: " guest_name
+                    print "      email: " guest_email
                     print "      status: active"
                     print "      execution_user: \"\""
                     print "      roles: [appmesh-viewer]"
@@ -806,6 +812,11 @@ admin_ui() {
     listen=${APPMESH_AUTH_ADMIN_LISTEN:-127.0.0.1:6064}
     issuer=${APPMESH_AUTH_ISSUER:-$(oidc_value issuer http://127.0.0.1:6062/auth)}
     grpc_listen=${APPMESH_AUTH_GRPC_LISTEN:-127.0.0.1:5557}
+    # dexuser authentication contract: the runtime issuer it must validate
+    # sessions against, the same value rendered into dex.yaml above. Audience
+    # (appmesh-api) and session TTL keep dexuser defaults unless the operator
+    # exports APP_MESH_DEXUSER_AUDIENCE / APP_MESH_DEXUSER_SESSION_TTL himself.
+    export APP_MESH_DEXUSER_ISSUER="${issuer}"
     exec "${ADMIN_UI_BIN}" \
         --listen "http://${listen}" \
         --issuer "${issuer}" \
@@ -1460,6 +1471,7 @@ bootstrap_owner() {
     ensure_guest_credentials
     ensure_automation_client
     seed_builtin_principals
+    ensure_replication_follower_tokens
 
     local ready_file="${AUTH_STATE_DIR}/bootstrap.ready"
     local temporary owner
@@ -1489,6 +1501,441 @@ prepare_dex_config() {
     render_dex_config
 }
 
+# --- Cluster replication tokens (per follower, individually revocable) ------
+# Two interchangeable sources, selected by environment:
+#   file  (default): the accept list holds one bearer per line with an
+#          optional label; distribution is a projected token file.
+#   vault (real secrets service): the accepted per-follower tokens live in
+#          Vault KV v2 (secret/appmesh/replication/<label>). Issuing and
+#          revoking are KV operations against the component itself, every
+#          change lands in the Vault audit log, and both engine sides read
+#          live values: the owner lists per request, the follower reads its
+#          own entry per pull. Rotation propagates without any restart.
+replication_token_file() {
+    echo "${APPMESH_AUTH_REPLICATION_TOKEN_FILE:-${AUTH_STATE_DIR}/replication/replication-token}"
+}
+
+replication_vault_addr() {
+    # The Vault tooling is opt-in: it activates only when the deployment
+    # selected the secrets-service source.
+    [ "${APPMESH_AUTH_REPLICATION_TOKEN_SOURCE:-file}" = "vault" ] || return 1
+    echo "${APPMESH_AUTH_REPLICATION_TOKEN_VAULT_ADDR:-}"
+}
+
+replication_vault_kv_path() {
+    echo "secret/data/${APPMESH_REPLICATION_VAULT_KV_PATH:-appmesh/replication}"
+}
+
+replication_vault_meta_path() {
+    echo "secret/metadata/${APPMESH_REPLICATION_VAULT_KV_PATH:-appmesh/replication}"
+}
+
+vault_curl() {
+    # vault_curl <ADDR> <TOKEN> <METHOD> <PATH> [JSON_BODY] — one bounded
+    # curl shared by both Vault helpers: timeouts keep a network black hole
+    # failing fast instead of hanging bootstrap, and the token rides in a
+    # header file so it never appears in a process listing.
+    local addr=$1 token=$2 method=$3 path=$4 body=${5:-} out rc header
+    header=$(mktemp) || return 1
+    printf 'X-Vault-Token: %s\n' "${token}" >"${header}"
+    if [ -n "${body}" ]; then
+        out=$(curl -sS --connect-timeout 3 --max-time 10 -X "${method}" -H @"${header}" \
+            -H 'Content-Type: application/json' -d "${body}" "${addr}${path}" 2>&1)
+    else
+        out=$(curl -sS --connect-timeout 3 --max-time 10 -X "${method}" -H @"${header}" \
+            "${addr}${path}" 2>&1)
+    fi
+    rc=$?
+    rm -f "${header}"
+    [ "${rc}" -eq 0 ] || { echo "${out}" >&2; return 1; }
+    printf '%s' "${out}" | grep -q '"errors"' && { echo "${out}" >&2; return 1; }
+    printf '%s' "${out}"
+}
+
+vault_api() {
+    # vault_api <METHOD> <PATH> [JSON_BODY] — prints the response body and
+    # fails on a Vault error envelope or a transport failure.
+    local token
+    token=$(cat "${APPMESH_AUTH_REPLICATION_TOKEN_VAULT_TOKEN_FILE:?vault token file unset}" 2>/dev/null) || {
+        echo "The Vault token file is not readable" >&2
+        return 1
+    }
+    vault_curl "${APPMESH_AUTH_REPLICATION_TOKEN_VAULT_ADDR}" "${token}" "$@"
+}
+
+validate_replication_label() {
+    case "${1:-}" in
+        ''|*[!A-Za-z0-9._-]*)
+            echo "The follower label may only use letters, digits, '.', '_' or '-'" >&2
+            return 1
+            ;;
+    esac
+}
+
+issue_replication_token() {
+    validate_replication_label "${1:-}" || return 1
+    local token payload
+    token=$(openssl rand -hex 32) || { echo "Could not generate a token" >&2; return 1; }
+    if replication_vault_addr >/dev/null; then
+        payload=$(python3 -c 'import json,sys;print(json.dumps({"data":{"token":sys.argv[1]}}))' "${token}") || return 1
+        # KV v2 put on an existing key is the rotation; the follower reads the
+        # new value on its next pull.
+        vault_api PUT "/v1/$(replication_vault_kv_path)/$1" "${payload}" >/dev/null || return 1
+        echo "${token}"
+        return 0
+    fi
+    local file slot rotate
+    file=$(replication_token_file)
+    mkdir -p "$(dirname "${file}")"
+    slot="$(dirname "${file}")/$1.token"
+    rotate=0
+    [ -f "${slot}" ] && rotate=1
+    if [ "${rotate}" -eq 0 ] && [ -f "${file}" ] &&
+        awk -v n="$1" 'NF >= 2 && $2 == n { found = 1 } END { exit !found }' "${file}"; then
+        echo "A replication token labeled <${1}> already exists; revoke it first" >&2
+        return 1
+    fi
+    if [ "${rotate}" -eq 1 ]; then
+        # Rotation: replace the accept line and rewrite the follower's file in
+        # place; the follower re-reads its token on the next pull.
+        local tmp="${file}.tmp.$$"
+        awk -v n="$1" '!(NF >= 2 && $2 == n)' "${file}" > "${tmp}" || { rm -f "${tmp}"; return 1; }
+        chmod 600 "${tmp}"
+        mv "${tmp}" "${file}"
+    fi
+    printf '%s %s\n' "${token}" "$1" >> "${file}"
+    if [ "${rotate}" -eq 1 ]; then
+        printf '%s\n' "${token}" > "${slot}"
+        chmod 600 "${slot}"
+        echo "Rotated the replication token for <${1}>" >&2
+    fi
+    chmod 600 "${file}"
+    echo "${token}" # shown exactly once; the label stays in the file for audit
+}
+
+revoke_replication_token() {
+    validate_replication_label "${1:-}" || return 1
+    if replication_vault_addr >/dev/null; then
+        # A KV v2 DELETE of a missing entry still succeeds, so a failure here
+        # means Vault or the owner credential is broken — not "absent".
+        vault_api DELETE "/v1/$(replication_vault_kv_path)/$1" >/dev/null 2>&1 ||
+            { echo "Could not revoke replication token <${1}> in Vault (check Vault reachability and the owner credential)" >&2; return 1; }
+        echo "Revoked replication token <${1}> in Vault; its next pull is rejected"
+        return 0
+    fi
+    local file tmp slot
+    file=$(replication_token_file)
+    [ -f "${file}" ] || { echo "No replication token file at <${file}>" >&2; return 1; }
+    tmp="${file}.tmp.$$"
+    if ! awk -v n="$1" '!(NF >= 2 && $2 == n)' "${file}" > "${tmp}"; then
+        rm -f "${tmp}"
+        return 1
+    fi
+    if [ "$(wc -l < "${file}")" -eq "$(wc -l < "${tmp}")" ]; then
+        rm -f "${tmp}"
+        echo "No replication token labeled <${1}>" >&2
+        return 1
+    fi
+    chmod 600 "${tmp}"
+    mv "${tmp}" "${file}"
+    # Truncate (not delete) a provisioned slot: an empty file stays "present"
+    # so bootstrap provisioning does not silently re-enable the follower. To
+    # re-enable, rotate with: replication-token <label> (or delete the slot
+    # file and restart the owner bootstrap).
+    slot="$(dirname "${file}")/$1.token"
+    [ -f "${slot}" ] && : > "${slot}" && chmod 600 "${slot}"
+    echo "Revoked replication token <${1}>; its next pull is rejected"
+}
+
+list_replication_tokens() {
+    if replication_vault_addr >/dev/null; then
+        vault_api GET "/v1/$(replication_vault_meta_path)?list=true" |
+            python3 -c 'import sys,json;[print(k.rstrip("/")) for k in json.load(sys.stdin)["data"]["keys"]]'
+        return 0
+    fi
+    local file
+    file=$(replication_token_file)
+    [ -f "${file}" ] || { echo "(no replication token file)" >&2; return 0; }
+    awk 'NF && $1 !~ /^#/ { print (NF >= 2 ? $2 : "shared") }' "${file}"
+}
+
+# Provision per-follower replication tokens for the declared follower set
+# (APPMESH_AUTH_REPLICATION_FOLLOWERS, space or comma separated). Idempotent:
+# an existing token is never regenerated; rotation is a deliberate
+# replication-token re-issue.
+ensure_replication_follower_tokens() {
+    local followers=${APPMESH_AUTH_REPLICATION_FOLLOWERS:-}
+    [ -n "${followers}" ] || return 0
+    local label dir
+    dir="$(dirname "$(replication_token_file)")"
+    mkdir -p "${dir}"
+    followers=${followers//,/ }
+    # Word-split without globbing: a label carrying '*' must stay a label.
+    printf '%s\n' "${followers}" | tr -s ' \t' '\n' | while IFS= read -r label; do
+        [ -n "${label}" ] || continue
+        validate_replication_label "${label}" || exit 1
+        if replication_vault_addr >/dev/null; then
+            ensure_replication_vault_token "${label}" "${dir}" || exit 1
+        else
+            ensure_replication_file_token "${label}" "${dir}" || exit 1
+        fi
+    done
+}
+
+# File source: one single-token file per follower, registered as a labeled
+# line in the accept list (projected-secret pattern; read-only mounts).
+ensure_replication_file_token() {
+    local label=$1 dir=$2 token
+    [ -f "${dir}/${label}.token" ] && return 0
+    token=$(openssl rand -hex 32) || { echo "Could not generate a replication token" >&2; return 1; }
+    printf '%s %s\n' "${token}" "${label}" >> "$(replication_token_file)"
+    printf '%s\n' "${token}" > "${dir}/${label}.token"
+    chmod 600 "$(replication_token_file)" "${dir}/${label}.token"
+    echo "Issued the replication token for follower <${label}>" >&2
+}
+
+# Vault source: the KV entry is the accepted token. The follower's machine
+# identity is an AppRole (role_id + one secret_id), the standard Vault
+# issuance for non-human callers: the engine logs in for a fresh client token
+# on every pull, and the role's policy can read its own KV entry only. The
+# credential file is the single bootstrap secret delivered through the volume.
+ensure_replication_vault_token() {
+    local label=$1 dir=$2 token payload policy role role_id secret_id
+    if ! vault_api GET "/v1/$(replication_vault_kv_path)/${label}" >/dev/null 2>&1; then
+        token=$(openssl rand -hex 32) || return 1
+        payload=$(python3 -c 'import json,sys;print(json.dumps({"data":{"token":sys.argv[1]}}))' "${token}") || return 1
+        vault_api PUT "/v1/$(replication_vault_kv_path)/${label}" "${payload}" >/dev/null || return 1
+        echo "Issued the Vault replication token for follower <${label}>" >&2
+    fi
+    # The policy is rewritten on every bootstrap (a delivered credential does
+    # not stop the rewrite: that is exactly how a follower provisioned before
+    # the PKI source gains its pki/issue path). A policy upsert invalidates
+    # nothing; the KV path follows APPMESH_REPLICATION_VAULT_KV_PATH like
+    # every other reader. The role is created once and never replaced: a PUT
+    # would mint a new role_id and silently invalidate every delivered
+    # credential. Changing a role is an explicit operator action.
+    policy=$(
+        python3 - "${label}" "$(ssl_vault_pki_role)" "$(replication_vault_kv_path)" <<'PY'
+import json, sys
+label, role, kv = sys.argv[1], sys.argv[2], sys.argv[3]
+rules = (
+    f'path "{kv}/{label}" {{ capabilities = ["read"] }}\n'
+    f'path "pki/issue/{role}" {{ capabilities = ["create", "update"] }}'
+)
+print(json.dumps({"policy": rules}))
+PY
+    ) || return 1
+    vault_api PUT "/v1/sys/policies/acl/appmesh-follower-${label}" "${policy}" >/dev/null || return 1
+    if ! vault_api GET "/v1/auth/approle/role/appmesh-follower-${label}/role-id" >/dev/null 2>&1; then
+        # Every pull mints a fresh token through this role, so the tokens stay
+        # use-bounded and short-lived: a login per pull cycle would otherwise
+        # accumulate month-long tokens in the token table (a pull needs at
+        # most three calls: its KV read and two PKI issues).
+        role=$(python3 - "${label}" <<'PY'
+import json, sys
+print(json.dumps({"token_policies": ["appmesh-follower-" + sys.argv[1]], "token_ttl": "1h", "token_num_uses": 10}))
+PY
+        ) || return 1
+        vault_api PUT "/v1/auth/approle/role/appmesh-follower-${label}" "${role}" >/dev/null || return 1
+    fi
+    # A delivered credential is final: re-issuing would rewrite the AppRole
+    # (PUT replaces the role and invalidates every delivered secret_id) while
+    # the follower keeps the old file. Rotate explicitly instead.
+    [ -f "${dir}/${label}.vault-token" ] && return 0
+    # Field order in Vault's JSON is not contractual (secret_id_accessor
+    # sorts before secret_id); parse it properly instead of positional awk.
+    role_id=$(vault_api GET "/v1/auth/approle/role/appmesh-follower-${label}/role-id" |
+        python3 -c 'import sys,json;print(json.load(sys.stdin)["data"]["role_id"])') || return 1
+    secret_id=$(vault_api POST "/v1/auth/approle/role/appmesh-follower-${label}/secret-id" '{}' |
+        python3 -c 'import sys,json;print(json.load(sys.stdin)["data"]["secret_id"])') || return 1
+    printf '%s\n%s\n' "${role_id}" "${secret_id}" > "${dir}/${label}.vault-token"
+    chmod 600 "${dir}/${label}.vault-token"
+    echo "Issued the AppRole Vault access for follower <${label}>" >&2
+}
+
+
+# --- Cluster TLS material (central issuance through the Vault PKI) ----------
+# Two interchangeable sources, selected by APPMESH_SSL_SOURCE exactly like the
+# replication tokens above:
+#   file  (default): each node self-signs its six-file set (docker entrypoint
+#          / setup.sh) and the compose cluster shares the owner CA by volume.
+#   vault (real PKI): one cluster CA lives in the Vault PKI engine and signs
+#          every node's leaf certificates — owner and followers alike — so any
+#          node verifies any peer. The CA private key never leaves Vault:
+#          this path writes the five daemon-consumed files and no ca-key.pem.
+# Issuing and renewing are operator actions (bootstrap, tls-renew); the engine
+# only ever consumes files and serves new material after a restart.
+ssl_vault_addr() {
+    # Opt-in like the replication tooling: it activates only when the
+    # deployment selected the central source. The address defaults to the
+    # replication deployment's Vault when no dedicated one was pinned.
+    [ "${APPMESH_SSL_SOURCE:-file}" = "vault" ] || return 1
+    echo "${APPMESH_SSL_VAULT_ADDR:-${APPMESH_AUTH_REPLICATION_TOKEN_VAULT_ADDR:-}}"
+}
+
+ssl_vault_token_file() {
+    echo "${APPMESH_SSL_VAULT_TOKEN_FILE:-${APPMESH_AUTH_REPLICATION_TOKEN_VAULT_TOKEN_FILE:-}}"
+}
+
+ssl_vault_pki_role() {
+    echo "${APPMESH_SSL_VAULT_PKI_ROLE:-appmesh-node}"
+}
+
+vault_tls_api() {
+    # vault_tls_api <ADDR> <TOKEN> <METHOD> <PATH> [JSON_BODY] — the PKI
+    # companion of vault_api, parametrized on address and token so one helper
+    # serves the owner's service token and the follower AppRole logins.
+    vault_curl "$@"
+}
+
+vault_tls_token() {
+    # Resolve the bootstrap credential exactly like the engine's VaultClient:
+    # one line is a static service token (the owner's); a non-empty second
+    # line is an AppRole (role_id, secret_id) whose login mints a fresh client
+    # token. A lone trailing newline stays the one-line form.
+    local addr=$1 file token secret_id payload
+    file=$(ssl_vault_token_file)
+    [ -n "${file}" ] && [ -f "${file}" ] || {
+        echo "The Vault token file for TLS is unavailable: ${file:-unset}" >&2
+        return 1
+    }
+    token=$(sed -n '1p' "${file}")
+    secret_id=$(sed -n '2p' "${file}")
+    if [ -n "$(printf '%s' "${secret_id}" | tr -d '[:space:]')" ]; then
+        payload=$(printf '%s\n%s\n' "${token}" "${secret_id}" |
+            python3 -c 'import json,sys;print(json.dumps(dict(zip(("role_id", "secret_id"), sys.stdin.read().splitlines()))))') || return 1
+        token=$(vault_tls_api "${addr}" "" POST /v1/auth/approle/login "${payload}" |
+            python3 -c 'import sys,json;print(json.load(sys.stdin)["auth"]["client_token"])') || return 1
+    fi
+    [ -n "${token}" ] || { echo "The Vault credential for TLS is empty" >&2; return 1; }
+    printf '%s' "${token}"
+}
+
+tls_trusts_vault_ca() {
+    # True when the five daemon-consumed files are complete and chain to the
+    # argument CA. Material from any other origin — a previous self-signed
+    # set, a replaced CA — fails and is re-issued: the check doubles as the
+    # migration path from the file source.
+    local ca_file=$1 leaf
+    for leaf in ca.pem server.pem server-key.pem client.pem client-key.pem; do
+        [ -f "${AUTH_TLS_DIR}/${leaf}" ] || return 1
+    done
+    openssl verify -CAfile "${ca_file}" \
+        "${AUTH_TLS_DIR}/server.pem" "${AUTH_TLS_DIR}/client.pem" >/dev/null 2>&1
+}
+
+issue_vault_certificate() {
+    # POST pki/issue/<role> for one leaf; prints the Vault response. Empty SAN
+    # lists are omitted rather than sent as empty strings; the API takes DNS
+    # names as alt_names and addresses as ip_sans (unknown fields are ignored
+    # silently, so a wrong name means a silently missing SAN).
+    local addr=$1 token=$2 role=$3 common_name=$4 dns=$5 ips=$6 payload
+    payload=$(python3 -c '
+import json, sys
+payload = {"common_name": sys.argv[1]}
+if sys.argv[2]:
+    payload["alt_names"] = sys.argv[2]
+if sys.argv[3]:
+    payload["ip_sans"] = sys.argv[3]
+print(json.dumps(payload))' "${common_name}" "${dns}" "${ips}") || return 1
+    vault_tls_api "${addr}" "${token}" POST "/v1/pki/issue/${role}" "${payload}"
+}
+
+write_vault_leaf() {
+    # Atomically install one issued pair: certificate 644, private key 600.
+    # The Vault response arrives on stdin — the private key never sits in a
+    # process's argv. The paths are argv (not secret), so the program itself
+    # rides a -c string and stdin stays the data channel.
+    local cert_path=$1 key_path=$2
+    python3 -c '
+import json, os, sys
+data = json.load(sys.stdin)["data"]
+for path, field, mode in ((sys.argv[1], "certificate", 0o644), (sys.argv[2], "private_key", 0o600)):
+    temporary = path + ".tmp"
+    with open(temporary, "w") as handle:
+        handle.write(data[field])
+    os.chmod(temporary, mode)
+    os.replace(temporary, path)
+' "${cert_path}" "${key_path}"
+}
+
+provision_tls_vault() {
+    local force=${1:-0}
+    local addr role token temporary sans san_dns san_ip common_name response server_response leaf
+    addr=$(ssl_vault_addr) || return 1
+    [ -n "${addr}" ] || { echo "The Vault address for TLS is unset" >&2; return 1; }
+    role=$(ssl_vault_pki_role)
+    token=$(vault_tls_token "${addr}") || return 1
+
+    [ ! -L "${AUTH_TLS_DIR}" ] || { echo "refusing symbolic-link TLS directory: ${AUTH_TLS_DIR}" >&2; return 1; }
+    install -d -m 700 "${AUTH_TLS_DIR}"
+    for leaf in ca.pem server.pem server-key.pem client.pem client-key.pem; do
+        [ ! -L "${AUTH_TLS_DIR}/${leaf}" ] || {
+            echo "refusing symbolic-link TLS material: ${AUTH_TLS_DIR}/${leaf}" >&2
+            return 1
+        }
+    done
+    temporary="${AUTH_TLS_DIR}/.vault-ca.$$"
+    rm -f "${temporary}"
+
+    # The trust anchor: the root certificate, or the issuing chain when an
+    # operator layers an intermediate CA on the engine.
+    vault_tls_api "${addr}" "" GET /v1/pki/cert/ca |
+        python3 -c 'import sys,json;print(json.load(sys.stdin)["data"]["certificate"])' \
+        >"${temporary}" || { rm -f "${temporary}"; return 1; }
+    if [ "${force}" -eq 0 ] && tls_trusts_vault_ca "${temporary}"; then
+        rm -f "${temporary}"
+        return 0
+    fi
+
+    # Same name coverage as the self-signed generator: hostname, FQDN, local
+    # addresses and the APPMESH_SSL_EXTRA_SAN peers, split the way the Vault
+    # API wants them (alt_names takes DNS names, ip_names takes addresses).
+    [ -x "${APPMESH_ROOT}/ssl/generate_ssl_cert.sh" ] || {
+        echo "The SAN listing tool is unavailable: ${APPMESH_ROOT}/ssl/generate_ssl_cert.sh" >&2
+        rm -f "${temporary}"
+        return 1
+    }
+    sans=$("${APPMESH_ROOT}/ssl/generate_ssl_cert.sh" --san-list) || { rm -f "${temporary}"; return 1; }
+    san_dns=$(printf '%s\n' "${sans}" | sed -n '1p')
+    san_ip=$(printf '%s\n' "${sans}" | sed -n '2p')
+    common_name=$(hostname 2>/dev/null) || common_name=""
+    [ -n "${common_name}" ] && [ "${#common_name}" -le 64 ] || common_name="AppMesh-Server"
+
+    # Both leaves are issued before any file changes: a failure mid-way must
+    # not leave a half-replaced set. The five renames back-to-back then leave
+    # only a microsecond mixing window, closed by the trust check on the next
+    # bootstrap if it ever matters.
+    response=$(issue_vault_certificate "${addr}" "${token}" "${role}" \
+        "${common_name}" "${san_dns}" "${san_ip}") || { rm -f "${temporary}"; return 1; }
+    server_response=${response}
+    response=$(issue_vault_certificate "${addr}" "${token}" "${role}" \
+        "appmesh-client" "${san_dns}" "${san_ip}") || { rm -f "${temporary}"; return 1; }
+    printf '%s' "${server_response}" | write_vault_leaf "${AUTH_TLS_DIR}/server.pem" "${AUTH_TLS_DIR}/server-key.pem" || {
+        rm -f "${temporary}"
+        return 1
+    }
+    printf '%s' "${response}" | write_vault_leaf "${AUTH_TLS_DIR}/client.pem" "${AUTH_TLS_DIR}/client-key.pem" || {
+        rm -f "${temporary}"
+        return 1
+    }
+    chmod 644 "${temporary}"
+    mv -f "${temporary}" "${AUTH_TLS_DIR}/ca.pem"
+    # A stale signing key from the file source has no business here: this
+    # node's certificates are issued by Vault, never locally.
+    rm -f "${AUTH_TLS_DIR}/ca-key.pem"
+    echo "Issued the TLS certificates for <${common_name}> from the Vault PKI" >&2
+}
+
+ensure_tls_material() {
+    # Bootstrap hook on every node: central issuance when the deployment
+    # selected the Vault PKI source; the file source self-signs in the docker
+    # entrypoint / setup and needs nothing here.
+    ssl_vault_addr >/dev/null || return 0
+    provision_tls_vault 0
+}
+
+
 action=${1:-}
 case "${action}" in
     bootstrap)
@@ -1500,6 +1947,9 @@ case "${action}" in
             prepare_dex_config
             echo "App Mesh authentication state initialized" >&2
         fi
+        # Every node — owner and followers — provisions its TLS material
+        # before the daemon starts; the file source self-signs instead.
+        ensure_tls_material
         ;;
     service|dex)
         if ! is_builtin_auth || ! is_auth_owner; then
@@ -1580,14 +2030,36 @@ case "${action}" in
         is_auth_owner || { echo "Users are managed only on the authentication owner" >&2; exit 1; }
         add_user "${2:-}" "${3:-}"
         ;;
+    replication-token)
+        is_auth_owner || { echo "Replication tokens are managed only on the authentication owner" >&2; exit 1; }
+        issue_replication_token "${2:-}"
+        ;;
+    replication-token-revoke)
+        is_auth_owner || { echo "Replication tokens are managed only on the authentication owner" >&2; exit 1; }
+        revoke_replication_token "${2:-}"
+        ;;
+    replication-token-list)
+        is_auth_owner || { echo "Replication tokens are managed only on the authentication owner" >&2; exit 1; }
+        list_replication_tokens
+        ;;
+    tls-renew)
+        ssl_vault_addr >/dev/null || {
+            echo "TLS renewal requires the Vault PKI source (APPMESH_SSL_SOURCE=vault)" >&2
+            exit 1
+        }
+        provision_tls_vault 1
+        echo "TLS certificates re-issued; restart the daemon to serve them" >&2
+        ;;
     delete-user)
         is_builtin_auth || { echo "The user management API is unavailable in external authentication mode" >&2; exit 1; }
         is_auth_owner || { echo "Users are managed only on the authentication owner" >&2; exit 1; }
         delete_user "${2:-}"
         ;;
     *)
-        echo "usage: appmesh-auth.sh {bootstrap|service|service-health|admin-ui|admin-ui-health|automation-token|user-token|print-initial-password|rotate-initial-password|set-initial-password|forget-initial-password|add-user|delete-user}" >&2
+        echo "usage: appmesh-auth.sh {bootstrap|service|service-health|admin-ui|admin-ui-health|automation-token|user-token|print-initial-password|rotate-initial-password|set-initial-password|forget-initial-password|add-user|delete-user|replication-token|replication-token-revoke|replication-token-list|tls-renew}" >&2
         echo "  user-token [--with-refresh] [username]  print the password-grant access token; --with-refresh adds offline_access and prints the full JSON token set for SDK use" >&2
+        echo "  replication-token <label>  issue a per-follower replication token (printed once); revoke with replication-token-revoke <label>" >&2
+        echo "  tls-renew  re-issue this node's TLS certificates from the Vault PKI, then restart the daemon to serve them" >&2
         exit 2
         ;;
 esac

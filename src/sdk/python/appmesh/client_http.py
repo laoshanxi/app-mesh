@@ -28,6 +28,7 @@ from .app import App
 from .app_output import AppOutput
 from .app_run import AppRun, OutputHandler
 from .exceptions import AppMeshAuthError, AppMeshConnectionError, AppMeshRequestError
+from . import request_signature
 from .token_provider import StaticAccessTokenProvider, TokenProvider
 
 logger = logging.getLogger(__name__)
@@ -65,6 +66,8 @@ class AppMeshClient:
         - set_token_provider()
         - set_bearer_token()
         - clear_bearer_token()
+        - enable_request_signature()
+        - disable_request_signature()
         - get_auth_config()
         - get_current_principal()
 
@@ -183,6 +186,8 @@ class AppMeshClient:
         *,
         bearer_token: Optional[str] = None,
         token_provider: Optional[TokenProvider] = None,
+        api_key: Optional[str] = None,
+        api_secret: Optional[str] = None,
     ):
         """Initialize an App Mesh HTTP client for interacting with the App Mesh server via secure HTTPS.
 
@@ -203,6 +208,10 @@ class AppMeshClient:
               refresh, persistence, and revocation are handled by :class:`OAuthClient`.
             token_provider: Provider that supplies and refreshes access tokens. Mutually
               exclusive with ``bearer_token``. Refresh credentials remain provider-private.
+            api_key: API key id for opt-in HMAC request signing (see
+              :meth:`enable_request_signature`); requires ``api_secret``.
+            api_secret: API key secret. Signing activates only when both
+              ``api_key`` and ``api_secret`` are set; the secret is never logged.
         """
         self._ensure_logging_configured()
         self.base_url = self._normalize_base_url(base_url)
@@ -210,6 +219,12 @@ class AppMeshClient:
         self.ssl_client_cert = ssl_client_cert
         self.request_timeout = request_timeout
         self._forward_to = None
+
+        self._api_key: Optional[str] = None
+        self._api_secret: Optional[str] = None
+        if api_key is not None or api_secret is not None:
+            # Validate through the shared setter so partial pairs are rejected.
+            self.enable_request_signature(api_key or "", api_secret or "")
 
         if bearer_token is not None and token_provider is not None:
             raise ValueError("bearer_token and token_provider are mutually exclusive")
@@ -294,6 +309,64 @@ class AppMeshClient:
     def clear_bearer_token(self) -> None:
         """Detach local authentication state without contacting the authentication service."""
         self._token_provider = None
+
+    def enable_request_signature(self, key_id: str, secret: str) -> None:
+        """Enable opt-in HMAC request signing (see Security.md, "Request replay
+        protection and signatures").
+
+        Once enabled, every request from this client carries the
+        ``X-Request-Key``/``X-Timestamp``/``X-Nonce``/``X-Signature`` headers
+        over an HMAC-SHA256 of the canonical request string, mirroring the
+        daemon's ``RequestSignature`` verification. The key pair comes from
+        ``POST /appmesh/security/apikeys``; the secret is kept in memory only
+        and never logged. The signature is an integrity layer on top of the
+        bearer token, not a replacement for it.
+
+        Args:
+            key_id: API key id sent as ``X-Request-Key``.
+            secret: API key secret; only its HMAC crosses the wire.
+        """
+        if not isinstance(key_id, str) or not key_id:
+            raise ValueError("key_id must be a non-empty string")
+        if not isinstance(secret, str) or not secret:
+            raise ValueError("secret must be a non-empty string")
+        self._api_key = key_id
+        self._api_secret = secret
+
+    def disable_request_signature(self) -> None:
+        """Turn off request signing previously enabled via ``enable_request_signature``."""
+        self._api_key = None
+        self._api_secret = None
+
+    def _request_signature_enabled(self) -> bool:
+        """Signing is active only when both the key id and secret are set."""
+        return bool(self._api_key and self._api_secret)
+
+    def _signature_headers(self, method: "AppMeshClient._Method", path: str, query: Optional[dict], body) -> dict:
+        """Build the four signature headers for one HTTP request.
+
+        ``body`` is the already-JSON-normalized body (str/bytes) or the raw
+        caller value. A callable body (a streamed upload) and the streamed file
+        endpoints sign the empty-string body hash — the documented exemption.
+        """
+        return request_signature.signed_headers(
+            self._api_key,
+            self._api_secret,
+            method.value,
+            path,
+            query,
+            None if body is None or callable(body) else body,
+        )
+
+    def _append_signature_headers(self, headers: dict, method: str, path: str, query: Optional[dict] = None) -> None:
+        """Attach the four signature headers to a caller-built request that does
+        not funnel through ``_request_http`` (e.g. a WSS/TCP file side-channel
+        request). No-op when signing is not enabled. Streamed file endpoints
+        sign the empty-string body hash — the streamed content is exempt."""
+        if self._request_signature_enabled():
+            headers.update(
+                request_signature.signed_headers(self._api_key, self._api_secret, method, path, query, None)
+            )
 
     def close(self) -> None:
         """Close the client and release resources."""
@@ -961,6 +1034,22 @@ class AppMeshClient:
             body = json.dumps(body, allow_nan=False)
             base_headers.setdefault("Content-Type", "application/json")
 
+        # Signed requests carry a percent-only encoded query: the daemon decodes
+        # %XX but keeps '+' literal, so urllib.parse.quote (never quote_plus)
+        # must build the wire form — the daemon-visible decoded values must
+        # equal the values that were signed. Unsigned requests keep the
+        # library-default (dict) encoding.
+        params = query
+        signing = self._request_signature_enabled()
+        if signing:
+            params = request_signature.encode_query(query)
+            # The signature must bind the path exactly as it reaches the daemon.
+            # requests re-quotes the URL before the wire (spaces and non-ASCII
+            # become %XX), so derive the wire path with the same quoting
+            # requests applies (requests.utils.requote_uri) and sign that —
+            # signing the caller's raw path would 401 on the daemon.
+            wire_path = requests.utils.requote_uri(parse.urlsplit(url).path)
+
         # Streaming/multipart bodies cannot be assumed replayable after a 401 response.
         replayable = body is None or isinstance(body, (str, bytes, bytearray)) or callable(body)
         rejected_token = None
@@ -977,6 +1066,12 @@ class AppMeshClient:
                     if bearer_token:
                         headers[self._HTTP_HEADER_KEY_AUTH] = f"Bearer {bearer_token}"
 
+                if signing:
+                    # Fresh timestamp and nonce per attempt: a retried request
+                    # must not reuse a nonce the daemon may have already seen.
+                    # The wire path (not the caller's raw path) is signed.
+                    headers.update(self._signature_headers(method, wire_path, query, body))
+
                 request_kwargs = {
                     "url": url,
                     "headers": headers,
@@ -988,17 +1083,19 @@ class AppMeshClient:
                 payload = body() if callable(body) else body
                 try:
                     if method == AppMeshClient._Method.GET:
-                        resp = self.session.get(params=query, **request_kwargs)
+                        resp = self.session.get(params=params, **request_kwargs)
                     elif method == AppMeshClient._Method.GET_STREAM:
-                        resp = self.session.get(params=query, stream=True, **request_kwargs)
+                        resp = self.session.get(params=params, stream=True, **request_kwargs)
                     elif method == AppMeshClient._Method.POST:
-                        resp = self.session.post(params=query, data=payload, **request_kwargs)
+                        resp = self.session.post(params=params, data=payload, **request_kwargs)
                     elif method == AppMeshClient._Method.POST_STREAM:
-                        resp = self.session.post(params=query, data=payload, stream=True, **request_kwargs)
+                        resp = self.session.post(params=params, data=payload, stream=True, **request_kwargs)
                     elif method == AppMeshClient._Method.DELETE:
-                        resp = self.session.delete(**request_kwargs)
+                        # params is passed like on every other method so a signed
+                        # DELETE+query matches the wire (the signature covers it).
+                        resp = self.session.delete(params=params, **request_kwargs)
                     elif method == AppMeshClient._Method.PUT:
-                        resp = self.session.put(params=query, data=payload, **request_kwargs)
+                        resp = self.session.put(params=params, data=payload, **request_kwargs)
                     else:
                         raise AppMeshRequestError(f"Invalid http method: {method}")
                 finally:

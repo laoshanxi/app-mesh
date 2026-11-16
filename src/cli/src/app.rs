@@ -25,6 +25,16 @@ pub struct Cli {
     #[arg(long = "ca-cert", global = true, value_name = "PATH")]
     pub ca_cert: Option<PathBuf>,
 
+    /// API key id for HMAC request signing (env: APPMESH_API_KEY); requires --api-secret
+    #[arg(long = "api-key", global = true, value_name = "KEY_ID")]
+    pub api_key: Option<String>,
+
+    /// API key secret for HMAC request signing (env: APPMESH_API_SECRET); never stored.
+    /// Use `-` to read one line from stdin and keep the secret out of argv; with
+    /// `logon --password-stdin` the secret line comes first, the password second
+    #[arg(long = "api-secret", global = true, value_name = "SECRET")]
+    pub api_secret: Option<String>,
+
     /// Enable debug logging
     #[arg(short = 'v', long = "verbose", global = true)]
     pub verbose: bool,
@@ -195,6 +205,23 @@ pub struct AddArgs {
     /// Docker image
     #[arg(short = 'I', long = "docker-image")]
     pub docker_image: Option<String>,
+
+    /// Publish a container port: [hostIp:]hostPort:containerPort[/protocol]
+    /// (repeatable, docker run -p spelling; requires --docker-image)
+    #[arg(long = "docker-port")]
+    pub docker_port: Vec<String>,
+
+    /// Bind-mount a volume (repeatable, docker run -v spelling)
+    #[arg(long = "docker-volume")]
+    pub docker_volume: Vec<String>,
+
+    /// Container network mode: host, bridge, none or a network name
+    #[arg(long = "docker-network")]
+    pub docker_network: Option<String>,
+
+    /// Container backend: api (default) or cli
+    #[arg(long = "docker-backend")]
+    pub docker_backend: Option<String>,
 
     /// Attach to existing process ID
     #[arg(short = 'P', long = "pid")]
@@ -372,6 +399,23 @@ pub struct RunArgs {
     /// Working directory
     #[arg(short = 'w', long = "working-dir")]
     pub working_dir: Option<String>,
+
+    /// Docker image: run the command inside a container of this image
+    #[arg(short = 'I', long = "docker-image")]
+    pub docker_image: Option<String>,
+
+    /// Publish a container port: [hostIp:]hostPort:containerPort[/protocol]
+    /// (repeatable, docker run -p spelling; requires --docker-image)
+    #[arg(long = "docker-port")]
+    pub docker_port: Vec<String>,
+
+    /// Bind-mount a volume (repeatable, docker run -v spelling)
+    #[arg(long = "docker-volume")]
+    pub docker_volume: Vec<String>,
+
+    /// Container network mode: host, bridge, none or a network name
+    #[arg(long = "docker-network")]
+    pub docker_network: Option<String>,
 
     /// Metadata input (passed to stdin, '@' for file)
     #[arg(short = 'm', long = "metadata")]

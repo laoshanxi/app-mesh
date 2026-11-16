@@ -25,6 +25,10 @@ type (
 		WebSocketPort                int    `yaml:"WebSocketPort"`
 		PrometheusExporterListenPort int    `yaml:"PrometheusExporterListenPort"`
 		CORSDisabled                 bool   `yaml:"CorsDisabled"`
+		// CORS is opt-in like on the daemon: the request Origin is echoed only
+		// when listed here. The default empty list sends no CORS headers at all
+		// (the UI is a same-origin proxy and needs none).
+		CorsAllowOrigins []string `yaml:"CorsAllowOrigins"`
 
 		SSL appmesh.SSLConfig `yaml:"SSL"`
 	}
@@ -52,6 +56,7 @@ var ConfigData = Configuration{
 		WebSocketPort:                6058,
 		PrometheusExporterListenPort: 0,
 		CORSDisabled:                 false,
+		CorsAllowOrigins:             []string{},
 
 		SSL: appmesh.SSLConfig{
 			SSLCAPath:                   "ssl/ca.pem",
@@ -346,6 +351,15 @@ func setConfigValue(target interface{}, path []string, value string) error {
 		v = v.FieldByIndex(field.Index)
 	}
 
+	// Optional leaves (SSLConfig.SSLEnabled is a *bool: nil keeps the TLS
+	// default) allocate on first override, preserving absent-means-default.
+	if v.Kind() == reflect.Ptr {
+		if v.IsNil() {
+			v.Set(reflect.New(v.Type().Elem()))
+		}
+		v = v.Elem()
+	}
+
 	switch v.Kind() {
 	case reflect.String:
 		v.SetString(value)
@@ -361,6 +375,19 @@ func setConfigValue(target interface{}, path []string, value string) error {
 			return err
 		}
 		v.SetInt(parsed)
+	case reflect.Slice:
+		// Only []string leaves exist (e.g. CorsAllowOrigins); an environment
+		// variable carries them as a comma-separated list, like the daemon.
+		if v.Type().Elem().Kind() != reflect.String {
+			return fmt.Errorf("unsupported config field type %s", v.Kind())
+		}
+		parts := []string{}
+		for _, item := range strings.Split(value, ",") {
+			if item = strings.TrimSpace(item); item != "" {
+				parts = append(parts, item)
+			}
+		}
+		v.Set(reflect.ValueOf(parts))
 	default:
 		return fmt.Errorf("unsupported config field type %s", v.Kind())
 	}

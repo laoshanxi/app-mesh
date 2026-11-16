@@ -510,6 +510,10 @@ example above.
 
 ## Reference
 
+### Request signatures and replay protection
+
+An access token authenticates the caller. A deployment that also needs per-request integrity or replay rejection enables the request hardening layers. These are independent of OAuth: issue a signing API key, then enable `REST.RequestReplayProtection` and `REST.RequestSignature`. See the Security guide, section "Request replay protection and signatures".
+
 ### Identities and clients
 
 | Item | Value |
@@ -549,7 +553,7 @@ processes must re-authenticate after the access token expires.
 
 | Role | Permissions |
 | --- | --- |
-| `appmesh-admin` | All 27 permissions, including `app-reg`, `app-run-task`, `principal-set`, `role-set`, `workflow-admin` |
+| `appmesh-admin` | All 29 permissions, including `app-reg`, `app-run-task`, `file-delete`, `host-forward`, `principal-set`, `role-set`, `workflow-admin` |
 | `appmesh-maintenance` | `app-control`, `app-manage-all`, `app-view-all`, `host-resource-view` |
 | `appmesh-viewer` | `app-view-all`, `app-view`, `app-output-view`, `config-view`, `host-resource-view`, `label-view`, `role-view` |
 

@@ -29,6 +29,7 @@ class TCPTransport:
         address: Tuple[str, int],
         ssl_verify: Union[bool, str],
         ssl_client_cert: Optional[Union[str, Tuple[str, str]]] = None,
+        plain_transport: bool = False,
     ):
         """
         Initialize TCP transport with TLS configuration.
@@ -42,15 +43,18 @@ class TCPTransport:
             ssl_client_cert: SSL client certificate:
                 - str: Path to PEM file with cert and key
                 - tuple: (cert_path, key_path)
+            plain_transport: Speak plaintext frames (daemon SSL.SSLEnabled=false
+                behind a gateway); TLS stays the default.
 
         Note:
             TCP connections require an explicit full-chain CA specification for certificate validation,
             unlike HTTP, which can retrieve intermediate certificates automatically.
         """
         self.address = address
+        self._plain_transport = plain_transport
         self.ssl_verify = ssl_verify
         self.ssl_client_cert = ssl_client_cert
-        self._socket: Optional[ssl.SSLSocket] = None
+        self._socket: Optional[Union[ssl.SSLSocket, socket.socket]] = None
 
     def __enter__(self):
         """Context manager entry."""
@@ -70,18 +74,23 @@ class TCPTransport:
 
     def __str__(self) -> str:
         """Return TCP URI representation."""
-        scheme = "tcps" if self.ssl_verify else "tcp"
+        scheme = "tcp" if self._plain_transport else ("tcps" if self.ssl_verify else "tcp")
         host, port = self.address
         return f"{scheme}://{host}:{port}"
 
     def connect(self) -> None:
-        """Establish TLS connection to server."""
-        context = self._create_ssl_context()
+        """Establish a TLS connection, or a plain TCP connection when constructed with plain_transport=True."""
         # Create a TCP socket
         sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         sock.setblocking(True)
 
         try:
+            if self._plain_transport:
+                sock.connect(self.address)
+                sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
+                self._socket = sock
+                return
+            context = self._create_ssl_context()
             # Wrap the socket with SSL/TLS
             ssl_socket = context.wrap_socket(sock, server_hostname=self.address[0])
             ssl_socket.connect(self.address)

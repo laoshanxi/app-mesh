@@ -118,11 +118,14 @@ func TestLiveTCPFileTransferGuard(t *testing.T) {
 	assert.Contains(t, err.Error(), "not supported")
 
 	// ...and a separate client instance (its own connection) transfers fine.
+	// The remote path must sit in the exchangeable work/tmp scratch (the
+	// default jail), so upload a seed there and download it back.
 	plain, err := NewTCPClient(Option{InsecureSkipVerify: true})
 	require.NoError(t, err)
 	plain.SetToken(requireBearerToken(t))
 	defer plain.CloseConnection()
-	require.NoError(t, plain.DownloadFile("/etc/hosts", t.TempDir()+"/separate-client", false))
+	require.NoError(t, plain.UploadFile("/etc/hosts", "/opt/appmesh/work/tmp/guarded-seed", true))
+	require.NoError(t, plain.DownloadFile("/opt/appmesh/work/tmp/guarded-seed", t.TempDir()+"/separate-client", false))
 }
 
 // WSS variant of the subscribe-based wait.

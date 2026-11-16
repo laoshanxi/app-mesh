@@ -169,6 +169,10 @@ TCP and WSS send the same bearer as HTTP. WSS also sends it during the HTTP upgr
 
 Go, Java, JavaScript, and C++ are bearer-only clients. They provide an in-memory token setter and clearer. Use a standards-based OAuth library when an application needs interactive sign-in or token refresh.
 
+## Request signatures
+
+All SDKs can attach an HMAC request signature when a deployment enables `REST.RequestSignature`. The application supplies an API key id and secret (see `POST /appmesh/security/apikeys`). When both are set, the client signs every request and sends `X-Request-Key`, `X-Timestamp`, `X-Nonce`, and `X-Signature`. The canonical string and the file-endpoint body-hash exemption are specified in the Security guide, section "Request replay protection and signatures". The signature does not replace the bearer token. The SDK never logs the secret and never persists it.
+
 ## Forwarding
 
 HTTP, TCP, and WSS support forwarding for normal request methods. The client adds `X-Target-Host` to each forwarded request. The client also adds the current bearer.
@@ -176,6 +180,8 @@ HTTP, TCP, and WSS support forwarding for normal request methods. The client add
 WSS sends the bearer during the gateway upgrade. It also sends the bearer in each forwarded frame. The gateway checks that the frame bearer has the principal that the upgrade established. The target validates the bearer again.
 
 The gateway validates a protected request before it opens a target connection. It removes `X-Target-Host` before it sends the request to the target. This rule prevents a forwarding loop.
+
+The gateway also requires the `host-forward` permission on the authenticated principal (both the Engine and the Go agent enforce it); without it the forward is rejected with 403. The packaged `appmesh-admin` role carries the permission, viewer/guest roles do not.
 
 The two public discovery requests can forward without a bearer:
 

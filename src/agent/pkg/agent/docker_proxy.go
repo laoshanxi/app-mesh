@@ -8,6 +8,7 @@ import (
 	"net"
 	"net/http"
 	"net/http/httputil"
+	"net/url"
 	"strconv"
 	"strings"
 	"time"
@@ -100,7 +101,7 @@ func (dp *DockerProxy) CreateReverseProxy() *httputil.ReverseProxy {
 			// Control-plane endpoints reply with one small JSON document. Buffered
 			// and length-framed, the daemon never has to recover a chunked body
 			// from a connection the peer closed right after the last flush.
-			if !isStreamingDockerEndpoint(resp.Request.URL.Path) && resp.Body != nil {
+			if !isStreamingDockerEndpoint(resp.Request.URL.Path, resp.Request.URL.Query()) && resp.Body != nil {
 				body, err := io.ReadAll(resp.Body)
 				resp.Body.Close()
 				if err != nil {
@@ -118,17 +119,29 @@ func (dp *DockerProxy) CreateReverseProxy() *httputil.ReverseProxy {
 
 // isStreamingDockerEndpoint reports Docker endpoints whose response is a
 // live stream; those must pass through unbuffered.
-func isStreamingDockerEndpoint(path string) bool {
-	// Real streaming endpoints the suffix list misses: /images/create is the
-	// actual pull, /build streams progress, /exec/{id}/start is hijacked.
+func isStreamingDockerEndpoint(path string, query url.Values) bool {
+	// Real streaming endpoints the suffix list misses: /build streams
+	// progress, /exec/{id}/start is hijacked. /images/create (the actual pull)
+	// replies with one finite NDJSON document: keep it buffered and
+	// length-framed so buffered HTTP clients read the full progress.
 	// Control-plane endpoints (e.g. /containers/create) must stay buffered.
-	if strings.HasPrefix(path, "/images/create") || strings.HasPrefix(path, "/build") {
+	if strings.HasPrefix(path, "/build") {
 		return true
 	}
 	if strings.Contains(path, "/exec/") && strings.HasSuffix(path, "/start") {
 		return true
 	}
-	for _, suffix := range []string{"/logs", "/attach", "/events", "/stats", "/pull", "/push", "/get", "/load"} {
+	// Non-following /logs (and /stats without stream) reply with one finite
+	// document: buffer and length-frame it so buffered HTTP clients do not
+	// see a close-terminated stream. Only a live follow stays unbuffered.
+	if strings.HasSuffix(path, "/logs") {
+		follow := query.Get("follow")
+		return follow == "1" || follow == "true"
+	}
+	if strings.HasSuffix(path, "/stats") {
+		return query.Get("stream") != "0"
+	}
+	for _, suffix := range []string{"/attach", "/events", "/pull", "/push", "/get", "/load"} {
 		if strings.HasSuffix(path, suffix) {
 			return true
 		}

@@ -1,5 +1,57 @@
 # Changelog
 
+## 3.0.20
+
+- `ResourceLimitation.cpu` (fractional cores) mapped to container NanoCPUs.
+
+## 3.0.19
+
+- Builder methods `docker_ports`, `docker_volumes`, `docker_network` and
+  `docker_backend` for first-class container wiring next to `docker_image`.
+
+## 3.0.18
+
+- Plain-transport opt-in for the TLS-at-gateway deployment shape (daemon
+  `SSL.SSLEnabled=false` behind a load balancer, API gateway, or service-mesh
+  sidecar on a trusted network): `ClientBuilderTCP`/`ClientBuilderWSS`
+  `.plain_transport(true)` (and the client constructors' `plain` argument) dial
+  the TCP frame port without TLS and `ws://` for the WebSocket transport, with
+  the WSS HTTPS file side channel on plain `http://`. TLS stays the default;
+  the flag never disables verification of a TLS endpoint.
+- CLI (crate 3.0.3): a `-H ws://host:port` (or `http://`) endpoint selects the
+  same plaintext shape for that invocation — no CA or client certificate
+  applies, and a plain endpoint is never remembered as the default (a later
+  bare `-H` would dial the same host over TLS). The local-daemon default
+  endpoint reads the daemon's `SSL.SSLEnabled` from its own config (work
+  overlay first, like the daemon), so a local plaintext daemon is dialed as
+  `ws://` with no flags.
+
+
+## 3.0.17
+
+- Request signing (opt-in): `RequestSigner::new(key_id, secret)` produces the
+  `X-Request-Key`/`X-Timestamp`/`X-Nonce`/`X-Signature` headers over the daemon's
+  canonical string (`METHOD\npath\nsortedQuery\nsha256hex(body)\ntimestamp\nnonce`);
+  the canonical construction mirrors the C++ verifier byte-for-byte. Install one
+  with `ClientBuilder::request_signer` / `ClientBuilderTCP` / `ClientBuilderWSS`
+  or `set_request_signer` on the HTTP, TCP, and WSS clients. The streamed file
+  endpoints sign the empty-string body hash; TCP/WSS reuse the framed message
+  uuid as the nonce; the WSS HTTPS file side channel is signed too. The secret
+  is kept in memory only, never rendered by `Debug`, and never logged.
+- Path/query canonical fixes for signed HTTP requests: the wire query is
+  percent-only encoded (space → `%20`, never reqwest's `.query()` `+`, which
+  the daemon keeps literal), and the WSS data-channel routes
+  `/appmesh/file/{upload,download}/ws` sign the route without the trailing
+  `/ws` (daemon `canonicalFileRoute`).
+- CLI (crate 3.0.2): global `--api-key`/`--api-secret` (env fallback
+  `APPMESH_API_KEY`/`APPMESH_API_SECRET`) attach a request signer to the
+  Engine client; the secret is never persisted. `--api-secret -` reads one
+  line from stdin so the secret never crosses argv (with
+  `logon --password-stdin` the secret line comes first, the password second). The OAuth session lock names its holder pid
+  (waiters steal only dead holders, and a holder never removes a stolen
+  lock), and a cold start that lost the refresh-token rotation adopts the
+  parallel CLI's live token set instead of reporting the session invalidated.
+
 ## 3.0.16
 
 - WSS transport: the WebSocket message/frame size caps are removed (tungstenite

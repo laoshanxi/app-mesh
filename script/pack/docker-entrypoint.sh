@@ -55,10 +55,42 @@ publish_default_workflow() {
     rm -f "$temporary"
 }
 
+# True when the daemon listens in plaintext (TLS terminates upstream). The
+# explicit env override wins; otherwise the packaged config's SSLEnabled key
+# decides (absent = TLS, the same default the daemon applies).
+tls_disabled() {
+    [ "${APPMESH_REST_SSL_SSLEnabled:-}" = "false" ] && return 0
+    [ "${APPMESH_REST_SSL_SSLEnabled:-}" = "true" ] && return 1
+    [ -f "${PROG_HOME}/config/config.yaml" ] &&
+        grep -Eq '^[[:space:]]*SSLEnabled:[[:space:]]*"?false"?' "${PROG_HOME}/config/config.yaml"
+}
+
 prepare_tls() {
+    # Plaintext (TLS-at-gateway) deployments ignore certificate material
+    # entirely: nothing is required and nothing is generated.
+    if tls_disabled; then
+        log "SSL is disabled (SSLEnabled=false): skipping TLS material preparation"
+        return 0
+    fi
     ensure_private_directory "$TLS_DIR"
     local existing=0
     local path
+
+    if [ "${APPMESH_SSL_SOURCE:-file}" = "vault" ]; then
+        # The Vault PKI bootstrap (already run) issued the five daemon-consumed
+        # files. The CA private key stays in Vault: there is no ca-key.pem and
+        # nothing to generate locally.
+        for path in \
+            "$TLS_DIR/ca.pem" "$TLS_DIR/server.pem" "$TLS_DIR/server-key.pem" \
+            "$TLS_DIR/client.pem" "$TLS_DIR/client-key.pem"; do
+            [ ! -L "$path" ] || die "Refusing symbolic-link TLS material: $path"
+            [ -f "$path" ] || die "TLS state is incomplete: $path was not issued by the Vault PKI bootstrap"
+        done
+        chmod 644 "$TLS_DIR/ca.pem" "$TLS_DIR/server.pem" "$TLS_DIR/client.pem"
+        chmod 600 "$TLS_DIR/server-key.pem" "$TLS_DIR/client-key.pem"
+        return
+    fi
+
     for path in \
         "$TLS_DIR/ca.pem" "$TLS_DIR/ca-key.pem" \
         "$TLS_DIR/server.pem" "$TLS_DIR/server-key.pem" \

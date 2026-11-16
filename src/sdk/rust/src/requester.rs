@@ -1,6 +1,7 @@
 // requester.rs
 
 use crate::error::AppMeshError;
+use crate::request_signature::RequestSigner;
 use crate::subscribe::MessageDemuxer;
 use async_trait::async_trait;
 use bytes::Bytes;
@@ -43,6 +44,10 @@ pub trait Requester: Send + Sync {
 
     /// Handle token updates (called after successful authentication)
     fn handle_token_update(&self, token: Option<String>);
+
+    /// Install or remove the HMAC request signer (`X-Request-Key` & friends).
+    /// Opt-in: without a signer no signature headers are attached.
+    fn set_request_signer(&self, _signer: Option<RequestSigner>) {}
 
     /// Set the forward_to URL
     fn set_forward_to(&self, _url: Option<String>) {}

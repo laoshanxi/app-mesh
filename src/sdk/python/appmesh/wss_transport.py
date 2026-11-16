@@ -32,6 +32,7 @@ class WSSTransport:
         address: Tuple[str, int],
         ssl_verify: Union[bool, str],
         ssl_client_cert: Optional[Union[str, Tuple[str, str]]] = None,
+        plain_transport: bool = False,
     ):
         """
         Initialize WebSocket Secure (WSS) transport with TLS configuration.
@@ -45,6 +46,8 @@ class WSSTransport:
             ssl_client_cert: SSL client certificate:
                 - str: Path to PEM file with cert and key
                 - tuple: (cert_path, key_path)
+            plain_transport: Dial ws:// without TLS (daemon
+                SSL.SSLEnabled=false behind a gateway); TLS stays the default.
 
         Note:
             This implementation uses synchronous blocking sockets for WebSocket connections.
@@ -53,6 +56,7 @@ class WSSTransport:
         self.address = address
         self.ssl_verify = ssl_verify
         self.ssl_client_cert = ssl_client_cert
+        self._plain_transport = plain_transport
         self._websocket = None
         self._connect_timeout = self.WSS_CONNECT_TIMEOUT
         self._message_timeout = self.WSS_MESSAGE_TIMEOUT
@@ -83,9 +87,9 @@ class WSSTransport:
             pass  # suppress all exceptions
 
     def __str__(self) -> str:
-        """Return WSS URI representation."""
+        """Return the URI representation (ws:// when plain, wss:// otherwise)."""
         host, port = self.address
-        scheme = "wss"
+        scheme = "ws" if self._plain_transport else "wss"
         return f"{scheme}://{host}:{port}"
 
     def connect(self) -> None:
@@ -94,6 +98,22 @@ class WSSTransport:
             return
 
         uri = f"{self}/"
+        if self._plain_transport:
+            # Plain ws://: websocket-client applies sslopt only to wss URLs.
+            try:
+                self._websocket = create_connection(
+                    uri,
+                    timeout=self._connect_timeout,
+                    subprotocols=["appmesh-ws"],
+                    sslopt=None,
+                    header=[f"Authorization: Bearer {self._bearer_token}"] if self._bearer_token else [],
+                )
+            except (socket.timeout, socket.error, ssl.SSLError) as e:
+                self._websocket = None
+                raise AppMeshConnectionError(f"Failed to connect to {self.address}: {e}") from e
+            self._websocket.settimeout(self._message_timeout)
+            return
+
         sslopt: dict = {}
 
         # Prepare SSL options for websocket-client library

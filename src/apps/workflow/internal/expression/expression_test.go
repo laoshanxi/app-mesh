@@ -171,14 +171,24 @@ func TestSubstituteForJob_JobStatus(t *testing.T) {
 
 // --- EvalCondition ---
 
+// evalOK evaluates a condition that must parse; a parse error fails the test.
+func evalOK(t *testing.T, expr string, ctx *Context, jobName string) bool {
+	t.Helper()
+	met, err := EvalConditionForJob(expr, ctx, jobName)
+	if err != nil {
+		t.Fatalf("EvalConditionForJob(%q) returned error: %v", expr, err)
+	}
+	return met
+}
+
 func TestEval_Empty(t *testing.T) {
-	if !EvalConditionForJob("", NewContext(), "") {
+	if !evalOK(t, "", NewContext(), "") {
 		t.Error("empty should be true")
 	}
 }
 
 func TestEval_Always(t *testing.T) {
-	if !EvalConditionForJob("always()", NewContext(), "") {
+	if !evalOK(t, "always()", NewContext(), "") {
 		t.Error("always should be true")
 	}
 }
@@ -187,7 +197,7 @@ func TestEval_Success_AllPass(t *testing.T) {
 	ctx := NewContext()
 	ctx.SetStepResult("test", "a", "", 0, "success", "", nil)
 	ctx.SetStepResult("test", "b", "", 0, "success", "", nil)
-	if !EvalConditionForJob("success()", ctx, "test") {
+	if !evalOK(t, "success()", ctx, "test") {
 		t.Error("should be true")
 	}
 }
@@ -196,7 +206,7 @@ func TestEval_Success_OneFails(t *testing.T) {
 	ctx := NewContext()
 	ctx.SetStepResult("test", "a", "", 0, "success", "", nil)
 	ctx.SetStepResult("test", "b", "", 1, "failure", "", nil)
-	if EvalConditionForJob("success()", ctx, "test") {
+	if evalOK(t, "success()", ctx, "test") {
 		t.Error("should be false")
 	}
 }
@@ -205,7 +215,7 @@ func TestEval_Failure_OneFails(t *testing.T) {
 	ctx := NewContext()
 	ctx.SetStepResult("test", "a", "", 0, "success", "", nil)
 	ctx.SetStepResult("test", "b", "", 1, "failure", "", nil)
-	if !EvalConditionForJob("failure()", ctx, "test") {
+	if !evalOK(t, "failure()", ctx, "test") {
 		t.Error("should be true")
 	}
 }
@@ -213,10 +223,10 @@ func TestEval_Failure_OneFails(t *testing.T) {
 func TestEval_ExitCodeEquals(t *testing.T) {
 	ctx := NewContext()
 	ctx.SetStepResult("test", "build", "", 0, "success", "", nil)
-	if !EvalConditionForJob("steps.build.exit_code == 0", ctx, "test") {
+	if !evalOK(t, "steps.build.exit_code == 0", ctx, "test") {
 		t.Error("should be true")
 	}
-	if EvalConditionForJob("steps.build.exit_code == 1", ctx, "test") {
+	if evalOK(t, "steps.build.exit_code == 1", ctx, "test") {
 		t.Error("should be false")
 	}
 }
@@ -224,7 +234,7 @@ func TestEval_ExitCodeEquals(t *testing.T) {
 func TestEval_ExitCodeNotEquals(t *testing.T) {
 	ctx := NewContext()
 	ctx.SetStepResult("test", "test", "", 1, "failure", "", nil)
-	if !EvalConditionForJob("steps.test.exit_code != 0", ctx, "test") {
+	if !evalOK(t, "steps.test.exit_code != 0", ctx, "test") {
 		t.Error("should be true")
 	}
 }
@@ -232,7 +242,7 @@ func TestEval_ExitCodeNotEquals(t *testing.T) {
 func TestEval_StatusEquals(t *testing.T) {
 	ctx := NewContext()
 	ctx.SetStepResult("test", "build", "", 0, "success", "", nil)
-	if !EvalConditionForJob(`steps.build.status == "success"`, ctx, "test") {
+	if !evalOK(t, `steps.build.status == "success"`, ctx, "test") {
 		t.Error("should be true")
 	}
 }
@@ -240,7 +250,7 @@ func TestEval_StatusEquals(t *testing.T) {
 func TestEval_GreaterThan(t *testing.T) {
 	ctx := NewContext()
 	ctx.SetStepResult("test", "test", "", 2, "failure", "", nil)
-	if !EvalConditionForJob("steps.test.exit_code > 1", ctx, "test") {
+	if !evalOK(t, "steps.test.exit_code > 1", ctx, "test") {
 		t.Error("should be true")
 	}
 }
@@ -249,7 +259,7 @@ func TestEval_And(t *testing.T) {
 	ctx := NewContext()
 	ctx.SetStepResult("test", "a", "", 0, "success", "", nil)
 	ctx.SetStepResult("test", "b", "", 1, "failure", "", nil)
-	if !EvalConditionForJob(`steps.a.status == "success" && steps.b.status == "failure"`, ctx, "test") {
+	if !evalOK(t, `steps.a.status == "success" && steps.b.status == "failure"`, ctx, "test") {
 		t.Error("should be true")
 	}
 }
@@ -257,7 +267,7 @@ func TestEval_And(t *testing.T) {
 func TestEval_Or(t *testing.T) {
 	ctx := NewContext()
 	ctx.SetStepResult("test", "a", "", 1, "failure", "", nil)
-	if !EvalConditionForJob(`steps.a.status == "success" || steps.a.status == "failure"`, ctx, "test") {
+	if !evalOK(t, `steps.a.status == "success" || steps.a.status == "failure"`, ctx, "test") {
 		t.Error("should be true")
 	}
 }
@@ -265,7 +275,7 @@ func TestEval_Or(t *testing.T) {
 func TestEval_Not(t *testing.T) {
 	ctx := NewContext()
 	ctx.SetStepResult("test", "a", "", 0, "success", "", nil)
-	if !EvalConditionForJob("!failure()", ctx, "test") {
+	if !evalOK(t, "!failure()", ctx, "test") {
 		t.Error("should be true")
 	}
 }
@@ -275,22 +285,22 @@ func TestEvalConditionForJob_IsolatesParallelJobs(t *testing.T) {
 	ctx.SetStepResult("job-a", "check", "", 0, "success", "", nil)
 	ctx.SetStepResult("job-b", "check", "", 1, "failure", "", nil)
 
-	if !EvalConditionForJob(`steps.check.status == "success"`, ctx, "job-a") {
+	if !evalOK(t, `steps.check.status == "success"`, ctx, "job-a") {
 		t.Error("job-a condition should be true")
 	}
-	if EvalConditionForJob(`steps.check.status == "success"`, ctx, "job-b") {
+	if evalOK(t, `steps.check.status == "success"`, ctx, "job-b") {
 		t.Error("job-b condition should be false")
 	}
 }
 
 func TestEvalConditionForJobWithStatus_UsesJobStatusFunctions(t *testing.T) {
 	ctx := NewContext()
-	if EvalConditionForJobWithStatus("success()", ctx, "deploy", func() bool { return false },
-		func() bool { return true }) {
+	if ok, err := EvalConditionForJobWithStatus("success()", ctx, "deploy", func() bool { return false },
+		func() bool { return true }); err != nil || ok {
 		t.Error("success() should use supplied job status function")
 	}
-	if !EvalConditionForJobWithStatus("failure()", ctx, "deploy", func() bool { return false },
-		func() bool { return true }) {
+	if ok, err := EvalConditionForJobWithStatus("failure()", ctx, "deploy", func() bool { return false },
+		func() bool { return true }); err != nil || !ok {
 		t.Error("failure() should use supplied job status function")
 	}
 }
@@ -299,20 +309,20 @@ func TestEvalConditionForJobWithStatus_UsesJobStatusFunctions(t *testing.T) {
 // that evaluates to false/0/"" must skip, not silently run.
 func TestEvalConditionForJob_BooleanLiterals(t *testing.T) {
 	ctx := NewContext()
-	if EvalConditionForJob("false", ctx, "") {
+	if evalOK(t, "false", ctx, "") {
 		t.Error("`if: false` must be false")
 	}
-	if !EvalConditionForJob("true", ctx, "") {
+	if !evalOK(t, "true", ctx, "") {
 		t.Error("`if: true` must be true")
 	}
-	if EvalConditionForJob("0", ctx, "") {
+	if evalOK(t, "0", ctx, "") {
 		t.Error("`if: 0` must be false")
 	}
 	ctx.Inputs = map[string]string{"enabled": "false", "flag": "true"}
-	if EvalConditionForJob("${{ inputs.enabled }}", ctx, "") {
+	if evalOK(t, "${{ inputs.enabled }}", ctx, "") {
 		t.Error("input resolved to 'false' must be falsy")
 	}
-	if !EvalConditionForJob("${{ inputs.flag }}", ctx, "") {
+	if !evalOK(t, "${{ inputs.flag }}", ctx, "") {
 		t.Error("input resolved to 'true' must be truthy")
 	}
 }
@@ -320,10 +330,10 @@ func TestEvalConditionForJob_BooleanLiterals(t *testing.T) {
 func TestEvalConditionForJob_BooleanComparison(t *testing.T) {
 	ctx := NewContext()
 	ctx.Inputs = map[string]string{"enabled": "true"}
-	if !EvalConditionForJob("inputs.enabled == true", ctx, "") {
+	if !evalOK(t, "inputs.enabled == true", ctx, "") {
 		t.Error("string 'true' should compare equal to boolean literal true")
 	}
-	if EvalConditionForJob("inputs.enabled == false", ctx, "") {
+	if evalOK(t, "inputs.enabled == false", ctx, "") {
 		t.Error("string 'true' should not equal boolean literal false")
 	}
 }
@@ -441,7 +451,7 @@ func TestEvalCondition_WrappedExpression(t *testing.T) {
 		{`failure()`, false},
 	}
 	for _, c := range cases {
-		if got := EvalConditionForJob(c.cond, ctx, "j"); got != c.want {
+		if got := evalOK(t, c.cond, ctx, "j"); got != c.want {
 			t.Errorf("condition %q: got %v, want %v", c.cond, got, c.want)
 		}
 	}
@@ -500,19 +510,19 @@ func TestSuccessFailure_ToleratedFailure(t *testing.T) {
 	ctx.SetStepResult("j", "flaky", "", 3, "failure", "", nil)
 	ctx.MarkContinueOnError("j", "flaky")
 	ctx.SetStepResult("j", "real", "", 0, "success", "", nil)
-	if !EvalConditionForJob("success()", ctx, "j") {
+	if !evalOK(t, "success()", ctx, "j") {
 		t.Error("success() must tolerate a continue-on-error failure")
 	}
-	if EvalConditionForJob("failure()", ctx, "j") {
+	if evalOK(t, "failure()", ctx, "j") {
 		t.Error("failure() must not fire for a tolerated failure")
 	}
 	// The raw outcome stays visible to expressions.
-	if !EvalConditionForJob("steps.flaky.status == 'failure'", ctx, "j") {
+	if !evalOK(t, "steps.flaky.status == 'failure'", ctx, "j") {
 		t.Error("steps.flaky.status must keep the raw failure")
 	}
 	// An untolerated failure still fails the job.
 	ctx.SetStepResult("j", "fatal", "", 1, "failure", "", nil)
-	if EvalConditionForJob("success()", ctx, "j") {
+	if evalOK(t, "success()", ctx, "j") {
 		t.Error("success() must fail on an untolerated failure")
 	}
 }
@@ -590,5 +600,101 @@ func TestSubstituteForCommand_MissOnlyForCompletedMessageSteps(t *testing.T) {
 	if got, bindings, err := SubstituteForCommand(`echo ${{ steps.qa.stdout }}`, plainMessageCtx("j", "qa"), "j"); err != nil ||
 		got != "echo $WF_E0" || bindings["WF_E0"] != "answer-from-py" {
 		t.Errorf("plain-text stdout: got %q bindings %v err %v, want it substituted", got, bindings, err)
+	}
+}
+
+// --- Parenthesized conditions ---
+
+// A whole-condition parenthesis group must not turn the condition into an
+// opaque truthy operand (the bug: `(${{ inputs.a }} == 'x')` was always false
+// because the == inside the parentheses was never found at top level).
+func TestEvalCondition_ParenthesizedComparison(t *testing.T) {
+	ctx := NewContext()
+	ctx.Inputs = map[string]string{"a": "x"}
+	if !evalOK(t, "(${{ inputs.a }} == 'x')", ctx, "") {
+		t.Error("parenthesized comparison that holds must be true")
+	}
+	if evalOK(t, "(${{ inputs.a }} == 'y')", ctx, "") {
+		t.Error("parenthesized comparison that fails must be false")
+	}
+	// Multiple wrapping layers unwrap recursively.
+	if !evalOK(t, "(((${{ inputs.a }} == 'x')))", ctx, "") {
+		t.Error("multi-layer wrapping must unwrap")
+	}
+}
+
+// Deep but legitimate nesting must still evaluate.
+func TestEvalCondition_DeepParenNesting(t *testing.T) {
+	ctx := NewContext()
+	ctx.Inputs = map[string]string{"a": "1"}
+	deep := strings.Repeat("(", 50) + "inputs.a == '1'" + strings.Repeat(")", 50)
+	if !evalOK(t, deep, ctx, "") {
+		t.Error("50-level nesting must evaluate")
+	}
+}
+
+// Parentheses inside string literals are data, not grouping.
+func TestEvalCondition_ParensInLiterals(t *testing.T) {
+	ctx := NewContext()
+	ctx.Inputs = map[string]string{"smile": "(x)"}
+	if !evalOK(t, "inputs.smile == '(x)'", ctx, "") {
+		t.Error("parenthesis inside a quoted literal must not affect grouping")
+	}
+	if !evalOK(t, `'(((' == '((('`, ctx, "") {
+		t.Error("unbalanced-looking parens inside quotes must stay literal")
+	}
+	if !evalOK(t, `(inputs.smile == '(x)') && (inputs.smile == "(x)")`, ctx, "") {
+		t.Error("quoted parens inside groups must not unbalance the scan")
+	}
+}
+
+// Grouping changes precedence: `a && (b || c)` is not `a && b || c`.
+func TestEvalCondition_GroupingPrecedence(t *testing.T) {
+	ctx := NewContext()
+	ctx.Inputs = map[string]string{"a": "true", "b": "false", "c": "true"}
+	if !evalOK(t, "inputs.a == 'true' && (inputs.b == 'true' || inputs.c == 'true')", ctx, "") {
+		t.Error("a && (b || c) with a,c true must be true")
+	}
+	if evalOK(t, "(inputs.a == 'true' && inputs.b == 'true') || false", ctx, "") {
+		t.Error("(a && b) || false with b false must be false")
+	}
+	// Grouped operands on both sides of a comparison unwrap before coercion.
+	if !evalOK(t, "(inputs.a) == ('true')", ctx, "") {
+		t.Error("parenthesized operands must unwrap before comparison")
+	}
+	if !evalOK(t, "!(inputs.b == 'true')", ctx, "") {
+		t.Error("negation must apply to the grouped sub-expression")
+	}
+}
+
+// Unbalanced parentheses are an author error: report it, never a silent false.
+func TestEvalCondition_UnbalancedParens(t *testing.T) {
+	ctx := NewContext()
+	for _, expr := range []string{
+		"(inputs.a == 'x'",
+		"inputs.a == 'x')",
+		"((inputs.a == 'x')",
+		"inputs.a == 'x') && (inputs.b == 'y'",
+	} {
+		if _, err := EvalConditionForJob(expr, ctx, ""); err == nil {
+			t.Errorf("condition %q must report unbalanced parentheses", expr)
+		}
+	}
+	// Balanced conditions keep evaluating without error.
+	if _, err := EvalConditionForJob("(inputs.a == 'x') || (inputs.b == 'y')", ctx, ""); err != nil {
+		t.Errorf("balanced condition errored: %v", err)
+	}
+}
+
+// Status-function detection sees through author grouping.
+func TestHasStatusFunction_Grouped(t *testing.T) {
+	if !HasStatusFunction("(success() || always())") {
+		t.Error("grouped status functions must be detected")
+	}
+	if !HasStatusFunction("failure() && (steps.a.status == 'failure')") {
+		t.Error("status function outside the group must be detected")
+	}
+	if HasStatusFunction(`(steps.x.stdout == 'success()')`) {
+		t.Error("quoted status text inside a group must not count")
 	}
 }

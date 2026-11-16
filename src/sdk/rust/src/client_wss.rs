@@ -4,6 +4,7 @@ use crate::client_http::{encode_file_path, AppMeshClient};
 use crate::constants::*;
 use crate::error::AppMeshError;
 use crate::models::*;
+use crate::request_signature::{sign_wire_message, RequestSigner};
 use crate::requester::Requester;
 use crate::subscribe::{MessageDemuxer, MessageReader};
 use crate::tls_config::ClientCert;
@@ -55,6 +56,9 @@ pub struct WSSRequester {
     token: Arc<std::sync::RwLock<Option<String>>>,
     forward_to: std::sync::Mutex<Option<String>>,
     demuxer: std::sync::Mutex<Option<Arc<MessageDemuxer>>>,
+    /// Shared with [`AppMeshClientWSS`] so one setter covers both the framed
+    /// control messages and the HTTPS file side channel.
+    signer: Arc<std::sync::RwLock<Option<RequestSigner>>>,
 }
 
 impl WSSRequester {
@@ -62,11 +66,12 @@ impl WSSRequester {
         address: Option<(String, u16)>,
         verify: crate::tls_config::SslVerify,
         ssl_client_cert: Option<(String, String)>,
+        plain: bool,
     ) -> Result<Self, AppMeshError> {
         let address = address.unwrap_or_else(|| (DEFAULT_TCP_HOST.to_string(), DEFAULT_WSS_PORT));
         let client_cert = ssl_client_cert.map(|(cert, key)| ClientCert::Pair(cert, key));
 
-        let transport = WSSTransport::new(address, verify, client_cert);
+        let transport = WSSTransport::new(address, verify, client_cert, plain);
         let reader_handle = transport.reader_handle();
 
         Ok(Self {
@@ -75,6 +80,7 @@ impl WSSRequester {
             token: Arc::new(std::sync::RwLock::new(None)),
             forward_to: std::sync::Mutex::new(None),
             demuxer: std::sync::Mutex::new(None),
+            signer: Arc::new(std::sync::RwLock::new(None)),
         })
     }
 }
@@ -141,6 +147,12 @@ impl Requester for WSSRequester {
                 req.body = b.to_vec();
             }
 
+            // HMAC request signature (opt-in): the framed message uuid serves
+            // as the nonce, matching the daemon's replay-protection fallback.
+            if let Some(signer) = self.signer.read().unwrap_or_else(|e| e.into_inner()).as_ref() {
+                sign_wire_message(signer, &mut req);
+            }
+
             let data = req.serialize().map_err(|e| AppMeshError::SerializationError(e.to_string()))?;
             if let Err(e) = transport.send_message(&data).await {
                 // A failed write leaves the websocket unusable; drop it so the
@@ -200,6 +212,10 @@ impl Requester for WSSRequester {
 
     fn handle_token_update(&self, token: Option<String>) {
         *self.token.write().unwrap_or_else(|e| e.into_inner()) = token;
+    }
+
+    fn set_request_signer(&self, signer: Option<RequestSigner>) {
+        *self.signer.write().unwrap_or_else(|e| e.into_inner()) = signer;
     }
 
     fn get_access_token(&self) -> Option<String> {
@@ -283,6 +299,9 @@ pub struct AppMeshClientWSS {
     base_url: String,
     /// Shared handle to the WSS transport so `close_async` can await the close handshake.
     transport: Arc<Mutex<WSSTransport>>,
+    /// Shared with the WSS requester: covers framed control messages and the
+    /// HTTPS file side channel with one setter.
+    signer: Arc<std::sync::RwLock<Option<RequestSigner>>>,
 }
 
 impl AppMeshClientWSS {
@@ -295,44 +314,83 @@ impl AppMeshClientWSS {
         ssl_client_cert: Option<(String, String)>,
     ) -> Result<Arc<Self>, AppMeshError> {
         let verify = crate::tls_config::resolve_ssl_verify(ssl_verify)?;
-        Self::new_with_verify(address, verify, ssl_client_cert)
+        Self::new_with_verify(address, verify, ssl_client_cert, false)
     }
 
     /// Create a WSS transport client with an explicit `SslVerify` mode (used by the
     /// builder so insecure mode is an explicit flag, never an empty-string sentinel).
+    /// `plain` selects the TLS-at-gateway shape: ws:// and a plaintext HTTPS side
+    /// channel.
     pub(crate) fn new_with_verify(
         address: Option<(String, u16)>,
         verify: crate::tls_config::SslVerify,
         ssl_client_cert: Option<(String, String)>,
+        plain: bool,
     ) -> Result<Arc<Self>, AppMeshError> {
         let address_val = address.clone().unwrap_or_else(|| (DEFAULT_TCP_HOST.to_string(), DEFAULT_WSS_PORT));
 
-        let wss_requester = WSSRequester::new(address, verify.clone(), ssl_client_cert.clone())?;
+        let wss_requester = WSSRequester::new(address, verify.clone(), ssl_client_cert.clone(), plain)?;
         let transport = Arc::clone(&wss_requester.transport);
+        let signer = Arc::clone(&wss_requester.signer);
 
-        let base_url = format!("https://{}:{}", address_val.0, address_val.1);
+        // The file side channel follows the transport: http:// when plain.
+        let scheme = if plain { "http" } else { "https" };
+        let base_url = format!("{}://{}:{}", scheme, address_val.0, address_val.1);
         let client = AppMeshClient::with_requester(Box::new(wss_requester), base_url.clone());
 
         // A pinned CA or no-verify mode must be preconfigured (see
         // configure_reqwest_tls); SslVerify::True keeps the platform roots.
         let side_cert = ssl_client_cert.clone().map(|(cert, key)| ClientCert::Pair(cert, key));
-        let client_builder = crate::tls_config::configure_reqwest_tls(
-            reqwest::Client::builder().timeout(std::time::Duration::from_secs(120)),
-            &verify,
-            side_cert.as_ref(),
-        )
-        .map_err(AppMeshError::ConfigurationError)?;
+        let client_builder = if plain {
+            reqwest::Client::builder().timeout(std::time::Duration::from_secs(120))
+        } else {
+            crate::tls_config::configure_reqwest_tls(
+                reqwest::Client::builder().timeout(std::time::Duration::from_secs(120)),
+                &verify,
+                side_cert.as_ref(),
+            )
+            .map_err(AppMeshError::ConfigurationError)?
+        };
 
         let http_client = client_builder
             .build()
             .map_err(|e| AppMeshError::ConnectionError(format!("Failed to build HTTP client: {}", e)))?;
 
-        Ok(Arc::new(Self { client, http_client, base_url, transport }))
+        Ok(Arc::new(Self { client, http_client, base_url, transport, signer }))
     }
 
     /// Get the underlying generic client for shared auth/app/task APIs.
     pub fn client(&self) -> &Arc<AppMeshClient> {
         &self.client
+    }
+
+    /// Install or remove the HMAC-SHA256 request signer (opt-in).
+    ///
+    /// When set, every framed control message and every authenticated HTTPS
+    /// side-channel request carries `X-Request-Key`, `X-Timestamp`,
+    /// `X-Nonce`, and `X-Signature` per `docs/source/Security.md`. The framed
+    /// message uuid serves as the nonce. The secret stays in memory and is
+    /// never logged. Pass `None` to stop signing.
+    pub fn set_request_signer(&self, signer: Option<RequestSigner>) {
+        *self.signer.write().unwrap_or_else(|e| e.into_inner()) = signer;
+    }
+
+    /// Attach the four signature headers to an HTTPS side-channel request.
+    /// File side channels sign the empty-string body hash (documented
+    /// exemption; `query` is `None` on these routes).
+    fn sign_https_side_channel(
+        &self,
+        request: reqwest::RequestBuilder,
+        method: &str,
+        path: &str,
+    ) -> reqwest::RequestBuilder {
+        let guard = self.signer.read().unwrap_or_else(|e| e.into_inner());
+        let Some(signer) = guard.as_ref() else { return request };
+        let mut request = request;
+        for (key, value) in signer.sign_request(method, path, None, None) {
+            request = request.header(key, value);
+        }
+        request
     }
 
     /// Fetch the public `/appmesh/auth/config` over the HTTPS side channel.
@@ -405,11 +463,12 @@ impl AppMeshClientWSS {
         let auth_token = format!("Bearer {}", auth_token);
 
         let url = format!("{}/appmesh/file/download/ws", self.base_url);
-        let mut request = self
+        let request = self
             .http_client
             .get(&url)
             .header(HTTP_HEADER_KEY_X_FILE_PATH, encode_file_path(remote_file))
             .header(HTTP_HEADER_JWT_AUTHORIZATION, &auth_token);
+        let mut request = self.sign_https_side_channel(request, "GET", "/appmesh/file/download/ws");
         // The data channel is a separate HTTPS hop: without the forwarding header
         // of the WSS control request the bytes land on the gateway.
         if let Some(target) = self.client.get_forward_to() {
@@ -566,7 +625,9 @@ impl AppMeshClientWSS {
         let file_content = std::fs::read(local_path)?;
         let url = format!("{}/appmesh/file/upload/ws", self.base_url);
 
-        let response = self.http_client.post(&url).headers(upload_headers).body(file_content).send().await.map_err(|e| {
+        let request = self.http_client.post(&url).headers(upload_headers).body(file_content);
+        let request = self.sign_https_side_channel(request, "POST", "/appmesh/file/upload/ws");
+        let response = request.send().await.map_err(|e| {
             AppMeshError::RequestFailed { status: StatusCode::INTERNAL_SERVER_ERROR, message: e.to_string() }
         })?;
 

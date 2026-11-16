@@ -54,8 +54,11 @@ class AppMeshClientTCP(TransportClientMixin, AppMeshClient):
         ssl_verify: Union[bool, str, None] = None,
         ssl_client_cert: Optional[Union[str, Tuple[str, str]]] = None,
         *,
+        plain_transport: bool = False,
         bearer_token: Optional[str] = None,
         token_provider: Optional[TokenProvider] = None,
+        api_key: Optional[str] = None,
+        api_secret: Optional[str] = None,
     ):
         """Construct a TCP transport client that reuses the standard App Mesh client API.
 
@@ -71,13 +74,18 @@ class AppMeshClientTCP(TransportClientMixin, AppMeshClient):
               - tuple: (cert_path, key_path)
             bearer_token: Caller-owned access token.
             token_provider: Provider that supplies and refreshes access tokens.
+            api_key: API key id for opt-in HMAC request signing (see
+              ``AppMeshClient.enable_request_signature``); requires ``api_secret``.
+            api_secret: API key secret. Signing activates only when both are set.
 
         Note:
             TCP connections require an explicit full-chain CA specification for certificate validation,
             unlike HTTP, which can retrieve intermediate certificates automatically.
         """
         ssl_verify = AppMeshClient._resolve_ssl_verify(ssl_verify)
-        self.tcp_transport = TCPTransport(address=tcp_address, ssl_verify=ssl_verify, ssl_client_cert=ssl_client_cert)
+        self.tcp_transport = TCPTransport(
+            address=tcp_address, ssl_verify=ssl_verify, ssl_client_cert=ssl_client_cert, plain_transport=plain_transport
+        )
         self._transport_client_addr = socket.gethostname()
         self._transport_name = "Socket"
         super().__init__(
@@ -85,6 +93,8 @@ class AppMeshClientTCP(TransportClientMixin, AppMeshClient):
             ssl_client_cert=ssl_client_cert,
             bearer_token=bearer_token,
             token_provider=token_provider,
+            api_key=api_key,
+            api_secret=api_secret,
         )
 
     @property

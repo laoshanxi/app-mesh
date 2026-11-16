@@ -14,6 +14,7 @@ use crate::client_http::AppMeshClient;
 use crate::constants::*;
 use crate::error::AppMeshError;
 use crate::models::*;
+use crate::request_signature::{sign_wire_message, RequestSigner};
 use crate::requester::Requester;
 use crate::subscribe::{MessageDemuxer, MessageReader};
 use crate::tcp_transport::{ReceivePoll, TCPTransport};
@@ -60,6 +61,7 @@ pub struct TCPRequester {
     token: Arc<Mutex<Option<String>>>,
     forward_to: Arc<Mutex<Option<String>>>,
     demuxer: Mutex<Option<Arc<MessageDemuxer>>>,
+    signer: std::sync::RwLock<Option<RequestSigner>>,
 }
 
 impl TCPRequester {
@@ -70,6 +72,7 @@ impl TCPRequester {
             token: Arc::new(Mutex::new(None)),
             forward_to: Arc::new(Mutex::new(None)),
             demuxer: Mutex::new(None),
+            signer: std::sync::RwLock::new(None),
         }
     }
 
@@ -158,6 +161,12 @@ impl Requester for TCPRequester {
                 req.body = b.to_vec();
             }
 
+            // HMAC request signature (opt-in): the framed message uuid serves
+            // as the nonce, matching the daemon's replay-protection fallback.
+            if let Some(signer) = self.signer.read().unwrap_or_else(|e| e.into_inner()).as_ref() {
+                sign_wire_message(signer, &mut req);
+            }
+
             let data = req.serialize().map_err(|e| AppMeshError::SerializationError(e.to_string()))?;
             if let Err(e) = transport.send_message(&data) {
                 // A failed write leaves the stream unusable; drop it so the
@@ -206,6 +215,10 @@ impl Requester for TCPRequester {
 
     fn handle_token_update(&self, token: Option<String>) {
         self.set_token(token);
+    }
+
+    fn set_request_signer(&self, signer: Option<RequestSigner>) {
+        *self.signer.write().unwrap_or_else(|e| e.into_inner()) = signer;
     }
 
     fn set_forward_to(&self, url: Option<String>) {
@@ -274,20 +287,22 @@ impl AppMeshClientTCP {
         ssl_client_cert: Option<(String, String)>,
     ) -> Result<Arc<Self>> {
         let verify = crate::tls_config::resolve_ssl_verify(ssl_verify)?;
-        Self::new_with_verify(tcp_address, verify, ssl_client_cert)
+        Self::new_with_verify(tcp_address, verify, ssl_client_cert, false)
     }
 
     /// Create a TCP transport client with an explicit `SslVerify` mode (used by the
     /// builder so insecure mode is an explicit flag, never an empty-string sentinel).
+    /// `plain` selects the TLS-at-gateway shape: a plaintext TCP connection.
     pub(crate) fn new_with_verify(
         tcp_address: Option<(String, u16)>,
         verify: crate::tls_config::SslVerify,
         ssl_client_cert: Option<(String, String)>,
+        plain: bool,
     ) -> Result<Arc<Self>> {
         let tcp_address = tcp_address.unwrap_or_else(|| (DEFAULT_TCP_HOST.to_string(), DEFAULT_TCP_PORT));
         let client_cert = ssl_client_cert.map(|(cert, key)| ClientCert::Pair(cert, key));
 
-        let tcp_transport = Arc::new(Mutex::new(TCPTransport::new(tcp_address.clone(), verify, client_cert)));
+        let tcp_transport = Arc::new(Mutex::new(TCPTransport::new(tcp_address.clone(), verify, client_cert, plain)));
         let tcp_requester = TCPRequester::with_shared_transport(Arc::clone(&tcp_transport));
         let url = format!("tcp://{}:{}", tcp_address.0, tcp_address.1);
         let client = AppMeshClient::with_requester(Box::new(tcp_requester), url);

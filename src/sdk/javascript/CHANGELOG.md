@@ -1,5 +1,32 @@
 # Changelog
 
+## 3.1.15
+
+- Document `resource_limit.cpu` (fractional cores, container NanoCPUs).
+
+## 3.1.14
+
+- Document and accept first-class Docker container wiring fields on the app
+  config: `docker_ports`, `docker_volumes`, `docker_network`, `docker_backend`.
+
+## 3.1.13
+
+- Opt-in HMAC request signing (Node.js only; `enableRequestSignature(keyId, secret)`,
+  mirror of the Java 3.0.12 feature): every request carries `X-Request-Key`,
+  `X-Timestamp`, `X-Nonce` and `X-Signature` (lowercase hex HMAC-SHA256) over the
+  daemon canonical string `METHOD \n path \n sortedQuery \n sha256hex(body) \n
+  timestamp \n nonce`, on the HTTP and TCP transports. While signing is enabled
+  the HTTP client serializes query parameters with pure percent encoding so the
+  daemon's %-only decode yields exactly the signed values. Streamed file
+  endpoints (`/appmesh/file/download|upload|delete`) sign the empty-string body
+  hash. A 401 refresh retry is re-signed with a fresh nonce. The API key secret
+  is never logged. Disabling (`disableRequestSignature`) removes the headers.
+- Path/query canonical fixes for signed HTTP requests: the signature binds the
+  wire path (the percent-encoded path axios actually sends, including a baseURL
+  path prefix) instead of the caller-supplied raw path, and the WSS
+  data-channel routes `/appmesh/file/{upload,download}/ws` sign the route
+  without the trailing `/ws` (daemon `canonicalFileRoute`).
+
 ## 3.1.10
 
 - `forwardingHost`: a bare host is sent as given instead of appending the client's

@@ -30,6 +30,8 @@ Authorization:
     # field2: "local"}). Seeding — not this template — owns the entry so exactly
     # one guest binding exists per deployment; bootstrap also retires the
     # factory-default-issuer binding from policies written by older versions.
+    # display_name and email are pre-filled so the principal list names this
+    # identity before its first sign-in; a sign-in refreshes them from the token.
 
   roles:
     # Package lifecycle automation may enumerate and stop non-system Apps. It

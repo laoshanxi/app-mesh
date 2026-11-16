@@ -5,31 +5,29 @@ import io
 import json
 import os
 import sys
-import tempfile
 import threading
 import time
 
+import requests
+
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..")))  # -> src/sdk/python
-from appmesh import App, AppMeshRequestError, print_output_handler
+from appmesh import App, AppMeshAuthError, AppMeshClient, AppMeshRequestError, print_output_handler
 from _support import config
 
 
 def get_test_paths():
-    # None of these paths may live inside the daemon's installation tree: the
-    # file API refuses its own state on every transport.
-    local_tmpdir = tempfile.gettempdir()
+    # With REST.FileAllowedBaseDir unset the file API jails transfers to the
+    # daemon work tree, and inside it only work/tmp is exchangeable, so remote
+    # transfers exercise the work/tmp scratch of the standard install.
+    # "system_file" stays outside the jail and must be refused.
     if sys.platform == "win32":
         return {
-            "remote_tmp": r"C:\Windows\Temp\2.log",
-            "local_tmp": os.path.join(local_tmpdir, "3.log"),
-            "etc_file": r"C:\Windows\System32\drivers\etc\hosts",
-            "etc_copy": r"C:\Windows\Temp\hosts-copy",
+            "remote_tmp": r"C:\local\appmesh\work\tmp\2.log",
+            "system_file": r"C:\Windows\System32\drivers\etc\hosts",
         }
     return {
-        "remote_tmp": "/tmp/2.log",
-        "local_tmp": os.path.join(local_tmpdir, "3.log"),
-        "etc_file": "/etc/hosts",
-        "etc_copy": "/tmp/hosts-copy",
+        "remote_tmp": "/opt/appmesh/work/tmp/2.log",
+        "system_file": "/etc/hosts",
     }
 
 
@@ -112,16 +110,22 @@ class ProtocolTestMixin:
     def test_08_app_list_and_get(self):
         """List applications and inspect one."""
         config.attach_test_bearer(self.client)
-        apps = self.client.list_apps()
-        self.assertGreater(len(apps), 0)
-        first_app = apps[0].name
-        fetched = self.client.get_app(first_app)
-        self.assertEqual(fetched.name, first_app)
-        for app in apps:
-            self.assertTrue(hasattr(app, "name"))
-            self.assertTrue(hasattr(app, "shell"))
-        self.assertIsInstance(self.client.check_app_health(first_app), bool)
-        self.client.get_app_output(first_app)
+        # Self-contained: run instances deregister after their process exits, so
+        # leftover apps from earlier tests cannot be relied on.
+        self.client.add_app(App({"command": "sleep 1000", "name": "SDK_LIST_08"}))
+        try:
+            apps = self.client.list_apps()
+            self.assertGreater(len(apps), 0)
+            first_app = apps[0].name
+            fetched = self.client.get_app(first_app)
+            self.assertEqual(fetched.name, first_app)
+            for app in apps:
+                self.assertTrue(hasattr(app, "name"))
+                self.assertTrue(hasattr(app, "shell"))
+            self.assertIsInstance(self.client.check_app_health(first_app), bool)
+            self.client.get_app_output(first_app)
+        finally:
+            self.client.delete_app("SDK_LIST_08")
 
     def test_09_app_add_enable_disable_delete(self):
         """Full lifecycle: add -> disable -> enable -> delete."""
@@ -171,6 +175,20 @@ class ProtocolTestMixin:
         self.assertIn("appmesh_metrics_scrapes_total", self.client.get_metrics())
         self.assertEqual(self.client.set_log_level("INFO"), "INFO")
         self.assertEqual(self.client.set_log_level("DEBUG"), "DEBUG")
+
+    def test_13b_metrics_require_auth_switch(self):
+        """REST.MetricsRequireAuth=false is the trusted-scraper escape hatch."""
+        config.attach_test_bearer(self.client)
+        entry = config.BASE_URL or "https://127.0.0.1:6060"
+        self.assertTrue(self.client.get_config()["REST"]["MetricsRequireAuth"])
+        self.client.set_config({"REST": {"MetricsRequireAuth": False}})
+        try:
+            scraped = requests.get(entry + "/metrics", timeout=10,
+                                   verify=AppMeshClient._resolve_ssl_verify(None))
+            self.assertEqual(200, scraped.status_code)
+        finally:
+            self.client.set_config({"REST": {"MetricsRequireAuth": True}})
+        self.assertTrue(self.client.get_config()["REST"]["MetricsRequireAuth"])
 
     def test_14_get_config_roundtrip(self):
         """get_config / set_config roundtrip."""
@@ -450,28 +468,43 @@ class FileTransferMixin:
     """Tests for download_file / upload_file across HTTP / TCP / WSS transports."""
 
     def test_20_file_download(self):
-        """Download a system file to local."""
+        """System files are refused by the default jail; a scratch file downloads."""
         paths = get_test_paths()
         config.attach_test_bearer(self.client)
         local = "download_test.log"
         try:
             if os.path.exists(local):
                 os.remove(local)
-            self.assertIsNone(self.client.download_file(paths["etc_file"], local))
-            self.assertTrue(os.path.exists(local))
+            with self.assertRaises(AppMeshAuthError) as ctx:
+                self.client.download_file(paths["system_file"], local)
+            self.assertEqual(403, ctx.exception.status_code)
+            self.assertEqual(
+                0,
+                self.client.run_app_sync(
+                    App({"name": "py-exec", "metadata": f"open(r'{paths['remote_tmp']}', 'w').write('download-test')"})
+                )[0],
+            )
+            self.assertIsNone(self.client.download_file(paths["remote_tmp"], local))
+            with open(local, "r", encoding="utf-8") as f:
+                self.assertEqual("download-test", f.read())
         finally:
             if os.path.exists(local):
                 os.remove(local)
+            self.client.run_app_sync(
+                App({"name": "py-exec",
+                     "metadata": f"import os; [os.remove(r'{paths['remote_tmp']}') if os.path.exists(r'{paths['remote_tmp']}') else None]"})
+            )
 
     def test_21_file_upload_download_roundtrip(self):
-        """Upload a file, then download it, verify content exists."""
+        """Upload a file, then download it, verify content matches."""
         paths = get_test_paths()
         config.attach_test_bearer(self.client)
         local_src = "roundtrip_src.log"
         local_dst = "roundtrip_dst.log"
         remote = paths["remote_tmp"]
         try:
-            self.client.download_file(paths["etc_file"], local_src)
+            with open(local_src, "w", encoding="utf-8") as f:
+                f.write("roundtrip-payload")
             self.assertEqual(
                 0,
                 self.client.run_app_sync(
@@ -481,24 +514,38 @@ class FileTransferMixin:
             )
             self.assertIsNone(self.client.upload_file(local_file=local_src, remote_file=remote))
             self.assertIsNone(self.client.download_file(remote_file=remote, local_file=local_dst))
-            self.assertTrue(os.path.exists(local_dst))
+            with open(local_dst, "r", encoding="utf-8") as f:
+                self.assertEqual("roundtrip-payload", f.read())
         finally:
             for f in (local_src, local_dst):
                 if os.path.exists(f):
                     os.remove(f)
 
     def test_22_download_readonly_file(self):
-        """Download a read-only system file."""
+        """Download a read-only file from the scratch area."""
         paths = get_test_paths()
         config.attach_test_bearer(self.client)
-        local = "etc_download"
+        local = "readonly_download"
+        remote = os.path.join(os.path.dirname(paths["remote_tmp"]), "readonly.log")
         try:
-            self.assertIsNone(self.client.download_file(paths["etc_file"], local))
+            self.assertEqual(
+                0,
+                self.client.run_app_sync(
+                    App({"name": "py-exec",
+                        "metadata": (f"import os; open(r'{remote}', 'w').write('readonly-payload');"
+                                     f"os.chmod(r'{remote}', 0o444)")})
+                )[0],
+            )
+            self.assertIsNone(self.client.download_file(remote, local))
             with open(local, "r", encoding="utf-8") as f:
-                self.assertGreater(len(f.read()), 0)
+                self.assertEqual("readonly-payload", f.read())
         finally:
             if os.path.exists(local):
                 os.remove(local)
+            self.client.run_app_sync(
+                App({"name": "py-exec",
+                     "metadata": f"import os; [os.remove(r'{remote}') if os.path.exists(r'{remote}') else None]"})
+            )
 
 
 # ---------------------------------------------------------------------------
