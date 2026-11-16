@@ -1937,6 +1937,11 @@ void Application::recordProcessExit(int code, bool naturalExit, AppProcess *repo
 			setLastError(exitError);
 		health(false);
 		m_task.terminate();
+		// Run instances are one-shot: deregister shortly after the process exits
+		// (the grace keeps output readable for late pollers, SDKs do an exit
+		// backfill). Managed apps keep their registration by design.
+		if (isOneShot())
+			scheduleRemoval(RUN_INSTANCE_EXIT_GRACE_SECONDS);
 	}
 
 	EventDispatcher::instance()->flushStdout(m_name, reporter, stdoutDispatchedBytes);
