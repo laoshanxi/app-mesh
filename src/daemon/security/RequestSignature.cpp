@@ -104,8 +104,12 @@ std::string RequestSignature::canonicalQuery(const std::map<std::string, std::st
 	pairs.reserve(query.size());
 	for (const auto &entry : query)
 		pairs.push_back(&entry);
+	// Parameter types spelled out: the centos7 toolchain (gcc 4.8) has no
+	// generic lambdas, and this port must compile on every legacy platform.
 	std::sort(pairs.begin(), pairs.end(),
-			  [](const auto *a, const auto *b) { return a->first != b->first ? a->first < b->first : a->second < b->second; });
+			  [](const std::pair<const std::string, std::string> *a, const std::pair<const std::string, std::string> *b) {
+				  return a->first != b->first ? a->first < b->first : a->second < b->second;
+			  });
 
 	std::string canonical;
 	for (const auto *entry : pairs)

@@ -755,7 +755,14 @@ int WebSocketService::handleHttpCallback(struct lws *wsi, enum lws_callback_reas
 
             int status_code = http_resp.http_status > 0 ? http_resp.http_status : HTTP_STATUS_OK;
 
-            http_resp.applyCorsHeaders();
+            std::string corsOrigin;
+            if (pss && pss->http_request)
+            {
+                const auto originIt = pss->http_request->headers.find("Origin");
+                if (originIt != pss->http_request->headers.end())
+                    corsOrigin = originIt->second;
+            }
+            http_resp.applyCorsHeaders(corsOrigin);
             http_resp.applySecurityHeaders();
 
             // HTTP headers

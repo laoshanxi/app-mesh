@@ -1246,10 +1246,15 @@ bool Utility::secureCompare(const std::string &a, const std::string &b)
 
 std::string Utility::toHex(const unsigned char *data, size_t size)
 {
-	// hex_lower matches the lowercase digests callers persist and compare
+	// Lowercase digests match what callers persist and compare.
+	static const char *digits = "0123456789abcdef";
 	std::string result;
 	result.reserve(size * 2);
-	boost::algorithm::hex_lower(data, data + size, std::back_inserter(result));
+	for (size_t i = 0; i < size; ++i)
+	{
+		result.push_back(digits[data[i] >> 4]);
+		result.push_back(digits[data[i] & 0x0F]);
+	}
 	return result;
 }
 

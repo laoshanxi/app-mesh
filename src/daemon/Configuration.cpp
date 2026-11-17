@@ -249,7 +249,7 @@ int Configuration::getScheduleInterval()
 	return m_baseConfig->m_scheduleInterval;
 }
 
-std::shared_ptr<Configuration::JsonDocker> JsonDocker::FromJson(const nlohmann::json &jsonValue)
+std::shared_ptr<JsonDocker> JsonDocker::FromJson(const nlohmann::json &jsonValue)
 {
 	auto docker = std::make_shared<JsonDocker>();
 	auto mode = GET_JSON_STR_VALUE(jsonValue, JSON_KEY_Docker_HostSecurityPolicy);
@@ -1328,13 +1328,14 @@ std::shared_ptr<Configuration::JsonRest> Configuration::JsonRest::FromJson(const
 	}
 	// Request hardening modes: unknown values fall back to "off" so a typo
 	// cannot silently enable enforcement.
-	const auto normalizeMode = [&jsonValue, &fname](const char *key, std::string &target) {
+	const std::string fnameCopy(fname);
+	const auto normalizeMode = [&jsonValue, &fnameCopy](const char *key, std::string &target) {
 		target = GET_JSON_STR_VALUE(jsonValue, key);
 		std::transform(target.begin(), target.end(), target.begin(), [](unsigned char c) { return std::tolower(c); });
 		if (target != "off" && target != "audit" && target != "enforce")
 		{
 			if (!target.empty())
-				LOG_WAR << fname << "ignored invalid " << key << " <" << target << ">, expected off | audit | enforce";
+				LOG_WAR << fnameCopy << "ignored invalid " << key << " <" << target << ">, expected off | audit | enforce";
 			target = "off";
 		}
 	};

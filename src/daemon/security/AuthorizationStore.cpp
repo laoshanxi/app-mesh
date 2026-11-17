@@ -30,6 +30,9 @@ namespace
 	const char *DEFAULT_FIRST_ADMIN_SUBJECT =
 		"CiQyZDFjOGMzOC0zODk4LTRjODktYTc4Yi0zY2FhNDJmMjAzYzESBWxvY2Fs";
 
+	// Request-signing API keys per principal; the owner revokes before issuing more.
+	constexpr std::size_t MAX_API_KEYS_PER_PRINCIPAL = 10;
+
 	// Every permission identifier the policy accepts; role updates are checked
 	// against this set so typos cannot silently grant nothing.
 	const std::set<std::string> &knownPermissions()

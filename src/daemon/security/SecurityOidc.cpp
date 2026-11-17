@@ -80,6 +80,9 @@ void SecurityOidc::updateRole(const std::string &role, const nlohmann::json &per
 }
 
 void SecurityOidc::deleteRole(const std::string &role)
+{
+	m_authorization.deleteRole(role);
+}
 
 nlohmann::json SecurityOidc::issueApiKey(const std::string &principalId) { return m_authorization.issueApiKey(principalId); }
 
@@ -96,7 +99,4 @@ bool SecurityOidc::deleteApiKey(const std::string &keyId, const std::string &req
 bool SecurityOidc::apiKeySecret(const std::string &keyId, std::string &principalId, std::string &secret) const
 {
 	return m_authorization.apiKeySecret(keyId, principalId, secret);
-}
-{
-	m_authorization.deleteRole(role);
 }

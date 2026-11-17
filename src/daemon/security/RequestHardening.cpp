@@ -185,8 +185,13 @@ RequestHardening::Decision RequestHardening::evaluate(const Input &input)
 			std::string namespaceKey;
 			if (!input.transportPrincipal.empty())
 				namespaceKey = input.transportPrincipal;
-			else if (const auto credential = Utility::bearerCredential(input.bearer); !credential.empty())
-				namespaceKey = "bearer:" + RequestSignature::sha256Hex(credential.data(), credential.size()).substr(0, 16);
+			else
+			{
+				const auto credential = Utility::bearerCredential(input.bearer);
+				if (!credential.empty())
+					namespaceKey =
+						"bearer:" + RequestSignature::sha256Hex(credential.data(), credential.size()).substr(0, 16);
+			}
 			if (namespaceKey.empty())
 				namespaceKey = input.keyId.empty() ? "anonymous" : "key:" + input.keyId;
 			if (m_guard.check(namespaceKey, nonce, std::chrono::seconds(window)) == ReplayGuard::Verdict::Duplicate)

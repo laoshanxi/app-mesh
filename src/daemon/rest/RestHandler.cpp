@@ -585,7 +585,8 @@ long RestHandler::getHttpQueryPosition(const HttpRequest &message, const std::st
 	// cursors), not durations: the duration parser rejects values beyond int
 	// range, which a cursor legitimately exceeds.
 	long rt = defaultValue;
-	if (auto it = message.m_query.find(key); it != message.m_query.end())
+	const auto it = message.m_query.find(key);
+	if (it != message.m_query.end())
 	{
 		try
 		{
