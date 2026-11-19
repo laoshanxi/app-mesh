@@ -59,6 +59,11 @@ Reconnect after a token refresh. A WSS frame cannot change the pinned principal.
 
 File upload and download endpoints validate the bearer before file access. They also enforce the required file permission.
 
+The CLI remembers a remote endpoint with its transport settings, so later
+commands need no `-H`, `--ca-cert`, or `--no-verify`. See
+[TLS and certificates](TLS.md) for the listener configuration and the client
+matrix.
+
 ## Deployment behind a TLS-terminating gateway
 
 Enterprise networks usually centralize TLS at an edge layer: a load balancer,
@@ -96,7 +101,8 @@ Clients:
 - To the gateway, clients keep using `https://` and `wss://` — nothing changes
   for them; TLS ends at the gateway.
 - Direct connections to a plaintext daemon are opt-in per client: the CLI uses
-  a `ws://` or `http://` `-H` endpoint, the Python SDK passes
+  a `ws://` or `http://` `-H` endpoint (the transport mode is remembered with
+  the endpoint at logon, like a CA), the Python SDK passes
   `plain_transport=True` to the TCP and WSS clients, the Rust SDK and CLI
   builder use `.plain_transport(true)`, and the Go SDK dials
   `TCPConnection.ConnectPlain` or a `ws://` URL. Every SDK keeps TLS as the

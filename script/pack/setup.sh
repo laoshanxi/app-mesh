@@ -959,6 +959,16 @@ setup_permissions() {
 
 setup_ssl_certificates() {
     local ssl_dir="${PROG_HOME}/ssl"
+    if [ "${APPMESH_SSL_SOURCE:-file}" = "vault" ]; then
+        # The Vault PKI bootstrap issued the five daemon-consumed files. There
+        # is no ca-key.pem, and local generation must never overwrite them.
+        if [ ! -f "${ssl_dir}/server.pem" ] && [ -x "${AUTH_LAUNCHER}" ]; then
+            "${AUTH_LAUNCHER}" bootstrap || die "Vault PKI TLS bootstrap failed"
+        fi
+        [ -f "${ssl_dir}/server.pem" ] ||
+            die "The Vault PKI source is selected but no TLS material was issued; run ${AUTH_LAUNCHER} bootstrap"
+        return
+    fi
     if [ "${APPMESH_FRESH_INSTALL:-}" = "Y" ] || [ ! -f "${ssl_dir}/server.pem" ]; then
         info "Generating SSL certificates"
         if [ -f "${ssl_dir}/generate_ssl_cert.sh" ]; then

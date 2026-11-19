@@ -58,6 +58,15 @@ appm -H wss://node-a.example.com:6058 ls
 
 The session belongs to the selected Engine endpoint. The CLI verifies the authentication configuration before it reuses the session.
 
+## TLS and plaintext endpoints
+
+By default the CLI connects to the local Engine over WSS with the certificate
+settings from its `config.yaml`. For a remote Engine, trust its CA with
+`--ca-cert` or skip verification with `--no-verify` (insecure); use a `ws://` or
+`http://` `-H` URL for a plaintext Engine. Remote transport settings are
+remembered at logon, so later commands need no flags. See
+[TLS and certificates](TLS.md) for the full configuration and client matrix.
+
 ## Forwarded sign-in
 
 Use `-F` when one Engine forwards requests to another Engine:
@@ -69,7 +78,7 @@ appm -H wss://gateway.example.com:6058 -F node-b.example.com ls
 
 The gateway forwards authentication discovery to the target. The client then gets a token directly from the shared authentication service. The gateway validates the token before it connects to the target. The target Engine validates the token again.
 
-The CLI connects over WSS only. SDK clients can also use HTTP and TCP for forwarded commands. A forwarded event subscription requires TCP or WSS.
+The CLI uses the WebSocket transport only. SDK clients can also use HTTP and TCP for forwarded commands. A forwarded event subscription requires TCP or WSS.
 
 The local session belongs to the gateway endpoint. You can use that session with another forwarded target only when the target advertises the same issuer, client ID, and audience. Include `-F` on each command that must run on the target. The CLI does not save a forwarding target as a default.
 
@@ -118,6 +127,8 @@ Commands:
 Options:
   -H, --host-url <HOST_URL>      Server host URL (default: last used or wss://127.0.0.1:6058)
   -F, --forward-to <FORWARD_TO>  Forward request to target host
+  --ca-cert <PATH>               CA bundle trusted for the Engine certificate
+  --no-verify                    Skip Engine TLS certificate verification (insecure; remembered for a remote endpoint)
   -v, --verbose                  Enable debug logging
   -h, --help                     Print help
   -V, --version                  Print version

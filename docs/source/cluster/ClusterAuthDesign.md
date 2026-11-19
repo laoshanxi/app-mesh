@@ -408,8 +408,8 @@ docker exec appmesh_master sh -c 'printf "%s\n" "$(grep "^password=" /opt/appmes
   appm view
   ```
 
-  The CA is remembered with the endpoint at logon; later commands need
-  neither `-H` nor `--ca-cert`.
+  The CLI remembers the CA with the endpoint at logon, pinned to an absolute
+  path, so later commands need neither `-H` nor `--ca-cert`.
 - Then copy the owner's `work/config/authorization.yaml` to every
   follower before the follower first serves an authenticated request. A
   copy that lands first needs no restart: a follower adopts an entry from
@@ -420,7 +420,8 @@ docker exec appmesh_master sh -c 'printf "%s\n" "$(grep "^password=" /opt/appmes
 
 ### Cluster TLS trust
 
-Every node generates its own CA at first start. An SDK on one node
+See [TLS and certificates](../TLS.md) for the key reference and the client
+matrix. Every node generates its own CA at first start. An SDK on one node
 verifies a peer certificate against the local CA by default. That CA did
 not sign the peer certificate. The check fails with `BadSignature`. Use
 one of these patterns.
@@ -445,7 +446,8 @@ Pattern 2. Share one CA across the cluster:
    Copy the new leaf files and `ca.pem` to the new node. Never distribute
    `ca-key.pem`.
 
-Pattern 3. Central issuance (Vault PKI, one trust domain for the cluster):
+Pattern 3. Central issuance (Vault PKI, one trust domain for the cluster); the
+setting reference is [TLS and certificates](../TLS.md#vault-pki-source):
 
 1. Select the source with `APPMESH_SSL_SOURCE=vault` plus
    `APPMESH_SSL_VAULT_ADDR` and `APPMESH_SSL_VAULT_TOKEN_FILE` (both

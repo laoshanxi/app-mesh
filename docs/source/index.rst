@@ -37,6 +37,7 @@ Welcome to AppMesh's documentation!
    :numbered:
 
    Security.md
+   TLS.md
    Authentication.md
    cluster/ClusterAuthDesign.md
 

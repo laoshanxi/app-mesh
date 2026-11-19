@@ -25,6 +25,10 @@ pub struct Cli {
     #[arg(long = "ca-cert", global = true, value_name = "PATH")]
     pub ca_cert: Option<PathBuf>,
 
+    /// Skip Engine TLS certificate verification (insecure; remembered at logon)
+    #[arg(long = "no-verify", global = true, conflicts_with = "ca_cert")]
+    pub no_verify: bool,
+
     /// API key id for HMAC request signing (env: APPMESH_API_KEY); requires --api-secret
     #[arg(long = "api-key", global = true, value_name = "KEY_ID")]
     pub api_key: Option<String>,

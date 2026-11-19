@@ -9,8 +9,8 @@ pub fn get_current_url(cli: &Cli) -> String {
     if let Some(ref url) = cli.host_url {
         return url.clone();
     }
-    if let Some((host, port)) = config::load_last_host() {
-        return format!("{}:{}", host, port);
+    if let Some(endpoint) = config::load_last_endpoint() {
+        return format!("{}://{}:{}", if endpoint.plain { "ws" } else { "wss" }, endpoint.host, endpoint.port);
     }
     format!("127.0.0.1:{}", config::DEFAULT_WSS_PORT)
 }
@@ -68,27 +68,40 @@ pub async fn build_client(cli: &Cli) -> Result<Arc<AppMeshClientWSS>> {
 
     apply_request_signer(&client, cli);
 
-    // An explicitly passed endpoint becomes the remembered default only after a
-    // successful logon; a plaintext endpoint is never remembered (no scheme).
-    if cli.host_url.is_none() && !tls.plain {
-        config::save_last_host(&host, wss_port, None);
+    // An explicit -H is remembered only at logon, so a one-off -H cannot hijack the default.
+    if cli.host_url.is_none() {
+        remember_resolved(cli, &host, wss_port, &tls);
     }
     Ok(client)
 }
 
-/// Persist the resolved endpoint as the CLI default. Called after a successful
-/// logon, where the endpoint has proven reachable and authenticated. A `--ca-cert`
-/// given at logon is remembered with the endpoint so later commands need no flag.
+/// Persist the resolved endpoint and its transport settings. The local Engine
+/// re-reads its own CA, so only a named or previously recorded CA is kept.
+fn remember_resolved(cli: &Cli, host: &str, port: u16, tls: &config::DaemonTlsConfig) {
+    // A CA has no effect without verification or on a plaintext endpoint.
+    let ca_cert = if !tls.verify_server || tls.plain {
+        None
+    } else {
+        match cli.ca_cert {
+            Some(ref ca) => Some(ca.clone()),
+            None => config::load_last_endpoint()
+                .filter(|endpoint| endpoint.host == host && endpoint.port == port && endpoint.plain == tls.plain)
+                .and_then(|endpoint| endpoint.ca_cert),
+        }
+    };
+    config::save_last_endpoint(&config::RememberedEndpoint {
+        host: host.to_string(),
+        port,
+        plain: tls.plain,
+        verify_server: tls.verify_server,
+        ca_cert,
+    });
+}
+
+/// Persist the resolved endpoint as the CLI default after a successful logon.
 pub fn remember_engine_endpoint(cli: &Cli) -> Result<()> {
     let (host, port, tls) = resolve_address_and_tls(cli)?;
-    // A plaintext endpoint is per-invocation; remembering it would later dial TLS.
-    if tls.plain {
-        return Ok(());
-    }
-    // The local daemon resolves its own CA from its config on every run; remember
-    // one only when it was named for this logon (--ca-cert).
-    let ca_cert = if cli.ca_cert.is_some() { tls.ca_cert.as_deref() } else { None };
-    config::save_last_host(&host, port, ca_cert);
+    remember_resolved(cli, &host, port, &tls);
     Ok(())
 }
 
@@ -287,51 +300,42 @@ fn build_wss(host: String, port: u16, tls: &config::DaemonTlsConfig) -> Result<A
 
 fn resolve_address_and_tls(cli: &Cli) -> Result<(String, u16, config::DaemonTlsConfig)> {
     let (daemon_addr, daemon_tls) = config::load_daemon_config();
+    let remembered = config::load_last_endpoint();
+    let explicit = cli.host_url.is_some();
 
-    // A ws:// or http:// -H is a plaintext endpoint; local TLS never leaks in.
-    if let Some(ref url) = cli.host_url {
+    // Endpoint: explicit -H, else the remembered default, else local Engine config, else loopback.
+    let (host, port, plain) = if let Some(ref url) = cli.host_url {
         let (host, port) = parse_url(url)?;
-        if url_scheme_is_plain(url)? {
-            let mut tls = config::DaemonTlsConfig::default();
-            tls.plain = true;
-            return Ok((host, port, tls));
-        }
-        return resolve_tls_for(cli, host, port, daemon_addr, daemon_tls);
-    }
-    if let Some((host, port)) = config::load_last_host() {
-        return resolve_tls_for(cli, host, port, daemon_addr, daemon_tls);
-    }
-    if let Some((host, port)) = daemon_addr.clone() {
-        return Ok((host, port, daemon_tls));
-    }
-    Ok(("127.0.0.1".to_string(), config::DEFAULT_WSS_PORT, config::DaemonTlsConfig::default()))
-}
+        (host, port, url_scheme_is_plain(url)?)
+    } else if let Some(ref endpoint) = remembered {
+        (endpoint.host.clone(), endpoint.port, endpoint.plain)
+    } else if let Some((host, port)) = daemon_addr.clone() {
+        (host, port, daemon_tls.plain)
+    } else {
+        ("127.0.0.1".to_string(), config::DEFAULT_WSS_PORT, false)
+    };
 
-/// TLS settings for a TLS endpoint: inherit the local daemon's only when the
-/// endpoint IS the local daemon; a remote endpoint trusts only its remembered CA.
-#[allow(clippy::too_many_arguments)]
-fn resolve_tls_for(
-    cli: &Cli,
-    host: String,
-    port: u16,
-    daemon_addr: Option<(String, u16)>,
-    daemon_tls: config::DaemonTlsConfig,
-) -> Result<(String, u16, config::DaemonTlsConfig)> {
-    let mut tls = if daemon_addr.as_ref().is_some_and(|address| address == &(host.clone(), port)) {
+    let local_engine = daemon_addr.as_ref().is_some_and(|address| address == &(host.clone(), port));
+    let mut tls = if local_engine && (!explicit || plain == daemon_tls.plain) {
+        // The local Engine is authoritative for its own listener and certificates.
         daemon_tls
     } else {
-        // An explicit remote endpoint never inherits the local daemon's insecure
-        // VerifyServer setting or private client key material. It trusts only the
-        // CA remembered for it at logon, if any.
-        let mut tls = config::DaemonTlsConfig::default();
-        tls.ca_cert = config::load_last_ca_cert(&host, port);
+        // A remote endpoint uses its recorded settings; never local key material.
+        let mut tls = config::DaemonTlsConfig { plain, ..config::DaemonTlsConfig::default() };
+        if let Some(endpoint) = remembered.filter(|e| e.host == host && e.port == port && e.plain == plain) {
+            tls.verify_server = endpoint.verify_server;
+            tls.ca_cert = endpoint.ca_cert;
+        }
         tls
     };
-    // --ca-cert names the CA to trust for any endpoint, remote included, and
-    // always implies server verification.
+    // Explicit flags describe this invocation and are remembered at logon.
     if let Some(ref ca) = cli.ca_cert {
         tls.ca_cert = Some(ca.clone());
         tls.verify_server = true;
+    }
+    if cli.no_verify {
+        tls.ca_cert = None;
+        tls.verify_server = false;
     }
     Ok((host, port, tls))
 }
