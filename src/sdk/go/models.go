@@ -33,6 +33,7 @@ const (
 	headerFileUser       = "X-File-User"
 	headerFileGroup      = "X-File-Group"
 	headerTargetHost     = "X-Target-Host"
+	headerInputClose     = "X-Input-Close"
 )
 
 // Platform-aware default SSL paths.
@@ -75,6 +76,9 @@ type Application struct {
 	Enabled           bool             `json:"enabled"`
 	StdoutBackupCount *int             `json:"stdout_backup_count"`
 	Metadata          *json.RawMessage `json:"metadata,omitempty"`
+	// Stdin selects the stdin wiring: empty (default) /dev/null or metadata
+	// launch file; "pipe" keeps the write end open for SendInput.
+	Stdin *string `json:"stdin,omitempty"`
 
 	// Time
 	StartTime     *int64 `json:"start_time"`

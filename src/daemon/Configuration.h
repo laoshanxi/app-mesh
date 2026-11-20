@@ -150,7 +150,8 @@ public:
 	std::string generateRunAppName(const std::string &provideAppName);
 	/// Stops and removes the on-demand run instances spawned from `baseName`
 	/// (their `<base>_N` registrations). Used by base-app delete; the delete
-	/// permission check on the base governs the cascade.
+	/// permission check on the base governs the cascade. Returns the removal
+	/// count, or -1 when instances kept re-registering past the resweep bound.
 	int removeRunInstances(const std::string &baseName);
 	/// Disables an application; false on a stale disable. Status flip and save
 	/// under the mutation lock, termination outside it.

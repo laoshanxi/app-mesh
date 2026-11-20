@@ -77,6 +77,9 @@ protected:
 	void apiDeleteTask(const std::shared_ptr<HttpRequest> &message); // client delete task
 	void apiFetchTask(const std::shared_ptr<HttpRequest> &message);  // server fetch task with block and iterator REST call
 	void apiReplyTask(const std::shared_ptr<HttpRequest> &message); // server reply task (responds to the client apiSendTask)
+	void apiSendTaskStream(const std::shared_ptr<HttpRequest> &message); // SSE variant: partials + final over one stream
+	void apiSendTaskPartial(const std::shared_ptr<HttpRequest> &message); // worker pushes an incremental task result
+	void apiAppInput(const std::shared_ptr<HttpRequest> &message);        // inject bytes into a pipe-stdin process
 
 	void apiCloudResourceView(const std::shared_ptr<HttpRequest> &message);
 

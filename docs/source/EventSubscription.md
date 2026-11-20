@@ -2,6 +2,9 @@
 
 App Mesh supports real-time event subscription over persistent connections (TCP and WebSocket). Clients can subscribe to specific application events and receive server-push notifications without polling.
 
+Plain-HTTP clients receive the same STDOUT push as server-sent events through
+the [output stream](Streaming.md) — no persistent connection required.
+
 ## Event Types
 
 | Event | Description | Data Fields |

@@ -23,6 +23,10 @@ import java.util.Objects;
 public class AppMeshClientTCP extends AppMeshClient {
     private static final Logger LOGGER = Logger.getLogger(AppMeshClientTCP.class.getName());
     private static final int TCP_BLOCK_SIZE = 16 * 1024 - 128; // TLS-optimized chunk size
+    /** Standard daemon REST listener port; the SSE streaming side channel dials it directly. */
+    private static final int DEFAULT_REST_PORT = 6058;
+    private final String host;
+    private final int restPort;
     private final TCPTransport tcpTransport;
     private volatile MessageDemuxer demuxer;
 
@@ -49,8 +53,18 @@ public class AppMeshClientTCP extends AppMeshClient {
      * settings are reused for the TCP transport (system default trust when none configured).
      */
     protected AppMeshClientTCP(AppMeshClient.Builder builder, String host, int port) {
+        this(builder, host, port, DEFAULT_REST_PORT);
+    }
+
+    /**
+     * Create a TCP transport client from a fully configured base builder with an explicit
+     * REST listener port for the SSE streaming side channel ({@code restPort}).
+     */
+    protected AppMeshClientTCP(AppMeshClient.Builder builder, String host, int port, int restPort) {
         super(builder);
         Objects.requireNonNull(host, "host");
+        this.host = host;
+        this.restPort = restPort;
         this.tcpTransport = new TCPTransport(host, port, getSSLSocketFactory());
     }
 
@@ -59,6 +73,7 @@ public class AppMeshClientTCP extends AppMeshClient {
         private final AppMeshClient.Builder base = new AppMeshClient.Builder();
         private String host = "127.0.0.1";
         private int port = 6059;
+        private int restPort = DEFAULT_REST_PORT;
 
         public Builder() {
         }
@@ -70,6 +85,15 @@ public class AppMeshClientTCP extends AppMeshClient {
 
         public Builder port(int port) {
             this.port = port;
+            return this;
+        }
+
+        /**
+         * REST listener port of the same daemon; the SSE streaming side channel
+         * (followOutput / runTaskStream) dials it directly. Defaults to 6058.
+         */
+        public Builder restPort(int restPort) {
+            this.restPort = restPort;
             return this;
         }
 
@@ -128,8 +152,18 @@ public class AppMeshClientTCP extends AppMeshClient {
         public AppMeshClientTCP build() {
             Objects.requireNonNull(host, "host");
             base.baseURL("https://" + host + ":" + port);
-            return new AppMeshClientTCP(base, host, port);
+            return new AppMeshClientTCP(base, host, port, restPort);
         }
+    }
+
+    /**
+     * SSE side channel base URL: the framed TCP transport cannot carry a chunked event
+     * stream, so the streaming APIs dial the daemon's plain HTTPS REST listener directly
+     * (default 6058, override with {@code Builder.restPort}; the file-transfer side-channel shape).
+     */
+    @Override
+    protected String directRequestBaseURL() {
+        return "https://" + host + ":" + restPort;
     }
 
     /** Send a request over TCP transport and expose it as an {@link HttpURLConnection}-like object. */

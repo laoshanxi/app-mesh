@@ -172,6 +172,10 @@ pub struct Application {
     pub description: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub metadata: Option<serde_json::Value>,
+    /// Stdin wiring: `"pipe"` keeps the daemon-side write end open for
+    /// `send_input`; unset (default) uses /dev/null or the metadata launch file.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub stdin: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub working_dir: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -368,6 +372,12 @@ impl ApplicationBuilder {
     /// Attaches a JSON document as application metadata.
     pub fn metadata(mut self, meta: serde_json::Value) -> Self {
         self.app.metadata = Some(meta);
+        self
+    }
+
+    /// Sets the stdin wiring: `"pipe"` lets `send_input` drive the process while it runs.
+    pub fn stdin(mut self, mode: &str) -> Self {
+        self.app.stdin = Some(mode.to_string());
         self
     }
 

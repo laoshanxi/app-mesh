@@ -13,9 +13,13 @@
 #include <set>
 #include <sstream>
 #include <thread>
+#include <tuple>
 #include <utility>
+#include <vector>
 
 #include <json/json.h>
+
+#include <drogon/utils/Utilities.h>
 
 #include "../../common/DateTime.h"
 #include "../../common/RestClient.h"
@@ -80,8 +84,8 @@ namespace
 		return offset == raw.size() ? output : raw;
 	}
 
-	// "registry:5000/team/app:1.2" -> {"registry:5000/team/app", "1.2"};
-	// digest references keep the digest in the repository ("repo@sha256:...").
+	// "registry:5000/team/app:1.2" -> {"registry:5000/team/app", "1.2"}; a digest
+	// reference splits into {"repo", "sha256:..."} — reassemble with '@', not ':'.
 	std::pair<std::string, std::string> splitImageReference(const std::string &image)
 	{
 		if (const auto at = image.find('@'); at != std::string::npos)
@@ -107,7 +111,8 @@ namespace
 			auth["password"] = password->second;
 		if (const auto server = envMap.find(ENV_APPMESH_DOCKER_REGISTRY_SERVER); server != envMap.end() && !server->second.empty())
 			auth["serveraddress"] = server->second;
-		return Utility::encode64(JSON::dump(auth));
+		// dockerd requires URL-safe base64; the standard alphabet fails on '+' or '/'.
+		return drogon::utils::base64Encode(JSON::dump(auth), /*urlSafe=*/true);
 	}
 
 	// Registry credentials are daemon-side configuration; they must not leak
@@ -130,17 +135,19 @@ namespace
 
 	std::string dockerAgentBaseUrl()
 	{
-		return std::string("https://") + Configuration::instance()->getRestListenAddress() + ":" +
+		// The agent shares the REST listener and serves plaintext when SSL is off; no hardcoded https://.
+		const auto scheme = Configuration::instance()->getSslEnabled() ? "https://" : "http://";
+		return std::string(scheme) + Configuration::instance()->getRestListenAddress() + ":" +
 			   std::to_string(Configuration::instance()->getRestListenPort());
 	}
 
-	// Negotiated "/v1.xx" prefix, probed once per daemon run. Empty keeps the
-	// server's default (latest) version: the pre-negotiation behavior.
+	// Negotiated "/v1.xx" prefix, probed once per daemon run. Empty keeps the server's default version.
+	// Returned by value: do not hold a reference across the probe's write.
 	std::mutex g_versionMutex;
 	std::atomic<bool> g_versionProbed{false};
 	std::string g_versionPrefix;
 
-	const std::string &dockerApiVersionPrefix()
+	std::string dockerApiVersionPrefix()
 	{
 		// Probe outside the mutex: the 10s network probe must never block
 		// concurrent docker calls; a racing caller falls back to the default.
@@ -175,9 +182,9 @@ namespace
 			LOG_INF << "DockerApiProcess negotiated Docker Engine API prefix <"
 					<< (g_versionPrefix.empty() ? "<server default>" : g_versionPrefix) << ">";
 		}
-		std::lock_guard guard(g_versionMutex);
-		return g_versionPrefix;
-	}
+	std::lock_guard guard(g_versionMutex);
+	return g_versionPrefix;
+}
 } // namespace
 
 DockerApiProcess::DockerApiProcess(std::weak_ptr<Application> owner, const std::string &appName,
@@ -211,7 +218,7 @@ bool DockerApiProcess::running() const
 		return true;
 	{
 		std::lock_guard guard(m_dockerMutex);
-		if (!m_containerId.empty() && !m_hostPidVisible)
+		if (!m_containerId.empty() && !m_hostPidVisible.load(std::memory_order_acquire))
 			return m_containerRunning.load(std::memory_order_acquire);
 	}
 	return AppProcess::running();
@@ -268,15 +275,21 @@ std::optional<int> DockerApiProcess::containerHealthVerdict()
 							  Utility::stringFormat("/containers/%s/json", containerId.c_str()), {}, {}, nullptr);
 	if (resp->statusCode != web::http::status_codes::OK)
 	{
-		LOG_WAR << fname << "container inspect failed <" << resp->statusCode << ">";
-		return std::nullopt;
+		// Fail closed like the exec probe: a channel failure is not proof of health.
+		LOG_WAR << fname << "container inspect failed <" << resp->statusCode << ">, marking unhealthy";
+		return 1;
 	}
 	const auto inspect = JSON::parse(resp->text, nullptr);
-	if (!inspect.isObject() || !HAS_JSON_FIELD(inspect, "State") || !inspect["State"].isObject() ||
-		!HAS_JSON_FIELD(inspect["State"], "Health") || !inspect["State"]["Health"].isObject())
+	if (!inspect.isObject() || !HAS_JSON_FIELD(inspect, "State") || !inspect["State"].isObject())
+		return std::nullopt;
+	const auto &state = inspect["State"];
+	// A stopped container keeps its last State.Health; reading it would bounce a dead app back to healthy.
+	if (HAS_JSON_FIELD(state, "Running") && state["Running"].isBool() && !GET_JSON_BOOL_VALUE(state, "Running"))
+		return 1;
+	if (!HAS_JSON_FIELD(state, "Health") || !state["Health"].isObject())
 		return std::nullopt; // no image HEALTHCHECK: nothing Docker maintains to read
 
-	const auto status = GET_JSON_STR_VALUE(inspect["State"]["Health"], "Status");
+	const auto status = GET_JSON_STR_VALUE(state["Health"], "Status");
 	if (status == "healthy")
 		return 0;
 	if (status == "unhealthy")
@@ -469,6 +482,38 @@ void DockerApiProcess::selfCheckDockerAgent()
 	}
 }
 
+void DockerApiProcess::adoptRecoveredContainer()
+{
+	const static char fname[] = "DockerApiProcess::adoptRecoveredContainer() ";
+	if (!containerId().empty())
+		return;
+
+	// Same ownership proof deleteOwnedContainer applies: only a container labeled for this app is adopted.
+	auto resp = this->requestDocker(web::http::methods::GET,
+									Utility::stringFormat("/containers/%s/json", m_containerName.c_str()), {}, {}, nullptr);
+	if (resp->statusCode != web::http::status_codes::OK)
+		return;
+	const auto inspect = JSON::parse(resp->text, nullptr);
+	if (!inspect.isObject() || !HAS_JSON_FIELD(inspect, "Config") || !inspect["Config"].isObject() ||
+		!HAS_JSON_FIELD(inspect["Config"], "Labels") || !inspect["Config"]["Labels"].isObject())
+		return;
+	const auto &labels = inspect["Config"]["Labels"];
+	if (GET_JSON_STR_VALUE(labels, DOCKER_LABEL_MANAGED) != "true" ||
+		GET_JSON_STR_VALUE(labels, DOCKER_LABEL_APP) != legacyContainerName())
+		return;
+	if (!HAS_JSON_FIELD(inspect, "State") || !inspect["State"].isObject() || !HAS_JSON_FIELD(inspect["State"], "Running") ||
+		!inspect["State"]["Running"].isBool())
+		return;
+
+	const auto running = GET_JSON_BOOL_VALUE(inspect["State"], "Running");
+	setContainerId(HAS_JSON_FIELD(inspect, "Id") && inspect["Id"].isString() ? GET_JSON_STR_VALUE(inspect, "Id")
+																			 : m_containerName);
+	m_containerRunning.store(running, std::memory_order_release);
+	m_hostPidVisible.store(AppProcess::running(), std::memory_order_release);
+	LOG_INF << fname << "adopted recovered container <" << m_containerName << "> (running: <" << running
+			<< ">) for application <" << legacyContainerName() << ">";
+}
+
 void DockerApiProcess::terminateImpl()
 {
 	const static char fname[] = "DockerApiProcess::terminateImpl() ";
@@ -549,18 +594,31 @@ bool DockerApiProcess::deleteOwnedContainer(const std::string &containerName)
 
 	if (labeledApp.empty())
 	{
-		// Pre-labeling container: only the pre-upgrade App Mesh could have named
-		// a container after this app. Migrate it away loudly, never silently.
-		LOG_WAR << fname << "Removing unlabeled container <" << containerName
-				<< "> left by an older App Mesh version before starting app <" << legacyContainerName() << ">";
+		// Every container this version creates carries the ownership labels, so an unlabeled
+		// occupant is foreign (or a pre-labeling leftover) — not ours to delete.
+		LOG_ERR << fname << "Container name <" << containerName
+				<< "> is occupied by an unlabeled container; remove it manually or rerun the previous "
+				   "App Mesh version once to label it";
+		return false;
 	}
-	else if (labeledApp != legacyContainerName())
+	if (labeledApp != legacyContainerName())
 	{
 		// An App Mesh container belonging to a different app: refuse so cleanup
 		// can never cross that boundary.
 		LOG_ERR << fname << "Container name <" << containerName << "> is owned by app <" << labeledApp << ">";
 		return false;
 	}
+
+	// The container is ours: stop it gracefully first, so a leftover from a lost daemon run still gets
+	// its SIGTERM grace and final logs archived, not the force-delete shortcut.
+	resp = this->requestDocker(web::http::methods::POST, Utility::stringFormat("/containers/%s/stop", containerName.c_str()),
+							   {{"t", std::to_string(stopGraceSeconds())}}, {}, nullptr);
+	if (resp->statusCode >= web::http::status_codes::BadRequest && resp->statusCode != web::http::status_codes::NotFound &&
+		resp->statusCode != web::http::status_codes::NotModified)
+	{
+		LOG_WAR << fname << "Graceful stop of leftover container <" << containerName << "> failed <" << resp->text << ">";
+	}
+	archiveContainerLogs(containerName);
 
 	resp = this->requestDocker(web::http::methods::DEL, Utility::stringFormat("/containers/%s", containerName.c_str()),
 							   {{"force", "true"}, {"v", "true"}}, {}, nullptr);
@@ -574,10 +632,12 @@ bool DockerApiProcess::deleteOwnedContainer(const std::string &containerName)
 
 pid_t DockerApiProcess::startImpl(std::string cmd, std::string execUser, std::string workDir,
 								  std::map<std::string, std::string> envMap, std::shared_ptr<ResourceLimitation> limit,
-								  const std::string &stdoutFile, const Json::Value &stdinFileContent, int maxStdoutSize)
+								  const std::string &stdoutFile, const Json::Value &stdinFileContent, int maxStdoutSize,
+								  bool stdinPipe)
 {
 	const static char fname[] = "DockerApiProcess::startImpl() ";
 	LOG_DBG << fname << "Entered";
+	(void)stdinPipe; // registration rejects pipe stdin for container apps
 	m_stdoutFile = stdoutFile;
 
 	// GET /images/{name}/json - Check if image exists
@@ -619,15 +679,6 @@ pid_t DockerApiProcess::startImpl(std::string cmd, std::string execUser, std::st
 	{
 		LOG_WAR << fname << "Docker REST request failed with status <" << resp->statusCode << ">: " << resp->text;
 		setStartError(resp->text.empty() ? "Docker REST service is unavailable" : resp->text);
-		return INVALID_PID;
-	}
-
-	// Clean both names App Mesh ever used for this app; refuses to touch a
-	// container owned by anything else.
-	if (!deleteOwnedContainer(m_containerName) || !deleteOwnedContainer(legacyContainerName()))
-	{
-		setStartError(Utility::stringFormat("container name <%s> is owned by another application or a foreign container",
-											m_containerName.c_str()));
 		return INVALID_PID;
 	}
 
@@ -748,6 +799,14 @@ pid_t DockerApiProcess::startImpl(std::string cmd, std::string execUser, std::st
 		}
 	}
 
+	// Clean both names App Mesh ever used; runs after the policy gate so a rejected definition deletes nothing.
+	if (!deleteOwnedContainer(m_containerName) || !deleteOwnedContainer(legacyContainerName()))
+	{
+		setStartError(Utility::stringFormat("container name <%s> is owned by another application or a foreign container",
+											m_containerName.c_str()));
+		return INVALID_PID;
+	}
+
 	// POST /containers/create
 	resp = this->requestDocker(web::http::methods::POST, "/containers/create", {{"name", m_containerName}}, {}, &createBody);
 
@@ -817,9 +876,9 @@ pid_t DockerApiProcess::startImpl(std::string cmd, std::string execUser, std::st
 							// A containerized daemon cannot see sibling containers'
 							// host PIDs; Docker's own state becomes the liveness
 							// authority (needsAlwaysExitPoll / reportBackendExit).
-							m_hostPidVisible = AppProcess::running();
+							m_hostPidVisible.store(AppProcess::running(), std::memory_order_release);
 							m_containerRunning.store(true, std::memory_order_release);
-							LOG_INF << fname << "started pid <" << pid << "> (visible: " << m_hostPidVisible
+							LOG_INF << fname << "started pid <" << pid << "> (visible: " << m_hostPidVisible.load(std::memory_order_acquire)
 									<< ") for container: " << m_containerName;
 							return this->getpid();
 						}
@@ -884,7 +943,8 @@ void DockerApiProcess::startApiImagePull(std::map<std::string, std::string> envM
 
 			// Only one thread pulls a given reference; concurrent runs wait for
 			// the image to appear (bounded by their own pull timeout).
-			const std::string imageRef = fromImage + ":" + tag;
+			const bool digestRef = self->m_dockerImage.find('@') != std::string::npos;
+			const std::string imageRef = digestRef ? fromImage + "@" + tag : fromImage + ":" + tag;
 			bool pullOwner = false;
 			{
 				std::lock_guard guard(g_pullInFlightMutex);
@@ -925,9 +985,28 @@ void DockerApiProcess::startApiImagePull(std::map<std::string, std::string> envM
 				pullOwner = g_pullsInFlight.insert(imageRef).second;
 			}
 
+			// A run cancelled before its own POST (owner raced a stop, or a waiter gave up) must not
+			// launch the pull; the exit report still fires so the stopped run finalizes.
+			if (self->m_pullCancelled.load(std::memory_order_acquire))
+			{
+				if (pullOwner)
+				{
+					std::lock_guard guard(g_pullInFlightMutex);
+					g_pullsInFlight.erase(imageRef);
+				}
+				self->setStartError("image pull cancelled");
+				self->onExit(1);
+				self->m_pullInFlight.store(false, std::memory_order_release);
+				return;
+			}
+
 			try
 			{
-				std::map<std::string, std::string> query = {{"fromImage", fromImage}, {"tag", tag}};
+				// A digest reference must ride whole in fromImage; a "tag" of sha256:... violates docker's tag grammar.
+				std::map<std::string, std::string> query = digestRef
+															   ? std::map<std::string, std::string>{{"fromImage", imageRef}}
+															   : std::map<std::string, std::string>{
+																	 {"fromImage", fromImage}, {"tag", tag}};
 				std::map<std::string, std::string> header;
 				if (auto auth = buildRegistryAuthHeader(envMap); !auth.empty())
 					header[DOCKER_REGISTRY_AUTH_HEADER] = auth;
@@ -1039,28 +1118,29 @@ const std::string DockerApiProcess::getOutputMsg(long *position, int maxSize, bo
 								 {"since", sinceQuery},
 								 {"tail", readLine ? "1" : "all"}},
 								{}, nullptr);
+		if (resp->statusCode != web::http::status_codes::OK)
+		{
+			// An error body is not application output; fall back to the archived stdout file.
+			LOG_WAR << "DockerApiProcess::getOutputMsg() log fetch failed <" << resp->statusCode << ">";
+			return AppProcess::getOutputMsg(position, maxSize, readLine);
+		}
 
-		// Strip the timestamp prefix from every line and advance the cursor to
-		// the newest one; with no lines the cursor stays where it was so the
-		// next poll rescans exactly the empty tail (server-side filtered).
-		std::string output;
+		// Strip the timestamp prefix from every line; the cursor advances only to the newest line the
+		// caller receives, so a truncated response never skips lines (they re-deliver on the next poll).
+		std::vector<std::tuple<std::string, long, size_t, size_t>> lines; // payload, epoch ns, start, payload end
 		std::istringstream stream(decodeDockerLogs(resp->text));
 		std::string line;
 		while (std::getline(stream, line))
 		{
+			long nanos = -1;
 			const auto prefixEnd = line.find(' ');
 			if (prefixEnd != std::string::npos)
 			{
 				try
 				{
 					const auto lineTime = DateTime::parseISO8601DateTime(clampFractionalSeconds(line.substr(0, prefixEnd)));
-					if (position)
-					{
-						const auto nanos =
-							std::chrono::duration_cast<std::chrono::nanoseconds>(lineTime.time_since_epoch()).count();
-						if (nanos > *position)
-							*position = static_cast<long>(nanos);
-					}
+					nanos = static_cast<long>(
+						std::chrono::duration_cast<std::chrono::nanoseconds>(lineTime.time_since_epoch()).count());
 					line = line.substr(prefixEnd + 1);
 				}
 				catch (const std::exception &)
@@ -1068,19 +1148,41 @@ const std::string DockerApiProcess::getOutputMsg(long *position, int maxSize, bo
 					// Not a timestamped line (unparseable prefix): keep it verbatim.
 				}
 			}
-			output += line;
+			lines.emplace_back(std::move(line), nanos, 0, 0);
+		}
+		std::string output;
+		for (auto &[payload, nanos, start, payloadEnd] : lines)
+		{
+			start = output.size();
+			output += payload;
+			payloadEnd = output.size();
 			output += '\n';
 		}
+		size_t frontCut = 0;
 		if (readLine)
 		{
 			const auto newline = output.find('\n');
 			if (newline != std::string::npos)
 				output.resize(newline);
 		}
-		if (maxSize > 0 && output.size() > static_cast<size_t>(maxSize))
+		else if (maxSize > 0 && output.size() > static_cast<size_t>(maxSize))
 			output.resize(static_cast<size_t>(maxSize));
 		else if (maxSize < 0 && output.size() > static_cast<size_t>(-maxSize))
-			output.erase(0, output.size() - static_cast<size_t>(-maxSize));
+		{
+			frontCut = output.size() - static_cast<size_t>(-maxSize);
+			output.erase(0, frontCut);
+		}
+		if (position)
+		{
+			for (const auto &[payload, nanos, start, payloadEnd] : lines)
+			{
+				if (nanos < 0 || nanos <= *position)
+					continue;
+				// Fully delivered: neither end truncated nor beginning cut into.
+				if (start >= frontCut && payloadEnd <= output.size())
+					*position = nanos;
+			}
+		}
 		return output;
 	}
 
@@ -1154,7 +1256,9 @@ const std::shared_ptr<HttpResponse> DockerApiProcess::requestDocker(const web::h
 		try
 		{
 			response = RestClient::request(restURL, mtd, wrapperPath, bodyContent, header, query, effectiveTimeout);
-			break;
+			// A transport failure returns normally with status 0 (the error callback never raises); retry like the exception path.
+			if (response->statusCode != 0 || attempt == maxAttempts)
+				break;
 		}
 		catch (const std::exception &ex)
 		{
@@ -1174,9 +1278,15 @@ const std::shared_ptr<HttpResponse> DockerApiProcess::requestDocker(const web::h
 			response->text = errorMsg;
 		}
 	}
+	if (response->statusCode == 0)
+	{
+		// Transport failure that never raised: normalize to a real failure code, never a fake success.
+		response->statusCode = web::http::status_codes::ServiceUnavailable;
+		response->text = "connection to the Docker agent channel failed";
+	}
 	// A blocking docker call stalls the calling thread up to the full timeout;
 	// make the stall visible with its duration and where it ran from.
-	LOG_INF << fname << path << " status <" << response->statusCode << "> took <"
+	LOG_DBG << fname << path << " status <" << response->statusCode << "> took <"
 			<< std::chrono::duration<double>(std::chrono::steady_clock::now() - requestStart).count() << "s>";
 	return response;
 }

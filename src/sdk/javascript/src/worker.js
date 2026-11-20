@@ -271,6 +271,37 @@ class AppMeshWorker {
   }
 
   /**
+   * Push an incremental result before the final reply. Delivered only to a caller
+   * streaming via `runTaskStream`; a one-shot `runTask` caller silently ignores it.
+   *
+   * @param {string|Buffer} partial - Incremental payload delivered to the streaming caller in order
+   * @returns {Promise<boolean>} `true` when a streaming client received the partial
+   * @throws {Error} If the partial push fails
+   */
+  async sendTaskPartial(partial) {
+    const { processKey, appName } = this._getRuntimeEnv()
+    const path = `/appmesh/app/${appName}/task/partial`
+
+    let response
+    try {
+      response = await this._client.request('post', path, partial, {
+        headers: { 'X-AppMesh-Process-Key': processKey }
+      })
+    } catch (error) {
+      // request() throws AppMeshError on non-200
+      this._logger.error(`sendTaskPartial failed with status ${error.statusCode}: ${error.message}`)
+      throw error
+    }
+
+    if (response.status !== 200) {
+      const msg = `sendTaskPartial failed with status ${response.status}: ${response.data}`
+      this._logger.error(msg)
+      throw new AppMeshError(msg)
+    }
+    return Boolean(response.data && response.data.delivered)
+  }
+
+  /**
    * Sleep utility for retry logic
    * @private
    * @param {number} ms - Milliseconds to sleep
@@ -380,6 +411,14 @@ class AppMeshWorkerTCP extends AppMeshWorker {
   async sendTaskResult(result) {
     await this._ensureClient()
     return super.sendTaskResult(result)
+  }
+
+  /**
+   * Push a task partial (overrides parent to ensure TCP client is initialized)
+   */
+  async sendTaskPartial(partial) {
+    await this._ensureClient()
+    return super.sendTaskPartial(partial)
   }
 
   /**

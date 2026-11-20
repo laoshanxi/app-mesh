@@ -48,7 +48,7 @@ public:
 	ProcessStartResult start(std::string cmd, std::string user, std::string workDir,
 							 std::map<std::string, std::string> envMap, std::shared_ptr<ResourceLimitation> limit,
 							 const std::string &stdoutFile = "", const Json::Value &stdinFileContent = EMPTY_STR_JSON,
-							 int maxStdoutSize = APP_STD_OUT_MAX_FILE_SIZE);
+							 int maxStdoutSize = APP_STD_OUT_MAX_FILE_SIZE, bool stdinPipe = false);
 	void terminate();
 	void scheduleTermination(std::size_t timeoutSec, const std::string &from);
 	// Virtual: backends with detached activities (API image pulls) stay alive
@@ -71,6 +71,10 @@ public:
 	// Output and process metrics
 	virtual const std::string getOutputMsg(long *position = nullptr, int maxSize = APP_STD_OUT_VIEW_DEFAULT_SIZE,
 										   bool readLine = false);
+	/// Injects bytes into a pipe-backed stdin (see start(stdinPipe=true)).
+	/// Non-blocking: a full pipe reports the bytes already written. `closePipe`
+	/// closes the write end so the process reads EOF. Returns bytes written.
+	long writeStdin(const std::vector<std::uint8_t> &data, bool closePipe);
 	// Health probe where the run actually lives: inside the container for
 	// Docker backends. Returns the probe exit code; nullopt when this backend
 	// cannot probe (the caller decides the fail-closed semantics).
@@ -83,6 +87,9 @@ public:
 	// daemon itself runs in a container) cannot gate on PID liveness: they need
 	// the docker-authoritative exit poll on every scheduler tick.
 	virtual bool needsAlwaysExitPoll() const { return false; }
+	// After a daemon restart, re-bind a recovered container run to its container (verifying the ownership
+	// labels): without the ID a stop degrades to a host SIGKILL, exit codes fake to 0, the probe loses its target.
+	virtual void adoptRecoveredContainer() {}
 	// Fetch the authoritative run state and report the exit when the run really
 	// ended; container backends override to consult Docker instead of the OS.
 	virtual void reportBackendExit();
@@ -93,7 +100,8 @@ protected:
 	// Backend contract
 	virtual pid_t startImpl(std::string cmd, std::string user, std::string workDir,
 							std::map<std::string, std::string> envMap, std::shared_ptr<ResourceLimitation> limit,
-							const std::string &stdoutFile, const Json::Value &stdinFileContent, int maxStdoutSize);
+							const std::string &stdoutFile, const Json::Value &stdinFileContent, int maxStdoutSize,
+							bool stdinPipe);
 	virtual void terminateImpl();
 
 	// Backend state publication
@@ -153,6 +161,9 @@ private:
 
 	// Redirected I/O
 	AtomicHandleGuard m_stdinHandler;
+	// Daemon-side write end of an interactive stdin pipe (invalid otherwise).
+	AtomicHandleGuard m_stdinWriteHandler;
+	std::mutex m_stdinWriteMutex;
 	AtomicHandleGuard m_stdoutHandler;
 	std::string m_stdinFileName;
 	std::string m_stdoutFileName;

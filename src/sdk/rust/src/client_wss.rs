@@ -1,6 +1,9 @@
 // client_wss.rs
 
-use crate::client_http::{encode_file_path, AppMeshClient};
+use crate::client_http::{
+    build_sse_side_channel, encode_file_path, encode_path_segment, open_sse_side_channel, task_body_bytes,
+    AppMeshClient, RunStream, SseKind, SseStream,
+};
 use crate::constants::*;
 use crate::error::AppMeshError;
 use crate::models::*;
@@ -218,6 +221,10 @@ impl Requester for WSSRequester {
         *self.signer.write().unwrap_or_else(|e| e.into_inner()) = signer;
     }
 
+    fn request_signer(&self) -> Option<RequestSigner> {
+        self.signer.read().unwrap_or_else(|e| e.into_inner()).clone()
+    }
+
     fn get_access_token(&self) -> Option<String> {
         self.token.read().unwrap_or_else(|e| e.into_inner()).clone()
     }
@@ -297,6 +304,10 @@ pub struct AppMeshClientWSS {
     client: Arc<AppMeshClient>,
     http_client: reqwest::Client,
     base_url: String,
+    /// Direct HTTPS to the daemon's REST listener (`rest_port`, default 6058) for SSE
+    /// streams: framed transports cannot carry a chunked stream; no total request timeout.
+    rest_client: reqwest::Client,
+    rest_base_url: String,
     /// Shared handle to the WSS transport so `close_async` can await the close handshake.
     transport: Arc<Mutex<WSSTransport>>,
     /// Shared with the WSS requester: covers framed control messages and the
@@ -314,18 +325,20 @@ impl AppMeshClientWSS {
         ssl_client_cert: Option<(String, String)>,
     ) -> Result<Arc<Self>, AppMeshError> {
         let verify = crate::tls_config::resolve_ssl_verify(ssl_verify)?;
-        Self::new_with_verify(address, verify, ssl_client_cert, false)
+        Self::new_with_verify(address, verify, ssl_client_cert, false, None)
     }
 
     /// Create a WSS transport client with an explicit `SslVerify` mode (used by the
     /// builder so insecure mode is an explicit flag, never an empty-string sentinel).
     /// `plain` selects the TLS-at-gateway shape: ws:// and a plaintext HTTPS side
-    /// channel.
+    /// channel. `rest_port` overrides the SSE side channel's REST port (default
+    /// 6058) for shifted-port daemons.
     pub(crate) fn new_with_verify(
         address: Option<(String, u16)>,
         verify: crate::tls_config::SslVerify,
         ssl_client_cert: Option<(String, String)>,
         plain: bool,
+        rest_port: Option<u16>,
     ) -> Result<Arc<Self>, AppMeshError> {
         let address_val = address.clone().unwrap_or_else(|| (DEFAULT_TCP_HOST.to_string(), DEFAULT_WSS_PORT));
 
@@ -356,7 +369,10 @@ impl AppMeshClientWSS {
             .build()
             .map_err(|e| AppMeshError::ConnectionError(format!("Failed to build HTTP client: {}", e)))?;
 
-        Ok(Arc::new(Self { client, http_client, base_url, transport, signer }))
+        let (rest_client, rest_base_url) =
+            build_sse_side_channel(&address_val.0, rest_port, &verify, ssl_client_cert, plain)?;
+
+        Ok(Arc::new(Self { client, http_client, base_url, rest_client, rest_base_url, transport, signer }))
     }
 
     /// Get the underlying generic client for shared auth/app/task APIs.
@@ -678,7 +694,7 @@ impl AppMeshClientWSS {
     /// Returns:
     ///   `Ok(Some(code))` -- process exited (code may be negative for signal kills)
     ///   `Ok(None)`       -- caller-side timeout
-    ///   `Err(AppMeshError::AppRemoved)`            -- REMOVED before EXIT observed
+    ///   `Err(AppMeshError::AppRemoved)`            -- app removed before EXIT observed
     ///   `Err(AppMeshError::TransportDisconnected)` -- demuxer disconnected (transport failure)
     pub async fn wait_for_async_run(
         &self,
@@ -687,6 +703,84 @@ impl AppMeshClientWSS {
         timeout: i32,
     ) -> Result<Option<i32>, AppMeshError> {
         self.client.wait_for_async_run(run, stdout_handler, timeout).await
+    }
+
+    /// Push a fresh provider-managed bearer, then read the token the SSE side
+    /// channel needs (the daemon rejects tokenless streams with 401).
+    async fn sse_token(&self) -> Result<String, AppMeshError> {
+        self.client.prepare_bearer().await?;
+        self.client.get_access_token().ok_or_else(|| AppMeshError::RequestFailed {
+            status: StatusCode::UNAUTHORIZED,
+            message: "Streaming requires a bearer token".into(),
+        })
+    }
+
+    /// Stream an application's stdout over the REST side channel (SSE cannot
+    /// ride the WebSocket control channel); see [`AppMeshClient::follow_output`].
+    pub async fn follow_output(
+        &self,
+        app_name: &str,
+        stdout_position: i64,
+        process_uuid: &str,
+        follow: bool,
+        timeout: i32,
+    ) -> Result<SseStream, AppMeshError> {
+        let path = format!("/appmesh/app/{}/output/stream", encode_path_segment(app_name));
+        let query = AppMeshClient::output_stream_query(stdout_position, process_uuid, follow, timeout);
+        let signer = self.signer.read().unwrap_or_else(|e| e.into_inner()).clone();
+        let resp = open_sse_side_channel(
+            &self.rest_client,
+            &self.rest_base_url,
+            &self.sse_token().await?,
+            signer.as_ref(),
+            HTTP_USER_AGENT_WSS,
+            Method::GET,
+            &path,
+            Some(&query),
+            None,
+        )
+        .await?;
+        Ok(SseStream::new(SseKind::Output, resp))
+    }
+
+    /// Streaming task RPC over the REST side channel; see [`AppMeshClient::run_task_stream`].
+    pub async fn run_task_stream(
+        &self,
+        app_name: &str,
+        data: serde_json::Value,
+        timeout: i32,
+    ) -> Result<SseStream, AppMeshError> {
+        let timeout = if timeout <= 0 { 300 } else { timeout };
+        let path = format!("/appmesh/app/{}/task/stream", encode_path_segment(app_name));
+        let query = AppMeshClient::task_stream_query(timeout);
+        let body = task_body_bytes(data)?;
+        let signer = self.signer.read().unwrap_or_else(|e| e.into_inner()).clone();
+        let resp = open_sse_side_channel(
+            &self.rest_client,
+            &self.rest_base_url,
+            &self.sse_token().await?,
+            signer.as_ref(),
+            HTTP_USER_AGENT_WSS,
+            Method::POST,
+            &path,
+            Some(&query),
+            Some(&body),
+        )
+        .await?;
+        Ok(SseStream::new(SseKind::Task, resp))
+    }
+
+    /// One-shot run + stdout stream over the REST side channel; see [`AppMeshClient::stream_run`].
+    /// The temporary app is always deleted when the stream terminates or is dropped.
+    pub async fn stream_run(
+        self: &Arc<Self>,
+        app: &Application,
+        max_time: i32,
+        lifecycle: i32,
+    ) -> Result<RunStream, AppMeshError> {
+        let run = self.run_app_async(app, max_time, lifecycle).await?;
+        let stream = self.follow_output(&run.app_name, 0, &run.proc_uid, true, max_time.max(lifecycle)).await?;
+        Ok(RunStream::new(stream, Arc::clone(&self.client), run.app_name))
     }
 }
 

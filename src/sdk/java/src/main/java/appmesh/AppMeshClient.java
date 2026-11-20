@@ -417,6 +417,92 @@ public class AppMeshClient implements Closeable {
         headers.forEach(connection::setRequestProperty);
     }
 
+    // -------- SSE side channel --------
+
+    /**
+     * Base URL for direct HTTPS requests (the SSE side channel): the plain HTTP transport
+     * serves them on the service URL; the framed TCP transport overrides to the REST listener.
+     */
+    protected String directRequestBaseURL() {
+        return this.baseURL;
+    }
+
+    /**
+     * Transport hook: open an SSE stream and return the connected HttpURLConnection
+     * (HTTP 200, InputStream still streaming). Plain HTTP by design: SSE frames cannot
+     * ride a framed (TCP/WSS) transport, so every transport dials the daemon's REST
+     * listener directly (the WSS file data side-channel shape).
+     */
+    protected HttpURLConnection sseRequest(String method, String path, Object body, Map<String, String> params)
+            throws IOException {
+        // One 401 refresh-and-retry, same contract as request().
+        TokenProvider provider = this.tokenProvider.get();
+        String sentToken = provider == null ? null : provider.getAccessToken();
+        HttpURLConnection connection = openSseConnection(method, path, body, params, sentToken);
+        if (provider != null && provider.canRefresh() && isReplayable(body)
+                && connection.getResponseCode() == HttpURLConnection.HTTP_UNAUTHORIZED) {
+            String newToken = provider.refreshAccessToken(sentToken);
+            connection.disconnect();
+            if (newToken == null || newToken.trim().isEmpty()) {
+                throw new IOException("TokenProvider returned an invalid access token");
+            }
+            connection = openSseConnection(method, path, body, params, newToken);
+        }
+        int status = connection.getResponseCode();
+        if (status != HttpURLConnection.HTTP_OK) {
+            String error = Utils.readErrorResponse(connection);
+            connection.disconnect();
+            throw new IOException("stream request failed with status " + status + ": " + error);
+        }
+        return connection;
+    }
+
+    /** Open one direct HTTPS SSE connection attempt with the given bearer token (null for none). */
+    private HttpURLConnection openSseConnection(String method, String path, Object body, Map<String, String> params,
+            String token) throws IOException {
+        StringBuilder urlBuilder = new StringBuilder(directRequestBaseURL()).append(path);
+        String encodedQuery = encodeQuery(params);
+        if (encodedQuery != null) {
+            urlBuilder.append('?').append(encodedQuery);
+        }
+
+        HttpURLConnection connection = (HttpURLConnection) Utils.toUrl(urlBuilder.toString()).openConnection();
+        connection.setRequestMethod(method.toUpperCase());
+        connection.setConnectTimeout(connectTimeoutMs);
+        connection.setReadTimeout(readTimeoutMs);
+        applySSL(connection);
+
+        // Streams bypass node forwarding (X-Target-Host) and the agent proxy: bearer only, no commonHeaders().
+        Map<String, String> headers = new HashMap<>();
+        headers.put(HTTP_USER_AGENT_HEADER_NAME, HTTP_USER_AGENT);
+        if (token != null && !token.isEmpty()) {
+            headers.put(AUTHORIZATION_HEADER, BEARER_PREFIX + token);
+        }
+
+        byte[] bodyBytes = null;
+        if (body instanceof byte[]) {
+            bodyBytes = (byte[]) body;
+            connection.setRequestProperty(CONTENT_TYPE_HEADER, "application/octet-stream");
+        } else if (body != null) {
+            bodyBytes = (body instanceof JSONObject ? body.toString() : String.valueOf(body))
+                    .getBytes(StandardCharsets.UTF_8);
+            connection.setRequestProperty(CONTENT_TYPE_HEADER, "text/plain; charset=utf-8");
+        }
+
+        // Streamed endpoints sign the empty-string body hash (exemption, like the file side channels).
+        applyRequestSignature(headers, method.toUpperCase(), path, params, null);
+        headers.forEach(connection::setRequestProperty);
+
+        if (bodyBytes != null) {
+            connection.setDoOutput(true);
+            try (OutputStream os = connection.getOutputStream()) {
+                os.write(bodyBytes);
+                os.flush();
+            }
+        }
+        return connection;
+    }
+
     /** Return Engine's public OAuth/OIDC configuration. */
     public JSONObject getAuthConfig() throws IOException {
         return new JSONObject(Utils.readResponse(request("GET", "/appmesh/auth/config", null, null, null)));
@@ -520,6 +606,9 @@ public class AppMeshClient implements Closeable {
      * ("api" default or "cli"); {@code metadata} carries a full Docker create request body.
      * Registry credentials for image pulls go in {@code secret_env} as
      * {@code APP_DOCKER_REGISTRY_SERVER/USER/PASSWORD}.
+     * <p>{@code stdin}: {@code "none"} (default) uses /dev/null or the {@code metadata} launch
+     * file; {@code "pipe"} keeps the daemon-side write end open so {@link #sendInput} can drive
+     * the process turn by turn. Not combinable with {@code metadata}; unsupported for containers.
      *
      * @param appName application name; for a Docker app it must start with a letter or digit
      * @param appJson application definition
@@ -819,6 +908,146 @@ public class AppMeshClient implements Closeable {
         HttpURLConnection conn = request("DELETE", "/appmesh/app/" + encodeURIComponent(appName) + "/task", null, null,
                 null);
         return ensureOk("cancelTask", conn);
+    }
+
+    // -------- Streaming (server-sent events) --------
+
+    /**
+     * Stream an application's stdout incrementally over server-sent events.
+     *
+     * <p>Replays from {@code stdoutPosition}, then (with {@code follow=true}) streams new
+     * output until exit, removal or the overall {@code timeoutSeconds}. The server
+     * de-duplicates the replay/live boundary.
+     *
+     * @param appName        name of the target application
+     * @param stdoutPosition byte cursor to start from (0 replays from the beginning)
+     * @param processUuid    pin the stream to one run; empty follows the current run
+     * @param follow         {@code false} replays to the current end of output and stops
+     * @param timeoutSeconds overall stream lifetime cap in seconds (server-side)
+     * @return the stream; iterate {@link SseStream#nextChunk()} and read {@link SseStream#getEnd()}
+     * @throws IOException the stream request failed; terminal error/timeout ends throw
+     *                     from {@link SseStream#nextChunk()} instead
+     */
+    public SseStream followOutput(String appName, long stdoutPosition, String processUuid, boolean follow,
+            int timeoutSeconds) throws IOException {
+        Map<String, String> params = new HashMap<>();
+        params.put("stdout_position", String.valueOf(stdoutPosition));
+        params.put("follow", follow ? "true" : "false");
+        params.put("timeout", String.valueOf(timeoutSeconds));
+        if (processUuid != null && !processUuid.isEmpty()) {
+            params.put("process_uuid", processUuid);
+        }
+        HttpURLConnection conn = sseRequest("GET",
+                "/appmesh/app/" + encodeURIComponent(appName) + "/output/stream", null, params);
+        return new SseStream(conn, "stdout", "output", null, null);
+    }
+
+    /** Follow the current run's output from the beginning (see {@link #followOutput(String, long, String, boolean, int)}). */
+    public SseStream followOutput(String appName) throws IOException {
+        return followOutput(appName, 0, "", true, 3600);
+    }
+
+    /**
+     * Streaming task RPC: send an invocation and receive incremental results as they arrive.
+     *
+     * <p>The {@link #runTask} counterpart for continuous-output services (LLM agents): the
+     * worker pushes partial results ({@code sendTaskPartial}) before its final reply, which
+     * lands in {@link SseEnd#getResult()}.
+     *
+     * @param appName        name of the target application
+     * @param data           payload to deliver to the application (same contract as runTask)
+     * @param timeoutSeconds maximum seconds for the whole call (server-side)
+     * @return the stream; the final reply is {@link SseEnd#getResult()} after iteration
+     * @throws IOException the stream request failed; terminal error/timeout ends throw
+     *                     from {@link SseStream#nextChunk()} instead
+     */
+    public SseStream runTaskStream(String appName, String data, int timeoutSeconds) throws IOException {
+        Map<String, String> params = null;
+        if (timeoutSeconds > 0) {
+            params = new HashMap<>();
+            params.put("timeout", String.valueOf(timeoutSeconds));
+        }
+        HttpURLConnection conn = sseRequest("POST",
+                "/appmesh/app/" + encodeURIComponent(appName) + "/task/stream", data, params);
+        return new SseStream(conn, "partial", "data", "final", "result");
+    }
+
+    /** Streaming task RPC with the default 300 second timeout (see {@link #runTaskStream(String, String, int)}). */
+    public SseStream runTaskStream(String appName, String data) throws IOException {
+        return runTaskStream(appName, data, 300);
+    }
+
+    /**
+     * Run a one-shot application remotely and stream its stdout incrementally.
+     *
+     * <p>Equivalent to {@link #runAppAsync(JSONObject, long, long)} + {@link #followOutput}
+     * + {@link #deleteApp}: stdout chunks are delivered as produced. The temporary application
+     * is always deleted when the stream ends or is closed.
+     *
+     * @param appJson            application JSON definition (same contract as runAppAsync)
+     * @param maxTimeSeconds     maximum runtime for the remote process
+     * @param lifecycleSeconds   retention window for the temporary run app
+     * @return the stream; the run's exit code is {@link SseEnd#getExitCode()} after iteration
+     * @throws Exception the async run failed; terminal error/timeout ends throw
+     *                     from {@link SseStream#nextChunk()} instead
+     */
+    public SseStream streamRun(JSONObject appJson, long maxTimeSeconds, long lifecycleSeconds) throws Exception {
+        AppRun run = runAppAsync(appJson, maxTimeSeconds, lifecycleSeconds);
+        SseStream stream = followOutput(run.getAppName(), 0, run.getProcessUuid(), true,
+                (int) Math.min(Math.max(maxTimeSeconds, lifecycleSeconds), Integer.MAX_VALUE));
+        stream.onCompletion(() -> {
+            try {
+                deleteApp(run.getAppName(), forwardHeaders(run.getForwardingHost()));
+            } catch (Exception ignored) {
+                // Best-effort cleanup, mirrors the Python SDK's suppressed delete.
+            }
+        });
+        return stream;
+    }
+
+    /** Run a one-shot application with ISO 8601 durations (see {@link #streamRun(JSONObject, long, long)}). */
+    public SseStream streamRun(JSONObject appJson, String maxTime, String lifecycle) throws Exception {
+        return streamRun(appJson, Utils.toSeconds(maxTime), Utils.toSeconds(lifecycle));
+    }
+
+    /**
+     * Inject bytes into the stdin of a running application.
+     *
+     * <p>The application must be registered with {@code "stdin": "pipe"}; the daemon holds the
+     * write end open, making the process conversational while
+     * {@link #followOutput(String, long, String, boolean, int)} reads its output. A full pipe
+     * answers 412 with the bytes already written — retry with the remainder.
+     *
+     * @param appName     name of the target application
+     * @param data        raw bytes to write to the process stdin
+     * @param close       also close the pipe write end so the process reads EOF
+     * @param processUuid restrict the write to this run; empty targets the current run
+     * @return number of bytes written
+     * @throws IOException the write failed (412: pipe full, 409: no running process)
+     */
+    public long sendInput(String appName, byte[] data, boolean close, String processUuid) throws IOException {
+        Map<String, String> headers = null;
+        if (close) {
+            headers = new HashMap<>();
+            headers.put("X-Input-Close", "true");
+        }
+        Map<String, String> params = null;
+        if (processUuid != null && !processUuid.isEmpty()) {
+            params = new HashMap<>();
+            params.put("process_uuid", processUuid);
+        }
+        HttpURLConnection conn = request("POST", "/appmesh/app/" + encodeURIComponent(appName) + "/input", data,
+                headers, params);
+        if (conn.getResponseCode() != HttpURLConnection.HTTP_OK) {
+            throw new IOException("sendInput failed with status " + conn.getResponseCode() + ": "
+                    + Utils.readResponseSafe(conn));
+        }
+        return new JSONObject(Utils.readResponse(conn)).optLong("bytes_written", 0);
+    }
+
+    /** Write UTF-8 text to the current run's stdin (see {@link #sendInput(String, byte[], boolean, String)}). */
+    public long sendInput(String appName, String data) throws IOException {
+        return sendInput(appName, data.getBytes(StandardCharsets.UTF_8), false, "");
     }
 
     // -------- File Transfer --------
@@ -1241,25 +1470,12 @@ public class AppMeshClient implements Closeable {
     /** Open and send one HTTP request attempt with the given bearer token (null for none). */
     private HttpURLConnection openRequest(String method, String path, Object body, Map<String, String> headers,
             Map<String, String> params, String token) throws IOException {
-        StringBuilder urlBuilder = new StringBuilder(baseURL).append(path);
+        StringBuilder urlBuilder = new StringBuilder(directRequestBaseURL()).append(path);
 
         // The encoded query is kept as a string: the signature canonicalizes from the
         // exact wire form (the daemon percent-decodes it back with %-only decoding).
-        String encodedQuery = null;
-        if (params != null && !params.isEmpty()) {
-            StringBuilder queryBuilder = new StringBuilder();
-            for (Map.Entry<String, ?> e : params.entrySet()) {
-                try {
-                    queryBuilder.append(URLEncoder.encode(e.getKey(), StandardCharsets.UTF_8.name()))
-                            .append('=')
-                            .append(URLEncoder.encode(String.valueOf(e.getValue()), StandardCharsets.UTF_8.name()))
-                            .append('&');
-                } catch (UnsupportedEncodingException ex) {
-                    throw new RuntimeException("Error encoding URL parameters", ex);
-                }
-            }
-            queryBuilder.setLength(queryBuilder.length() - 1);
-            encodedQuery = queryBuilder.toString();
+        String encodedQuery = encodeQuery(params);
+        if (encodedQuery != null) {
             urlBuilder.append('?').append(encodedQuery);
         }
 
@@ -1280,7 +1496,13 @@ public class AppMeshClient implements Closeable {
         // The body bytes are computed once: the signature must hash exactly the bytes written.
         byte[] bodyBytes = null;
         if ("POST".equalsIgnoreCase(method) || "PUT".equalsIgnoreCase(method) || "PATCH".equalsIgnoreCase(method)) {
-            if (body != null) {
+            if (body instanceof byte[]) {
+                // Raw bytes are sent verbatim (stdin injection payload).
+                bodyBytes = (byte[]) body;
+                if (!allHeaders.containsKey(CONTENT_TYPE_HEADER)) {
+                    connection.setRequestProperty(CONTENT_TYPE_HEADER, "application/octet-stream");
+                }
+            } else if (body != null) {
                 String bodyString;
                 if (body instanceof JSONObject) {
                     bodyString = body.toString();
@@ -1316,5 +1538,25 @@ public class AppMeshClient implements Closeable {
         }
 
         return connection;
+    }
+
+    /** URL-encode a query map into wire form ({@code k=v&k2=v2}), or null when empty. */
+    private static String encodeQuery(Map<String, ?> params) {
+        if (params == null || params.isEmpty()) {
+            return null;
+        }
+        StringBuilder queryBuilder = new StringBuilder();
+        for (Map.Entry<String, ?> e : params.entrySet()) {
+            try {
+                queryBuilder.append(URLEncoder.encode(e.getKey(), StandardCharsets.UTF_8.name()))
+                        .append('=')
+                        .append(URLEncoder.encode(String.valueOf(e.getValue()), StandardCharsets.UTF_8.name()))
+                        .append('&');
+            } catch (UnsupportedEncodingException ex) {
+                throw new RuntimeException("Error encoding URL parameters", ex);
+            }
+        }
+        queryBuilder.setLength(queryBuilder.length() - 1);
+        return queryBuilder.toString();
     }
 }

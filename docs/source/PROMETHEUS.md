@@ -42,10 +42,13 @@ the agent forwarding header is rejected on this endpoint.
 
 ### Scrape exposure
 
-`/metrics` needs no token, like a standard exporter endpoint: the listener relies on
-network isolation. Restrict the port with a firewall or a reverse proxy when the host
-is reachable from an untrusted network. The text exposes the application inventory and
-its resource use.
+`/metrics` requires authentication with the `config-view` permission by default
+(`REST.MetricsRequireAuth`, hot-reloadable). Scrapers that cannot present a bearer
+token — for example a Prometheus on a trusted network — set
+`REST.MetricsRequireAuth: false` and rely on network isolation instead: restrict the
+port with a firewall or a reverse proxy when the host is reachable from an untrusted
+network. The packaged all-in-one stack uses this opt-out. The text exposes the
+application inventory and its resource use.
 
 ### Defined Metrics
 

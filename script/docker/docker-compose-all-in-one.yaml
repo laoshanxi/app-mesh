@@ -11,6 +11,9 @@ services:
     image: laoshanxi/appmesh:latest
     environment:
       - APPMESH_REST_PrometheusExporterListenPort=6061
+      # Metrics endpoints require config-view by default; this demo stack scrapes
+      # over the trusted Docker network instead (keep the published 6061 firewalled).
+      - APPMESH_REST_MetricsRequireAuth=false
     volumes:
       - /opt/appmesh/work # mount this to enable configuration persist
     cap_drop:
@@ -22,7 +25,7 @@ services:
       - "6060:6060" # Go agent REST API for host REST clients and SDKs
       - "6058:6058" # engine WSS/HTTPS listener: CLI (appm speaks WSS) and SDK WSS clients
       - "6059:6059" # engine TCP API: SDK TCP transport, event subscriptions, workers
-      - "6061:6061" # Prometheus exporter, unauthenticated: restrict this port
+      - "6061:6061" # Prometheus exporter (MetricsRequireAuth=false in this stack): restrict this port
     networks:
       - frontend
 

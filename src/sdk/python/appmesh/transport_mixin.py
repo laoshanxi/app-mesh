@@ -226,6 +226,50 @@ class TransportClientMixin:
 
         raise AppMeshAuthError("TokenProvider failed to replace a rejected access token", HTTPStatus.UNAUTHORIZED)
 
+    def _sse_request(
+        self,
+        method: AppMeshClient._Method,
+        path: str,
+        query: Optional[dict] = None,
+        body=None,
+    ) -> requests.Response:
+        """Open an SSE stream over a direct HTTPS connection.
+
+        The framed transport cannot carry a chunked event stream, so streaming endpoints
+        bypass it (like the WSS file data channel); without a bearer token the daemon
+        answers 401.
+        """
+        from urllib import parse as _parse
+
+        headers = {self._HTTP_HEADER_KEY_USER_AGENT: self._HTTP_USER_AGENT_TRANSPORT}
+        token = self._get_bearer_token()
+        if token:
+            headers[self._HTTP_HEADER_KEY_AUTH] = f"Bearer {token}"
+        # Same empty-body hash exemption as the streamed file side channels.
+        self._append_signature_headers(headers, method.value.replace("_STREAM", ""), path, query)
+        url = _parse.urljoin(self.base_url, path)
+        request_kwargs = {
+            "url": url,
+            "headers": headers,
+            "cert": self.ssl_client_cert,
+            "verify": self.ssl_verify,
+            "timeout": self.request_timeout,
+        }
+        try:
+            if method in (AppMeshClient._Method.GET_STREAM, AppMeshClient._Method.GET):
+                resp = self.session.get(params=query, stream=True, **request_kwargs)
+            else:
+                resp = self.session.post(params=query, data=body, stream=True, **request_kwargs)
+        except requests.exceptions.RequestException as e:
+            raise AppMeshConnectionError(f"SSE request failed: {e}") from e
+        if resp.status_code in (HTTPStatus.UNAUTHORIZED, HTTPStatus.FORBIDDEN):
+            raise AppMeshAuthError(f"HTTP {resp.status_code}: {resp.reason}", resp.status_code)
+        try:
+            resp.raise_for_status()
+        except requests.exceptions.HTTPError as e:
+            raise AppMeshRequestError(f"SSE request failed: {e}", resp.status_code) from e
+        return resp
+
     def add_app(self, app: App, subscribe_events: Optional[list] = None, callback: Optional[EventCallback] = None) -> App:
         """Register an app, optionally subscribing atomically and wiring a local callback.
 

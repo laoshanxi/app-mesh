@@ -76,9 +76,11 @@ await assertLive('live TCP file transfer guard', async () => {
     client.close()
   }
 
+  // The remote path must sit in the exchangeable work/tmp scratch: the daemon jails transfers there.
   const plain = liveTCP()
   try {
-    await plain.downloadFile('/etc/hosts', '/tmp/e2e-js-plain')
+    await plain.uploadFile('/etc/hosts', '/opt/appmesh/work/tmp/e2e-js-seed', true)
+    await plain.downloadFile('/opt/appmesh/work/tmp/e2e-js-seed', '/tmp/e2e-js-plain')
   } finally {
     plain.close()
   }

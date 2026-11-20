@@ -74,10 +74,20 @@ private:
 	void handleHttpRequest(const drogon::HttpRequestPtr &req, drogon::RequestStreamPtr &&stream,
 						   drogon::AdviceCallback &&callback);
 	// Generic pipeline into the shared worker (auth, X-Target-Host forwarding,
-	// REST dispatch); `requestPath` lets a caller normalize the path first.
+	// REST dispatch); `requestPath` normalizes the path. A prebuilt `replyCtx`
+	// replaces the default HTTP callback; `extraHeaders` ride on the request.
 	void handleWorkerRequest(const drogon::HttpRequestPtr &req, drogon::RequestStreamPtr &&stream,
-							 drogon::AdviceCallback &&callback, std::string requestPath);
+							 drogon::AdviceCallback &&callback, std::string requestPath,
+							 std::shared_ptr<WSS::ReplyContext> replyCtx = nullptr,
+							 std::map<std::string, std::string> extraHeaders = {});
 	void handleDownload(const drogon::HttpRequestPtr &req, drogon::AdviceCallback &&callback);
+	// SSE output follow: served natively (subscription + backfill), never enters
+	// the worker pipeline.
+	void handleOutputStream(const drogon::HttpRequestPtr &req, drogon::AdviceCallback &&callback);
+	// SSE task RPC: opens the chunked response here, then hands the request to
+	// the worker pipeline so auth/hardening/CSRF apply unchanged.
+	void handleTaskStream(const drogon::HttpRequestPtr &req, drogon::RequestStreamPtr &&stream,
+						  drogon::AdviceCallback &&callback);
 	void handleUpload(const drogon::HttpRequestPtr &req, drogon::RequestStreamPtr &&stream,
 					  drogon::AdviceCallback &&callback);
 	void handleFileDelete(const drogon::HttpRequestPtr &req, drogon::AdviceCallback &&callback);

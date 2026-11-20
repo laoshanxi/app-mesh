@@ -48,6 +48,9 @@ public:
 	}
 	bool is_open() const { return m_fd >= 0; }
 	bool good() const { return m_good; }
+	// True once a read hit end-of-file; a zero gcount with eof() set is a clean
+	// stream end, not a failure.
+	bool eof() const { return m_eof; }
 	int fd() const { return m_fd; }
 
 	// ifstream-style chunk read: loops over partial reads, only a zero gcount
@@ -67,6 +70,8 @@ public:
 				continue;
 			if (n < 0)
 				m_good = false;
+			if (n == 0)
+				m_eof = true;
 			break;
 		}
 		m_gcount = total;
@@ -110,6 +115,7 @@ public:
 private:
 	int m_fd = -1;
 	bool m_good = false;
+	bool m_eof = false;
 	std::streamsize m_gcount = 0;
 };
 
@@ -132,9 +138,14 @@ struct FileUploadInfo
 				   const std::string &allowedBaseDir = "")
 		: m_filePath(uploadFilePath), m_tempPath(tempFilePath), m_requestHeaders(requestHeaders), m_overwrite(overwrite)
 	{
-		// Missing parent directories are created for every transport surface.
-		std::error_code ec;
-		std::filesystem::create_directories(std::filesystem::path(uploadFilePath).parent_path(), ec);
+		// Missing parent directories are created for every transport surface; the
+		// jailed component walk keeps creation inside the jail even on a symlink swap.
+		const auto parentDir = std::filesystem::path(uploadFilePath).parent_path().string();
+		if (!parentDir.empty() && !Utility::createDirectoriesWithinJail(parentDir, allowedBaseDir))
+		{
+			m_rejected = true;
+			return;
+		}
 		// Open through the jailed helper: the fd is pinned to a verified in-jail
 		// inode, so a directory component swapped to a symlink cannot move the temp
 		// file (or its later rename) out of the jail. m_dirFd keeps the pinned

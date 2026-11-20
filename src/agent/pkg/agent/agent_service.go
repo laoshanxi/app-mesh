@@ -52,11 +52,6 @@ const (
 	TCPChunkBlockSize = appmesh.TCPChunkBlockSize
 )
 
-func isPublicForwardRequest(r *http.Request) bool {
-	return r.Method == http.MethodGet &&
-		(r.URL.Path == "/appmesh/auth/config" || r.URL.Path == "/.well-known/oauth-protected-resource")
-}
-
 func isSubscriptionRequest(r *http.Request) bool {
 	return r.URL.Path == "/appmesh/subscribe" || strings.HasSuffix(r.URL.Path, "/subscribe") ||
 		r.URL.Query().Get("subscribe_events") != ""
@@ -185,6 +180,9 @@ func getDelegateClient() *http.Client {
 // allowError is retained for API compatibility; read errors only drop the dead
 // connection from the pool, and the next request reconnects.
 func MonitorConnectionResponse(conn *Connection, allowError bool) {
+	// deleteConnection skips unpooled one-shot connections, so close here too
+	// (once-guarded) or the in-flight waiter hangs and the fd leaks.
+	defer conn.close()
 	defer deleteConnection(conn)
 
 	for {
@@ -195,6 +193,42 @@ func MonitorConnectionResponse(conn *Connection, allowError bool) {
 		}
 
 		conn.onResponse(response)
+	}
+}
+
+// watchCorsAllowlist reloads config.yaml when its mtime changes and swaps the
+// CORS allowlist, mirroring the daemon's hot reload without an agent restart.
+func watchCorsAllowlist(ctx context.Context, allowlist *utils.CORSAllowlist) {
+	latestMtime := func() time.Time {
+		var latest time.Time
+		for _, path := range config.ConfigFileCandidates() {
+			if info, err := os.Stat(path); err == nil && info.ModTime().After(latest) {
+				latest = info.ModTime()
+			}
+		}
+		return latest
+	}
+	lastMod := latestMtime()
+	ticker := time.NewTicker(15 * time.Second)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			current := latestMtime()
+			if !current.After(lastMod) {
+				continue
+			}
+			lastMod = current
+			if err := config.Reload(); err != nil {
+				logger.Warnf("Config reload for the CORS allowlist failed: %v", err)
+				continue
+			}
+			origins := config.ConfigData.REST.CorsAllowOrigins
+			allowlist.Set(origins)
+			logger.Infof("CORS allowlist reloaded from config: %d origin(s)", len(origins))
+		}
 	}
 }
 
@@ -227,8 +261,9 @@ func ListenAndServeREST(ctx context.Context) error {
 	corsDisabled := config.ConfigData.REST.CORSDisabled
 	utils.EnableGlobalCORS(!corsDisabled)
 	corsConfig := utils.DefaultCORSConfig
-	corsConfig.AllowedOrigins = config.ConfigData.REST.CorsAllowOrigins
-	logger.Infof("CORS enabled: %v, allowlisted origins: %d", !corsDisabled, len(corsConfig.AllowedOrigins))
+	corsAllowlist := utils.NewCORSAllowlist(config.ConfigData.REST.CorsAllowOrigins)
+	corsConfig.LiveOrigins = corsAllowlist
+	logger.Infof("CORS enabled: %v, allowlisted origins: %d", !corsDisabled, len(config.ConfigData.REST.CorsAllowOrigins))
 
 	// HTTP router using gorilla/mux
 	router := mux.NewRouter()
@@ -246,6 +281,9 @@ func ListenAndServeREST(ctx context.Context) error {
 	// Apply CORS globally
 	if !corsDisabled {
 		router.Use(utils.Cors(corsConfig))
+		// Follow daemon-side CORS hot reloads (PUT /appmesh/config, SIGHUP): a stale
+		// startup snapshot would keep serving the old allowlist until an agent restart.
+		go watchCorsAllowlist(ctx, corsAllowlist)
 	}
 
 	// Grafana
@@ -479,27 +517,27 @@ func HandleAppMeshRequest(w http.ResponseWriter, r *http.Request) {
 	forwardingHost := string(r.Header.Get(HTTPHeaderKeyXTargetHost))
 	if forwardingHost != "" {
 		r.Header.Del(HTTPHeaderKeyXTargetHost)
-		if !isPublicForwardRequest(r) {
-			authorization := strings.TrimSpace(r.Header.Get(HTTPHeaderKeyAuthorization))
-			if authorization == "" {
-				w.Header().Set("WWW-Authenticate", `Bearer realm="appmesh"`)
-				utils.HTTPError(w, "Forwarded requests require bearer authentication", http.StatusUnauthorized)
-				return
-			}
-			validation, validationErr := validateForwardBearer(r.Context(), localConn, authorization)
-			if validationErr != nil {
-				logger.Errorf("Failed to validate forwarding authentication: %v", validationErr)
-				utils.HTTPError(w, "authentication service is unavailable", http.StatusServiceUnavailable)
-				return
-			}
-			if validation.HTTPStatus < http.StatusOK || validation.HTTPStatus >= http.StatusMultipleChoices {
-				writeForwardValidationResponse(w, validation)
-				return
-			}
-			if !forwardPermissionGranted(validation) {
-				utils.HTTPError(w, "forwarding requires the "+PermissionHostForward+" permission", http.StatusForbidden)
-				return
-			}
+		// Forwarding is a capability regardless of target path: a public discovery
+		// path must not hand an anonymous caller a port-scan oracle.
+		authorization := strings.TrimSpace(r.Header.Get(HTTPHeaderKeyAuthorization))
+		if authorization == "" {
+			w.Header().Set("WWW-Authenticate", `Bearer realm="appmesh"`)
+			utils.HTTPError(w, "Forwarded requests require bearer authentication", http.StatusUnauthorized)
+			return
+		}
+		validation, validationErr := validateForwardBearer(r.Context(), localConn, authorization)
+		if validationErr != nil {
+			logger.Errorf("Failed to validate forwarding authentication: %v", validationErr)
+			utils.HTTPError(w, "authentication service is unavailable", http.StatusServiceUnavailable)
+			return
+		}
+		if validation.HTTPStatus < http.StatusOK || validation.HTTPStatus >= http.StatusMultipleChoices {
+			writeForwardValidationResponse(w, validation)
+			return
+		}
+		if !forwardPermissionGranted(validation) {
+			utils.HTTPError(w, "forwarding requires the "+PermissionHostForward+" permission", http.StatusForbidden)
+			return
 		}
 		if isSubscriptionRequest(r) {
 			utils.HTTPError(w, "Forwarded subscriptions require TCP or WebSocket", http.StatusMethodNotAllowed)

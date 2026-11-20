@@ -49,6 +49,12 @@ pub trait Requester: Send + Sync {
     /// Opt-in: without a signer no signature headers are attached.
     fn set_request_signer(&self, _signer: Option<RequestSigner>) {}
 
+    /// The installed request signer, if any: the TCP/WSS SSE side channels
+    /// clone it to sign their direct requests.
+    fn request_signer(&self) -> Option<RequestSigner> {
+        None
+    }
+
     /// Set the forward_to URL
     fn set_forward_to(&self, _url: Option<String>) {}
 

@@ -338,6 +338,16 @@ missing_template_roles() {
         tr -d ':' | tr '\n' ' '
 }
 
+# Prints "role.permission" entries the template grants to a role the persisted
+# authorization lacks; an upgraded install otherwise misses new permissions until a 403.
+missing_template_permissions() {
+    local template="${PROG_HOME}/config/authorization.yaml"
+    local runtime="${PROG_HOME}/work/config/authorization.yaml"
+    [ -f "$template" ] && [ -f "$runtime" ] || return 0
+    local extract='/^  roles:/{r=1;next} /^  [A-Za-z]/{r=0} r&&/^    [A-Za-z0-9_-]+:/{role=substr($1,1,length($1)-1);next} r&&/^      - /{print role"."substr($2,1,length($2))}'
+    comm -23 <(awk "$extract" "$template" | sort) <(awk "$extract" "$runtime" | sort) | tr '\n' ' '
+}
+
 # A persisted copy in work/apps shadows the bundled definition at daemon
 # startup; refresh system apps so an upgraded definition is not ignored.
 refresh_bundled_system_apps() {
@@ -1039,6 +1049,13 @@ print_startup_instructions() {
         if [ -n "$new_roles" ]; then
             echo "New role(s) in this version (absent from the persisted authorization): $new_roles"
             echo "  adopt via the role API; definitions: ${PROG_HOME}/config/authorization.yaml"
+        fi
+        # Same for permissions added to roles that already exist (else 403 at use time).
+        local new_permissions
+        new_permissions="$(missing_template_permissions)"
+        if [ -n "$new_permissions" ]; then
+            echo "New permission(s) this version grants (absent from the persisted authorization): $new_permissions"
+            echo "  add via the role API; definitions: ${PROG_HOME}/config/authorization.yaml"
         fi
         echo
         echo "Logs: ${PROG_HOME}/work/server.log"

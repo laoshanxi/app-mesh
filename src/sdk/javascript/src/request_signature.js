@@ -10,8 +10,8 @@
 // - sortedQuery: decoded k=v pairs joined with '&', sorted by key then value, empty
 //   string when there is no query (%XX-decoding only; '+' stays literal)
 // - body: lowercase hex SHA-256 of the raw body bytes; no body hashes the empty string
-// - streamed file endpoints (/appmesh/file/download|upload|delete) sign the
-//   empty-string body hash (documented exemption: the file content is not bound)
+// - streamed endpoints (/appmesh/file/download|upload|delete and the SSE output|task streams)
+//   sign the empty-string body hash (documented exemption: the streamed content is not bound)
 //
 // The secret is never logged and never exposed through a getter or toString().
 // Node.js only: signing uses node:crypto (no npm dependencies).
@@ -33,6 +33,10 @@ async function nodeCrypto () {
  * The exact daemon set (RequestHardening::canonicalFileRoute) — subpaths are not exempt. */
 const EMPTY_BODY_EXEMPT_PATHS = new Set(['/appmesh/file/download', '/appmesh/file/upload', '/appmesh/file/delete'])
 
+/** SSE stream routes (/appmesh/app/{name}/output|task/stream): the daemon's SSE hardening
+ * check ignores the request body, so these sign the empty-string hash (docs/source/Streaming.md). */
+const EMPTY_BODY_EXEMPT_STREAM_RE = /^\/appmesh\/app\/[^/]+\/(output|task)\/stream$/
+
 /** Header names (must match HTTP_HEADER_KEY_* in src/common/Utility.h). */
 export const REQUEST_SIGNATURE_HEADERS = Object.freeze({
   KEY_ID: 'X-Request-Key',
@@ -41,10 +45,11 @@ export const REQUEST_SIGNATURE_HEADERS = Object.freeze({
   SIGNATURE: 'X-Signature'
 })
 
-/** True for the streamed file endpoints that sign the empty-string body hash. */
+/** True for streamed endpoints (file transfer, SSE streams) that sign the empty-string body hash. */
 export function isEmptyBodyExemptPath (path) {
   if (typeof path !== 'string') return false
-  return EMPTY_BODY_EXEMPT_PATHS.has(canonicalSigningPath(path))
+  const signingPath = canonicalSigningPath(path)
+  return EMPTY_BODY_EXEMPT_PATHS.has(signingPath) || EMPTY_BODY_EXEMPT_STREAM_RE.test(signingPath)
 }
 
 /**

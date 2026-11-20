@@ -41,6 +41,10 @@ public:
 	/// docker-backed callbacks cannot stall it.
 	void postCallback(std::function<void()> task);
 
+	/// Queue a polled liveness task (the periodic docker inspect behind needsAlwaysExitPoll) on its own
+	/// thread: a hung docker channel stalls polling only, never the exit callbacks finalizing other runs.
+	void postPoll(std::function<void()> task);
+
 	/// Run a task on the io thread and wait for it. Direct call when already
 	/// there. A task exception propagates to the calling thread. Returns false
 	/// when the service stopped before the task could run. Callers may hold
@@ -57,9 +61,14 @@ private:
 	bool onIoThread() const;
 	/// True when called from the exit-callback thread.
 	bool onCallbackThread() const;
+	/// True when called from the liveness-poll thread.
+	bool onPollThread() const;
 	/// Start the exit-callback thread on first use; no process ever exited
 	/// before, so the thread stays down until the first postCallback().
 	void ensureCallbackThread();
+	/// Start the liveness-poll thread on first use, mirroring the lazy
+	/// exit-callback thread.
+	void ensurePollThread();
 
 	/// One dispatchSync wait; released by shutdown after the io thread joins.
 	struct SyncWaiter;
@@ -74,6 +83,12 @@ private:
 	std::thread m_callbackThread;
 	std::thread::id m_callbackThreadId;
 	mutable std::mutex m_callbackMutex; ///< Guards lazy start/join of m_callbackThread and its id.
+
+	boost::asio::io_context m_pollContext;
+	boost::asio::executor_work_guard<boost::asio::io_context::executor_type> m_pollGuard;
+	std::thread m_pollThread;
+	std::thread::id m_pollThreadId;
+	mutable std::mutex m_pollMutex; ///< Guards lazy start/join of m_pollThread and its id.
 
 	std::atomic<bool> m_stopped{false};
 	std::mutex m_syncMutex;                                 ///< Guards m_syncWaiters.

@@ -6,6 +6,12 @@ App Mesh supports both process-level and code/task-level remote calls without in
 
 Remote tasks allow a client to send a payload to App Mesh. App Mesh dispatches the payload to a running application process, which processes it and returns the result.
 
+A task answers one final result. Workers that produce output continuously
+(model token streams, progress updates) can additionally push partial results
+on the same call: the client opens the [streaming task channel](Streaming.md)
+(`POST /appmesh/app/{name}/task/stream`, SDK `run_task_stream`) and the worker
+calls `send_task_partial` while it works.
+
 With request forwarding, you can achieve cluster-level task execution.
 
 ### Client

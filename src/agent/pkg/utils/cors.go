@@ -4,6 +4,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"sync"
 )
 
 var globalCORSEnabled = true
@@ -55,6 +56,41 @@ type CORSConfig struct {
 	ExposedHeaders   []string
 	MaxAge           int
 	AllowCredentials bool
+	// LiveOrigins replaces the static AllowedOrigins snapshot so a caller holding
+	// the allowlist can hot-reload it (daemon PUT /appmesh/config, SIGHUP).
+	LiveOrigins *CORSAllowlist
+}
+
+// CORSAllowlist is an atomically swappable origin allowlist for Cors.
+type CORSAllowlist struct {
+	mu      sync.RWMutex
+	origins map[string]struct{}
+}
+
+// NewCORSAllowlist builds a live allowlist seeded with `origins`.
+func NewCORSAllowlist(origins []string) *CORSAllowlist {
+	l := &CORSAllowlist{}
+	l.Set(origins)
+	return l
+}
+
+// Set swaps the whole allowlist.
+func (l *CORSAllowlist) Set(origins []string) {
+	next := make(map[string]struct{}, len(origins))
+	for _, origin := range origins {
+		next[origin] = struct{}{}
+	}
+	l.mu.Lock()
+	l.origins = next
+	l.mu.Unlock()
+}
+
+// Allowed reports whether `origin` is allowlisted.
+func (l *CORSAllowlist) Allowed(origin string) bool {
+	l.mu.RLock()
+	_, ok := l.origins[origin]
+	l.mu.RUnlock()
+	return ok
 }
 
 // DefaultCORSConfig provides a default configuration for CORS. The origin
@@ -90,6 +126,13 @@ func Cors(config CORSConfig) func(http.Handler) http.Handler {
 	for _, origin := range config.AllowedOrigins {
 		originsMap[origin] = struct{}{}
 	}
+	originAllowed := func(origin string) bool {
+		if config.LiveOrigins != nil {
+			return config.LiveOrigins.Allowed(origin)
+		}
+		_, ok := originsMap[origin]
+		return ok
+	}
 
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -100,12 +143,14 @@ func Cors(config CORSConfig) func(http.Handler) http.Handler {
 				next.ServeHTTP(w, r)
 				return
 			}
-			if _, allowed := originsMap[origin]; !allowed {
+			if !originAllowed(origin) {
 				next.ServeHTTP(w, r)
 				return
 			}
 
 			w.Header().Set("Access-Control-Allow-Origin", origin)
+			// Vary on Origin so shared caches never cross-serve origins (Add keeps existing Vary).
+			w.Header().Add("Vary", "Origin")
 			if config.AllowCredentials {
 				w.Header().Set("Access-Control-Allow-Credentials", "true")
 			}

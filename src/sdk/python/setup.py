@@ -11,7 +11,9 @@ def get_version():
     """PyPI package version"""
     # 3.0 removes Engine-owned login/user APIs in favor of standard OAuth and
     # principal-based authorization. This is intentionally a major release.
-    return "3.0.19"
+    # 3.0.20 adds the streaming surface: follow_output/run_task_stream/
+    # stream_run generators, send_input, worker send_task_partial.
+    return "3.0.20"
 
 
 # Dependencies

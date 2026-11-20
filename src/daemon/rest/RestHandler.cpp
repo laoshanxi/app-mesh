@@ -27,6 +27,7 @@
 #include "PrometheusRest.h"
 #include "ReplyContext.h"
 #include "RestHandler.h"
+#include "SseSink.h"
 #include "drogon/FileTransferHandler.h"
 
 // Content-type constants
@@ -116,6 +117,7 @@ namespace
 			JSON_KEY_APP_env,
 			JSON_KEY_APP_secret_env,
 			JSON_KEY_APP_metadata,
+			JSON_KEY_APP_stdin,
 			JSON_KEY_APP_behavior,
 			JSON_KEY_APP_permission,
 			JSON_KEY_APP_enabled,
@@ -230,6 +232,11 @@ constexpr auto REST_PATH_APP_DELETE = R"(/appmesh/app/([^/\*]+))";
 constexpr auto REST_PATH_APP_RUN_ASYNC = "/appmesh/app/run";
 constexpr auto REST_PATH_APP_RUN_SYNC = "/appmesh/app/syncrun";
 constexpr auto REST_PATH_APP_TASK = R"(/appmesh/app/([^/\*]+)/task)";
+// Streaming task RPC (SSE): partials ride the same parking as /task.
+constexpr auto REST_PATH_APP_TASK_STREAM = R"(/appmesh/app/([^/\*]+)/task/stream)";
+constexpr auto REST_PATH_APP_TASK_PARTIAL = R"(/appmesh/app/([^/\*]+)/task/partial)";
+// Interactive stdin injection for pipe-stdin apps.
+constexpr auto REST_PATH_APP_INPUT = R"(/appmesh/app/([^/\*]+)/input)";
 
 // 6. File Management
 constexpr auto REST_PATH_FILE_DOWNLOAD = "/appmesh/file/download";
@@ -327,6 +334,14 @@ RestHandler::RestHandler() : m_metrics(std::make_shared<PrometheusRest>())
 				   std::bind(&RestHandler::apiRunAsync, this, std::placeholders::_1));
 	bindRestMethod(web::http::methods::POST, REST_PATH_APP_RUN_SYNC,
 				   std::bind(&RestHandler::apiRunSync, this, std::placeholders::_1));
+	// The /task regex is a strict full match, but keep the longer paths bound
+	// first so the dispatch table reads most-specific-first.
+	bindRestMethod(web::http::methods::POST, REST_PATH_APP_TASK_STREAM,
+				   std::bind(&RestHandler::apiSendTaskStream, this, std::placeholders::_1));
+	bindRestMethod(web::http::methods::POST, REST_PATH_APP_TASK_PARTIAL,
+				   std::bind(&RestHandler::apiSendTaskPartial, this, std::placeholders::_1));
+	bindRestMethod(web::http::methods::POST, REST_PATH_APP_INPUT,
+				   std::bind(&RestHandler::apiAppInput, this, std::placeholders::_1));
 	bindRestMethod(web::http::methods::POST, REST_PATH_APP_TASK,
 				   std::bind(&RestHandler::apiSendTask, this, std::placeholders::_1));
 	bindRestMethod(web::http::methods::DEL, REST_PATH_APP_TASK,
@@ -689,7 +704,12 @@ void RestHandler::apiIndex(const std::shared_ptr<HttpRequest> &message)
 	LOG_DBG << fname << "Serving index.html";
 
 	std::string content = getIndexHtmlContent();
-	message->reply(web::http::status_codes::OK, content, CONTENT_TYPE_HTML);
+	std::map<std::string, std::string> headers;
+	// The page is a static installed file (no reflection, operators may customize
+	// it), so inline style/script is allowed here only; everything else stays denied.
+	headers[web::http::header_names::content_security_policy] =
+		"default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; frame-ancestors 'none'";
+	message->reply(web::http::status_codes::OK, content, headers, CONTENT_TYPE_HTML);
 }
 
 void RestHandler::checkAppAccessPermission(const std::shared_ptr<HttpRequest> &message,
@@ -727,8 +747,8 @@ long RestHandler::getHttpQueryValue(const HttpRequest &message, const std::strin
 	return rt;
 }
 
-long RestHandler::getHttpQueryPosition(const HttpRequest &message, const std::string &key, long defaultValue,
-									   long min, long max)
+long RestHandler::getHttpQueryPosition(const HttpRequest &message, const std::string &key, long defaultValue, long min,
+									   long max)
 {
 	// Positions and indices are plain integers (byte offsets, nanosecond log
 	// cursors), not durations: the duration parser rejects values beyond int
@@ -795,7 +815,7 @@ std::string RestHandler::regexSearch(const std::string &value, const char *expr,
 }
 
 std::tuple<std::string, std::string> RestHandler::regexSearch2(const std::string &value, const char *expr,
-																const char *clientError)
+															   const char *clientError)
 {
 	const static char fname[] = "RestHandler::regexSearch2() ";
 
@@ -924,12 +944,19 @@ void RestHandler::apiAppDelete(const std::shared_ptr<HttpRequest> &message)
 			message->reply(web::http::status_codes::Conflict);
 			return;
 		}
-		// Cascade: deleting the base stops and removes its run instances; the
-		// delete permission on the base governs the cascade (the base owner
-		// controls its instances).
+		// Cascade deletes base run instances; the base's delete permission governs it.
+		// -1 means instances re-registered faster than the resweep could drain them.
 		LOG_INF << "RestHandler::apiAppDelete() Principal <" << tokenUser << "> cascading run instances of <" << appName
 				<< ">";
-		config->removeRunInstances(appName);
+		const auto removedInstances = config->removeRunInstances(appName);
+		if (removedInstances < 0)
+		{
+			message->reply(web::http::status_codes::Conflict,
+						   Utility::text2json(Utility::stringFormat("Application <%s> removed, but its run instances kept "
+																	"re-registering; retry the delete",
+																	appName.c_str())));
+			return;
+		}
 		message->reply(web::http::status_codes::OK,
 					   Utility::text2json(Utility::stringFormat("Application <%s> removed.", appName.c_str())));
 	}
@@ -980,8 +1007,8 @@ void RestHandler::apiFileDownload(const std::shared_ptr<HttpRequest> &message)
 	// body can only come from the validated file, never a swapped symlink component.
 	std::string resolvedPath;
 	bool jailRejected = false;
-	const int fd = Utility::openFileWithinJail(file, false, Configuration::instance()->getFileAllowedBaseDir(),
-											   resolvedPath, &jailRejected);
+	const int fd = Utility::openFileWithinJail(file, false, Configuration::instance()->getFileAllowedBaseDir(), resolvedPath,
+											   &jailRejected);
 	if (fd < 0)
 	{
 		if (jailRejected)
@@ -1080,8 +1107,15 @@ void RestHandler::apiFileUpload(const std::shared_ptr<HttpRequest> &message)
 			throw std::runtime_error("failed to create the upload file");
 		upload.m_file.write(reinterpret_cast<const char *>(message->m_body->data()),
 							static_cast<std::streamsize>(message->m_body->size()));
-		if (!upload.m_file.good() || upload.commit() == FileUploadInfo::CommitResult::Failed)
+		const auto commitResult = upload.commit();
+		if (!upload.m_file.good() || commitResult == FileUploadInfo::CommitResult::Failed)
 			throw std::runtime_error("failed to write the upload file");
+		if (commitResult == FileUploadInfo::CommitResult::AlreadyExists)
+		{
+			// A concurrent upload won the non-overwrite race after the precheck.
+			message->reply(web::http::status_codes::Conflict, Utility::text2json("file already exist"));
+			return;
+		}
 		Utility::applyFilePermission(file, message->m_headers, upload.fd());
 		LOG_INF << fname << "File uploaded successfully: " << file << " (" << message->m_body->size() << " bytes)";
 		Json::Value respJson;
@@ -1112,23 +1146,26 @@ void RestHandler::apiFileDelete(const std::shared_ptr<HttpRequest> &message)
 	if (rejectFilePath(message, file))
 		return;
 
-	std::error_code ec;
-	if (std::filesystem::is_symlink(file, ec))
+	// Pin-then-verify delete: unlinkat targets the dirfd-pinned parent re-verified
+	// against the jail, so a symlink swap cannot steer the delete outside the jail.
+	std::string resolvedPath;
+	switch (Utility::unlinkFileWithinJail(file, Configuration::instance()->getFileAllowedBaseDir(), resolvedPath))
 	{
-		message->reply(web::http::status_codes::BadRequest, Utility::text2json("symlinks not allowed"));
+	case Utility::JailUnlinkStatus::Removed:
+		break;
+	case Utility::JailUnlinkStatus::Rejected:
+		message->reply(web::http::status_codes::Forbidden, Utility::text2json("File path is not allowed"));
 		return;
-	}
-	if (!std::filesystem::is_regular_file(file, ec))
-	{
+	case Utility::JailUnlinkStatus::NotFound:
+		// Missing leaf or a (never-deletable) directory; a symlink leaf lands in Rejected.
 		message->reply(web::http::status_codes::NotFound, Utility::text2json("file not found"));
 		return;
-	}
-	if (!std::filesystem::remove(file, ec))
-	{
+	case Utility::JailUnlinkStatus::Failed:
+	default:
 		message->reply(web::http::status_codes::InternalError, Utility::text2json("failed to remove the file"));
 		return;
 	}
-	LOG_INF << fname << "File deleted: " << file;
+	LOG_INF << fname << "File deleted: " << (resolvedPath.empty() ? file : resolvedPath);
 	message->reply(web::http::status_codes::OK, Utility::text2json("success"));
 }
 
@@ -1217,9 +1254,7 @@ void RestHandler::apiBasicConfigSet(const std::shared_ptr<HttpRequest> &message)
 		if (!unknown.empty())
 			throw std::invalid_argument("unknown configuration field(s): " + unknown);
 		// A hot update never rebinds a listener: reject instead of a fake 200.
-		if (json.get(JSON_KEY_REST, Json::Value())
-				.get(JSON_KEY_SSL, Json::Value())
-				.isMember(JSON_KEY_SSLEnabled))
+		if (json.get(JSON_KEY_REST, Json::Value()).get(JSON_KEY_SSL, Json::Value()).isMember(JSON_KEY_SSLEnabled))
 			throw std::invalid_argument("REST.SSL.SSLEnabled is startup-only: set it in config.yaml and restart the daemon");
 	}
 	Configuration::instance()->hotUpdateAndSave(json);
@@ -1503,7 +1538,6 @@ void RestHandler::apiRolesView(const std::shared_ptr<HttpRequest> &message)
 
 void RestHandler::apiApiKeysView(const std::shared_ptr<HttpRequest> &message)
 {
-	const static char fname[] = "RestHandler::apiApiKeysView() ";
 	const auto principalId = permissionCheck(message, "");
 	bool all = false;
 	if (message->m_query.count("all") != 0)
@@ -1534,8 +1568,8 @@ void RestHandler::apiApiKeyIssue(const std::shared_ptr<HttpRequest> &message)
 		}
 	}
 	const auto issued = Security::instance()->issueApiKey(target);
-	LOG_INF << fname << "API key <" << issued["key_id"].asString() << "> issued to <" << target << "> by <"
-			<< principalId << ">";
+	LOG_INF << fname << "API key <" << issued["key_id"].asString() << "> issued to <" << target << "> by <" << principalId
+			<< ">";
 	message->reply(web::http::status_codes::OK, issued);
 }
 
@@ -1559,9 +1593,9 @@ void RestHandler::apiAuthReplicationPolicy(const std::shared_ptr<HttpRequest> &m
 	// secrets service (Vault). One selector, one seam; absent configuration
 	// keeps the local file behavior with no external dependency.
 	const auto source = Utility::stdStringTrim(Utility::getenv("APPMESH_AUTH_REPLICATION_TOKEN_SOURCE"));
-	const auto vaultAddress =
-		source == "vault" ? Utility::stdStringTrim(Utility::getenv("APPMESH_AUTH_REPLICATION_TOKEN_VAULT_ADDR"))
-						  : std::string();
+	const auto vaultAddress = source == "vault"
+								  ? Utility::stdStringTrim(Utility::getenv("APPMESH_AUTH_REPLICATION_TOKEN_VAULT_ADDR"))
+								  : std::string();
 	const auto tokenFile = Utility::stdStringTrim(Utility::getenv("APPMESH_AUTH_REPLICATION_TOKEN_FILE"));
 	if (tokenFile.empty() && vaultAddress.empty())
 	{
@@ -1585,8 +1619,8 @@ void RestHandler::apiAuthReplicationPolicy(const std::shared_ptr<HttpRequest> &m
 		// Vault is the single source of truth: issuing and revoking are KV
 		// operations through the operator tooling, and a Vault outage fails
 		// the pull closed (the follower retries next cycle).
-		VaultClient::Config config{vaultAddress,
-								   Utility::stdStringTrim(Utility::getenv("APPMESH_AUTH_REPLICATION_TOKEN_VAULT_TOKEN_FILE"))};
+		VaultClient::Config config{
+			vaultAddress, Utility::stdStringTrim(Utility::getenv("APPMESH_AUTH_REPLICATION_TOKEN_VAULT_TOKEN_FILE"))};
 		try
 		{
 			matchedLabel = AuthReplication::matchToken(VaultClient::listReplicationTokens(config), presented);
@@ -1612,8 +1646,7 @@ void RestHandler::apiAuthReplicationPolicy(const std::shared_ptr<HttpRequest> &m
 	}
 	if (matchedLabel.empty())
 	{
-		LOG_WAR << fname << "replication policy request rejected: invalid token from <" << message->m_remote_address
-				<< ">";
+		LOG_WAR << fname << "replication policy request rejected: invalid token from <" << message->m_remote_address << ">";
 		message->reply(web::http::status_codes::Unauthorized, Utility::text2json("invalid replication token"));
 		return;
 	}
@@ -1930,6 +1963,77 @@ void RestHandler::apiReplyTask(const std::shared_ptr<HttpRequest> &message)
 	// no need setup timer for service side request, process terminate will take care cleanup
 	auto asyncRequest = std::make_shared<HttpRequestWithTimeout>(message);
 	app->replyTask(processKey, asyncRequest);
+}
+
+void RestHandler::apiSendTaskStream(const std::shared_ptr<HttpRequest> &message)
+{
+	permissionCheck(message, PERMISSION_KEY_run_task);
+
+	const auto path = (Utility::decodeURIComponent(message->m_relative_uri));
+	auto appName = regexSearch(path, REST_PATH_APP_TASK_STREAM);
+
+	auto app = Configuration::instance()->getApp(appName);
+	checkAppAccessPermission(message, app, true);
+
+	// Only the plain-HTTP entry (DrogonAdaptor::handleTaskStream) attaches the
+	// sink marker; framed transports cannot receive an SSE response.
+	const auto marker = message->m_headers.get(HTTP_HEADER_KEY_X_AppMesh_Sse_Stream);
+	auto sink = marker.empty() ? nullptr : SseStreamRegistry::instance()->take(marker);
+	if (!sink)
+	{
+		message->reply(web::http::status_codes::MethodNotAllowed,
+					   Utility::text2json("Task streaming requires a plain HTTP connection"));
+		return;
+	}
+
+	// Short default so a stuck target can't hold the app's active slot for days; override via ?timeout=.
+	int timeout = getHttpQueryValue(*message, HTTP_QUERY_KEY_timeout, DEFAULT_RUN_TASK_TIMEOUT_SECONDS, 0,
+									MAX_RUN_APP_TIMEOUT_SECONDS);
+	auto asyncRequest = std::make_shared<HttpRequestTaskStream>(message, std::move(sink));
+	asyncRequest->initTimer(timeout);
+	app->sendTask(asyncRequest);
+}
+
+void RestHandler::apiSendTaskPartial(const std::shared_ptr<HttpRequest> &message)
+{
+	if (!message->isManagedPrivateTransport() || !message->transportPrincipalId().empty())
+		throw AuthorizationException("worker task RPC is available only to a managed local process");
+	if (message->m_query.count("process_key") != 0)
+		throw std::invalid_argument("process_key query authentication is not supported");
+	const std::string processKey = Utility::stdStringTrim(message->m_headers.get(HTTP_HEADER_KEY_X_APPMESH_PROCESS_KEY));
+	if (processKey.empty())
+		throw AuthorizationException("managed process proof is required");
+	const auto path = (Utility::decodeURIComponent(message->m_relative_uri));
+	auto appName = regexSearch(path, REST_PATH_APP_TASK_PARTIAL);
+
+	auto app = Configuration::instance()->getApp(appName);
+	const std::string payload(message->m_body->begin(), message->m_body->end());
+	bool delivered = false;
+	app->partialTask(processKey, payload, delivered);
+	Json::Value result;
+	result["delivered"] = delivered;
+	message->reply(web::http::status_codes::OK, result);
+}
+
+void RestHandler::apiAppInput(const std::shared_ptr<HttpRequest> &message)
+{
+	permissionCheck(message, PERMISSION_KEY_app_control);
+
+	const auto path = (Utility::decodeURIComponent(message->m_relative_uri));
+	auto appName = regexSearch(path, REST_PATH_APP_INPUT);
+
+	auto app = Configuration::instance()->getApp(appName);
+	checkAppAccessPermission(message, app, true);
+	const bool closePipe = Utility::stdStringTrim(message->m_headers.get(HTTP_HEADER_KEY_X_Input_Close)) == "true";
+	const auto processUuid = message->m_query.count(HTTP_QUERY_KEY_process_uuid) != 0
+								 ? message->m_query.at(HTTP_QUERY_KEY_process_uuid)
+								 : std::string();
+	const auto written = app->writeStdin(*message->m_body, closePipe, processUuid);
+	Json::Value result;
+	result["bytes_written"] = (Json::Int64)written;
+	if (closePipe)
+		result["closed"] = true;
+	message->reply(web::http::status_codes::OK, result);
 }
 
 void RestHandler::apiAppOutputView(const std::shared_ptr<HttpRequest> &message)

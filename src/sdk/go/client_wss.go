@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 )
@@ -79,6 +80,23 @@ func (c *AppMeshClientWSS) SendMessage(ctx context.Context, buffer []byte) error
 // the same value as the WSS control request (a bare host is resolved server-side).
 func (c *AppMeshClientWSS) forwardTarget() string {
 	return c.wssReq.getForwardTo()
+}
+
+// sseRequest opens an SSE stream over a direct HTTPS connection to the same
+// REST listener the WSS control channel runs on: the framed transport cannot
+// carry a chunked stream, so streams bypass it like the file data channel.
+func (w *WSSRequester) sseRequest(ctx context.Context, method string, apiPath string, queries url.Values,
+	headers map[string]string, body []byte) (int, io.ReadCloser, http.Header, error) {
+	base := w.baseURL
+	switch base.Scheme {
+	case "wss":
+		base.Scheme = "https"
+	case "ws":
+		base.Scheme = "http"
+	}
+	return sseSideChannel{base: base, token: w.getAccessToken(), agent: userAgentWSS, signer: w.getRequestSigner(),
+		clientCert: w.sslClientCert, clientKey: w.sslClientKey, caFile: w.sslCAFile}.open(ctx, method, apiPath,
+		queries, headers, body)
 }
 
 // DownloadFileContext downloads a file through the WSS control channel plus HTTP(S) streaming data path.

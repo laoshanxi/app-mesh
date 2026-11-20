@@ -52,9 +52,11 @@ public:
 	static std::string namespacedContainerName(const std::string &appName);
 
 protected:
+	// stdinPipe is rejected at registration for container apps; the parameter
+	// satisfies the backend contract and stays unused here.
 	pid_t startImpl(std::string cmd, std::string execUser, std::string workDir, std::map<std::string, std::string> envMap,
 					std::shared_ptr<ResourceLimitation> limit, const std::string &stdoutFile,
-					const Json::Value &stdinFileContent, int maxStdoutSize) override;
+					const Json::Value &stdinFileContent, int maxStdoutSize, bool stdinPipe) override;
 	void terminateImpl() override;
 
 	// A pull is its own managed run, with this AppProcess owning its PID and exit callback.
@@ -83,9 +85,11 @@ protected:
 	bool needsAlwaysExitPoll() const override;
 	void reportBackendExit() override;
 	bool running() const override;
+	// Adopts a pre-existing container labeled for this app after a restart.
+	void adoptRecoveredContainer() override;
 	// Set right after attach(): true when the host PID is observable in this
 	// process namespace (classic host deployment).
-	bool m_hostPidVisible = false;
+	std::atomic_bool m_hostPidVisible{false};
 	mutable std::atomic_bool m_containerRunning{false};
 
 protected:

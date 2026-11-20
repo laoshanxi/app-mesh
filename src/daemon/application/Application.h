@@ -116,7 +116,14 @@ public:
 	bool deleteTask();
 	void fetchTask(const std::string &processKey, std::shared_ptr<HttpRequest> asyncHttpRequest);
 	void replyTask(const std::string &processKey, std::shared_ptr<HttpRequest> asyncHttpRequest);
+	// Worker incremental result: delivered when the in-flight caller streams.
+	void partialTask(const std::string &processKey, const std::string &payload, bool &delivered);
 	std::tuple<int, std::string> taskStatus();
+
+	// Interactive stdin (apps registered with "stdin": "pipe"): injects bytes
+	// into the running process; `closePipe` sends EOF. Returns bytes written.
+	long writeStdin(const std::vector<std::uint8_t> &data, bool closePipe, const std::string &processUuid = "");
+	bool isStdinPipe() const { return m_stdinPipe; }
 
 	// Current process identity and managed process proof
 	bool isCurrentProcessUuid(const std::string &processUuid);
@@ -231,6 +238,8 @@ private:
 	std::string m_workdir;
 	std::string m_stdoutFile;
 	Json::Value m_metadata;
+	// "stdin": "pipe" — the daemon keeps the pipe write end open for writeStdin.
+	bool m_stdinPipe{false};
 	bool m_shellApp;
 	bool m_sessionLogin;
 	int m_stdoutCacheNum;

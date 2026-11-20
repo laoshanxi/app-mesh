@@ -150,10 +150,18 @@ void FileTransferHandler::startDownload(const trantor::TcpConnectionPtr &conn, i
 			stream->read(buf + TCP_MESSAGE_HEADER_LENGTH, static_cast<std::streamsize>(payloadCapacity));
 			const auto readSize = static_cast<std::size_t>(stream->gcount());
 
-			// Header plus payload; a zero-length body ends the transfer.
+			// Header plus payload; a zero-length body ends the transfer. A read error
+			// also ends it, but is logged daemon-side (the frame protocol has no error marker).
 			tcpframe::writeHeader(buf, readSize);
 			if (readSize == 0)
+			{
+				// A clean end of file is not a failure; only an errored short
+				// read ends the transfer without its data.
+				if (!stream->good() && !stream->eof())
+					LOG_ERR << "FileTransferHandler::startDownload() read error (errno="
+							<< errno << ") ended the download stream early";
 				*terminatorSent = true;
+			}
 			return TCP_MESSAGE_HEADER_LENGTH + readSize;
 		});
 

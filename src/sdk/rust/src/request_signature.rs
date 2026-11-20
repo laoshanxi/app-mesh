@@ -147,11 +147,11 @@ impl RequestSigner {
         headers
     }
 
-    /// Lowercase hex SHA-256 of the body bytes with the file-endpoint
-    /// exemption applied: the streamed file endpoints always sign the empty
-    /// string, regardless of the actual body.
+    /// Lowercase hex SHA-256 of the body bytes with the file/stream-endpoint
+    /// exemption applied: the streamed file and SSE endpoints always sign the
+    /// empty string, regardless of the actual body.
     pub fn body_sha256_hex(path: &str, body: Option<&[u8]>) -> String {
-        if is_file_endpoint(path) {
+        if is_file_endpoint(path) || is_stream_endpoint(path) {
             return sha256_hex(b"");
         }
         sha256_hex(body.unwrap_or(&[]))
@@ -218,6 +218,13 @@ pub fn is_file_endpoint(path: &str) -> bool {
         "/appmesh/file/download" | "/appmesh/file/upload" | "/appmesh/file/delete" | "/appmesh/file/download/ws"
             | "/appmesh/file/upload/ws"
     )
+}
+
+/// The streamed SSE endpoints (`GET .../output/stream`, `POST .../task/stream`)
+/// sign the empty string in place of the body hash, like the streamed file
+/// endpoints (docs/source/Streaming.md, "Limits and scope").
+pub fn is_stream_endpoint(path: &str) -> bool {
+    path.starts_with("/appmesh/app/") && (path.ends_with("/output/stream") || path.ends_with("/task/stream"))
 }
 
 /// The canonical path the daemon signs: the trailing "/ws" of the WSS HTTPS
@@ -411,6 +418,17 @@ mod tests {
         // A non-file endpoint hashes the actual body; no body hashes "".
         assert_eq!(RequestSigner::body_sha256_hex("/appmesh/app/example", Some(body)), body_hash);
         assert_eq!(RequestSigner::body_sha256_hex("/appmesh/app/example", None), EMPTY_SHA256);
+    }
+
+    #[test]
+    fn stream_endpoints_sign_the_empty_string_body_hash() {
+        // The SSE task stream signs the empty string despite its payload body
+        // (docs/source/Streaming.md); the buffered stdin route hashes its real body.
+        let body = b"task-payload";
+        let body_hash = sha256_hex(body);
+        assert_eq!(RequestSigner::body_sha256_hex("/appmesh/app/agent/output/stream", None), EMPTY_SHA256);
+        assert_eq!(RequestSigner::body_sha256_hex("/appmesh/app/agent/task/stream", Some(body)), EMPTY_SHA256);
+        assert_eq!(RequestSigner::body_sha256_hex("/appmesh/app/chat/input", Some(body)), body_hash);
     }
 
     #[test]

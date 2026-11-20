@@ -100,15 +100,14 @@ A first-class capability, built on the Claude Agent SDK. **Three enterprise scen
 
 #### Scenario 1 — An LLM chat window for every employee (Interactive mode)
 
-Each session gets its own **worker app** with a stable working directory and **live token streaming** — your chat frontend subscribes to one STDOUT event stream, then holds a multi-turn conversation. The agent remembers context across turns; when the session ends, closing it removes the worker app and its data automatically.
+**Live token streaming** rides the task RPC itself: one `run_task_stream` call delivers every token as a partial and the final envelope at the end — on the shared app or a session worker alike, with no side-channel subscription. When a session needs context isolation, it gets its own **worker app** with a stable working directory; the agent remembers context across turns, and closing the session removes the worker app and its data automatically.
 
 ```python
-# one STDOUT subscription, many turns, tokens stream live
-sub = client.subscribe("llm-agent-sess-S1", ["STDOUT"],
-                       callback=lambda e: print(e.data.get("output", ""), end=""))
-client.run_task("llm-agent-sess-S1", json.dumps(
-    {"action": "session_send", "session_id": "S1",
-     "input": "Hi! Remember the number 7.", "stream": True}))
+# one call per turn, tokens stream live, final envelope closes it
+for token in client.run_task_stream("llm-agent", json.dumps(
+        {"action": "session_send", "session_id": "S1",
+         "input": "Hi! Remember the number 7.", "stream": True}), timeout=180):
+    print(token, end="", flush=True)
 ```
 
 Verified live: *"Remember the number 7"* → *"Got it — I'll remember the number **7**"* → *"What number did I give you?"* → *"You gave me the number **7**."*

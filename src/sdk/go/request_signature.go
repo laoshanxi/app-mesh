@@ -33,13 +33,22 @@ const (
 // emptyBodySignedPaths are the streamed file endpoints: their body crosses the
 // wire as a stream (or a socket side channel), so they sign the empty-string
 // body hash instead of the file content. Documented exemption, same list the
-// daemon enforces hardening on.
+// daemon enforces hardening on. SSE stream endpoints match by suffix instead
+// (isEmptyBodySignedPath).
 var emptyBodySignedPaths = map[string]bool{
 	"/appmesh/file/upload":      true,
 	"/appmesh/file/download":    true,
 	"/appmesh/file/delete":      true,
 	"/appmesh/file/upload/ws":   true,
 	"/appmesh/file/download/ws": true,
+}
+
+// isEmptyBodySignedPath reports whether a route signs the empty-string body
+// hash: the streamed file endpoints plus the SSE stream endpoints, whose
+// body the daemon verifies without reading.
+func isEmptyBodySignedPath(path string) bool {
+	return emptyBodySignedPaths[path] ||
+		strings.HasSuffix(path, "/output/stream") || strings.HasSuffix(path, "/task/stream")
 }
 
 // requestSigner holds the per-principal API key used for opt-in HMAC request
@@ -180,7 +189,7 @@ func applyRequestSignature(request *Request, signer *requestSigner) {
 	// hashes the raw body bytes.
 	signPath := canonicalSigningPath(request.RequestURI)
 	bodyHash := sha256Hex(request.Body)
-	if emptyBodySignedPaths[signPath] {
+	if isEmptyBodySignedPath(signPath) {
 		bodyHash = sha256Hex(nil)
 	}
 	timestamp, signature := signer.sign(request.HTTPMethod, signPath, canonicalQuery(request.Query),
@@ -197,15 +206,16 @@ func applyRequestSignature(request *Request, signer *requestSigner) {
 // path is taken exactly as sent (still percent-encoded), not decoded — except
 // the WSS data-channel "/ws" routes, which sign the route without the trailing
 // "/ws" (canonicalSigningPath, mirroring the daemon). The body is consumed to
-// compute its hash and replaced with an equivalent reader; streamed file
-// endpoints keep their body untouched and sign the empty-string hash instead.
+// compute its hash and replaced with an equivalent reader; the streamed file
+// and SSE endpoints keep their body untouched and sign the empty-string hash
+// instead.
 func signHTTPRequest(req *http.Request, query url.Values, signer *requestSigner) error {
 	if signer == nil {
 		return nil
 	}
 	signPath := canonicalSigningPath(req.URL.EscapedPath())
 	bodyHash := sha256Hex(nil)
-	if !emptyBodySignedPaths[signPath] && req.Body != nil {
+	if !isEmptyBodySignedPath(signPath) && req.Body != nil {
 		bodyBytes, err := io.ReadAll(req.Body)
 		if err != nil {
 			return fmt.Errorf("failed to buffer request body for signing: %w", err)

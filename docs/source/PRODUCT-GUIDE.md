@@ -139,15 +139,14 @@ appm workflow detail -w release-pipeline <run_id>         # 每步状态/耗时/
 
 #### 场景一：给员工的大模型对话窗口（交互模式）
 
-每个会话一个**专属 worker 应用**，带稳定工作目录和**逐 token 流式输出**——聊天前端订阅一路 STDOUT 事件流，就能多轮对话。跨轮次记忆上下文；会话结束一键关闭，worker 应用和会话数据自动清除。
+**逐 token 流式输出**走任务 RPC 本身：一次 `run_task_stream` 调用里，每个 token 就是一个 partial，最终回执带完成元数据；共享应用与会话 worker 应用皆可，无需旁路订阅。需要上下文隔离时，每会话一个**专属 worker 应用**（稳定工作目录）；跨轮次记忆上下文；会话结束一键关闭，worker 应用和会话数据自动清除。
 
 ```python
-# 一路订阅，多轮对话，token 实时流出
-sub = client.subscribe("llm-agent-sess-S1", ["STDOUT"],
-                       callback=lambda e: print(e.data.get("output", ""), end=""))
-client.run_task("llm-agent-sess-S1", json.dumps(
-    {"action": "session_send", "session_id": "S1",
-     "input": "记住数字 7", "stream": True}))
+# 一次调用，token 实时流出，最终回执收尾
+for token in client.run_task_stream("llm-agent", json.dumps(
+        {"action": "session_send", "session_id": "S1",
+         "input": "记住数字 7", "stream": True}), timeout=180):
+    print(token, end="", flush=True)
 ```
 
 实测：「记住数字 7」→「好的，我会记住数字 **7**」→「我让你记的数字是什么？」→「你让我记住的是 **7**。」

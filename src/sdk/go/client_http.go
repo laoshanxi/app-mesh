@@ -72,6 +72,11 @@ type Option struct {
 
 	// HTTPTimeout is the overall timeout for http.Client requests; honored when non-zero.
 	HTTPTimeout time.Duration
+
+	// RestPort is the daemon REST listener port for the TCP transport's SSE
+	// side channel (SSE cannot ride the framed protocol); 0 uses port 6058.
+	// HTTP and WSS already talk to the REST listener.
+	RestPort int
 }
 
 // NewHTTPClient builds an HTTP-backed client for App Mesh REST APIs.
@@ -539,6 +544,11 @@ func (r *AppMeshClient) CancelTask(appName string) (bool, error) {
 // The returned AppRun captures the current forward target so Wait can keep polling the same
 // cluster node even if the client forwarding setting changes later.
 func (r *AppMeshClient) RunAppAsync(app Application, maxTime int, lifecycle int) (*AppRun, error) {
+	return r.runAppAsync(context.Background(), app, maxTime, lifecycle)
+}
+
+// runAppAsync implements RunAppAsync bounded by ctx (shared with StreamRunContext).
+func (r *AppMeshClient) runAppAsync(ctx context.Context, app Application, maxTime int, lifecycle int) (*AppRun, error) {
 	if app.Name == "" {
 		return nil, fmt.Errorf("application name is required")
 	}
@@ -550,7 +560,8 @@ func (r *AppMeshClient) RunAppAsync(app Application, maxTime int, lifecycle int)
 	q := url.Values{}
 	q.Set("timeout", fmt.Sprintf("%d", maxTime))
 	q.Set("lifecycle", fmt.Sprintf("%d", lifecycle))
-	code, raw, _, err := r.post("/appmesh/app/run", q, nil, appJson)
+	code, raw, _, err := r.req.SendContext(ctx, http.MethodPost, "/appmesh/app/run", q,
+		withJSONContentType(nil, appJson), bytes.NewBuffer(appJson))
 	if err != nil {
 		return nil, fmt.Errorf("run app async request failed: %w", err)
 	}

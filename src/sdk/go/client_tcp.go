@@ -9,13 +9,18 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
+	"strconv"
 )
 
 const (
 	restPathUpload   = "/appmesh/file/upload"
 	restPathDownload = "/appmesh/file/download"
+
+	// defaultRESTPort is the SSE side channel's REST port when Option.RestPort is unset.
+	defaultRESTPort = 6058
 )
 
 // AppMeshClientTCP interacts with the TCP server using REST API requests via a socket.
@@ -40,12 +45,19 @@ func NewTCPClient(options Option) (*AppMeshClientTCP, error) {
 		return nil, fmt.Errorf("failed to resolve address %s: %v", uri, err)
 	}
 
+	// The SSE side channel dials the REST listener on the same host; shifted ports pass Option.RestPort.
+	restPort := options.RestPort
+	if restPort <= 0 {
+		restPort = defaultRESTPort
+	}
+
 	// Set up TCP requester and client.
 	tcpRequester := &TCPRequester{
 		TCPConnection: NewTCPConnection(),
 		baseURL:       *parsed,
 		psk:           options.PSK,
 		connectAddr:   connectAddr,
+		restBase:      url.URL{Scheme: parsed.Scheme, Host: net.JoinHostPort(parsed.Hostname(), strconv.Itoa(restPort))},
 	}
 
 	// Create the AppMeshClientTCP.
@@ -242,6 +254,25 @@ func (c *AppMeshClientTCP) uploadFileChunks(ctx context.Context, file *os.File) 
 // UploadFile uploads a local file via the TCP file-socket side channel.
 func (c *AppMeshClientTCP) UploadFile(localFile, remoteFile string, applyFileAttributes bool) error {
 	return c.UploadFileContext(context.Background(), localFile, remoteFile, applyFileAttributes)
+}
+
+// sseRequest opens an SSE stream over a direct HTTPS connection to the daemon
+// REST listener: the framed TCP transport cannot carry a chunked stream, so
+// streams bypass it like the WSS file data channel.
+func (t *TCPRequester) sseRequest(ctx context.Context, method string, apiPath string, queries url.Values,
+	headers map[string]string, body []byte) (int, io.ReadCloser, http.Header, error) {
+	base := t.restBase
+	if base.Host == "" {
+		// No REST base: derive it from the frame address (same host, default REST port).
+		scheme := t.baseURL.Scheme
+		if scheme == "" {
+			scheme = "https"
+		}
+		base = url.URL{Scheme: scheme, Host: net.JoinHostPort(t.baseURL.Hostname(), strconv.Itoa(defaultRESTPort))}
+	}
+	return sseSideChannel{base: base, token: t.getAccessToken(), agent: userAgentTCP, signer: t.getRequestSigner(),
+		clientCert: t.sslClientCert, clientKey: t.sslClientCertKey, caFile: t.sslCAFile}.open(ctx, method, apiPath,
+		queries, headers, body)
 }
 
 // requireHeader ensures a required header exists.

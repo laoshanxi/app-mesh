@@ -85,6 +85,25 @@ func init() {
 	}
 }
 
+// Reload re-reads config.yaml (files plus env overrides) into ConfigData,
+// idempotent with the startup load, to follow daemon-side hot reloads. The
+// file stores relative SSL paths, so the reload re-resolves them like the
+// startup load does; without it a reloaded TLS dial reads a relative CA path
+// against the process work directory and fails certificate setup.
+func Reload() error {
+	if err := readConfig(); err != nil {
+		return err
+	}
+	ResolveAbsolutePaths()
+	return nil
+}
+
+// ConfigFileCandidates lists the config locations the loader searches and a watcher stats.
+func ConfigFileCandidates() []string {
+	home := GetAppMeshHomeDir()
+	return []string{filepath.Join(home, "work", "config", "config.yaml"), filepath.Join(home, "config", "config.yaml")}
+}
+
 // Convert all relative paths to absolute paths
 func ResolveAbsolutePaths() {
 	ConfigData.REST.SSL.SSLCAPath = ResolveAbsolutePath(ConfigData.REST.SSL.SSLCAPath)

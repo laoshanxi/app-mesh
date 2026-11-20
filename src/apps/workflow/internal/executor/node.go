@@ -1,7 +1,9 @@
 package executor
 
 import (
+	"errors"
 	"fmt"
+	"net/http"
 	"strings"
 
 	"github.com/laoshanxi/app-mesh/src/apps/workflow/internal/tlsconf"
@@ -50,6 +52,14 @@ func ResolveTargetNode(localClient *appmesh.AppMeshClient, serverURI string, nod
 		remoteLabels, err := probe.ListLabels()
 		probe.CloseConnection()
 		if err != nil {
+			// A permission denial is not "this node has no such labels": the caller's
+			// bearer lacks host-forward, and a label miss would misdirect the fix.
+			var apiErr *appmesh.APIError
+			if errors.As(err, &apiErr) && (apiErr.StatusCode == http.StatusForbidden ||
+				apiErr.StatusCode == http.StatusUnauthorized) {
+				return "", fmt.Errorf("probe of node %s was denied (%s): forwarding requires the host-forward "+
+					"permission on the calling principal", node, apiErr.Message)
+			}
 			continue
 		}
 		if labelsMatch(remoteLabels, nodeLabel) {

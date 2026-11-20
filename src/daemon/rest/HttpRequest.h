@@ -195,6 +195,22 @@ private:
 	std::atomic_bool m_responseStarted{false};
 };
 
+// Task request parked on an SSE stream: the final reply flows through the
+// sink-bound reply context; this subclass only adds the partial-delivery
+// channel the worker drives via TaskRequest::partialReply.
+class HttpRequestTaskStream : public HttpRequestWithTimeout
+{
+public:
+	HttpRequestTaskStream(const std::shared_ptr<HttpRequest> &message, std::shared_ptr<class SseSink> sink);
+	~HttpRequestTaskStream() override = default;
+
+	// Emits one "partial" event. Returns false when the stream is gone.
+	bool sendPartial(const std::string &payload);
+
+private:
+	std::shared_ptr<class SseSink> m_sink;
+};
+
 // Manages task request/response communication between client and server
 // Coordinates message flow for bidirectional task handling
 // Manages task communication between multiple clients and a single server process.
@@ -216,6 +232,9 @@ public:
 	bool deleteTask();
 	void fetchTask(const std::string &processKey, std::shared_ptr<void> &serverRequest);
 	void replyTask(const std::string &processKey, std::shared_ptr<void> &serverRequest);
+	// Worker incremental result (X-Appmesh-Process-Key auth): delivers to the
+	// in-flight caller when it parked an SSE stream, otherwise ignored.
+	void partialReply(const std::string &processKey, const std::string &payload, bool &delivered);
 	std::tuple<int, std::string> taskStatus();
 
 private:

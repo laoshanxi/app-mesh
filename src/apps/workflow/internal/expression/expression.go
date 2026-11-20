@@ -573,6 +573,11 @@ func evalCondition(expr string, ctx *Context, jobName string, status *statusFunc
 	if err := checkBalancedParens(expr); err != nil {
 		return false, err
 	}
+	// An unterminated quote or ${{ span would make everything after it one
+	// opaque truthy operand; same verdict — an error, never a silent run.
+	if err := checkClosedLiterals(expr); err != nil {
+		return false, err
+	}
 	// Recursively drop pairs that wrap the whole expression, so a grouped
 	// condition like "(a == 'x')" evaluates like "a == 'x'" instead of being
 	// read as one opaque (truthy) operand.
@@ -607,7 +612,13 @@ func evalCondition(expr string, ctx *Context, jobName string, status *statusFunc
 	// splitTopLevel ignores operators inside quotes, ${{ }} blocks, or
 	// parentheses, so a value interpolated into an operand cannot inject a new
 	// operator (see coerce) and grouped operands stay together.
+	// A dangling operator (empty operand) is rejected up front: a truthy left side would short-circuit past it.
 	if parts := splitTopLevel(expr, "||"); len(parts) > 1 {
+		for _, part := range parts {
+			if strings.TrimSpace(part) == "" {
+				return false, fmt.Errorf("dangling '||' in condition %q", expr)
+			}
+		}
 		for _, part := range parts {
 			met, err := evalCondition(strings.TrimSpace(part), ctx, jobName, status)
 			if err != nil {
@@ -620,6 +631,11 @@ func evalCondition(expr string, ctx *Context, jobName string, status *statusFunc
 		return false, nil
 	}
 	if parts := splitTopLevel(expr, "&&"); len(parts) > 1 {
+		for _, part := range parts {
+			if strings.TrimSpace(part) == "" {
+				return false, fmt.Errorf("dangling '&&' in condition %q", expr)
+			}
+		}
 		for _, part := range parts {
 			met, err := evalCondition(strings.TrimSpace(part), ctx, jobName, status)
 			if err != nil {
@@ -710,6 +726,10 @@ func (cs *conditionScanner) step(s string, i int) (int, bool) {
 	}
 	if cs.tmpl > 0 {
 		return i + 1, false
+	}
+	if cs.tmpl == 0 && (cs.inSingle || cs.inDouble) && s[i] == '\\' && i+1 < len(s) {
+		// An escaped quote: consume both bytes so it cannot toggle quote state or miscount parens.
+		return i + 2, false
 	}
 	switch c := s[i]; c {
 	case '\'':
@@ -811,6 +831,23 @@ func checkBalancedParens(s string) error {
 	return nil
 }
 
+// checkClosedLiterals reports an error when a quoted literal or a ${{ }} span
+// is left unterminated: the lexer would swallow the rest as one truthy operand.
+func checkClosedLiterals(s string) error {
+	var scanner conditionScanner
+	for i := 0; i < len(s); {
+		next, _ := scanner.step(s, i)
+		i = next
+	}
+	if scanner.inSingle || scanner.inDouble {
+		return fmt.Errorf("unterminated quoted string in condition %q", s)
+	}
+	if scanner.tmpl > 0 {
+		return fmt.Errorf("unterminated ${{ in condition %q", s)
+	}
+	return nil
+}
+
 // unwrapParens strips one pair of parentheses that encloses the whole string —
 // "(a && b)" → "a && b", including across ${{ }} spans. The pair must be
 // balanced against the rest of the expression, so "(a) && b" stays unchanged.
@@ -839,7 +876,16 @@ func unwrapParens(s string) (string, bool) {
 // functions always()/success()/failure() outside quoted operands and ${{ }}
 // blocks, so literal text like `== 'success()'` does not count. Author
 // grouping parentheses do not hide the call.
+// A wrapped condition unwraps like evalCondition, else skipJob drops an always-true wrapped job.
 func HasStatusFunction(condition string) bool {
+	if strings.Contains(condition, "${{") {
+		condition = exprPattern.ReplaceAllStringFunc(condition, func(match string) string {
+			if inner := exprPattern.FindStringSubmatch(match); len(inner) == 2 {
+				return strings.TrimSpace(inner[1])
+			}
+			return match
+		})
+	}
 	for _, fn := range []string{"always()", "success()", "failure()"} {
 		if indexOutsideQuotes(condition, fn) >= 0 {
 			return true

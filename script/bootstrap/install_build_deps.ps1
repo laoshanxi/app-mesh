@@ -383,8 +383,8 @@ function Install-Dex {
 
     New-Item -ItemType Directory -Force -Path $env:GOBIN | Out-Null
 
-    $ldflags = "-s -w"
     $buildFlags = @("-trimpath", "-buildvcs=false")
+    $ldflags = "-s -w"
 
     Write-Host "Cloning the project fork's appmesh branch..." -ForegroundColor Yellow
     Remove-Item -Recurse -Force dex -ErrorAction SilentlyContinue
@@ -394,9 +394,13 @@ function Install-Dex {
         throw "git clone failed for Dex"
     }
 
+    # Same appmesh- version stamp as the POSIX script: proves the fork build (packaging asserts it).
+    $dexVersion = "appmesh-$(git -C dex rev-parse --short=7 HEAD)-$((Get-Date).ToUniversalTime().ToString('yyyyMMdd'))"
+    $dexLdflags = "-s -w -X github.com/dexidp/dex/version.Version=$dexVersion"
+
     try {
         Push-Location dex
-        go build @buildFlags -ldflags="$ldflags" -o "$env:GOBIN\dex.exe" ./cmd/dex
+        go build @buildFlags -ldflags="$dexLdflags" -o "$env:GOBIN\dex.exe" ./cmd/dex
         if ($LASTEXITCODE -ne 0) {
             throw "go build failed for Dex"
         }

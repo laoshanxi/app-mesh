@@ -39,6 +39,7 @@ __all__ = [
     "SubscriptionResult",
     "OutputHandler",
     "print_output_handler",
+    "SseEnd",
 ]
 
 # Lazy import configuration
@@ -46,6 +47,7 @@ _LAZY_IMPORTS = {
     "App": ("app", "App"),  # from .app import App
     "AppRun": ("app_run", "AppRun"),  # from .app_run import AppRun
     "AppOutput": ("app_output", "AppOutput"),  # from .app_output import AppOutput
+    "SseEnd": ("streaming", "SseEnd"),  # from .streaming import SseEnd
     "AppMeshClient": ("client_http", "AppMeshClient"),  # from .client_http import AppMeshClient
     "AppMeshClientTCP": ("client_tcp", "AppMeshClientTCP"),  # from .client_tcp import AppMeshClientTCP
     "AppMeshClientWSS": ("client_wss", "AppMeshClientWSS"),  # from .client_wss import AppMeshClientWSS

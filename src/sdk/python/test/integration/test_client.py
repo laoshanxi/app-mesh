@@ -34,6 +34,7 @@ from _support.client_mixins import (
     PrincipalManagementMixin,
     TaskOperationMixin,
     FileTransferMixin,
+    StreamingMixin,
     SubscribeMixin,
     SubscribeWildcardMixin,
     StressTestMixin,
@@ -50,7 +51,7 @@ class TestHTTP(ProtocolTestMixin, AppOutputMixin, PrincipalManagementMixin, Task
     """Tests using HTTP REST client (AppMeshClient)."""
 
     def setUp(self):
-        self.client = AppMeshClient()
+        self.client = AppMeshClient(base_url=config.BASE_URL or "https://127.0.0.1:6060")
 
     def tearDown(self):
         # Close the per-test client; otherwise the requests.Session keepalive
@@ -82,13 +83,13 @@ class TestHTTP(ProtocolTestMixin, AppOutputMixin, PrincipalManagementMixin, Task
 
 class TestTCP(
     ProtocolTestMixin, AppOutputMixin, PrincipalManagementMixin, TaskOperationMixin,
-    FileTransferMixin, SubscribeMixin, SubscribeWildcardMixin,
+    FileTransferMixin, StreamingMixin, SubscribeMixin, SubscribeWildcardMixin,
     StressTestMixin, SubscribeStressMixin, TestCase,
 ):
     """Tests using TCP client (AppMeshClientTCP)."""
 
     def setUp(self):
-        self.client = AppMeshClientTCP(tcp_address=("127.0.0.1", _TCP_PORT))
+        self.client = AppMeshClientTCP(tcp_address=("127.0.0.1", _TCP_PORT), rest_port=_WSS_REST_PORT)
 
     def tearDown(self):
         try:
@@ -97,12 +98,12 @@ class TestTCP(
             pass
 
     def _create_client(self):
-        return AppMeshClientTCP(tcp_address=("127.0.0.1", _TCP_PORT))
+        return AppMeshClientTCP(tcp_address=("127.0.0.1", _TCP_PORT), rest_port=_WSS_REST_PORT)
 
 
 class TestWSS(
     ProtocolTestMixin, AppOutputMixin, PrincipalManagementMixin, TaskOperationMixin,
-    FileTransferMixin, SubscribeMixin, SubscribeWildcardMixin,
+    FileTransferMixin, StreamingMixin, SubscribeMixin, SubscribeWildcardMixin,
     StressTestMixin, SubscribeStressMixin, TestCase,
 ):
     """Tests using WebSocket Secure client (AppMeshClientWSS)."""
@@ -225,9 +226,12 @@ class TestWSS(
             self.client.forward_to = None
 
 
-class TestWSSRest(ProtocolTestMixin, AppOutputMixin, PrincipalManagementMixin, TaskOperationMixin, StressTestMixin,
-    TestCase):
-    """Tests using plain HTTPS REST client against the WSS (lws) port."""
+class TestWSSRest(ProtocolTestMixin, AppOutputMixin, PrincipalManagementMixin, TaskOperationMixin, StreamingMixin,
+    StressTestMixin, TestCase):
+    """Tests using plain HTTPS REST client against the WSS (lws) port.
+
+    StreamingMixin lives here, not on TestHTTP: SSE answers only on the daemon REST
+    listener, and the HTTP class dials the agent, which cannot forward streams."""
 
     def setUp(self):
         self.client = AppMeshClient(base_url=f"https://127.0.0.1:{_WSS_REST_PORT}")

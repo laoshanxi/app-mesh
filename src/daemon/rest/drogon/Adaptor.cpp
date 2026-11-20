@@ -5,9 +5,12 @@
 #include <cctype>
 #include <charconv>
 #include <chrono>
+#include <cstring>
 #include <filesystem>
 #include <fstream>
 #include <stdexcept>
+// S_ISREG for the download content-length probe (UCRT ships it in sys/stat.h).
+#include <sys/stat.h>
 
 #ifdef _WIN32
 #include <mstcpip.h>
@@ -19,18 +22,22 @@
 
 #include <json/json.h>
 
+#include "../../../common/DurationParse.h"
 #include "../../../common/StreamLogger.h"
 #include "../../../common/Utility.h"
 #include "../../../common/json.h"
 #include "../../Configuration.h"
+#include "../../application/Application.h"
 #include "../../security/RequestHardening.h"
 #include "../../security/Security.h"
 #include "../Data.h"
 #include "../EventDispatcher.h"
 #include "../HttpRequest.h"
+#include "../SseSink.h"
 #include "../Worker.h"
 #include "FileTransferHandler.h" // FileUploadInfo: temp file + atomic rename
 #include "FrameCodec.h"          // tcpframe::enableKeepAlive
+#include "SseStream.h"
 #include "WsController.h"
 
 namespace
@@ -73,6 +80,10 @@ namespace
 	// these endpoints with the empty-body hash. Returns false after replying.
 	bool enforceFileHardening(const drogon::HttpRequestPtr &req, const drogon::AdviceCallback &callback);
 
+	// Same policy for the native SSE routes; the task-stream body arrives
+	// streamed, so the empty-body hash exemption applies here too.
+	bool enforceSseHardening(const drogon::HttpRequestPtr &req, const drogon::AdviceCallback &callback);
+
 	drogon::HttpResponsePtr plainResponse(drogon::HttpStatusCode code, const std::string &body)
 	{
 		auto resp = drogon::HttpResponse::newHttpResponse();
@@ -92,6 +103,7 @@ namespace
 		resp->addHeader(web::http::header_names::access_control_allow_origin, origin);
 		resp->addHeader(web::http::header_names::access_control_allow_methods, "GET, POST, PUT, DELETE, OPTIONS");
 		resp->addHeader(web::http::header_names::access_control_allow_headers, "Authorization, Content-Type, X-File-Path");
+		resp->addHeader(web::http::header_names::vary, "Origin");
 	}
 
 	// Sanitize filename for Content-Disposition header
@@ -166,6 +178,147 @@ namespace
 		std::string declaredLength; // content-length header, empty when chunked
 		bool answered = false;      // an error reply was sent; drop the remaining body
 	};
+
+	bool enforceSseHardening(const drogon::HttpRequestPtr &req, const drogon::AdviceCallback &callback)
+	{
+		const static char fname[] = "enforceSseHardening() ";
+		RequestHardening::Input input;
+		input.method = upperMethod(req);
+		input.path = req->getOriginalPath();
+		const auto &rawQuery = req->query();
+		for (size_t pos = 0; pos < rawQuery.size();)
+		{
+			const auto amp = rawQuery.find('&', pos);
+			const auto pair = rawQuery.substr(pos, amp == std::string::npos ? std::string::npos : amp - pos);
+			const auto eq = pair.find('=');
+			const auto key = pair.substr(0, eq);
+			const auto value = eq == std::string::npos ? std::string() : pair.substr(eq + 1);
+			input.query.emplace(decodeQueryComponent(key), decodeQueryComponent(value));
+			if (amp == std::string::npos)
+				break;
+			pos = amp + 1;
+		}
+		input.bearer = req->getHeader(web::http::header_names::authorization);
+		input.keyId = req->getHeader(HTTP_HEADER_KEY_X_Request_Key);
+		input.timestamp = req->getHeader(HTTP_HEADER_KEY_X_Timestamp);
+		input.nonce = req->getHeader(HTTP_HEADER_KEY_X_Nonce);
+		input.signature = req->getHeader(HTTP_HEADER_KEY_X_Signature);
+
+		const auto decision = RequestHardening::instance().evaluate(input);
+		if (decision.audit)
+			LOG_WAR << fname << "tolerated request hardening violation: " << decision.reason;
+		if (decision.action != RequestHardening::Decision::Action::Reject)
+			return true;
+		LOG_WAR << fname << "rejected stream request path <" << input.path << ">: " << decision.reason;
+		callback(plainResponse(decision.status == 409 ? drogon::k409Conflict : drogon::k401Unauthorized, decision.reason));
+		return false;
+	}
+
+	// App-name segment between the fixed prefix and a known suffix ("/output/stream"
+	// or "/task/stream"); the route regexes guarantee one segment without '/'.
+	std::string appNameFromStreamPath(const std::string &path, const std::string &suffix)
+	{
+		const auto decoded = Utility::decodeURIComponent(path);
+		constexpr auto prefix = "/appmesh/app/";
+		if (decoded.size() <= strlen(prefix) + suffix.size() || decoded.compare(0, strlen(prefix), prefix) != 0)
+			return {};
+		const auto name = decoded.substr(strlen(prefix), decoded.size() - strlen(prefix) - suffix.size());
+		if (name.empty() || name.find('/') != std::string::npos || name.find('*') != std::string::npos)
+			return {};
+		return name;
+	}
+
+	// Query parameters with the same %XX-only decoding as the worker path.
+	std::string streamQueryParam(const drogon::HttpRequestPtr &req, const std::string &key)
+	{
+		const auto &rawQuery = req->query();
+		for (size_t pos = 0; pos < rawQuery.size();)
+		{
+			const auto amp = rawQuery.find('&', pos);
+			const auto pair = rawQuery.substr(pos, amp == std::string::npos ? std::string::npos : amp - pos);
+			const auto eq = pair.find('=');
+			if (decodeQueryComponent(pair.substr(0, eq)) == key)
+				return eq == std::string::npos ? std::string() : decodeQueryComponent(pair.substr(eq + 1));
+			if (amp == std::string::npos)
+				break;
+			pos = amp + 1;
+		}
+		return {};
+	}
+
+	// Bearer gate shared by the native SSE routes: authenticate, check the route
+	// permission and the app-owner policy. Replies and returns empty on failure.
+	std::string authorizeStreamApp(const drogon::HttpRequestPtr &req, const drogon::AdviceCallback &callback,
+								   const std::string &appName, const std::string &permission, bool requireWrite)
+	{
+		const static char fname[] = "authorizeStreamApp() ";
+		try
+		{
+			const auto principalId = authorize(req->getHeader(web::http::header_names::authorization), permission);
+			const auto app = Configuration::instance()->getApp(appName);
+			if (!Configuration::instance()->checkOwnerPermission(principalId, app->getOwnerPrincipalId(),
+																 app->getOwnerPermission(), requireWrite))
+			{
+				LOG_WAR << fname << "Principal <" << principalId << "> is not allowed to <"
+						<< (requireWrite ? "EDIT" : "VIEW") << "> app <" << appName << ">";
+				callback(plainResponse(drogon::k403Forbidden, "Permission denied"));
+				return {};
+			}
+			return appName;
+		}
+		catch (const AuthorizationException &)
+		{
+			callback(plainResponse(drogon::k403Forbidden, "Permission denied"));
+		}
+		catch (const NotFoundException &)
+		{
+			callback(plainResponse(drogon::k404NotFound, "Application not found"));
+		}
+		catch (const std::invalid_argument &)
+		{
+			callback(plainResponse(drogon::k404NotFound, "Application not found"));
+		}
+		catch (...)
+		{
+			auto resp = plainResponse(drogon::k401Unauthorized, "Authentication failed");
+			resp->addHeader(web::http::header_names::www_authenticate, "Bearer realm=\"appmesh\"");
+			callback(resp);
+		}
+		return {};
+	}
+
+	// Starts an SSE response on the callback and returns the sink bound to it.
+	std::shared_ptr<SseStream> startSseResponse(const drogon::HttpRequestPtr &req, drogon::AdviceCallback &callback)
+	{
+		auto sink = std::make_shared<SseStream>(Utility::shortID(), SSE_HEARTBEAT_MILLISECONDS);
+		SseStreamRegistry::instance()->emplace(sink, sink->id());
+		auto resp = drogon::HttpResponse::newAsyncStreamResponse(
+			[sink](drogon::ResponseStreamPtr stream) { sink->attachStream(std::move(stream)); },
+			true /* disableKickoffTimeout: LLM streams sit idle for minutes */);
+		if (!resp)
+		{
+			SseStreamRegistry::instance()->erase(sink->id());
+			callback(plainResponse(drogon::k500InternalServerError, "Cannot open stream"));
+			return nullptr;
+		}
+		resp->setStatusCode(drogon::k200OK);
+		resp->setContentTypeString("text/event-stream");
+		resp->addHeader(web::http::header_names::cache_control, "no-cache");
+		// Reverse proxies must not buffer event frames.
+		resp->addHeader("X-Accel-Buffering", "no");
+		addCors(resp, req->getHeader(web::http::header_names::origin));
+		callback(resp);
+		sink->startTimers();
+		return sink;
+	}
+
+	// Synthetic ConnectionKey space for SSE subscriptions: disjoint from the
+	// wss session ids so removeByConnection() cleanup stays exact.
+	uint64_t nextSseConnectionKey()
+	{
+		static std::atomic<uint64_t> next{1ULL << 63};
+		return next.fetch_add(1, std::memory_order_relaxed);
+	}
 
 	// Runs once the body is complete (or the request has none).
 	void enqueueHttpRequest(const std::shared_ptr<HttpBodyState> &state)
@@ -412,8 +565,7 @@ void DrogonAdaptor::setupRoutes()
 		"/appmesh/file/upload",
 		[this](const drogon::HttpRequestPtr &req, drogon::RequestStreamPtr &&stream, drogon::AdviceCallback &&callback)
 		{ handleUpload(req, std::move(stream), std::move(callback)); }, {drogon::Post});
-	app.registerHandler("/appmesh/file/delete",
-						[this](const drogon::HttpRequestPtr &req, drogon::AdviceCallback &&callback)
+	app.registerHandler("/appmesh/file/delete", [this](const drogon::HttpRequestPtr &req, drogon::AdviceCallback &&callback)
 						{ handleFileDelete(req, std::move(callback)); }, {drogon::Delete});
 	app.registerHandler("/appmesh/file/download/ws",
 						[this](const drogon::HttpRequestPtr &req, drogon::AdviceCallback &&callback)
@@ -431,9 +583,8 @@ void DrogonAdaptor::setupRoutes()
 		addCors(resp, req->getHeader(web::http::header_names::origin));
 		callback(resp);
 	};
-	for (const char *path :
-		 {"/appmesh/file/download", "/appmesh/file/upload", "/appmesh/file/delete", "/appmesh/file/download/ws",
-		  "/appmesh/file/upload/ws"})
+	for (const char *path : {"/appmesh/file/download", "/appmesh/file/upload", "/appmesh/file/delete",
+							 "/appmesh/file/download/ws", "/appmesh/file/upload/ws"})
 	{
 		app.registerHandler(path, corsPreflight, {drogon::Options});
 	}
@@ -453,6 +604,19 @@ void DrogonAdaptor::setupRoutes()
 	app.registerHandler("/appmesh/file/download/ws", routeNotFound,
 						{drogon::Post, drogon::Put, drogon::Delete, drogon::Patch});
 	app.registerHandler("/appmesh/file/upload/ws", routeNotFound, {drogon::Get, drogon::Put, drogon::Delete, drogon::Patch});
+
+	// Streaming (SSE) endpoints on the plain HTTP listener: token-level output
+	// follow (served here end to end) and the task stream, which opens the
+	// chunked response then rides the worker pipeline under the same path.
+	app.registerHandlerViaRegex(R"(/appmesh/app/[^/]+/output/stream)",
+								[this](const drogon::HttpRequestPtr &req, drogon::AdviceCallback &&callback)
+								{ handleOutputStream(req, std::move(callback)); }, {drogon::Get});
+	app.registerHandlerViaRegex(
+		R"(/appmesh/app/[^/]+/task/stream)",
+		[this](const drogon::HttpRequestPtr &req, drogon::RequestStreamPtr &&stream, drogon::AdviceCallback &&callback)
+		{ handleTaskStream(req, std::move(stream), std::move(callback)); }, {drogon::Post});
+	// Preflights for the regex stream routes fall through to the catch-all
+	// below, whose worker reply answers 204 with the allowlist CORS headers.
 
 	// Dispatched at header time: the body is unread, so an oversized declared length is refused here.
 	app.registerPreRoutingAdvice(
@@ -590,7 +754,9 @@ void DrogonAdaptor::handleHttpRequest(const drogon::HttpRequestPtr &req, drogon:
 }
 
 void DrogonAdaptor::handleWorkerRequest(const drogon::HttpRequestPtr &req, drogon::RequestStreamPtr &&stream,
-										drogon::AdviceCallback &&callback, std::string requestPath)
+										drogon::AdviceCallback &&callback, std::string requestPath,
+										std::shared_ptr<WSS::ReplyContext> replyCtx,
+										std::map<std::string, std::string> extraHeaders)
 {
 	const auto method = upperMethod(req);
 	if (method != "GET" && method != "POST" && method != "PUT" && method != "DELETE" && method != "OPTIONS")
@@ -604,7 +770,7 @@ void DrogonAdaptor::handleWorkerRequest(const drogon::HttpRequestPtr &req, drogo
 	}
 
 	auto state = std::make_shared<HttpBodyState>();
-	state->replyCtx = createHttpReplyContext(std::move(callback));
+	state->replyCtx = replyCtx ? std::move(replyCtx) : createHttpReplyContext(std::move(callback));
 	state->declaredLength = req->getHeader(web::http::header_names::content_length);
 
 	const auto &requestState = state->request = std::make_shared<Request>();
@@ -613,6 +779,8 @@ void DrogonAdaptor::handleWorkerRequest(const drogon::HttpRequestPtr &req, drogo
 	// The path must stay raw, still-encoded; the daemon unescapes it once, so
 	// %-escapes are not decoded twice.
 	requestState->request_uri = std::move(requestPath);
+	for (auto &[k, v] : extraHeaders)
+		requestState->headers.emplace(std::move(k), std::move(v));
 
 	for (const auto &[k, v] : req->getHeaders())
 		requestState->headers.emplace(k, v);
@@ -763,14 +931,25 @@ void DrogonAdaptor::handleDownload(const drogon::HttpRequestPtr &req, drogon::Ad
 		return;
 	}
 	auto stream = std::make_shared<FdFileStream>(fd);
+	// The pinned fd knows the exact length, so clients detect a truncated body.
+	struct stat downloadSt
+	{
+	};
+	std::string contentLength;
+	if (::fstat(fd, &downloadSt) == 0 && S_ISREG(downloadSt.st_mode))
+		contentLength = std::to_string(downloadSt.st_size);
 	auto resp = drogon::HttpResponse::newStreamResponse(
-		[stream](char *buf, std::size_t size) -> std::size_t
-		{
-			if (buf == nullptr)
-				return 0; // drogon releasing the stream; the shared_ptr closes the fd
-			return static_cast<std::size_t>(stream->read(buf, size));
-		},
-		"", drogon::CT_APPLICATION_OCTET_STREAM, "", req);
+			[stream, filePathStr](char *buf, std::size_t size) -> std::size_t
+			{
+				if (buf == nullptr)
+					return 0; // drogon releasing the stream; the shared_ptr closes the fd
+				const auto read = stream->read(buf, size);
+				if (read == 0 && !stream->good())
+					// A read error truncates the body; Content-Length lets the client detect it.
+					LOG_ERR << "DrogonAdaptor::handleDownload() read error mid-stream on <" << filePathStr << ">";
+				return static_cast<std::size_t>(read);
+			},
+			"", drogon::CT_APPLICATION_OCTET_STREAM, "", req);
 	if (!resp)
 	{
 		LOG_ERR << fname << "newStreamResponse failed for: " << filePathStr;
@@ -778,6 +957,8 @@ void DrogonAdaptor::handleDownload(const drogon::HttpRequestPtr &req, drogon::Ad
 		return;
 	}
 	resp->addHeader(web::http::header_names::content_disposition, disposition);
+	if (!contentLength.empty())
+		resp->addHeader(web::http::header_names::content_length, contentLength);
 	for (const auto &[name, value] : Utility::fileAttributeHeaders(resolvedPath.empty() ? filePathStr : resolvedPath))
 		resp->addHeader(name, value);
 	addCors(resp, req->getHeader(web::http::header_names::origin));
@@ -1003,33 +1184,349 @@ void DrogonAdaptor::handleFileDelete(const drogon::HttpRequestPtr &req, drogon::
 	}
 
 	std::string fullPath = Utility::decodeHeaderFilePath(filePathHeader);
-	if (!Utility::validateFilePath(fullPath, Configuration::instance()->getFileAllowedBaseDir()))
+	// Pin-then-verify: unlinkat targets the dirfd-pinned parent re-verified against
+	// the jail, so a symlink swap cannot steer the delete outside the jail.
+	std::string resolvedPath;
+	switch (Utility::unlinkFileWithinJail(fullPath, Configuration::instance()->getFileAllowedBaseDir(), resolvedPath))
 	{
+	case Utility::JailUnlinkStatus::Removed:
+		break;
+	case Utility::JailUnlinkStatus::Rejected:
 		callback(plainResponse(drogon::k403Forbidden, "File path is not allowed"));
 		return;
-	}
-
-	std::filesystem::path filePath(fullPath);
-	std::error_code ec;
-	if (std::filesystem::is_symlink(filePath, ec))
-	{
-		callback(plainResponse(drogon::k400BadRequest, "Symlinks not allowed"));
-		return;
-	}
-	if (!std::filesystem::is_regular_file(filePath, ec))
-	{
+	case Utility::JailUnlinkStatus::NotFound:
+		// Missing leaf or a (never-deletable) directory; a symlink leaf lands in Rejected.
 		callback(plainResponse(drogon::k404NotFound, "File not found"));
 		return;
-	}
-	if (!std::filesystem::remove(filePath, ec))
-	{
+	case Utility::JailUnlinkStatus::Failed:
+	default:
 		callback(plainResponse(drogon::k500InternalServerError, "File remove failed"));
 		return;
 	}
-	LOG_INF << fname << "File deleted: " << fullPath;
+	LOG_INF << fname << "File deleted: " << (resolvedPath.empty() ? fullPath : resolvedPath);
 	auto resp = plainResponse(drogon::k200OK, "success");
 	addCors(resp, req->getHeader(web::http::header_names::origin));
 	callback(resp);
+}
+
+void DrogonAdaptor::handleOutputStream(const drogon::HttpRequestPtr &req, drogon::AdviceCallback &&callback)
+{
+	const static char fname[] = "DrogonAdaptor::handleOutputStream() ";
+
+	if (!req->getHeader(HTTP_HEADER_KEY_Forwarding_Host).empty())
+	{
+		callback(plainResponse(drogon::k400BadRequest, "Streaming is not supported through node forwarding"));
+		return;
+	}
+	if (!enforceSseHardening(req, callback))
+		return;
+	const auto appName = appNameFromStreamPath(req->getOriginalPath(), "/output/stream");
+	if (appName.empty() || authorizeStreamApp(req, callback, appName, PERMISSION_KEY_view_app_output, false).empty())
+		return;
+	const auto app = Configuration::instance()->getApp(appName);
+
+	const auto processUuid = streamQueryParam(req, HTTP_QUERY_KEY_process_uuid);
+	const bool follow = streamQueryParam(req, "follow") != "false";
+	long position = 0;
+	if (const auto posStr = streamQueryParam(req, HTTP_QUERY_KEY_stdout_position); !posStr.empty())
+	{
+		position = DurationParse::parse(posStr);
+		if (position < 0)
+		{
+			callback(plainResponse(drogon::k400BadRequest, "stdout_position must not be negative"));
+			return;
+		}
+	}
+	long timeoutSeconds = DEFAULT_SSE_STREAM_TIMEOUT_SECONDS;
+	if (const auto timeoutStr = streamQueryParam(req, HTTP_QUERY_KEY_timeout); !timeoutStr.empty())
+	{
+		timeoutSeconds = DurationParse::parse(timeoutStr);
+		if (timeoutSeconds < 0)
+			timeoutSeconds = DEFAULT_SSE_STREAM_TIMEOUT_SECONDS;
+		timeoutSeconds = std::min(timeoutSeconds, static_cast<long>(MAX_SSE_STREAM_TIMEOUT_SECONDS));
+	}
+
+	auto sink = startSseResponse(req, callback);
+	if (!sink)
+		return;
+
+	// Shared by the delivery callback, the backfill below and the overall
+	// timeout. The position cursor de-duplicates pump events against the
+	// backfill read (the race the SDKs used to paper over with sleeps).
+	struct FollowState
+	{
+		std::mutex mutex;
+		std::shared_ptr<SseStream> sink;
+		std::shared_ptr<Application> app;
+		std::string subId;
+		long cursor{0};
+		bool ended{false};
+	};
+	const auto state = std::make_shared<FollowState>();
+	state->sink = sink;
+	state->app = app;
+	state->cursor = position;
+	// Held weakly: the subscription callback and the sink's close hook keep the
+	// state alive, so the timeout timer cannot pin the Application.
+	const std::weak_ptr<FollowState> weakState = state;
+
+	// Emits the terminal "end" frame exactly once and tears the stream down.
+	const auto endFollow = [weakState](const std::string &reason, const Json::Value &extra)
+	{
+		const auto state = weakState.lock();
+		if (!state)
+			return;
+		std::string subId;
+		{
+			std::lock_guard lock(state->mutex);
+			if (state->ended)
+				return;
+			state->ended = true;
+			subId = state->subId;
+			Json::Value end = extra;
+			end["reason"] = reason;
+			end["position"] = (Json::Int64)state->cursor;
+			state->sink->sendEvent("end", JSON::dump(end));
+		}
+		// Outside the state lock: close() fires the sink's onClosed hook, which
+		// re-enters endFollow for a disconnect and would deadlock under the lock.
+		state->sink->close();
+		if (!subId.empty())
+			EventDispatcher::instance()->unsubscribe(subId);
+	};
+
+	// Position-cursor delivery shared by live events and backfill chunks. The
+	// cursor counts raw stdout bytes; `output` is the sanitized view whose
+	// length can differ, so the raw advance is passed in.
+	const auto deliverStdout = [state](long start, const std::string &output, long rawAdvance) -> bool
+	{
+		std::lock_guard lock(state->mutex);
+		if (state->ended)
+			return true;
+		if (rawAdvance <= 0)
+			rawAdvance = static_cast<long>(output.size());
+		if (start + rawAdvance <= state->cursor)
+			return true; // fully covered by an earlier delivery
+		auto text = output;
+		if (start < state->cursor && rawAdvance == static_cast<long>(output.size()))
+		{
+			// Exact prefix trim is only sound when the view is byte-identical
+			// to the raw span; a re-encoded chunk is delivered untrimmed rather
+			// than slicing the text at a raw-byte boundary.
+			text.erase(0, static_cast<std::size_t>(state->cursor - start));
+			start = state->cursor;
+		}
+		Json::Value data;
+		data["position"] = (Json::Int64)start;
+		data["output"] = std::move(text);
+		if (!state->sink->sendEvent("stdout", JSON::dump(data)))
+		{
+			state->ended = true;
+			return false;
+		}
+		state->cursor = std::max(state->cursor, start + rawAdvance);
+		return true;
+	};
+
+	// A silent peer is caught by the heartbeat; its close hook ends the follow
+	// instead of idling the subscription to the timeout.
+	sink->setOnClosed([endFollow]() { endFollow("disconnected", {}); });
+
+	// Subscribe first so the pump starts dispatching, then replay; overlapping
+	// deliveries are reconciled by the cursor above.
+	const auto subId = EventDispatcher::instance()->subscribe(
+		appName,
+		static_cast<uint32_t>(AppEventType::STDOUT_OUTPUT) | static_cast<uint32_t>(AppEventType::PROCESS_EXIT) |
+			static_cast<uint32_t>(AppEventType::APP_REMOVED),
+		"", // owner policy already checked; subscriptions store the principal for unsubscribe only
+		[state, deliverStdout, endFollow](const EventEnvelope &envelope) -> bool
+		{
+			if (envelope.eventType == "STDOUT")
+			{
+				try
+				{
+					const auto payload = JSON::parse(*envelope.basePayloadDump);
+					const auto &data = payload["data"];
+					// raw_size (pre-sanitization byte count) keeps the cursor on
+					// raw offsets when the UTF-8 view changed the length.
+					long rawAdvance = static_cast<long>(data["output"].asString().size());
+					if (data.isMember("raw_size"))
+						rawAdvance = data["raw_size"].asInt64();
+					return deliverStdout(data["position"].asInt64(), data["output"].asString(), rawAdvance);
+				}
+				catch (const std::exception &)
+				{
+					return true; // a malformed frame must not kill the stream
+				}
+			}
+			if (envelope.eventType == "EXIT")
+			{
+				// Drain [cursor, EOF] so the final position is exact even if the
+				// exit-time flush raced this delivery.
+				try
+				{
+					auto app = state->app;
+					for (;;)
+					{
+						long pos = 0;
+						{
+							std::lock_guard lock(state->mutex);
+							pos = state->cursor;
+							if (state->ended)
+								return false;
+						}
+						// Same raw-delta rule as the replay path above.
+						const auto chunkStart = pos;
+						auto output = std::get<0>(app->getOutput(pos, 256 * 1024, "", 0, 0));
+						if (output.empty())
+							break;
+						if (!deliverStdout(chunkStart, output, pos - chunkStart))
+							return false;
+						if (pos - chunkStart < 256 * 1024)
+							break;
+					}
+				}
+				catch (const std::exception &)
+				{
+				}
+				int exitCode = 0;
+				try
+				{
+					const auto payload = JSON::parse(*envelope.basePayloadDump);
+					exitCode = payload["data"]["exit_code"].asInt();
+				}
+				catch (const std::exception &)
+				{
+				}
+				Json::Value extra;
+				extra["exit_code"] = exitCode;
+				endFollow("exit", extra);
+				return false;
+			}
+			if (envelope.eventType == "REMOVED")
+			{
+				endFollow("removed", {});
+				return false;
+			}
+			return true;
+		},
+		ConnectionKey::wss(nextSseConnectionKey()));
+	{
+		std::lock_guard lock(state->mutex);
+		state->subId = subId;
+	}
+
+	// Overall lifetime bound; heartbeats inside the sink detect a gone peer.
+	if (timeoutSeconds > 0)
+	{
+		TIMER_MANAGER::instance()->registerTimer(static_cast<std::size_t>(timeoutSeconds) * 1000, 0, "sse-output-timeout",
+												 [endFollow]()
+												 {
+													 endFollow("timeout", {});
+													 return false;
+												 });
+	}
+
+	// Replay [position, EOF]; a finished run ends with its exit code, a live one
+	// keeps following (or stops at the tail when follow=false).
+	try
+	{
+		bool finished = false;
+		int exitCode = 0;
+		for (;;)
+		{
+			// getOutput advances position to the end of what it read, so the
+			// chunk start must be captured first.
+			const auto chunkStart = position;
+			std::string output;
+			std::tie(output, finished, exitCode) = app->getOutput(position, 256 * 1024, processUuid, 0, 0);
+			// getOutput returns the sanitized view but advances the cursor over
+			// raw bytes; the raw span is the position delta.
+			const auto rawAdvance = position - chunkStart;
+			if (!output.empty() && !deliverStdout(chunkStart, output, rawAdvance))
+				return;
+			{
+				std::lock_guard lock(state->mutex);
+				if (state->ended)
+					return;
+			}
+			if (finished)
+			{
+				Json::Value extra;
+				extra["exit_code"] = exitCode;
+				endFollow("exit", extra);
+				return;
+			}
+			if (rawAdvance < 256 * 1024)
+			{
+				if (!follow)
+					endFollow("eof", {});
+				return;
+			}
+		}
+	}
+	catch (const std::exception &e)
+	{
+		LOG_WAR << fname << "backfill failed for app <" << appName << ">: " << e.what();
+		Json::Value extra;
+		extra["message"] = e.what();
+		endFollow("error", extra);
+	}
+}
+
+void DrogonAdaptor::handleTaskStream(const drogon::HttpRequestPtr &req, drogon::RequestStreamPtr &&stream,
+									 drogon::AdviceCallback &&callback)
+{
+	if (!req->getHeader(HTTP_HEADER_KEY_Forwarding_Host).empty())
+	{
+		callback(plainResponse(drogon::k400BadRequest, "Streaming is not supported through node forwarding"));
+		return;
+	}
+	// No native hardening: the worker pipeline validates replay/signature
+	// exactly once against the real body (a pre-check would re-consume the
+	// nonce); rejections surface as the terminal "end{error}" frame.
+	const auto appName = appNameFromStreamPath(req->getOriginalPath(), "/task/stream");
+	if (appName.empty() || authorizeStreamApp(req, callback, appName, PERMISSION_KEY_run_task, true).empty())
+		return;
+	auto sink = startSseResponse(req, callback);
+	if (!sink)
+		return;
+
+	// The single final reply of the parked request maps onto terminal SSE
+	// events: 200 becomes "final" + "end", anything else (auth races, task
+	// timeout, cancellation, queue overflow) becomes an "end" error frame.
+	auto replyCtx = std::make_shared<WSS::ReplyContext>(
+		WSS::ReplyContext::ProtocolType::Http,
+		[sink](std::string &&data, const std::string &status, const WSS::ReplyContext::Headers &, const std::string &,
+			   bool /*isLast*/, bool /*isBinary*/)
+		{
+			int code = 200;
+			std::from_chars(status.data(), status.data() + status.size(), code);
+			if (code == 200)
+			{
+				Json::Value result;
+				result["result"] = std::move(data);
+				sink->sendEvent("final", JSON::dump(result));
+				Json::Value end;
+				end["reason"] = "final";
+				sink->sendEvent("end", JSON::dump(end));
+			}
+			else
+			{
+				Json::Value end;
+				end["reason"] = code == 408 ? "timeout" : "error";
+				end["status"] = code;
+				end["message"] = std::move(data);
+				sink->sendEvent("end", JSON::dump(end));
+			}
+			sink->close();
+		});
+
+	// The SSE 200 already owns the connection; the pipeline reply rides the
+	// sink-bound context above, and the marker header lets the worker-side
+	// handler resolve the same sink after the msgpack boundary.
+	handleWorkerRequest(req, std::move(stream), drogon::AdviceCallback([](drogon::HttpResponsePtr) {}),
+						req->getOriginalPath(), std::move(replyCtx), {{HTTP_HEADER_KEY_X_AppMesh_Sse_Stream, sink->id()}});
 }
 
 void DrogonAdaptor::onWsOpen(const drogon::HttpRequestPtr &req, const drogon::WebSocketConnectionPtr &conn)

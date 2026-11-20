@@ -6,6 +6,7 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.io.ByteArrayInputStream;
+import java.io.File;
 import java.io.IOException;
 import java.net.HttpURLConnection;
 import java.net.URL;
@@ -312,8 +313,10 @@ public class SubPubFixesTest {
         }
 
         // ...and a separate client instance (its own connection) transfers fine.
+        // The remote path must sit in the exchangeable work/tmp scratch: the daemon jails transfers there.
         try (AppMeshClientTCP plain = liveTCPClient()) {
-            assertTrue(plain.downloadFile("/etc/hosts", "/tmp/e2e-java-plain", false));
+            assertTrue(plain.uploadFile(new File("/etc/hosts"), "/opt/appmesh/work/tmp/e2e-java-seed", true));
+            assertTrue(plain.downloadFile("/opt/appmesh/work/tmp/e2e-java-seed", "/tmp/e2e-java-plain", false));
         }
     }
 

@@ -163,8 +163,84 @@ TEST_CASE("Utility Test", "[Utility]")
 // The fd jail closes the validate-to-open TOCTOU: an accepted descriptor can
 // only ever serve content whose RESOLVED location passed the full gate.
 #if !defined(_WIN32)
-TEST_CASE("openFileWithinJail fd verification", "[Utility][security]")
+TEST_CASE("unlinkFileWithinJail pinned-directory delete", "[Utility][security]")
 {
+	init();
+	const std::string home = Utility::getHomeDir();
+	const std::string scratch = home + "/work/tmp";
+	const std::string jail = home + "/work"; // mirrors the daemon's unset-FileAllowedBaseDir default
+	REQUIRE(Utility::createDirectory(scratch));
+	std::error_code ec;
+
+	SECTION("a regular file in the scratch area is removed")
+	{
+		const std::string path = scratch + "/unlink_plain.txt";
+		{
+			std::ofstream f(path, std::ios::binary | std::ios::trunc);
+			f << "BENIGN";
+		}
+		std::string resolved;
+		REQUIRE(Utility::unlinkFileWithinJail(path, jail, resolved) == Utility::JailUnlinkStatus::Removed);
+		REQUIRE_FALSE(fs::exists(path, ec));
+	}
+
+	SECTION("missing leaf and directories answer NotFound; a symlink leaf is rejected")
+	{
+		std::string resolved;
+		REQUIRE(Utility::unlinkFileWithinJail(scratch + "/unlink_missing.txt", jail, resolved) ==
+				Utility::JailUnlinkStatus::NotFound);
+		REQUIRE(Utility::unlinkFileWithinJail(scratch, jail, resolved) == Utility::JailUnlinkStatus::NotFound);
+		// The lexical precheck resolves the leaf: a symlink outside the jail is a violation, never a deletion target.
+		const std::string link = scratch + "/unlink_link";
+		fs::remove(link, ec);
+		fs::create_symlink("/etc/hosts", link, ec);
+		REQUIRE(Utility::unlinkFileWithinJail(link, jail, resolved) == Utility::JailUnlinkStatus::Rejected);
+		REQUIRE(fs::exists("/etc/hosts", ec));
+		fs::remove(link, ec);
+	}
+
+	SECTION("a middle directory swapped to a symlink outside the jail is rejected")
+	{
+		const std::string dirLink = scratch + "/unlink_dir_link";
+		fs::remove(dirLink, ec);
+		fs::create_symlink("/etc", dirLink, ec);
+		std::string resolved;
+		REQUIRE(Utility::unlinkFileWithinJail(dirLink + "/hosts", jail, resolved) == Utility::JailUnlinkStatus::Rejected);
+		REQUIRE(fs::exists("/etc/hosts", ec));
+		fs::remove(dirLink, ec);
+	}
+}
+
+TEST_CASE("createDirectoriesWithinJail component walk", "[Utility][security]")
+{
+	init();
+	const std::string home = Utility::getHomeDir();
+	const std::string scratch = home + "/work/tmp";
+	const std::string jail = home + "/work";
+	REQUIRE(Utility::createDirectory(scratch));
+	std::error_code ec;
+
+	SECTION("missing components inside the jail are created")
+	{
+		const std::string dir = scratch + "/created/inner";
+		fs::remove_all(scratch + "/created", ec);
+		REQUIRE(Utility::createDirectoriesWithinJail(dir, jail));
+		REQUIRE(fs::is_directory(dir, ec));
+		fs::remove_all(scratch + "/created", ec);
+	}
+
+	SECTION("a middle directory swapped to a symlink outside the jail refuses to create")
+	{
+		const std::string dirLink = scratch + "/mkdir_dir_link";
+		fs::remove(dirLink, ec);
+		fs::create_symlink("/etc", dirLink, ec);
+		REQUIRE_FALSE(Utility::createDirectoriesWithinJail(dirLink + "/must_not_exist", jail));
+		REQUIRE_FALSE(fs::exists("/etc/must_not_exist", ec));
+		fs::remove(dirLink, ec);
+	}
+}
+
+TEST_CASE("openFileWithinJail fd verification", "[Utility][security]"){
 	init();
 	const std::string home = Utility::getHomeDir();
 	const std::string scratch = home + "/work/tmp";

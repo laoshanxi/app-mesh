@@ -183,16 +183,17 @@ macro_rules !define_transport_builder
 	($(#[$outer:meta]) * $name : ident, $default_port : expr,
 	 $client : ty) =>{$(#[$outer]) *
 #[derive(Default)]
-						  pub struct $name{
-							  host : Option<String>,
-							  port : Option<u16>,
-							  ssl_ca_cert : Option<String>,
-							  ssl_client_cert : Option<PathBuf>,
-							  ssl_client_key : Option<PathBuf>,
-							  danger_accept_invalid_certs : bool,
-							  plain_transport : bool,
-							  request_signer : Option<RequestSigner>,
-						  }
+							  pub struct $name{
+								  host : Option<String>,
+								  port : Option<u16>,
+								  ssl_ca_cert : Option<String>,
+								  ssl_client_cert : Option<PathBuf>,
+								  ssl_client_key : Option<PathBuf>,
+								  danger_accept_invalid_certs : bool,
+								  plain_transport : bool,
+								  rest_port : Option<u16>,
+								  request_signer : Option<RequestSigner>,
+							  }
 
 					  impl $name{/// Create a builder for this transport client.
 								 pub fn new ()
@@ -259,6 +260,14 @@ pub fn plain_transport(mut self, plain : bool) -> Self
 	self
 }
 
+/// REST listener port of the same daemon for the SSE streaming side channel
+/// (default 6058; pass it when the framed transport runs on shifted ports).
+pub fn rest_port(mut self, port : u16) -> Self
+{
+	self.rest_port = Some(port);
+	self
+}
+
 /// Attach an HMAC-SHA256 request signer (opt-in). Every framed request then
 /// carries `X-Request-Key`, `X-Timestamp`, `X-Nonce` (the framed uuid), and
 /// `X-Signature` per `docs/source/Security.md`.
@@ -286,7 +295,7 @@ pub fn build(self)
 	let verify = if self.danger_accept_invalid_certs || self.plain_transport { crate::tls_config::SslVerify::False }
 	else {crate::tls_config::resolve_ssl_verify(self.ssl_ca_cert) ? };
 
-	let client = <$client>::new_with_verify(address, verify, ssl_client_cert, self.plain_transport) ? ;
+		let client = <$client>::new_with_verify(address, verify, ssl_client_cert, self.plain_transport, self.rest_port) ? ;
 	if let Some(signer) = self.request_signer
 	{
 		client.set_request_signer(Some(signer));
