@@ -134,6 +134,9 @@ public:
 	bool verifyProcessProof(const std::string &message, const std::string &hmacSignature);
 	/// Signs a message with the current process pre-shared key; empty when no proof exists.
 	std::string signProcessProof(const std::string &message);
+
+	// A container die event pushed by the agent: reports the exit like the scheduler poll.
+	void reportContainerEvent(const std::string &containerId);
 	/// Blocks until the spawned process has read its pre-shared key (startup fail-fast).
 	bool waitProcessProofRead();
 
@@ -281,8 +284,6 @@ private:
 	std::vector<std::string> m_dockerPorts;
 	std::vector<std::string> m_dockerVolumes;
 	std::string m_dockerNetwork;
-	// "api" (default, Docker Engine API) or "cli" (docker/podman CLI, legacy).
-	std::string m_dockerBackend;
 
 	// Runtime state
 	AppMeshProcess m_process;

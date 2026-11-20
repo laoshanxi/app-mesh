@@ -173,8 +173,6 @@ class App:
         """container bind mounts, docker run -v spelling"""
         self.docker_network = _get_str(data, "docker_network")
         """container network mode: host, bridge, none or a network name"""
-        self.docker_backend = _get_str(data, "docker_backend")
-        """container backend: "api" (default, Docker Engine API) or "cli" (docker/podman CLI)"""
         self.stdout_backup_count = _get_int(data, "stdout_backup_count")
         """maximum number of stdout log files to retain"""
         self.start_time = _get_int(data, "start_time")
@@ -201,7 +199,7 @@ class App:
 
         self.env = data.get("env", {}) if data else {}
         """environment variables (e.g., -e env1=value1 -e env2=value2); registry credentials (APP_DOCKER_REGISTRY_SERVER/USER/PASSWORD) """
-        """belong in ``secret_env`` (``set_env(..., secure=True)``) so they stay protected at rest; APP_DOCKER_OPTS only applies to the cli docker_backend"""
+        """belong in ``secret_env`` (``set_env(..., secure=True)``) so they stay protected at rest"""
         self.secret_env = data.get("secret_env", {}) if data else {}
         """security environment variables protected by Engine at rest"""
         self.pid = _get_int(data, "pid")

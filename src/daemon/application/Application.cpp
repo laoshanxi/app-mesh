@@ -23,7 +23,6 @@
 #include "../process/AppProcess.h"
 #if !defined(_WIN32)
 #include "../process/DockerApiProcess.h"
-#include "../process/DockerProcess.h"
 #endif
 #include "../rest/EventDispatcher.h"
 #include "../rest/RestHandler.h"
@@ -486,9 +485,6 @@ void Application::FromJson(const std::shared_ptr<Application> &app, const Json::
 		}
 	}
 	app->m_dockerNetwork = Utility::stdStringTrim(GET_JSON_STR_VALUE(jsonObj, JSON_KEY_APP_docker_network));
-	app->m_dockerBackend = Utility::stdStringTrim(GET_JSON_STR_VALUE(jsonObj, JSON_KEY_APP_docker_backend));
-	if (!app->m_dockerBackend.empty() && app->m_dockerBackend != "api" && app->m_dockerBackend != "cli")
-		throw std::invalid_argument(std::string(JSON_KEY_APP_docker_backend) + " must be \"api\" or \"cli\"");
 
 	if (HAS_JSON_FIELD(jsonObj, JSON_KEY_APP_pid))
 	{
@@ -749,8 +745,6 @@ Json::Value Application::AsJson(bool returnRuntimeInfo, void *ptree)
 		}
 		if (!m_dockerNetwork.empty())
 			result[JSON_KEY_APP_docker_network] = std::string(m_dockerNetwork);
-		if (!m_dockerBackend.empty())
-			result[JSON_KEY_APP_docker_backend] = std::string(m_dockerBackend);
 	}
 	if (m_startTime.time_since_epoch().count() && m_startTime != std::chrono::system_clock::time_point::min())
 	{
@@ -1286,9 +1280,17 @@ void Application::maintainRuntime(const std::chrono::system_clock::time_point &n
 		// Recovered processes and attached Docker containers have no child-process callback.
 		// Docker image pulls do: their empty container ID keeps the exact callback authoritative.
 		const bool lacksReactorExitCallback = process->isRecovered() || !process->containerId().empty();
-		// An invisible host PID (daemon in a container) cannot gate on OS
-		// liveness; those runs take the docker-authoritative poll every tick.
-		return lacksReactorExitCallback && (!process->running() || process->needsAlwaysExitPoll());
+		// While the agent's event pushes are fresh, the every-tick poll stands
+		// down (die events carry the exit); the observed-death fetch below
+		// always runs, and the backstop keeps one inspect flowing per interval.
+		// DockerApiProcess is not built on Windows: there the poll always runs.
+		return lacksReactorExitCallback &&
+			   (!process->running() ||
+				(process->needsAlwaysExitPoll() &&
+#if !defined(_WIN32)
+				 (!DockerApiProcess::containerEventsFresh() ||
+#endif
+				 process->backendLivenessPollDue())));
 	};
 
 	std::shared_ptr<AppProcess> process;
@@ -2014,20 +2016,8 @@ std::shared_ptr<AppProcess> Application::createProcess(const std::string &docker
 	if (!dockerImage.empty())
 	{
 #if !defined(_WIN32)
-		// Explicit docker_backend wins; the legacy APP_DOCKER_OPTS env still
-		// selects the CLI backend so pre-field deployments keep working.
-		const auto backend = !m_dockerBackend.empty() ? m_dockerBackend
-													 : (m_envMap.count(ENV_APPMESH_DOCKER_PARAMS) ? "cli" : "api");
-		const auto containerName = DockerProcess::namespacedContainerName(appName);
-		if (backend == "cli")
-			process = std::make_shared<DockerProcess>(weakSelf, containerName, dockerImage);
-		else
-		{
-			if (m_envMap.count(ENV_APPMESH_DOCKER_PARAMS))
-				LOG_WAR << "Application <" << appName << ">: " << ENV_APPMESH_DOCKER_PARAMS
-						<< " only applies to the cli docker_backend and is not forwarded into the container";
-			process = std::make_shared<DockerApiProcess>(weakSelf, containerName, dockerImage);
-		}
+		// The agent's container service is the only Docker backend.
+		process = std::make_shared<DockerApiProcess>(weakSelf, appName, dockerImage);
 #else
 		throw std::invalid_argument("Docker application does not support on Windows");
 #endif
@@ -2056,11 +2046,7 @@ std::optional<int> Application::probeContainerHealth()
 		return 1;
 	}
 	if (process->containerId().empty())
-	{
-		// Image pull in flight, or a recovered run whose container is gone: no
-		// container to probe, no verdict to flip — leave the current state.
-		return std::nullopt;
-	}
+		return std::nullopt; // pull in flight or a recovered run without its container
 
 	// An image HEALTHCHECK means Docker already executes the probe on its own
 	// schedule: read the maintained verdict, never run a second probe of ours.
@@ -2074,6 +2060,19 @@ std::optional<int> Application::probeContainerHealth()
 	if (m_healthCheckCmd.empty())
 		return std::nullopt; // nothing probes this container; leave health untouched
 	return process->execHealthProbe(m_healthCheckCmd);
+}
+
+void Application::reportContainerEvent(const std::string &containerId)
+{
+	std::shared_ptr<AppProcess> process;
+	{
+		auto lock = m_process.synchronize();
+		process = *lock;
+	}
+	// A stale event (previous run, or the id is not set yet) has no owner to report for.
+	if (!process || process->containerId().empty() || process->containerId() != containerId)
+		return;
+	process->reportPolledExitAsync();
 }
 
 void Application::compileDockerContainerFields(Json::Value &createBody) const

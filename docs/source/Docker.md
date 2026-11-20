@@ -66,7 +66,6 @@ client.add_app(app).await?;
 | `docker_ports` | Array of `[hostIp:]hostPort:containerPort[/protocol]` | `-p` |
 | `docker_volumes` | Array of bind strings (`/host:/container:rw`) | `-v` |
 | `docker_network` | `host`, `bridge`, `none`, or a network name | `--network` |
-| `docker_backend` | `api` (default) or `cli` | how App Mesh talks to Docker |
 | `resource_limit.cpu` | Fractional CPU cores (e.g. `0.5`), mapped to `NanoCPUs` | `--cpus` |
 | `metadata` | A full Docker create-request body merged into the container definition | anything Docker supports |
 
@@ -85,11 +84,33 @@ The container user follows the principal-bound `execution_user` (mapped to
 the Docker `User` field) unless `metadata.User` overrides it — use
 `metadata.User` for `uid:gid` spellings.
 
-`docker_backend: "cli"` falls back to invoking the `docker` (or `podman`, via
-`metadata.engine`) CLI inside the daemon. The default `api` backend speaks
-the Docker Engine API and needs no docker CLI installed. The legacy
-`APP_DOCKER_OPTS` environment variable still selects the CLI backend and is
-appended verbatim to `docker run`; prefer the structured fields above.
+## How App Mesh talks to Docker
+
+The built-in agent owns the Docker conversation: it embeds the official
+Docker Go client and drives the Docker Engine API directly (create, start,
+stop, logs, exec, image pull, events). The daemon keeps the run-state
+machine and calls the agent over a PSK-signed loopback channel; no `docker`
+CLI is involved and no shell parses Docker output. The agent uses
+`DOCKER_HOST` when set and the local socket otherwise, so a podman
+compatibility socket (`podman system service`) or a remote engine needs no
+extra configuration.
+
+Docker is off where it cannot run: the container service, the events push,
+and image pulls only activate when `Docker.Enable` is true (the default) and
+an endpoint exists. Set `Docker.Enable: false` to also exclude a node that
+has a socket; the daemon then refuses container applications with a clear
+error, and the `APPMESH_DOCKER_Enable` environment variable overrides the
+setting for both processes. The container service itself answers only the
+local daemon: the agent verifies the peer address (loopback or its own
+listen address) before the PSK proof, mirroring the daemon's internal-route
+transport gate.
+
+Container exits are delivered by an agent subscription to Docker events: a
+dying container reports its exit immediately instead of waiting for the next
+scheduler poll. Polling stays armed as a fallback; it takes over if the
+event markers stop arriving (for example during an agent restart), and a
+low-frequency backstop inspect keeps flowing even while markers are fresh so
+a die event lost in a reconnect gap cannot stall a run.
 
 ## Images and registries
 
@@ -169,9 +190,9 @@ with `docker_image` runs its command in a container of that image.
 ## Limits
 
 - Docker applications are not supported on Windows daemon hosts.
+- The agent needs a reachable Docker endpoint: the local socket or
+  `DOCKER_HOST`.
 - `stdout_backup_count` is ignored for Docker applications (output is read
   from the container, not rotated files).
 - `resource_limit` maps to `Memory` / `MemorySwap` / `CpuShares`; for other
   knobs use `metadata.HostConfig`.
-- The docker CLI backend requires the CLI installed in the daemon
-  environment; the default API backend only needs the Docker socket.

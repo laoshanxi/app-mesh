@@ -191,9 +191,6 @@ pub struct Application {
     /// Container network mode (host, bridge, none or a network name).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub docker_network: Option<String>,
-    /// Container backend: "api" (default, Docker Engine API) or "cli".
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub docker_backend: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub stdout_backup_count: Option<u32>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -408,12 +405,6 @@ impl ApplicationBuilder {
     /// Sets the container network mode (host, bridge, none or a network name).
     pub fn docker_network(mut self, network: &str) -> Self {
         self.app.docker_network = Some(network.to_string());
-        self
-    }
-
-    /// Overrides the container backend: "api" (default) or "cli".
-    pub fn docker_backend(mut self, backend: &str) -> Self {
-        self.app.docker_backend = Some(backend.to_string());
         self
     }
 

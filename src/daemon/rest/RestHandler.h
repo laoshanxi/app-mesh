@@ -65,6 +65,8 @@ protected:
 	void apiOauthCallback(const std::shared_ptr<HttpRequest> &message);
 	void apiProtectedResourceMetadata(const std::shared_ptr<HttpRequest> &message);
 	void apiWorkflowCapability(const std::shared_ptr<HttpRequest> &message);
+	// Signed agent push: container die events and liveness markers.
+	void apiAgentContainerEvent(const std::shared_ptr<HttpRequest> &message);
 	void apiWorkflowCleanupOrphans(const std::shared_ptr<HttpRequest> &message);
 	void apiWorkflowRegistry(const std::shared_ptr<HttpRequest> &message);
 	void apiEnrollFirstAdmin(const std::shared_ptr<HttpRequest> &message);

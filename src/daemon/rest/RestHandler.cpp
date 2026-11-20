@@ -16,6 +16,7 @@
 #include "../Label.h"
 #include "../ResourceCollection.h"
 #include "../application/Application.h"
+#include "../process/DockerApiProcess.h"
 #include "../security/AuthReplicationTokens.h"
 #include "../security/HMACVerifier.h"
 #include "../security/InternalCapability.h"
@@ -110,7 +111,6 @@ namespace
 			JSON_KEY_APP_docker_ports,
 			JSON_KEY_APP_docker_volumes,
 			JSON_KEY_APP_docker_network,
-			JSON_KEY_APP_docker_backend,
 			JSON_KEY_APP_description,
 			JSON_KEY_APP_working_dir,
 			JSON_KEY_APP_health_check_cmd,
@@ -211,6 +211,7 @@ constexpr auto REST_PATH_PROTECTED_RESOURCE_METADATA = "/.well-known/oauth-prote
 constexpr auto REST_PATH_INTERNAL_WORKFLOW_CAPABILITY = "/appmesh/internal/workflow/capability";
 constexpr auto REST_PATH_INTERNAL_WORKFLOW_CLEANUP_ORPHANS = "/appmesh/internal/workflow/cleanup-orphans";
 constexpr auto REST_PATH_INTERNAL_WORKFLOW_REGISTRY = "/appmesh/internal/workflow/registry";
+constexpr auto REST_PATH_INTERNAL_AGENT_CONTAINER_EVENT = "/appmesh/internal/container-event";
 constexpr auto REST_PATH_ENROLL_FIRST_ADMIN = "/appmesh/auth/enroll-first-admin";
 
 // 2. View Application
@@ -302,6 +303,8 @@ RestHandler::RestHandler() : m_metrics(std::make_shared<PrometheusRest>())
 				   std::bind(&RestHandler::apiWorkflowCleanupOrphans, this, std::placeholders::_1));
 	bindRestMethod(web::http::methods::GET, REST_PATH_INTERNAL_WORKFLOW_REGISTRY,
 				   std::bind(&RestHandler::apiWorkflowRegistry, this, std::placeholders::_1));
+	bindRestMethod(web::http::methods::POST, REST_PATH_INTERNAL_AGENT_CONTAINER_EVENT,
+				   std::bind(&RestHandler::apiAgentContainerEvent, this, std::placeholders::_1));
 	bindRestMethod(web::http::methods::POST, REST_PATH_ENROLL_FIRST_ADMIN,
 				   std::bind(&RestHandler::apiEnrollFirstAdmin, this, std::placeholders::_1));
 
@@ -2106,6 +2109,41 @@ void RestHandler::apiCloudResourceView(const std::shared_ptr<HttpRequest> &messa
 {
 	message->verifyHMAC();
 	message->reply(web::http::status_codes::OK, ResourceCollection::instance()->AsJson());
+}
+void RestHandler::apiAgentContainerEvent(const std::shared_ptr<HttpRequest> &message)
+{
+	const static char fname[] = "RestHandler::apiAgentContainerEvent() ";
+	// Absent from OpenAPI: the agent's signed pushes are the only caller.
+	if (!message->isManagedPrivateTransport())
+		throw AuthorizationException("container events are available only over local loopback transports");
+
+	const auto agentProcess = Configuration::instance()->getApp(SEPARATE_AGENT_APP_NAME, false);
+	if (!agentProcess || !agentProcess->isSystemProtected())
+		throw AuthorizationException("managed agent system application is unavailable");
+	// A bad or superseded proof is an authentication failure (401), not a 403.
+	if (agentProcess->currentProcessUuidForProof(message->m_uuid, message->m_headers.get(HMAC_HTTP_HEADER)).empty())
+		throw std::domain_error("agent process proof is invalid or superseded");
+
+	const auto event = message->extractJson();
+	if (!event.isObject())
+		throw std::invalid_argument("container event must be an object");
+	const auto type = GET_JSON_STR_VALUE(event, "type");
+	if (type != "die" && type != "sync")
+		throw std::invalid_argument("unknown container event type <" + type + ">");
+
+	// Every accepted push refreshes the liveness marker; die events route to the owning app.
+	DockerApiProcess::noteContainerEventsAlive();
+	if (type == "die")
+	{
+		const auto appName = GET_JSON_STR_VALUE(event, "app");
+		const auto containerId = GET_JSON_STR_VALUE(event, "containerId");
+		if (appName.empty() || containerId.empty())
+			throw std::invalid_argument("a container die event must carry app and containerId");
+		LOG_DBG << fname << "die event for container <" << containerId << "> of application <" << appName << ">";
+		if (const auto app = Configuration::instance()->getApp(appName, false))
+			app->reportContainerEvent(containerId);
+	}
+	message->reply(web::http::status_codes::OK);
 }
 
 void RestHandler::apiAppAdd(const std::shared_ptr<HttpRequest> &message)

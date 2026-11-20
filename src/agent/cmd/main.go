@@ -158,6 +158,9 @@ func main() {
 	restDone := initializeServices(ctx)
 	go monitorParentProcess(ctx, stop)
 
+	// Docker container events -> daemon push (noop without a Docker endpoint)
+	agent.StartContainerEventsPush(ctx)
+
 	changeWorkDir(path.Join(config.GetAppMeshHomeDir(), "work", "tmp"))
 
 	// Wait for shutdown signal

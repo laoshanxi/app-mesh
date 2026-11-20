@@ -133,9 +133,13 @@ REST:
 #     env: production
 # Docker application policy. Hot-reloaded on SIGHUP like the rest of this file.
 Docker:
+  # Master switch for the container support (agent service, events push,
+  # image pulls). A node without a Docker endpoint is inert anyway; false
+  # also excludes a node that has one. Absent keeps true.
+  Enable: true
   # Gate on high-risk host-facing container settings (privileged, pid=host,
   # binds of / or the docker socket, CapAdd SYS_ADMIN/SYS_PTRACE) found in a
-  # container definition (metadata) or raw APP_DOCKER_OPTS flags.
+  # container definition (metadata).
   # off     - no checks (default)
   # audit   - log the findings, allow the start
   # enforce - reject the start with a clear error

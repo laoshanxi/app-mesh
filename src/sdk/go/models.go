@@ -125,8 +125,6 @@ type Application struct {
 	DockerVolumes []string `json:"docker_volumes,omitempty"`
 	// DockerNetwork is the container network mode: host, bridge, none or a network name.
 	DockerNetwork *string `json:"docker_network,omitempty"`
-	// DockerBackend selects "api" (default) or "cli".
-	DockerBackend *string `json:"docker_backend,omitempty"`
 
 	DailyLimit    *DailyLimitation    `json:"daily_limitation"`
 	ResourceLimit *ResourceLimitation `json:"resource_limit"`

@@ -299,8 +299,10 @@ func ListenAndServeREST(ctx context.Context) error {
 	// Grafana
 	grafana.RegisterGrafanaRESTHandler(router)
 
-	// docker.sock proxy
-	RegisterDockerRoutes(router)
+	// Container lifecycle service (absent when no Docker endpoint exists)
+	if err := RegisterContainerRoutes(router); err != nil {
+		logger.Infof("Docker container service disabled: %v", err)
+	}
 
 	// Static relay page for the browser OAuth callback on this entry origin.
 	// Must stay ahead of the catch-all forward to the daemon.

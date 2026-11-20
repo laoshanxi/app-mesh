@@ -306,7 +306,6 @@ public:
 #define ENV_APPMESH_APPLICATION_NAME "APP_MESH_APPLICATION_NAME"
 #define ENV_APPMESH_LAUNCH_TIME "APP_MESH_LAUNCH_TIME"
 #define ENV_APPMESH_PROCESS_KEY "APP_MESH_PROCESS_KEY"
-#define ENV_APPMESH_DOCKER_PARAMS "APP_DOCKER_OPTS" // used to pass docker extra parameters to docker startup cmd
 #define ENV_APPMESH_DOCKER_IMG_PULL_TIMEOUT "APP_DOCKER_IMG_PULL_TIMEOUT" // app manager pull docker image timeout seconds
 // Private-registry credentials for the daemon-side image pull (X-Registry-Auth).
 // Never forwarded into the container environment.
@@ -348,6 +347,7 @@ public:
 
 #define JSON_KEY_BaseConfig "BaseConfig"
 #define JSON_KEY_Docker "Docker"
+#define JSON_KEY_Docker_Enable "Enable"
 #define JSON_KEY_Docker_HostSecurityPolicy "HostSecurityPolicy"
 #define JSON_KEY_DefaultExecUser "DefaultExecUser"
 #define JSON_KEY_DisableExecUser "DisableExecUser"
@@ -430,7 +430,6 @@ public:
 #define JSON_KEY_APP_docker_ports "docker_ports"
 #define JSON_KEY_APP_docker_volumes "docker_volumes"
 #define JSON_KEY_APP_docker_network "docker_network"
-#define JSON_KEY_APP_docker_backend "docker_backend"
 #define JSON_KEY_APP_last_error "last_error"
 #define JSON_KEY_APP_from_recover "from_recover"
 // Engine-injected marker: the base application an on-demand run instance was
