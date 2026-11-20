@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
+	"gopkg.in/yaml.v3"
 )
 
 func TestConfig(t *testing.T) {
@@ -38,4 +39,13 @@ func TestConfig(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, ConfigData.REST.CorsAllowOrigins,
 		[]string{"https://ui.example.com", "https://alt.example.com"})
+
+	// Docker.Enable parse semantics: absent key keeps true (an installed file
+	// may predate the key), explicit false wins. The env override mirrors the
+	// daemon's APPMESH_DOCKER_Enable and, like every override here, applies
+	// only when the config file already defines the key.
+	require.True(t, ConfigData.Docker.Enable)
+	var withDocker Configuration
+	require.NoError(t, yaml.Unmarshal([]byte("REST:\n  RestEnabled: true\nDocker:\n  Enable: false\n"), &withDocker))
+	require.False(t, withDocker.Docker.Enable)
 }

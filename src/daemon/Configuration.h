@@ -22,6 +22,9 @@ class Application;
 /// </summary>
 struct JsonDocker
 {
+	// Docker container support master switch; absent key keeps true so an
+	// upgrade never silently strands existing container applications.
+	bool m_enable = true;
 	// off | audit | enforce; anything else keeps off so a typo cannot weaken it.
 	std::string m_hostSecurityPolicy = "off";
 	static std::shared_ptr<JsonDocker> FromJson(const Json::Value &jsonValue);
@@ -145,6 +148,7 @@ public:
 	int getRestListenPort();
 	// Docker.HostSecurityPolicy: off (default) | audit | enforce, hot-reloaded.
 	std::string getDockerHostSecurityPolicy();
+	bool getDockerEnabled();
 	int getPromListenPort() const;
 	std::string getRestListenAddress();
 	int getTcpApiPort();

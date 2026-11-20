@@ -867,7 +867,6 @@ class AppMeshClient {
    *   docker_ports: [],       // docker run -p spelling: "[hostIp:]hostPort:containerPort[/protocol]"
    *   docker_volumes: [],     // docker run -v spelling
    *   docker_network: null,   // host, bridge, none or a network name
-   *   docker_backend: null,   // "api" (default) or "cli"
    *   stdout_backup_count: 3,
    *   start_time: "",
    *   end_time: "",

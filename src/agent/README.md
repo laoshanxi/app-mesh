@@ -1,6 +1,7 @@
 # AppMesh Agent REST API
 
-The agent provides access to Docker daemon through two methods:
+The agent fronts the daemon's REST surface locally and owns the Docker
+conversation for the node.
 
 ## Response headers
 
@@ -14,49 +15,61 @@ the daemon's rules:
   agent sends no CORS header at all. `REST.CorsDisabled: true` stays available
   as the explicit off switch and reproduces the same zero-header behavior.
 - Every response carries `X-Content-Type-Options: nosniff`, including proxied
-  surfaces (Grafana data source, docker proxy, authentication service).
+  surfaces (Grafana data source, container service, authentication service).
 - App Mesh API responses (the catch-all forwarded to the daemon) additionally
   carry `Content-Security-Policy: default-src 'none'; frame-ancestors 'none'`;
   the API serves JSON and files, never active content. The `/oauth/callback`
   relay page carries its own CSP that pins its inline script by SHA-256 hash.
 
-## AppMesh agent Docker REST API
+## Container lifecycle service (/appmesh/container/*)
 
-### Docker API Proxy (/appmesh/docker/\*)
+The agent embeds the official Docker Go client and drives the Docker Engine
+API itself. The daemon is the only caller of this narrow App-Mesh-level
+surface — raw Engine API paths are never exposed. Requests from any other
+host are rejected with 403 (the peer must be loopback or this agent's own
+listen address, the same private-transport rule the daemon applies on its
+internal routes); a local request must also carry the PSK headers
+`X-Request-ID` and `X-Request-HMAC`, and anything else is rejected with
+status 407.
 
-The agent proxies Docker daemon REST API requests under the `/appmesh/docker` prefix. The daemon is the only caller. Each request must carry the PSK headers `X-Request-ID` and `X-Request-HMAC`. The agent rejects a request without valid PSK headers with status 407.
+| Endpoint | Method | Description |
+| --- | --- | --- |
+| `/appmesh/container/ping` | GET | Engine reachability and negotiated API version |
+| `/appmesh/container/image?ref=` | GET | Image presence (404 when missing) |
+| `/appmesh/container/image/ensure` | POST | Pull if missing; per-reference single flight, deduped and bounded progress in the reply; registry credentials ride the body, never logs |
+| `/appmesh/container/run` | POST | One signed call: remove owned leftovers of the names (labels verified, tail logs returned for the archive), create, start and inspect; a failed start cleans up after itself |
+| `/appmesh/container/{idOrName}` | GET | Inspect projection: `id`, `pid`, `running`, `exitCode`, `health`, `labels` |
+| `/appmesh/container/{id}/logs?sinceNs=&tail=` | GET | Demultiplexed log lines with RFC3339 timestamps resolved to epoch nanoseconds |
+| `/appmesh/container/{id}/stop` | POST | Graceful stop (`graceSeconds`) |
+| `/appmesh/container/{id}/kill` | POST | SIGKILL |
+| `/appmesh/container/{id}` | DELETE | Remove (`force`, `volumes`) |
+| `/appmesh/container/{id}/exec` | POST | Run an argv inside the container, return its exit code (health probes) |
+| `/appmesh/container/list` | GET | All `appmesh.managed` labeled containers |
 
-| Endpoint                       | Method | Description                |
-| ------------------------------ | ------ | -------------------------- |
-| `/appmesh/docker/containers/*` | any    | Container operations       |
-| `/appmesh/docker/images/*`     | any    | Image operations           |
-| `/appmesh/docker/volumes/*`    | any    | Volume operations          |
-| `/appmesh/docker/networks/*`   | any    | Network operations         |
-| `/appmesh/docker/system/*`     | any    | System operations          |
-| `/appmesh/docker/version`      | any    | Docker version info        |
-| `/appmesh/docker/_ping`        | any    | Docker daemon health check |
+Implementation notes:
 
-The agent registers one unrestricted path prefix and forwards every method. The
-table above therefore lists no allow-list. The daemon itself uses GET and POST,
-and DELETE for `/containers/{id}`.
+- The daemon (`DockerApiProcess`) signs the `X-Request-ID` value with the
+  shared process HMAC key.
+- The routes exist only when `Docker.Enable` is true (the default; the
+  `APPMESH_DOCKER_Enable` environment variable overrides it, mirroring the
+  daemon's switch) and a Docker endpoint is configured: `DOCKER_HOST` set,
+  or the default `/var/run/docker.sock` present. `DOCKER_HOST` also
+  covers a podman compatibility socket or a remote engine.
+- The Docker client negotiates the Engine API version itself; the daemon
+  holds no version knowledge.
+- The agent stamps the ownership labels (`appmesh.managed`, `appmesh.app`)
+  at create and verifies them before any owned delete: cleanup can never
+  remove a foreign container.
 
-Implementation Details:
+## Container events push
 
-- The daemon (`DockerApiProcess`) sends the PSK headers. It signs the `X-Request-ID` value with the shared process HMAC key.
-- The agent registers these routes only when `/var/run/docker.sock` exists.
-- The agent proxies requests to Docker daemon socket at /var/run/docker.sock
-- TLS encryption is handled by the agent's main HTTPS server
-- All Docker API operations are available through the /appmesh/docker prefix
-- Request/response formats follow the Docker Engine API specification
-- Responses are classified per request: live streams (pull progress, builds, a
-  following `logs?follow=1`, events) pass through unbuffered, while finite
-  documents — including non-following `/logs` — are buffered and
-  Content-Length framed so buffered HTTP clients read them reliably
+The agent subscribes to Docker events filtered to `appmesh.managed`
+containers and pushes `die` events plus a periodic liveness marker to the
+daemon's internal route `/appmesh/internal/container-event` over the pooled
+local connection, signed with the boot PSK. While the markers arrive, the
+daemon's every-tick container exit poll stands down; a stale marker (for
+example during an agent restart) re-arms the poll automatically.
 
 Reference:
 
 [Docker Engine API Documentation](https://docs.docker.com/reference/api/engine/)
-
-### Nginx Proxy Implementation
-
-`nginx` implement a docker proxy demo with Nginx

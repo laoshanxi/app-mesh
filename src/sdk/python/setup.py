@@ -16,7 +16,7 @@ def get_version():
     # 3.0.21 signs the exact prepared wire path (requests' own URL repair),
     # keeps a base-URL path prefix in the signature and on the wire, swaps the
     # signing key/secret pair atomically, and reads APPMESH_AUTH_ALLOW_HTTP.
-    return "3.0.21"
+    return "3.0.22"
 
 
 # Dependencies

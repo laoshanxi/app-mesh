@@ -32,6 +32,11 @@ type (
 
 		SSL appmesh.SSLConfig `yaml:"SSL"`
 	}
+	DockerConfig struct {
+		// Mirrors the daemon's Docker.Enable: false keeps the container
+		// service and events push off this node.
+		Enable bool `yaml:"enable"`
+	}
 	OIDCConfig struct {
 		Issuer    string `yaml:"issuer"`
 		AccessURL string `yaml:"access_url"`
@@ -40,7 +45,8 @@ type (
 	}
 
 	Configuration struct {
-		REST RESTConfig `yaml:"REST"`
+		REST   RESTConfig   `yaml:"REST"`
+		Docker DockerConfig `yaml:"Docker"`
 	}
 )
 
@@ -67,6 +73,9 @@ var ConfigData = Configuration{
 			VerifyClient:                false,
 			VerifyServer:                true,
 		},
+	},
+	Docker: DockerConfig{
+		Enable: true,
 	},
 }
 
@@ -106,6 +115,24 @@ func ResolveAbsolutePaths() {
 	ConfigData.REST.SSL.SSLClientCertificateKeyFile = ResolveAbsolutePath(ConfigData.REST.SSL.SSLClientCertificateKeyFile)
 }
 
+// canonicalYAML parses YAML through a generic map, rewriting keys to the
+// yaml-tag casing of targetType (see canonicalizeKeys), and returns the
+// canonical bytes plus the parsed map: which keys the file actually defines
+// governs environment overrides (viper/mapstructure used to match keys
+// case-insensitively). The caller unmarshals the bytes into the target struct.
+func canonicalYAML(data []byte, targetType reflect.Type) ([]byte, map[string]interface{}, error) {
+	var fileConfig map[string]interface{}
+	if err := yaml.Unmarshal(data, &fileConfig); err != nil {
+		return nil, nil, err
+	}
+	canonicalizeKeys(fileConfig, targetType)
+	content, err := yaml.Marshal(fileConfig)
+	if err != nil {
+		return nil, nil, err
+	}
+	return content, fileConfig, nil
+}
+
 // readConfig loads the application config.yaml from files and environment variables.
 // It returns an error if the configuration cannot be loaded or unmarshaled.
 func readConfig() error {
@@ -118,17 +145,7 @@ func readConfig() error {
 		return fmt.Errorf("failed to read config file: %w", err)
 	}
 
-	// Parse into a generic map first: it records which keys the file actually
-	// defines (environment overrides apply only to existing keys) and lets us
-	// canonicalize key casing to the struct yaml tags (viper/mapstructure used
-	// to match keys case-insensitively).
-	var fileConfig map[string]interface{}
-	if err := yaml.Unmarshal(data, &fileConfig); err != nil {
-		return fmt.Errorf("failed to unmarshal config: %w", err)
-	}
-	canonicalizeKeys(fileConfig, reflect.TypeOf(Configuration{}))
-
-	content, err := yaml.Marshal(fileConfig)
+	content, fileConfig, err := canonicalYAML(data, reflect.TypeOf(Configuration{}))
 	if err != nil {
 		return fmt.Errorf("failed to unmarshal config: %w", err)
 	}
@@ -220,13 +237,8 @@ func readOIDCConfig() error {
 	root := struct {
 		OIDC OIDCConfig `yaml:"OIDC"`
 	}{OIDC: OIDCConfig{TLSVerify: true}}
-	var fileConfig map[string]interface{}
-	if err := yaml.Unmarshal(data, &fileConfig); err != nil {
-		return fmt.Errorf("failed to unmarshal oidc config: %w", err)
-	}
 	// Canonicalize key casing to the struct yaml tags, as in readConfig.
-	canonicalizeKeys(fileConfig, reflect.TypeOf(root))
-	content, err := yaml.Marshal(fileConfig)
+	content, _, err := canonicalYAML(data, reflect.TypeOf(root))
 	if err != nil {
 		return fmt.Errorf("failed to unmarshal oidc config: %w", err)
 	}

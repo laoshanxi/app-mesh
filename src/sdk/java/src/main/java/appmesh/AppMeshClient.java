@@ -602,8 +602,8 @@ public class AppMeshClient implements Closeable {
      * <p>Docker applications: set {@code docker_image} (container Cmd comes from {@code command});
      * common wiring is first-class — {@code docker_ports} (docker run -p spelling
      * {@code "[hostIp:]hostPort:containerPort[/protocol]"}), {@code docker_volumes} (docker run -v
-     * spelling), {@code docker_network} (host/bridge/none/name) and {@code docker_backend}
-     * ("api" default or "cli"); {@code metadata} carries a full Docker create request body.
+     * spelling) and {@code docker_network} (host/bridge/none/name); {@code metadata}
+     * carries a full Docker create request body.
      * Registry credentials for image pulls go in {@code secret_env} as
      * {@code APP_DOCKER_REGISTRY_SERVER/USER/PASSWORD}.
      * <p>{@code stdin}: {@code "none"} (default) uses /dev/null or the {@code metadata} launch

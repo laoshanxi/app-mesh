@@ -256,6 +256,9 @@ int Configuration::getScheduleInterval()
 std::shared_ptr<JsonDocker> JsonDocker::FromJson(const Json::Value &jsonValue)
 {
 	auto docker = std::make_shared<JsonDocker>();
+	// Only an explicit false disables; a typo cannot strand container applications.
+	if (HAS_JSON_FIELD(jsonValue, JSON_KEY_Docker_Enable) && jsonValue[JSON_KEY_Docker_Enable].isBool())
+		docker->m_enable = jsonValue[JSON_KEY_Docker_Enable].asBool();
 	auto mode = GET_JSON_STR_VALUE(jsonValue, JSON_KEY_Docker_HostSecurityPolicy);
 	std::transform(mode.begin(), mode.end(), mode.begin(), [](unsigned char c) { return std::tolower(c); });
 	if (mode == "off" || mode == "audit" || mode == "enforce")
@@ -269,6 +272,7 @@ std::shared_ptr<JsonDocker> JsonDocker::FromJson(const Json::Value &jsonValue)
 Json::Value JsonDocker::AsJson() const
 {
 	Json::Value result = Json::Value(Json::objectValue);
+	result[JSON_KEY_Docker_Enable] = m_enable;
 	result[JSON_KEY_Docker_HostSecurityPolicy] = m_hostSecurityPolicy;
 	return result;
 }
@@ -277,6 +281,12 @@ std::string Configuration::getDockerHostSecurityPolicy()
 {
 	std::lock_guard guard(m_hotupdateMutex);
 	return m_docker ? m_docker->m_hostSecurityPolicy : std::string("off");
+}
+
+bool Configuration::getDockerEnabled()
+{
+	std::lock_guard guard(m_hotupdateMutex);
+	return m_docker ? m_docker->m_enable : true;
 }
 
 int Configuration::getRestListenPort()

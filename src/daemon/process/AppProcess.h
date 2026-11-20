@@ -87,6 +87,9 @@ public:
 	// daemon itself runs in a container) cannot gate on PID liveness: they need
 	// the docker-authoritative exit poll on every scheduler tick.
 	virtual bool needsAlwaysExitPoll() const { return false; }
+	// True when the backend poll is due even while event markers look fresh.
+	// True by default: a backend without an event channel has no marker to trust.
+	virtual bool backendLivenessPollDue() const { return true; }
 	// After a daemon restart, re-bind a recovered container run to its container (verifying the ownership
 	// labels): without the ID a stop degrades to a host SIGKILL, exit codes fake to 0, the probe loses its target.
 	virtual void adoptRecoveredContainer() {}

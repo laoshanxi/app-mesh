@@ -223,10 +223,6 @@ pub struct AddArgs {
     #[arg(long = "docker-network")]
     pub docker_network: Option<String>,
 
-    /// Container backend: api (default) or cli
-    #[arg(long = "docker-backend")]
-    pub docker_backend: Option<String>,
-
     /// Attach to existing process ID
     #[arg(short = 'P', long = "pid")]
     pub pid: Option<u32>,
