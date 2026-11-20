@@ -541,7 +541,7 @@ OAuth clients defined in `src/apps/identity/dex.yaml`:
 | `appmesh-api` | public | Audience target |
 | `appmesh-cli` | public | CLI and native clients (RFC 8252) |
 | `appmesh-web` | public | Browser authorization code + PKCE |
-| `appmesh-mcp-user` | public | MCP clients (Dex has no dynamic registration) |
+| `appmesh-mcp-user` | public | MCP clients (Dex has no dynamic registration); PKCE S256 is mandatory — third-party MCP clients follow the MCP spec's authorization code + PKCE flow |
 | `appmesh-automation` | confidential | `client_credentials` for CI and unattended jobs |
 
 ### Lifetimes
@@ -582,4 +582,4 @@ The full permission list lives in `src/daemon/security/authorization.yaml`.
 | 6062 | authentication service | Issuer and token endpoint |
 | 6063 | authentication service | Telemetry (`/healthz`) |
 | 6064 | administration UI | `dexuser` System App web UI, loopback only |
-| 6061 | agent | Prometheus exporter, unauthenticated like a standard exporter (off by default) |
+| 6061 | agent | Prometheus exporter (off by default); the metrics endpoints need `config-view` unless `REST.MetricsRequireAuth: false` opts out for a trusted network |

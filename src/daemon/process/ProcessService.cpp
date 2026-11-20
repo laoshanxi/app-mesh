@@ -34,7 +34,7 @@ ProcessService *ProcessService::instance()
 
 ProcessService::ProcessService()
 	: m_workGuard(boost::asio::make_work_guard(m_ioContext)),
-	  m_callbackGuard(boost::asio::make_work_guard(m_callbackContext))
+	  m_callbackGuard(boost::asio::make_work_guard(m_callbackContext)), m_pollGuard(boost::asio::make_work_guard(m_pollContext))
 {
 	const static char fname[] = "ProcessService::ProcessService() ";
 	LOG_DBG << fname;
@@ -80,6 +80,21 @@ void ProcessService::ensureCallbackThread()
 	m_callbackThreadId = m_callbackThread.get_id();
 }
 
+void ProcessService::ensurePollThread()
+{
+	std::lock_guard lock(m_pollMutex);
+	// Re-check under the mutex: no thread may be created on the stopped context after shutdown() joined.
+	if (m_stopped.load(std::memory_order_acquire) || m_pollThread.get_id() != std::thread::id())
+		return;
+	m_pollThread = std::thread(
+		[this]()
+		{
+			Utility::setThreadName("appmesh-poll");
+			m_pollContext.run();
+		});
+	m_pollThreadId = m_pollThread.get_id();
+}
+
 void ProcessService::postCallback(std::function<void()> task)
 {
 	if (!m_stopped.load(std::memory_order_acquire))
@@ -100,12 +115,36 @@ void ProcessService::postCallback(std::function<void()> task)
 	boost::asio::post(m_callbackContext, std::move(task));
 }
 
+void ProcessService::postPoll(std::function<void()> task)
+{
+	if (!m_stopped.load(std::memory_order_acquire))
+	{
+		try
+		{
+			ensurePollThread();
+		}
+		catch (const std::exception &ex)
+		{
+			LOG_CRT << "ProcessService::postPoll() FATAL: cannot start the liveness-poll thread: " << ex.what();
+			task();
+			return;
+		}
+	}
+	boost::asio::post(m_pollContext, std::move(task));
+}
+
 bool ProcessService::onIoThread() const { return std::this_thread::get_id() == m_ioThreadId; }
 
 bool ProcessService::onCallbackThread() const
 {
 	std::lock_guard lock(m_callbackMutex);
 	return std::this_thread::get_id() == m_callbackThreadId;
+}
+
+bool ProcessService::onPollThread() const
+{
+	std::lock_guard lock(m_pollMutex);
+	return std::this_thread::get_id() == m_pollThreadId;
 }
 
 bool ProcessService::dispatchSync(const std::function<void()> &task)
@@ -162,7 +201,7 @@ void ProcessService::shutdown()
 	const static char fname[] = "ProcessService::shutdown() ";
 	if (m_stopped.exchange(true))
 		return;
-	if (onIoThread() || onCallbackThread())
+	if (onIoThread() || onCallbackThread() || onPollThread())
 	{
 		// Joining our own thread would deadlock; the daemon is exiting anyway.
 		LOG_CRT << fname << "called on a service thread, skipping join";
@@ -197,6 +236,14 @@ void ProcessService::shutdown()
 		m_callbackContext.stop();
 		if (m_callbackThread.joinable())
 			m_callbackThread.join();
+	}
+	// The liveness-poll thread stops last, mirroring the callback teardown.
+	{
+		std::lock_guard lock(m_pollMutex);
+		m_pollGuard.reset();
+		m_pollContext.stop();
+		if (m_pollThread.joinable())
+			m_pollThread.join();
 	}
 	LOG_INF << fname << "process service threads stopped";
 }

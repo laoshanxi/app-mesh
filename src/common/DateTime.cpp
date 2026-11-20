@@ -147,6 +147,12 @@ std::string DateTime::getISO8601TimeZone(const std::string &strTime) noexcept
 		return {};
 	}
 
+	// A trailing 'Z'/'z' is an explicit UTC designator; report it so the caller does not append a local offset
+	if (const char last = strTime.back(); last == 'Z' || last == 'z')
+	{
+		return std::string(1, last);
+	}
+
 	// Scan backwards to find '+' or '-' indicating timezone
 	for (auto it = strTime.rbegin(); it != strTime.rend(); ++it)
 	{
@@ -218,7 +224,10 @@ std::chrono::system_clock::time_point DateTime::parseISO8601DateTime(const std::
 		LOG_DBG << fname << "Converted ISO8601 string <" << iso8601TimeStr << "> to local time <" << localDateTime << ">";
 
 		const auto ptime = localDateTime.utc_time();
-		return std::chrono::system_clock::from_time_t(boost::posix_time::to_time_t(ptime));
+		// Build from the full duration: to_time_t truncates to seconds and the docker log cursor needs sub-second stamps (RFC3339Nano)
+		static const boost::posix_time::ptime epoch(boost::gregorian::date(1970, 1, 1));
+		return std::chrono::system_clock::time_point(
+			std::chrono::microseconds((ptime - epoch).total_microseconds()));
 	}
 	catch (const std::exception &e)
 	{
@@ -239,7 +248,9 @@ std::string DateTime::formatRFC3339Time(const TimePoint &time)
 		auto *facet = new boost::posix_time::time_facet(RFC3339FORMAT);
 		oss.imbue(std::locale(std::locale::classic(), facet));
 
-		const auto ptime = boost::posix_time::from_time_t(std::chrono::system_clock::to_time_t(time));
+		// Build the ptime from the full duration: from_time_t truncates to seconds, dropping the sub-second part %F prints
+		const auto us = std::chrono::duration_cast<std::chrono::microseconds>(time.time_since_epoch());
+		const auto ptime = boost::posix_time::ptime(boost::gregorian::date(1970, 1, 1)) + boost::posix_time::microseconds(us.count());
 		oss << ptime;
 
 		return oss.str();

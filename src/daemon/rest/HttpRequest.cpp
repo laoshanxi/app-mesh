@@ -20,6 +20,7 @@
 #include "Data.h"
 #include "ReplyContext.h"
 #include "RestHandler.h"
+#include "SseSink.h"
 #include "Worker.h"
 
 #include "HttpRequest.h"
@@ -674,6 +675,23 @@ void HttpRequestOutputView::unsubscribeRunCompletion()
 // and replies to them one at a time in FIFO order.
 ////////////////////////////////////////////////////////////////////////////////
 
+////////////////////////////////////////////////////////////////////////////////
+// HttpRequestTaskStream - task request parked on an SSE stream
+////////////////////////////////////////////////////////////////////////////////
+HttpRequestTaskStream::HttpRequestTaskStream(const std::shared_ptr<HttpRequest> &message, std::shared_ptr<SseSink> sink)
+	: HttpRequestWithTimeout(message), m_sink(std::move(sink))
+{
+}
+
+bool HttpRequestTaskStream::sendPartial(const std::string &payload)
+{
+	if (!m_sink || !m_sink->isOpen())
+		return false;
+	Json::Value data;
+	data["data"] = payload;
+	return m_sink->sendEvent("partial", JSON::dump(data));
+}
+
 TaskRequest::SupersededRequests TaskRequest::activate(const std::string &processKey)
 {
 	std::lock_guard guard(m_mutex);
@@ -750,6 +768,29 @@ void TaskRequest::sendTask(std::shared_ptr<HttpRequestWithTimeout> &taskRequest)
 		LOG_WAR << fname << "task queue full (512), rejecting";
 		taskRequest->reply(web::http::status_codes::ServiceUnavailable,
 						   Utility::text2json("task queue full, try again later"));
+	}
+}
+
+void TaskRequest::partialReply(const std::string &processKey, const std::string &payload, bool &delivered)
+{
+	const static char fname[] = "TaskRequest::partialReply() ";
+	std::shared_ptr<HttpRequestWithTimeout> active;
+	{
+		std::lock_guard guard(m_mutex);
+		if (processKey.empty() || !Utility::secureCompare(processKey, m_processKey))
+			throw std::runtime_error("Process key mismatch");
+		active = m_activeTask;
+	}
+	if (auto stream = std::dynamic_pointer_cast<HttpRequestTaskStream>(active))
+	{
+		delivered = stream->sendPartial(payload);
+		if (!delivered)
+			LOG_DBG << fname << "stream caller gone; partial dropped";
+	}
+	else
+	{
+		delivered = false;
+		LOG_DBG << fname << "caller is not streaming; partial ignored";
 	}
 }
 

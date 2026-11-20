@@ -132,9 +132,14 @@ struct FileUploadInfo
 				   const std::string &allowedBaseDir = "")
 		: m_filePath(uploadFilePath), m_tempPath(tempFilePath), m_requestHeaders(requestHeaders), m_overwrite(overwrite)
 	{
-		// Missing parent directories are created for every transport surface.
-		std::error_code ec;
-		std::filesystem::create_directories(std::filesystem::path(uploadFilePath).parent_path(), ec);
+		// Missing parent directories are created for every transport surface; the
+		// jailed component walk keeps creation inside the jail even on a symlink swap.
+		const auto parentDir = std::filesystem::path(uploadFilePath).parent_path().string();
+		if (!parentDir.empty() && !Utility::createDirectoriesWithinJail(parentDir, allowedBaseDir))
+		{
+			m_rejected = true;
+			return;
+		}
 		// Open through the jailed helper: the fd is pinned to a verified in-jail
 		// inode, so a directory component swapped to a symlink cannot move the temp
 		// file (or its later rename) out of the jail. m_dirFd keeps the pinned

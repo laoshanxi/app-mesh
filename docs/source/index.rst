@@ -27,6 +27,7 @@ Welcome to AppMesh's documentation!
    GrafanaDataSource.md
    RemoteTask.md
    EventSubscription.md
+   Streaming.md
    Workflow.md
    spec-pipeline.md
 

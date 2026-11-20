@@ -49,6 +49,7 @@ endpoints, requests use an OAuth access token in the
 | POST | `/appmesh/app/{name}/enable` | Enable a non-system application |
 | POST | `/appmesh/app/{name}/disable` | Disable a non-system application |
 | GET | `/appmesh/app/{name}/output` | Read application output |
+| GET | `/appmesh/app/{name}/output/stream` | Stream application output over server-sent events |
 
 ### Application field notes
 
@@ -115,6 +116,13 @@ Lifecycle semantics:
 | GET | `/appmesh/app/{name}/task` | Fetch the next task payload for a managed application process |
 | PUT | `/appmesh/app/{name}/task` | Return the task result from a managed application process |
 | DELETE | `/appmesh/app/{name}/task` | Cancel the pending task request for a managed application |
+| POST | `/appmesh/app/{name}/task/stream` | Send a task request and stream partial results (SSE) |
+| POST | `/appmesh/app/{name}/task/partial` | Push an incremental task result (worker RPC) |
+| POST | `/appmesh/app/{name}/input` | Inject bytes into the stdin of a pipe-stdin application |
+
+The streaming routes answer `text/event-stream` frames (partials, final
+result, terminal status) on the plain HTTP listener. See [Streaming.md](Streaming.md)
+for the event contract, the stdin pipe mode, and the SDK generator APIs.
 
 ### Client disconnect during `syncrun`
 

@@ -698,3 +698,48 @@ func TestHasStatusFunction_Grouped(t *testing.T) {
 		t.Error("quoted status text inside a group must not count")
 	}
 }
+
+// A wrapped condition must behave like its bare form, or skipJob drops a
+// "${{ always() }}" job whose condition is in fact always-true.
+func TestHasStatusFunction_Wrapped(t *testing.T) {
+	for _, condition := range []string{"${{ always() }}", "${{ !failure() }}", "${{ success() }} && inputs.go"} {
+		if !HasStatusFunction(condition) {
+			t.Errorf("wrapped condition %q must be detected", condition)
+		}
+	}
+	if HasStatusFunction(`${{ steps.x.stdout == 'success()' }}`) {
+		t.Error("quoted status text inside a wrapper must not count")
+	}
+}
+
+// Dangling operators and unterminated literals are author mistakes: they must
+// error, never silently evaluate (an empty operand is truthy by legacy).
+func TestEvalCondition_Malformed(t *testing.T) {
+	ctx := NewContext()
+	ctx.Inputs["a"] = "x"
+	for _, condition := range []string{
+		"inputs.a == 'x' &&",
+		"inputs.a == 'x' ||",
+		"&& inputs.a == 'x'",
+		"inputs.a == 'unclosed",
+		`${{ always()`,
+	} {
+		if _, err := EvalConditionForJob(condition, ctx, ""); err == nil {
+			t.Errorf("condition %q must error", condition)
+		}
+	}
+}
+
+// An escaped double quote inside a quoted literal must not break the lexer's
+// parenthesis counting: the condition evaluates (to false), not hard-fails.
+func TestEvalCondition_EscapedQuoteParens(t *testing.T) {
+	ctx := NewContext()
+	ctx.SetStepResult("", "s", `weird "(unbalanced`, 0, "success", "", nil)
+	met, err := EvalConditionForJob(`steps.s.stdout == "weird \"(unbalanced"`, ctx, "")
+	if err != nil {
+		t.Fatalf("escaped-quote condition errored: %v", err)
+	}
+	if met {
+		t.Error("condition compares unequal literals, must be false")
+	}
+}

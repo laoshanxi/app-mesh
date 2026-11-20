@@ -15,7 +15,7 @@ from enum import Enum, unique
 from http import HTTPStatus
 from http.cookiejar import DefaultCookiePolicy
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple, Union
+from typing import Any, Dict, Iterator, List, Optional, Tuple, Union
 from urllib import parse
 
 # Third-party imports
@@ -24,11 +24,12 @@ import requests
 from requests.structures import CaseInsensitiveDict
 
 # Local imports
+from . import request_signature
 from .app import App
 from .app_output import AppOutput
 from .app_run import AppRun, OutputHandler
 from .exceptions import AppMeshAuthError, AppMeshConnectionError, AppMeshRequestError
-from . import request_signature
+from .streaming import SseEnd, end_from_payload, iter_sse_events, raise_on_error_end
 from .token_provider import StaticAccessTokenProvider, TokenProvider
 
 logger = logging.getLogger(__name__)
@@ -87,6 +88,12 @@ class AppMeshClient:
         - run_app_sync()
         - run_task()
         - cancel_task()
+
+        # Streaming (SSE; generator APIs)
+        - follow_output()
+        - run_task_stream()
+        - stream_run()
+        - send_input()
 
         # Event Subscription (AppMeshClientTCP/AppMeshClientWSS only; see `supports_events`)
         - subscribe()
@@ -858,6 +865,181 @@ class AppMeshClient:
             logger.warning("Failed to cancel task for app '%s' with status %d: %s", app_name, resp.status_code, resp.text)
         return resp.status_code == HTTPStatus.OK
 
+    ########################################
+    # Streaming (SSE)
+    ########################################
+    def _sse_request(
+        self,
+        method: _Method,
+        path: str,
+        query: Optional[dict] = None,
+        body=None,
+    ) -> requests.Response:
+        """Open an SSE stream as a streamed response; SSE cannot ride a framed
+        (TCP/WSS) transport, so framed subclasses redirect this to a direct HTTPS side channel.
+        """
+        return self._request_http(method, path=path, query=query, body=body)
+
+    def run_task_stream(self, app_name: str, data: str, timeout: int = 300) -> Iterator[str]:
+        """Streaming task RPC: send an invocation and yield incremental results as they arrive.
+
+        Streaming counterpart of run_task(): the worker may push any number of partials
+        (``worker.send_task_partial``) before its final reply, each yielded in order.
+
+        Args:
+            app_name: Name of the target application (as registered in App Mesh).
+            data: Payload to deliver to the application (same contract as run_task).
+            timeout: Maximum seconds for the whole call; exceeding it raises AppMeshTimeoutError.
+
+        Returns:
+            The generator's return value is an ``SseEnd`` whose ``result`` carries the final
+            payload (the same string run_task would return); retrieve it with
+            ``end = yield from client.run_task_stream(...)`` or StopIteration.value.
+
+        Raises:
+            AppMeshTimeoutError: The task did not finish within ``timeout``.
+            AppMeshRequestError: The stream ended with an error.
+        """
+        query = {"timeout": str(timeout)} if timeout and timeout > 0 else None
+        resp = self._sse_request(AppMeshClient._Method.POST_STREAM, path=f"/appmesh/app/{app_name}/task/stream",
+            query=query, body=data)
+        end: Optional[SseEnd] = None
+        final_result: Optional[str] = None
+        try:
+            for event, payload in iter_sse_events(resp):
+                if event == "partial":
+                    yield str(payload.get("data", ""))
+                elif event == "final":
+                    final_result = payload.get("result")
+                elif event == "end":
+                    end = end_from_payload(payload, result=final_result)
+                    break
+        finally:
+            resp.close()
+        if end is None:
+            end = SseEnd(reason="closed", result=final_result)
+        raise_on_error_end(end)
+        return end
+
+    def follow_output(
+        self,
+        app_name: str,
+        stdout_position: int = 0,
+        process_uuid: str = "",
+        follow: bool = True,
+        timeout: int = 3600,
+    ) -> Iterator[str]:
+        """Stream an application's stdout incrementally over server-sent events.
+
+        Replays from ``stdout_position``, then (with ``follow=True``) yields live output
+        until exit/removal/timeout; the server de-duplicates the replay/live boundary,
+        so no polling or position bookkeeping is needed here.
+
+        Args:
+            app_name: Name of the target application.
+            stdout_position: Byte cursor to start from (0 replays from the beginning).
+            process_uuid: Pin the stream to one run; empty follows the current run.
+            follow: ``False`` replays to the current end of output and stops.
+            timeout: Overall stream lifetime cap in seconds (server-side).
+
+        Returns:
+            The generator's return value is an ``SseEnd`` (``exit_code``/``position``
+            filled on a natural exit); retrieve it with
+            ``end = yield from client.follow_output(...)`` or StopIteration.value.
+
+        Raises:
+            AppMeshRequestError: The stream ended with an error.
+        """
+        query = {
+            "stdout_position": str(stdout_position),
+            "follow": "true" if follow else "false",
+            "timeout": str(timeout),
+        }
+        if process_uuid:
+            query["process_uuid"] = process_uuid
+        resp = self._sse_request(AppMeshClient._Method.GET_STREAM, path=f"/appmesh/app/{app_name}/output/stream",
+            query=query)
+        end: Optional[SseEnd] = None
+        try:
+            for event, payload in iter_sse_events(resp):
+                if event == "stdout":
+                    yield str(payload.get("output", ""))
+                elif event == "end":
+                    end = end_from_payload(payload)
+                    break
+        finally:
+            resp.close()
+        if end is None:
+            end = SseEnd(reason="closed")
+        raise_on_error_end(end)
+        return end
+
+    def stream_run(
+        self,
+        app: Union[App, str],
+        max_time: Union[int, str] = _DURATION_TWO_DAYS_ISO,
+        lifecycle: Union[int, str] = _DURATION_TWO_DAYS_HALF_ISO,
+    ) -> Iterator[str]:
+        """Run a one-shot application remotely and stream its stdout incrementally.
+
+        Equivalent to run_app_async() + follow_output() + delete_app(); serves continuous-output
+        processes (model inference, log producers) that the fully-buffered run_app_sync()
+        cannot show until completion.
+
+        Args:
+            app: An ``App`` instance or a shell command string (same contract as run_app_async).
+            max_time: Maximum runtime for the remote process (seconds or ISO 8601 duration).
+            lifecycle: Retention window for the temporary run app (seconds or ISO 8601 duration).
+
+        Returns:
+            The generator's return value is the run's ``SseEnd`` (``exit_code`` on a
+            natural exit). The temporary application is always deleted on exit.
+
+        Raises:
+            AppMeshRequestError: The stream ended with an error.
+        """
+        run = self.run_app_async(app, max_time, lifecycle)
+        try:
+            end = yield from self.follow_output(run.app_name, process_uuid=run.process_uuid, follow=True,
+                timeout=max(self._parse_duration(max_time), self._parse_duration(lifecycle)))
+        finally:
+            with suppress(Exception):
+                self.delete_app(run.app_name)
+        return end
+
+    def send_input(self, app_name: str, data: Union[str, bytes], close: bool = False, process_uuid: str = "") -> int:
+        """Inject bytes into the stdin of a running application.
+
+        The application must be registered with ``stdin: "pipe"``; the daemon-held write
+        end makes it a conversational resource (interactive CLI, agent REPL) whose output
+        is read with follow_output().
+
+        Args:
+            app_name: Name of the target application.
+            data: Bytes (or text, encoded as UTF-8) to write to the process stdin.
+            close: Also close the pipe write end so the process reads EOF.
+            process_uuid: Restrict the write to this run; empty targets the current run.
+
+        Returns:
+            Number of bytes written.
+
+        Raises:
+            AppMeshRequestError: The stdin pipe buffer is full (retry with the
+                remainder) or the write failed.
+        """
+        if isinstance(data, str):
+            data = data.encode("utf-8")
+        header = {"X-Input-Close": "true"} if close else None
+        query = {"process_uuid": process_uuid} if process_uuid else None
+        resp = self._request_http(
+            AppMeshClient._Method.POST,
+            path=f"/appmesh/app/{app_name}/input",
+            query=query,
+            header=header,
+            body=data,
+        )
+        return int(resp.json().get("bytes_written", 0))
+
     def run_app_async(
         self,
         app: Union[App, str],
@@ -876,10 +1058,11 @@ class AppMeshClient:
             max_time: Maximum runtime for the remote process, after which the daemon kills it
                 (sent as the wire query parameter ``timeout``).
                 Accepts integer seconds or ISO 8601 duration format (e.g., 'P1Y2M3DT4H5M6S', 'P5W'). Defaults to `P2D`.
-            lifecycle: Total retention window for the temporary run app, after which the daemon
-                purges it (including its cached output); must cover ``max_time`` plus the time
-                needed to collect results (sent as the wire query parameter ``lifecycle``).
-                Accepts integer seconds or ISO 8601 duration format. Defaults to `P2DT12H`.
+            lifecycle: Retention window for the temporary run app (wire query parameter
+                ``lifecycle``; integer seconds or ISO 8601 duration, default `P2DT12H`). The
+                daemon purges at window expiry or ~60s after exit (the grace keeps output
+                readable for late pollers), so ``lifecycle`` must cover ``max_time`` plus
+                result collection.
 
         Returns:
             ``AppRun`` handle that captures the current ``forward_to`` target so later polling can
@@ -974,9 +1157,10 @@ class AppMeshClient:
             max_time: Maximum runtime for the remote process, after which the daemon kills it
                 (sent as the wire query parameter ``timeout``).
                 Accepts integer seconds or ISO 8601 duration format (e.g., 'P1Y2M3DT4H5M6S', 'P5W').
-            lifecycle: Total retention window for the temporary run app, after which the daemon
-                purges it (sent as the wire query parameter ``lifecycle``).
-                Accepts integer seconds or ISO 8601 duration format.
+            lifecycle: Retention window for the temporary run app (wire query parameter
+                ``lifecycle``; integer seconds or ISO 8601 duration). The daemon purges at
+                window expiry or ~60s after exit (the grace keeps output readable for late
+                pollers), so ``lifecycle`` must cover ``max_time`` plus result collection.
 
         Returns:
             ``(exit_code, stdout_text)``. ``exit_code`` is ``None`` when the server did not return

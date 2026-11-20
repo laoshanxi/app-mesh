@@ -26,13 +26,6 @@ static constexpr size_t MAX_PENDING_REQUESTS = 10000;
 
 namespace
 {
-	bool isPublicForwardRequest(const std::shared_ptr<HttpRequest> &request)
-	{
-		return request->m_method == web::http::methods::GET &&
-			   (request->m_relative_uri == "/appmesh/auth/config" ||
-				request->m_relative_uri == "/.well-known/oauth-protected-resource");
-	}
-
 	bool isSubscriptionRequest(const std::shared_ptr<HttpRequest> &request)
 	{
 		const auto &path = request->m_relative_uri;
@@ -371,8 +364,9 @@ bool Worker::process(const std::shared_ptr<HttpRequest> &request)
 			return true;
 		}
 
-		const bool publicRequest = isPublicForwardRequest(request);
-		if (!publicRequest && !request->m_headers.contains(HTTP_HEADER_JWT_Authorization))
+		// Forwarding is a capability regardless of the target path: an unauthenticated
+		// caller must never get an outbound connection (port-scan oracle).
+		if (!request->m_headers.contains(HTTP_HEADER_JWT_Authorization))
 		{
 			request->reply(web::http::status_codes::Unauthorized,
 						   Utility::text2json("Forwarded requests require bearer authentication"),
@@ -384,7 +378,7 @@ bool Worker::process(const std::shared_ptr<HttpRequest> &request)
 		// their bearer before the gateway opens an outbound connection. The target
 		// validates the unchanged bearer again and makes the authorization decision.
 		std::string gatewayPrincipalId = request->transportPrincipalId();
-		if (!publicRequest && gatewayPrincipalId.empty())
+		if (gatewayPrincipalId.empty())
 		{
 			try
 			{

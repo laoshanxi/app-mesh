@@ -1,6 +1,8 @@
 // src/daemon/process/DockerProcess.cpp
 #include "DockerProcess.h"
 
+#include <algorithm>
+#include <cctype>
 #include <charconv>
 #include <fstream>
 #include <chrono>
@@ -38,6 +40,18 @@ namespace
 			return std::nullopt;
 
 		return parsed;
+	}
+
+	std::string upperCase(std::string text)
+	{
+		std::transform(text.begin(), text.end(), text.begin(), [](unsigned char c) { return static_cast<char>(std::toupper(c)); });
+		return text;
+	}
+
+	std::string lowerCase(std::string text)
+	{
+		std::transform(text.begin(), text.end(), text.begin(), [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+		return text;
 	}
 
 	DockerCommandResult runDockerCli(const std::string &command, int timeoutSeconds = DOCKER_CLI_TIMEOUT_SEC,
@@ -101,9 +115,35 @@ std::vector<std::string> dockerHostSecurityFindings(const Json::Value &createBod
 		return findings;
 	if (hostConfig["Privileged"].isBool() && hostConfig["Privileged"].asBool())
 		findings.push_back("privileged container");
-	const auto pidMode = GET_JSON_STR_VALUE(hostConfig, "PidMode");
-	if (pidMode == "host")
+	const auto pidMode = upperCase(GET_JSON_STR_VALUE(hostConfig, "PidMode"));
+	if (pidMode == "HOST")
 		findings.push_back("host PID namespace (pid=host)");
+	const auto ipcMode = upperCase(GET_JSON_STR_VALUE(hostConfig, "IpcMode"));
+	if (ipcMode == "HOST" || ipcMode == "SHAREABLE")
+		findings.push_back("shared host IPC namespace (ipc=" + lowerCase(ipcMode) + ")");
+	// docker network semantics: host/none/container:<id> bypass the bridge.
+	const auto networkMode = lowerCase(GET_JSON_STR_VALUE(hostConfig, "NetworkMode"));
+	if (networkMode == "host")
+		findings.push_back("host network namespace (network=host)");
+	// Binds and Mounts are two spellings of the same host-path exposure; normalize so '//' and '/./' cannot disguise '/'.
+	const auto riskyBindSource = [](std::string source)
+	{
+		std::string normalized;
+		for (size_t i = 0; i < source.size(); i++)
+		{
+			if (source[i] == '/' && !normalized.empty() && normalized.back() == '/')
+				continue;
+			normalized += source[i];
+		}
+		// Collapse '/./' segments and a trailing '/.'.
+		const auto dotSlash = normalized.find("/./");
+		if (dotSlash != std::string::npos)
+			normalized = normalized.substr(0, dotSlash) + normalized.substr(dotSlash + 2);
+		if (Utility::endWith(normalized, "/."))
+			normalized.resize(normalized.size() - 2);
+		return normalized == "/" || normalized == "/var/run" || normalized == "/run" ||
+			   Utility::endWith(normalized, "/docker.sock");
+	};
 	if (hostConfig["Binds"].isArray())
 	{
 		for (const auto &bind : hostConfig["Binds"])
@@ -111,15 +151,49 @@ std::vector<std::string> dockerHostSecurityFindings(const Json::Value &createBod
 			if (!bind.isString())
 				continue;
 			const auto source = bind.asString().substr(0, bind.asString().find(':'));
-			if (source == "/" || source.rfind("/var/run/docker.sock", 0) == 0)
+			if (riskyBindSource(source))
 				findings.push_back("bind of host path <" + source + ">");
+		}
+	}
+	if (hostConfig["Mounts"].isArray())
+	{
+		for (const auto &mount : hostConfig["Mounts"])
+		{
+			// Read-only mounts still expose host content; every bind type counts.
+			if (!mount.isObject() || lowerCase(GET_JSON_STR_VALUE(mount, "Type")) != "bind")
+				continue;
+			const auto source = GET_JSON_STR_VALUE(mount, "Source");
+			if (riskyBindSource(source))
+				findings.push_back("Mount of host path <" + source + ">");
+		}
+	}
+	// Volumes-from or raw host-device mapping is a host-facing capability by construction.
+	if (hostConfig["VolumesFrom"].isArray() && hostConfig["VolumesFrom"].size() > 0)
+		findings.push_back("volumes inherited from another container (volumes-from)");
+	if (hostConfig["Devices"].isArray() && hostConfig["Devices"].size() > 0)
+		findings.push_back("host device mapping (device)");
+	if (hostConfig["SecurityOpt"].isArray())
+	{
+		for (const auto &opt : hostConfig["SecurityOpt"])
+		{
+			// apparmor/seccomp/systempaths "unconfined" and label disabling are the profile-escape spellings.
+			if (opt.isString())
+			{
+				const auto text = lowerCase(opt.asString());
+				if (text.find("unconfined") != std::string::npos || text.find("label=disable") == 0 ||
+					text.find("label:disable") != std::string::npos)
+					findings.push_back("security opt <" + opt.asString() + ">");
+			}
 		}
 	}
 	if (hostConfig["CapAdd"].isArray())
 	{
 		for (const auto &cap : hostConfig["CapAdd"])
 		{
-			if (cap.isString() && (cap.asString() == "SYS_ADMIN" || cap.asString() == "SYS_PTRACE"))
+			if (!cap.isString())
+				continue;
+			const auto name = upperCase(cap.asString());
+			if (name == "ALL" || name == "SYS_ADMIN" || name == "SYS_PTRACE")
 				findings.push_back("CapAdd " + cap.asString());
 		}
 	}
@@ -225,15 +299,22 @@ pid_t DockerProcess::startContainer(const std::string &cmd, const std::string &e
 		containerEngine = m_containerEngine;
 	}
 
-	// Step 0: Clean old docker container (containers may remain after host restart)
-	std::string dockerCommand = Utility::stringFormat("%s rm -f %s", containerEngine.c_str(), m_containerName.c_str());
-	runDockerCli(dockerCommand); // Best effort: docker run reports a name conflict if cleanup failed.
-	// Pre-namespacing name: a leftover from an older App Mesh version.
-	dockerCommand = Utility::stringFormat("%s rm -f %s", containerEngine.c_str(), m_legacyContainerName.c_str());
-	runDockerCli(dockerCommand); // Best effort, same failure reporting as above.
+	// Step 0: Clean this app's own leftover containers after a restart; only ownership-labeled ones are removed,
+	// so a foreign occupant of the name stays untouched and docker run fails loudly with the name conflict.
+	for (const auto &candidate : std::vector<std::string>{m_containerName, m_legacyContainerName})
+	{
+		const auto owned = runDockerCli(Utility::stringFormat("%s ps -aq --filter name=^/%s$ --filter label=%s=true --filter label=%s=%s",
+															  containerEngine.c_str(), candidate.c_str(), DOCKER_LABEL_MANAGED,
+															  DOCKER_LABEL_APP, m_legacyContainerName.c_str()));
+		const auto ownedIds = Utility::stdStringTrim(owned.output);
+		if ((owned.started && owned.completed && owned.exitCode == 0) && !ownedIds.empty())
+		{
+			launchDockerCleanup(Utility::stringFormat("%s rm -f %s", containerEngine.c_str(), ownedIds.c_str()));
+		}
+	}
 
 	// Step 1: Check if docker image exists
-	dockerCommand =
+	std::string dockerCommand =
 		Utility::stringFormat("%s image inspect -f '{{.Size}}' %s", containerEngine.c_str(), m_dockerImage.c_str());
 	{
 		const auto imageInspect = runDockerCli(dockerCommand);
@@ -354,8 +435,9 @@ pid_t DockerProcess::startContainer(const std::string &cmd, const std::string &e
 		}
 		if (limit->m_cpuCores > 0)
 		{
-			// docker --cpus takes fractional cores; keep two decimals
-			dockerCommand.append(" --cpus ").append(Utility::stringFormat("%.2f", limit->m_cpuCores));
+			// --cpus takes fractional cores; clamp up so a tiny value never formats to "0.00" (docker rejects it)
+			const auto cpus = std::max(limit->m_cpuCores, 0.01);
+			dockerCommand.append(" --cpus ").append(Utility::stringFormat("%.2f", cpus));
 		}
 	}
 
@@ -363,18 +445,27 @@ pid_t DockerProcess::startContainer(const std::string &cmd, const std::string &e
 	dockerCommand.append(" ").append(m_dockerImage).append(" ").append(cmd);
 	LOG_DBG << fname << "dockerCommand: " << dockerCommand;
 
-	// The CLI backend reaches the same risks through raw APP_DOCKER_OPTS flags.
+	// The CLI backend reaches the same risks through its HostConfig fields and raw APP_DOCKER_OPTS flags.
 	{
 		const auto policy = Configuration::instance()->getDockerHostSecurityPolicy();
 		if (policy != "off")
 		{
 			const auto optsIt = envMap.find(ENV_APPMESH_DOCKER_PARAMS);
 			const auto opts = optsIt == envMap.end() ? std::string() : optsIt->second;
-			std::vector<std::string> hits;
+			std::vector<std::string> hits = dockerHostSecurityFindings(createBody);
 			if (opts.find("--privileged") != std::string::npos)
 				hits.push_back("privileged container");
 			if (opts.find("--pid=host") != std::string::npos || opts.find("--pid host") != std::string::npos)
 				hits.push_back("host PID namespace");
+			if (opts.find("--network=host") != std::string::npos || opts.find("--network host") != std::string::npos ||
+				opts.find("--net=host") != std::string::npos || opts.find("--net host") != std::string::npos)
+				hits.push_back("host network namespace");
+			if (opts.find("--cap-add") != std::string::npos || opts.find("--device") != std::string::npos ||
+				opts.find("--volumes-from") != std::string::npos || opts.find("--security-opt") != std::string::npos)
+				hits.push_back("capability/device/profile option in " + std::string(ENV_APPMESH_DOCKER_PARAMS));
+			if (opts.find("-v /:") == 0 || opts.find(" -v /:") != std::string::npos ||
+				opts.find("--volume /:") != std::string::npos || opts.find(" --volume /:") != std::string::npos)
+				hits.push_back("bind of host path </>");
 			if (!hits.empty())
 			{
 				std::string joined;
@@ -382,7 +473,7 @@ pid_t DockerProcess::startContainer(const std::string &cmd, const std::string &e
 					joined += (joined.empty() ? "" : "; ") + h;
 				if (policy == "enforce")
 				{
-					setStartError("Docker.HostSecurityPolicy=enforce rejected the docker run options: " + joined);
+					setStartError("Docker.HostSecurityPolicy=enforce rejected the container definition: " + joined);
 					LOG_WAR << fname << startError();
 					return INVALID_PID;
 				}
@@ -465,7 +556,7 @@ pid_t DockerProcess::startContainer(const std::string &cmd, const std::string &e
 				if (runningText == "true" && hostPid > 1)
 				{
 					this->attach(hostPid);
-					m_hostPidVisible = AppProcess::running();
+					m_hostPidVisible.store(AppProcess::running(), std::memory_order_release);
 					m_containerRunning.store(true, std::memory_order_release);
 					setContainerId(containerId);
 					LOG_INF << fname << "started pid <" << hostPid << "> for container: " << containerId;
@@ -516,7 +607,7 @@ pid_t DockerProcess::startImagePull(const std::map<std::string, std::string> &en
 		containerEngine = m_containerEngine;
 	}
 	const pid_t pid = AppProcess::startImpl(containerEngine + " pull " + dockerImage, "root", std::move(workDir), {},
-											nullptr, stdoutFile, EMPTY_STR_JSON, 0);
+											nullptr, stdoutFile, EMPTY_STR_JSON, 0, false);
 	if (pid > 1)
 		scheduleTermination(pullTimeout, fname);
 	return pid;
@@ -563,7 +654,37 @@ std::optional<int> DockerProcess::containerHealthVerdict()
 bool DockerProcess::needsAlwaysExitPoll() const
 {
 	std::lock_guard guard(m_dockerMutex);
-	return !m_containerId.empty() && !m_hostPidVisible;
+	return !m_containerId.empty() && !m_hostPidVisible.load(std::memory_order_acquire);
+}
+
+void DockerProcess::adoptRecoveredContainer()
+{
+	const static char fname[] = "DockerProcess::adoptRecoveredContainer() ";
+	if (!containerId().empty())
+		return;
+
+	std::string containerEngineName;
+	{
+		std::lock_guard guard(m_dockerMutex);
+		containerEngineName = m_containerEngine;
+	}
+	// Same ownership proof as the API backend: only a container labeled for this app is adopted.
+	const auto owned = runDockerCli(Utility::stringFormat("%s ps -aq --filter name=^/%s$ --filter label=%s=true --filter label=%s=%s",
+														  containerEngineName.c_str(), m_containerName.c_str(), DOCKER_LABEL_MANAGED,
+														  DOCKER_LABEL_APP, m_legacyContainerName.c_str()));
+	const auto adoptedId = Utility::stdStringTrim(owned.output);
+	if (!owned.started || !owned.completed || owned.exitCode != 0 || adoptedId.empty())
+		return;
+
+	setContainerId(adoptedId);
+	const auto state = runDockerCli(Utility::stringFormat("%s inspect -f '{{.State.Running}}' %s",
+														  containerEngineName.c_str(), adoptedId.c_str()),
+									10, 32, true);
+	if (state.started && state.completed && state.exitCode == 0)
+		m_containerRunning.store(Utility::stdStringTrim(state.output) == "true", std::memory_order_release);
+	m_hostPidVisible.store(AppProcess::running(), std::memory_order_release);
+	LOG_INF << fname << "adopted recovered container <" << adoptedId << "> for application <" << m_legacyContainerName
+			<< ">";
 }
 
 bool DockerProcess::running() const
@@ -572,7 +693,7 @@ bool DockerProcess::running() const
 		return true;
 	{
 		std::lock_guard guard(m_dockerMutex);
-		if (!m_containerId.empty() && !m_hostPidVisible)
+		if (!m_containerId.empty() && !m_hostPidVisible.load(std::memory_order_acquire))
 			return m_containerRunning.load(std::memory_order_acquire);
 	}
 	return AppProcess::running();
@@ -735,10 +856,12 @@ int DockerProcess::returnValue() const
 
 pid_t DockerProcess::startImpl(std::string cmd, std::string execUser, std::string workDir,
 							   std::map<std::string, std::string> envMap, std::shared_ptr<ResourceLimitation> limit,
-							   const std::string &stdoutFile, const Json::Value &stdinFileContent, int maxStdoutSize)
+							   const std::string &stdoutFile, const Json::Value &stdinFileContent, int maxStdoutSize,
+							   bool stdinPipe)
 {
 	const static char fname[] = "DockerProcess::startImpl() ";
 	LOG_DBG << fname << "Entered";
+	(void)stdinPipe; // registration rejects pipe stdin for container apps
 
 	// Check for podman engine
 	if (CONTAINER_PODMAN == GET_JSON_STR_VALUE(stdinFileContent, "engine"))

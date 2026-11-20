@@ -85,6 +85,18 @@ func init() {
 	}
 }
 
+// Reload re-reads config.yaml (files plus env overrides) into ConfigData,
+// idempotent with the startup load, to follow daemon-side hot reloads.
+func Reload() error {
+	return readConfig()
+}
+
+// ConfigFileCandidates lists the config locations the loader searches and a watcher stats.
+func ConfigFileCandidates() []string {
+	home := GetAppMeshHomeDir()
+	return []string{filepath.Join(home, "work", "config", "config.yaml"), filepath.Join(home, "config", "config.yaml")}
+}
+
 // Convert all relative paths to absolute paths
 func ResolveAbsolutePaths() {
 	ConfigData.REST.SSL.SSLCAPath = ResolveAbsolutePath(ConfigData.REST.SSL.SSLCAPath)

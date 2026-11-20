@@ -1277,37 +1277,38 @@ int Configuration::removeRunInstances(const std::string &baseName)
 {
 	const static char fname[] = "Configuration::removeRunInstances() ";
 	// Identified by the engine-injected run_base marker, never by parsing the
-	// `<base>_N` name (the suffix rule is ambiguous once base names contain '_').
-	// removeApp() stops the instance process and drops the registration atomically.
-	// A run instance registering while we delete would otherwise survive on the
-	// first snapshot, so rescan until none is left (bounded: a client looping
-	// registrations must not spin here forever).
+	// `<base>_N` name (ambiguous once base names contain '_'). Each removal is
+	// race-safe against a same-name re-registration via the expected pointer,
+	// so rescan until none is left (bounded: a client looping registrations
+	// must not spin forever; -1 tells the caller the bound was hit).
 	static constexpr int MAX_RESWEEPS = 8;
 	int removed = 0;
+	bool gaveUp = false;
 	for (int sweep = 0;; ++sweep)
 	{
-		std::vector<std::string> instanceNames;
+		std::vector<std::shared_ptr<Application>> instances;
 		for (const auto &app : getApps())
 		{
 			if (app && app->isOneShot() && app->runBaseApp() == baseName)
-				instanceNames.push_back(app->getName());
+				instances.push_back(app);
 		}
-		if (instanceNames.empty())
+		if (instances.empty())
 			break;
-		for (const auto &name : instanceNames)
+		for (const auto &app : instances)
 		{
-			if (removeApp(name))
+			if (removeApp(app->getName(), app.get()))
 				++removed;
 		}
 		if (sweep >= MAX_RESWEEPS)
 		{
 			LOG_WAR << fname << "Run instances of <" << baseName << "> keep re-registering; giving up after "
 					<< MAX_RESWEEPS << " resweeps";
+			gaveUp = true;
 			break;
 		}
 	}
 	LOG_INF << fname << "Removed <" << removed << "> run instance(s) of base application <" << baseName << ">";
-	return removed;
+	return gaveUp ? -1 : removed;
 }
 
 const Json::Value Configuration::getAgentAppJson() const

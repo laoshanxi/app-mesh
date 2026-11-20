@@ -324,6 +324,28 @@ void Application::FromJson(const std::shared_ptr<Application> &app, const Json::
 		}
 	}
 
+	// Interactive stdin keeps the daemon-side pipe write end open for the input
+	// API. It replaces the launch-time metadata stdin, conflicts with container
+	// backends, and has no Windows pipe support.
+	if (jsonObj.isMember(JSON_KEY_APP_stdin))
+	{
+		const auto stdinMode = GET_JSON_STR_VALUE(jsonObj, JSON_KEY_APP_stdin);
+		if (stdinMode.empty() || stdinMode == "none")
+			app->m_stdinPipe = false;
+		else if (stdinMode == JSON_KEY_APP_stdin_pipe)
+		{
+#if defined(_WIN32)
+			throw std::invalid_argument("stdin pipe is not supported on this platform");
+#else
+			app->m_stdinPipe = true;
+#endif
+		}
+		else
+			throw std::invalid_argument("stdin must be \"none\" or \"pipe\"");
+	}
+	if (app->m_stdinPipe && app->m_metadata != EMPTY_STR_JSON)
+		throw std::invalid_argument("stdin pipe cannot be combined with launch metadata (metadata feeds process stdin)");
+
 	app->m_commandLine = Utility::stdStringTrim(GET_JSON_STR_VALUE(jsonObj, JSON_KEY_APP_command));
 	app->m_description = Utility::stdStringTrim(GET_JSON_STR_VALUE(jsonObj, JSON_KEY_APP_description));
 
@@ -431,6 +453,8 @@ void Application::FromJson(const std::shared_ptr<Application> &app, const Json::
 	}
 
 	app->m_dockerImage = GET_JSON_STR_VALUE(jsonObj, JSON_KEY_APP_docker_image);
+	if (app->m_stdinPipe && !app->m_dockerImage.empty())
+		throw std::invalid_argument("stdin pipe is not supported for container applications");
 
 	// First-class container wiring, compiled into the Docker create request at
 	// launch (see compileDockerContainerFields): common needs stay readable
@@ -640,6 +664,10 @@ Json::Value Application::AsJson(bool returnRuntimeInfo, void *ptree)
 	if (m_metadata != EMPTY_STR_JSON)
 	{
 		result[JSON_KEY_APP_metadata] = m_metadata;
+	}
+	if (m_stdinPipe)
+	{
+		result[JSON_KEY_APP_stdin] = JSON_KEY_APP_stdin_pipe;
 	}
 	if (!m_commandLine.empty())
 	{
@@ -1067,6 +1095,10 @@ bool Application::attach(int pid)
 	}
 	terminate(std::move(previous));
 
+	// A recovered container run must re-bind to its container: without the ID a stop degrades to a
+	// host SIGKILL, the exit code fakes to 0, the probe loses its target; adoption verifies labels.
+	attached->adoptRecoveredContainer();
+
 	// 2. Probe liveness (Windows: no probe -> treated as dead)
 	const pid_t attachedPid = attached->getpid();
 	auto procStartTime = std::chrono::system_clock::now();
@@ -1484,7 +1516,7 @@ std::string Application::startRun(bool onDemand, int timeoutSeconds, const std::
 	if (!m_dockerImage.empty())
 		compileDockerContainerFields(launchMetadata);
 	auto result = process->start(getCmdLine(), std::move(spawnUser), m_workdir, std::move(envMap), m_resourceLimit,
-								 m_stdoutFile, launchMetadata, APP_STD_OUT_MAX_FILE_SIZE);
+								 m_stdoutFile, launchMetadata, APP_STD_OUT_MAX_FILE_SIZE, m_stdinPipe);
 
 	if (processProof)
 		activateProcessProof(runId, processProof, result.accepted);
@@ -1629,6 +1661,24 @@ void Application::replyTask(const std::string &processKey, std::shared_ptr<HttpR
 	m_task.replyTask(processKey, req);
 }
 
+void Application::partialTask(const std::string &processKey, const std::string &payload, bool &delivered)
+{
+	m_task.partialReply(processKey, payload, delivered);
+}
+
+long Application::writeStdin(const std::vector<std::uint8_t> &data, bool closePipe, const std::string &processUuid)
+{
+	if (!m_stdinPipe)
+		throw ConflictException("stdin is not piped for this application");
+	auto processLock = m_process.synchronize();
+	const auto &process = *processLock;
+	if (!process || process->isFinalized())
+		throw ConflictException("no running process to receive stdin");
+	if (!processUuid.empty() && process->getUuid() != processUuid)
+		throw ConflictException("process uuid mismatch");
+	return process->writeStdin(data, closePipe);
+}
+
 std::tuple<int, std::string> Application::taskStatus() { return m_task.taskStatus(); }
 
 bool Application::usesProcessProof() const
@@ -1731,8 +1781,13 @@ const std::string Application::getExecUser() const
 
 	if (executeUser.empty())
 	{
-		static const auto osUser = os::getUsernameByUid();
-		executeUser = osUser;
+		// A container maps only an explicitly chosen user: a daemon-user fallback would override the
+		// image's own USER with a name most images do not define (and with root on a root-host install).
+		if (m_dockerImage.empty())
+		{
+			static const auto osUser = os::getUsernameByUid();
+			executeUser = osUser;
+		}
 	}
 	return executeUser;
 #endif
@@ -1986,7 +2041,17 @@ std::optional<int> Application::probeContainerHealth()
 		process = *lock;
 	}
 	if (!process)
+	{
+		// No run at all (never started, or between registrations): a containerized app without a live
+		// run is not healthy — the same rule the per-tick phase check applies to native apps.
+		return 1;
+	}
+	if (process->containerId().empty())
+	{
+		// Image pull in flight, or a recovered run whose container is gone: no
+		// container to probe, no verdict to flip — leave the current state.
 		return std::nullopt;
+	}
 
 	// An image HEALTHCHECK means Docker already executes the probe on its own
 	// schedule: read the maintained verdict, never run a second probe of ours.
@@ -2056,10 +2121,11 @@ void Application::compileDockerContainerFields(Json::Value &createBody) const
 	}
 	if (!m_dockerVolumes.empty())
 	{
-		auto binds = Json::Value(Json::arrayValue);
+		// Append (the shell script bind above); a wholesale assignment would unmount it.
+		if (!hostConfig["Binds"].isArray())
+			hostConfig["Binds"] = Json::Value(Json::arrayValue);
 		for (const auto &bind : m_dockerVolumes)
-			binds.append(bind);
-		hostConfig["Binds"] = std::move(binds);
+			hostConfig["Binds"].append(bind);
 	}
 	if (!m_dockerNetwork.empty())
 		hostConfig["NetworkMode"] = std::string(m_dockerNetwork);

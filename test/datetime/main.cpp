@@ -83,6 +83,20 @@ TEST_CASE("DateTime Class Test", "[DateTime]")
 	// time in different zone
 	REQUIRE(DateTime::parseISO8601DateTime("2020-10-07T21:19:00+07", "") ==
 			DateTime::parseISO8601DateTime("2020-10-07T22:19:00+08", ""));
+
+	// A trailing 'Z' is an explicit UTC designator: parse as UTC no matter the host timezone;
+	// the local offset must never be appended to an already zoned string.
+	REQUIRE(DateTime::parseISO8601DateTime("2026-11-15T09:46:40.123456789Z") ==
+			DateTime::parseISO8601DateTime("2026-11-15T09:46:40.123456789+00:00"));
+	REQUIRE(DateTime::parseISO8601DateTime("2026-11-15T09:46:40Z") ==
+			DateTime::parseISO8601DateTime("2026-11-15T17:46:40+08:00"));
+
+	// formatRFC3339Time keeps sub-second precision: the docker log cursor nudges one millisecond past
+	// the last delivered line and relies on the fraction surviving the round trip.
+	const auto stamped = DateTime::parseISO8601DateTime("2026-11-15T09:46:40.250Z");
+	const auto nudged = stamped + std::chrono::milliseconds(1);
+	REQUIRE(DateTime::formatRFC3339Time(nudged) == "2026-11-15T09:46:40.251000Z");
+	REQUIRE(DateTime::formatRFC3339Time(stamped) == "2026-11-15T09:46:40.250000Z");
 }
 
 TEST_CASE("Boost Date Time Test", "[Boost]")

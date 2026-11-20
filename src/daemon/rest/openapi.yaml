@@ -484,6 +484,139 @@ paths:
         "412": { description: Process key superseded by a newer process instance. }
         "404": { $ref: "#/components/responses/NotFound" }
 
+  /appmesh/app/{name}/task/stream:
+    parameters:
+      - $ref: "#/components/parameters/AppName"
+    post:
+      tags: [Tasks]
+      summary: Send a task request and stream partial results (SSE)
+      description: |
+        Streaming variant of the task RPC. The body and the timeout follow the
+        plain task operation; the answer is a text/event-stream with partial
+        events pushed by the worker, one final event with the result, and a
+        terminal end event. Requires the app-run-task permission and write
+        access to the target application; only a plain HTTP connection can
+        receive the stream.
+      parameters:
+        - name: timeout
+          in: query
+          required: false
+          schema: { type: integer, minimum: 0 }
+      requestBody:
+        required: false
+        content:
+          application/octet-stream:
+            schema: { type: string, format: binary }
+      responses:
+        "200":
+          description: SSE stream of partial/final/end events.
+          content:
+            text/event-stream:
+              schema: { type: string }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "405": { description: Task streaming requires a plain HTTP connection. }
+
+  /appmesh/app/{name}/task/partial:
+    parameters:
+      - $ref: "#/components/parameters/AppName"
+    post:
+      tags: [Tasks]
+      summary: Push an incremental task result from a managed application process
+      description: |
+        Worker RPC. Use the same transport and header requirements as the task
+        reply operation. The partial is delivered to the streaming caller of
+        the in-flight task; a one-shot caller ignores it.
+      security: []
+      parameters:
+        - name: X-AppMesh-Process-Key
+          in: header
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: false
+        content:
+          application/octet-stream:
+            schema: { type: string, format: binary }
+      responses:
+        "200": { description: "Accepted; the body reports {delivered: boolean}." }
+        "400": { description: Worker request permanently rejected. A retry cannot recover it. }
+        "412": { description: Process key superseded by a newer process instance. }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /appmesh/app/{name}/output/stream:
+    parameters:
+      - $ref: "#/components/parameters/AppName"
+    get:
+      tags: [Applications]
+      summary: Stream application output over server-sent events
+      description: |
+        Replays stdout from the byte cursor, then (follow=true) keeps pushing
+        live output until the run exits, the application is removed, or the
+        overall timeout elapses. The server reconciles replay and live frames
+        by the byte cursor. Requires the app-output-view permission and read
+        access to the target application.
+      parameters:
+        - name: stdout_position
+          in: query
+          required: false
+          schema: { type: integer, minimum: 0 }
+        - name: process_uuid
+          in: query
+          required: false
+          schema: { type: string }
+        - name: follow
+          in: query
+          required: false
+          schema: { type: boolean, default: true }
+        - name: timeout
+          in: query
+          required: false
+          schema: { type: integer, minimum: 0, maximum: 86400 }
+      responses:
+        "200":
+          description: SSE stream of stdout/end events.
+          content:
+            text/event-stream:
+              schema: { type: string }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /appmesh/app/{name}/input:
+    parameters:
+      - $ref: "#/components/parameters/AppName"
+    post:
+      tags: [Applications]
+      summary: Inject bytes into the stdin of a running application
+      description: |
+        The application must be registered with "stdin": "pipe". The body is
+        written to the process stdin; X-Input-Close true closes the pipe so
+        the process reads EOF. Requires the app-control permission and write
+        access to the target application.
+      parameters:
+        - name: X-Input-Close
+          in: header
+          required: false
+          schema: { type: boolean }
+        - name: process_uuid
+          in: query
+          required: false
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/octet-stream:
+            schema: { type: string, format: binary }
+      responses:
+        "200": { description: "Written; the body reports {bytes_written: integer}." }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { description: The application has no piped stdin or no running process. }
+        "412": { description: The stdin pipe buffer is full; the message reports the bytes written. }
+
   /appmesh/app/{name}/subscribe:
     parameters:
       - $ref: "#/components/parameters/AppName"
@@ -914,6 +1047,13 @@ components:
         shell:
           type: boolean
           description: Run the command through a generated shell script instead of a direct exec.
+        stdin:
+          type: string
+          enum: [none, pipe]
+          description: >-
+            "pipe" keeps the daemon-side stdin write end open so the input API
+            can inject bytes while the process runs; cannot be combined with
+            metadata and is not supported for container applications.
         session_login:
           type: boolean
           description: Start the process as a login session (sudo --login semantics).

@@ -127,11 +127,26 @@ def _run_worker(args, common):
     return 0
 
 
+def _partial_forwarder(ctx):
+    """Bridge the handler's stream callback onto the task RPC: each chunk becomes a
+    run_task_stream partial; returns False for a one-shot caller (stdout echo fallback)."""
+
+    def forward(chunk: str) -> bool:
+        try:
+            return bool(ctx.send_task_partial(chunk))
+        except Exception as e:
+            log.warning("send_task_partial failed: %s", e)
+            return False
+
+    return forward
+
+
 def _serve(handler: Handler):
     """fetch_task → dispatch → send_task_result loop (serial). The request is bracketed
     in-flight so a worker reaper never exits mid-request."""
     from appmesh import AppMeshProcessSupersededError, AppMeshWorkerRejectedError, AppMeshWorkerTCP
     ctx = AppMeshWorkerTCP()
+    partial = _partial_forwarder(ctx)
     backoff = 1.0
     while True:
         try:
@@ -151,7 +166,7 @@ def _serve(handler: Handler):
         backoff = 1.0
         handler.begin_request()
         try:
-            resp = handler.dispatch(payload)
+            resp = handler.dispatch(payload, partial=partial)
             ctx.send_task_result(json.dumps(resp))
         except Exception as e:
             log.error("unhandled error in request cycle: %s", e, exc_info=True)

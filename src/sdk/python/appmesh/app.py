@@ -159,6 +159,8 @@ class App:
         """app description string"""
         self.metadata = _get_item(data, "metadata")
         """metadata string/JSON (input for app, pass to process stdin)"""
+        self.stdin = _get_str(data, "stdin")
+        """stdin wiring: "pipe" keeps the daemon write end open for send_input() byte injection while the process runs; "none" (default) uses /dev/null or the metadata launch file"""
         self.working_dir = _get_str(data, "working_dir")
         """working directory"""
         self.enabled = _get_bool(data, "enabled")
@@ -198,8 +200,8 @@ class App:
         self.behavior = App.Behavior(_get_item(data, "behavior"))
 
         self.env = data.get("env", {}) if data else {}
-        """environment variables (e.g., -e env1=value1 -e env2=value2); registry credentials use """
-        """APP_DOCKER_REGISTRY_SERVER/USER/PASSWORD, APP_DOCKER_OPTS only applies to the cli docker_backend"""
+        """environment variables (e.g., -e env1=value1 -e env2=value2); registry credentials (APP_DOCKER_REGISTRY_SERVER/USER/PASSWORD) """
+        """belong in ``secret_env`` (``set_env(..., secure=True)``) so they stay protected at rest; APP_DOCKER_OPTS only applies to the cli docker_backend"""
         self.secret_env = data.get("secret_env", {}) if data else {}
         """security environment variables protected by Engine at rest"""
         self.pid = _get_int(data, "pid")

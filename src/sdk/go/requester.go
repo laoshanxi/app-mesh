@@ -248,6 +248,46 @@ func (h *HTTPRequester) getStream(apiPath string, queries url.Values, headers ma
 	return resp.StatusCode, resp.Body, resp.Header, nil
 }
 
+// sseRequest opens an SSE stream and returns the response body unread; the
+// caller must close it. It drops the client's 2-minute timeout: the stream is
+// bounded server-side and kept alive by the 15s ping plus the caller's context.
+func (h *HTTPRequester) sseRequest(ctx context.Context, method string, apiPath string, queries url.Values,
+	headers map[string]string, body []byte) (int, io.ReadCloser, http.Header, error) {
+	if h.httpClient == nil {
+		return 0, nil, nil, fmt.Errorf("http client is nil")
+	}
+	token := ""
+	if _, callerAuth := headers["Authorization"]; !callerAuth {
+		var err error
+		token, err = h.resolveAccessToken()
+		if err != nil {
+			return 0, nil, nil, err
+		}
+	}
+	// Streams never traverse node forwarding: an empty X-Target-Host override
+	// cancels the client-wide target (empty values are not sent).
+	if _, set := headers[headerTargetHost]; !set {
+		noForward := make(map[string]string, len(headers)+1)
+		for k, v := range headers {
+			noForward[k] = v
+		}
+		noForward[headerTargetHost] = ""
+		headers = noForward
+	}
+	req, err := h.buildRequest(ctx, method, apiPath, queries, headers, bytes.NewReader(body), token)
+	if err != nil {
+		return 0, nil, nil, err
+	}
+	// Share the transport (connection pool) but drop the overall deadline.
+	streamClient := *h.httpClient.Client
+	streamClient.Timeout = 0
+	resp, err := streamClient.Do(req)
+	if err != nil {
+		return 0, nil, nil, fmt.Errorf("request failed: %w", err)
+	}
+	return resp.StatusCode, resp.Body, resp.Header, nil
+}
+
 // doContext builds and executes the HTTP request, returning the response with
 // its body unread. Callers own resp.Body and must close it.
 func (h *HTTPRequester) doContext(ctx context.Context, method string, apiPath string, queries url.Values,
@@ -256,7 +296,25 @@ func (h *HTTPRequester) doContext(ctx context.Context, method string, apiPath st
 	if h.httpClient == nil {
 		return nil, fmt.Errorf("http client is nil")
 	}
+	req, err := h.buildRequest(ctx, method, apiPath, queries, headers, body, token)
+	if err != nil {
+		return nil, err
+	}
 
+	// Execute request
+	resp, err := h.httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("request failed: %w", err)
+	}
+
+	return resp, nil
+}
+
+// buildRequest constructs the signed request as it goes on the wire (bearer,
+// forwarding, custom headers, opt-in signature); doContext executes it on the
+// shared client, sseRequest on a deadline-free copy (streams outlive it).
+func (h *HTTPRequester) buildRequest(ctx context.Context, method string, apiPath string, queries url.Values,
+	headers map[string]string, body io.Reader, token string) (*http.Request, error) {
 	// Snapshot the signer once: the query encoding below and the signing step
 	// at the end must observe the same toggle state — reading it twice could
 	// pair a percent-only encoded query from one state with a signature (or its
@@ -319,13 +377,7 @@ func (h *HTTPRequester) doContext(ctx context.Context, method string, apiPath st
 		return nil, err
 	}
 
-	// Execute request
-	resp, err := h.httpClient.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("request failed: %w", err)
-	}
-
-	return resp, nil
+	return req, nil
 }
 
 // Close closes the HTTP client and its idle connections.
@@ -377,6 +429,9 @@ type TCPRequester struct {
 	sslClientCert    string
 	sslClientCertKey string
 	sslCAFile        string
+
+	// restBase is the REST listener the SSE side channel dials; from Option.RestPort.
+	restBase url.URL
 }
 
 // Send performs a REST-like request over TCP.

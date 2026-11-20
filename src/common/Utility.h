@@ -175,6 +175,23 @@ public:
 	// later publish can stay relative to the verified directory.
 	static int openFileWithinJail(const std::string &filePath, bool forWrite, const std::string &allowedBaseDir,
 								  std::string &resolvedOut, bool *rejectedOut = nullptr, int *dirFdOut = nullptr);
+	/// Outcome of unlinkFileWithinJail: callers map Removed to 200, NotFound to
+	/// 404, Rejected to 403, Failed to 500.
+	enum class JailUnlinkStatus
+	{
+		Removed,
+		NotFound,
+		Rejected,
+		Failed
+	};
+	// Delete-then-verify mirror of openFileWithinJail: pins each parent with openat(O_NOFOLLOW), re-runs the
+	// validateFilePath rules on the dirfd's RESOLVED location, and requires a regular non-symlink leaf, so a
+	// middle directory swapped outside the jail cannot steer the unlink. Windows stays lexical.
+	static JailUnlinkStatus unlinkFileWithinJail(const std::string &filePath, const std::string &allowedBaseDir,
+												 std::string &resolvedOut);
+	// Create every missing component of `dirPath` below a verified jail ancestor; each component is
+	// opened with O_NOFOLLOW so no directory is ever created outside the jail.
+	static bool createDirectoriesWithinJail(const std::string &dirPath, const std::string &allowedBaseDir);
 	static bool createDirectory(const std::string &path, fs::perms perms = fs::perms::owner_all | fs::perms::group_all |
 																		   fs::perms::others_read | fs::perms::others_exec);
 	static bool createRecursiveDirectory(const std::string &path,
@@ -316,6 +333,9 @@ public:
 // entry no longer lingers for the whole run lifecycle.
 #define RUN_INSTANCE_EXIT_GRACE_SECONDS int(60)
 #define MAX_OUTPUT_VIEW_TIMEOUT_SECONDS int(300) // output long-poll max wait; a dropped client is held this long
+#define DEFAULT_SSE_STREAM_TIMEOUT_SECONDS int(60 * 60)      // SSE output stream default lifetime
+#define MAX_SSE_STREAM_TIMEOUT_SECONDS int(24 * 60 * 60)     // SSE output stream lifetime cap
+#define SSE_HEARTBEAT_MILLISECONDS long(15 * 1000)           // SSE keep-alive cadence; also bounds disconnect detection
 #define CONSUL_SESSION_DEFAULT_TTL 30
 #define APP_STD_OUT_MAX_FILE_SIZE 1024 * 1024 * 100   // 100M
 #define APP_STD_OUT_VIEW_DEFAULT_SIZE 1024 * 1024 * 3 // 3M
@@ -382,6 +402,11 @@ public:
 #define JSON_KEY_APP_depends_on "depends_on"
 #define JSON_KEY_APP_permission "permission"
 #define JSON_KEY_APP_metadata "metadata"
+// stdin wiring: "pipe" keeps the daemon-side write end open so the input API
+// can inject bytes while the process runs (default "none": /dev/null or the
+// metadata launch file).
+#define JSON_KEY_APP_stdin "stdin"
+#define JSON_KEY_APP_stdin_pipe "pipe"
 #define JSON_KEY_APP_shell "shell"
 #define JSON_KEY_APP_session_login "session_login"
 #define JSON_KEY_APP_command "command"
@@ -480,6 +505,12 @@ public:
 #define HTTP_HEADER_KEY_X_App_Name "X-App-Name"
 #define HTTP_HEADER_KEY_X_Event_Type "X-Event-Type"
 #define HTTP_HEADER_KEY_X_Subscription_Id "X-Subscription-Id"
+// Internal marker (never client-settable behavior: a forged value only fails
+// to resolve): links an SSE task-stream request to its live sink across the
+// msgpack worker boundary.
+#define HTTP_HEADER_KEY_X_AppMesh_Sse_Stream "X-AppMesh-Sse-Stream"
+// stdin injection: "true" closes the pipe write end (the process reads EOF).
+#define HTTP_HEADER_KEY_X_Input_Close "X-Input-Close"
 
 #define HTTP_QUERY_KEY_stdout_position "stdout_position"
 #define HTTP_QUERY_KEY_stdout_index "stdout_index"

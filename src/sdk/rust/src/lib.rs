@@ -23,7 +23,7 @@ mod worker_wss;
 mod wss_transport;
 
 pub use client_builder::*;
-pub use client_http::AppMeshClient;
+pub use client_http::{AppMeshClient, RunStream, SseEnd, SseStream};
 pub use client_tcp::AppMeshClientTCP;
 pub use client_wss::AppMeshClientWSS;
 pub use error::{AppMeshError, TransportError};

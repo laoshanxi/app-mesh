@@ -412,18 +412,18 @@ void AppProcess::reportEarlyExit(int exitCode)
 
 void AppProcess::reportPolledExitAsync()
 {
-	// A recovered run has no backend to query for an exit code; report 0.
-	if (m_recovered)
+	// A recovered native run has no backend to query an exit code from — report 0; a re-bound container run does.
+	if (m_recovered && containerId().empty())
 	{
 		onExit(0);
 		return;
 	}
-	// docker inspect can stall for the full request timeout, so the exit-callback
-	// thread fetches it (guarded against stacking per tick); only an exception defers.
+	// docker inspect can stall for the full request timeout, so it runs on the dedicated poll thread
+	// (one in flight per tick): a hung channel must not delay the exit callbacks finalizing other runs.
 	if (m_lifecycle->exitPollInFlight.exchange(true))
 		return;
 	auto self = std::dynamic_pointer_cast<AppProcess>(shared_from_this());
-	ProcessService::instance()->postCallback(
+	ProcessService::instance()->postPoll(
 		[self]
 		{
 			try
@@ -439,10 +439,7 @@ void AppProcess::reportPolledExitAsync()
 		});
 }
 
-void AppProcess::reportBackendExit()
-{
-	onExit(returnValue());
-}
+void AppProcess::reportBackendExit() { onExit(returnValue()); }
 
 void AppProcess::finalizeExit() noexcept
 {
@@ -626,6 +623,13 @@ long AppProcess::cleanupResources()
 		m_stdinHandler.reset();
 		stdinFileName = m_stdinFileName;
 	}
+	// The write end closes under the stdin-write mutex so a racing writeStdin
+	// sees a valid fd or INVALID_FD, never a reused one. Closing is also the
+	// EOF a piped child still waits for.
+	{
+		std::lock_guard guard(m_stdinWriteMutex);
+		m_stdinWriteHandler.reset();
+	}
 	Utility::removeFile(stdinFileName);
 	return dispatchedBytes;
 }
@@ -800,10 +804,11 @@ bool AppProcess::onTimerCheckStdout()
 
 ProcessStartResult AppProcess::start(std::string cmd, std::string user, std::string workDir,
 									 std::map<std::string, std::string> envMap, std::shared_ptr<ResourceLimitation> limit,
-									 const std::string &stdoutFile, const Json::Value &stdinFileContent, int maxStdoutSize)
+									 const std::string &stdoutFile, const Json::Value &stdinFileContent, int maxStdoutSize,
+									 bool stdinPipe)
 {
 	const pid_t pid = startImpl(std::move(cmd), std::move(user), std::move(workDir), std::move(envMap), std::move(limit),
-								stdoutFile, stdinFileContent, maxStdoutSize);
+								stdoutFile, stdinFileContent, maxStdoutSize, stdinPipe);
 	resolveStart(pid > 1, pid);
 	const bool accepted = isStartAccepted();
 	if (!accepted)
@@ -819,9 +824,52 @@ ProcessStartResult AppProcess::start(std::string cmd, std::string user, std::str
 	return result;
 }
 
+long AppProcess::writeStdin(const std::vector<std::uint8_t> &data, bool closePipe)
+{
+	const static char fname[] = "AppProcess::writeStdin() ";
+#if defined(_WIN32)
+	// Registration rejects stdin:"pipe" on Windows; the stub keeps the process
+	// library compilable where ::write(native_fd) does not exist.
+	(void)data;
+	(void)closePipe;
+	throw std::runtime_error("stdin pipe is not supported on Windows");
+#else
+	// The fd is read and closed under the stdin-write mutex (cleanupResources
+	// uses the same lock): a racing injector never sees a reused descriptor.
+	std::lock_guard guard(m_stdinWriteMutex);
+	const auto fd = m_stdinWriteHandler.get();
+	if (fd == INVALID_FD)
+		throw std::runtime_error("stdin pipe is not open");
+	// Non-blocking writes keep a slow consumer a partial write, not a blocked
+	// worker thread.
+	std::size_t written = 0;
+	while (written < data.size())
+	{
+		const auto n = ::write(fd, data.data() + written, data.size() - written);
+		if (n > 0)
+		{
+			written += static_cast<std::size_t>(n);
+			continue;
+		}
+		if (n < 0 && errno == EINTR)
+			continue;
+		if (n < 0 && (errno == EAGAIN || errno == EWOULDBLOCK))
+			throw std::runtime_error(Utility::stringFormat("stdin pipe buffer is full after %zu bytes", written));
+		throw std::runtime_error(Utility::stringFormat("stdin write failed: %s", last_error_msg()));
+	}
+	if (closePipe)
+	{
+		LOG_DBG << fname << "closing stdin pipe (EOF)";
+		m_stdinWriteHandler.reset();
+	}
+	return static_cast<long>(written);
+#endif
+}
+
 pid_t AppProcess::startImpl(std::string cmd, std::string user, std::string workDir,
 							std::map<std::string, std::string> envMap, std::shared_ptr<ResourceLimitation> limit,
-							const std::string &stdoutFile, const Json::Value &stdinFileContent, int maxStdoutSize)
+							const std::string &stdoutFile, const Json::Value &stdinFileContent, int maxStdoutSize,
+							bool stdinPipe)
 {
 	const static char fname[] = "AppProcess::startImpl() ";
 
@@ -941,6 +989,40 @@ pid_t AppProcess::startImpl(std::string cmd, std::string user, std::string workD
 		if (!m_stdinHandler.valid())
 			setStartError(Utility::stringFormat("Failed to reopen stdin file for reading <%s>", last_error_msg()));
 		LOG_DBG << fname << "std_in <" << m_stdinFileName << "> handler=" << m_stdinHandler.get();
+	}
+	else if (stdinPipe)
+	{
+		// Interactive stdin: the child reads one end, the daemon keeps the
+		// other for the input API. Non-blocking so writeStdin never parks a
+		// worker thread on a process that stopped reading.
+#if !defined(_WIN32)
+		int stdinPipeFds[2] = {-1, -1};
+		// No portable pipe2: plain pipe plus fcntl flags (createStdoutPipe does
+		// the same). The write end is the one the API blocks on.
+		if (::pipe(stdinPipeFds) != 0)
+		{
+			setStartError(Utility::stringFormat("Failed to create stdin pipe <%s>", last_error_msg()));
+		}
+		else
+		{
+			const int writeFlags = ::fcntl(stdinPipeFds[1], F_GETFL, 0);
+			if (writeFlags < 0 || ::fcntl(stdinPipeFds[1], F_SETFL, writeFlags | O_NONBLOCK) < 0 ||
+				::fcntl(stdinPipeFds[1], F_SETFD, FD_CLOEXEC) < 0)
+			{
+				setStartError(Utility::stringFormat("Failed to configure stdin pipe <%s>", last_error_msg()));
+				::close(stdinPipeFds[0]);
+				::close(stdinPipeFds[1]);
+			}
+			else
+			{
+				m_stdinHandler.reset(stdinPipeFds[0]);
+				m_stdinWriteHandler.reset(stdinPipeFds[1]);
+				LOG_DBG << fname << "std_in pipe read=" << stdinPipeFds[0] << " write=" << stdinPipeFds[1];
+			}
+		}
+#else
+		setStartError("stdin pipe is not supported on this platform");
+#endif
 	}
 	else
 	{

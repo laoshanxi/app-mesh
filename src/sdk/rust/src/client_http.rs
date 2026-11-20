@@ -19,7 +19,7 @@ use crate::constants::*;
 use crate::error::AppMeshError;
 use crate::models::*;
 use crate::oauth::TokenProvider;
-use crate::request_signature::{is_file_endpoint, new_nonce, RequestSigner};
+use crate::request_signature::{is_file_endpoint, is_stream_endpoint, new_nonce, RequestSigner};
 use crate::requester::Requester;
 use crate::response_ext::ResponseExt;
 use crate::subscribe::EventCallback;
@@ -54,6 +54,9 @@ macro_rules !hmap
 pub struct HTTPRequester {
     url: String,
     client: ReqwestClient,
+    /// SSE streams outlive any total request timeout (a follow runs until its
+    /// end event); this client drops it and keeps a read timeout instead.
+    stream_client: ReqwestClient,
     access_token: Arc<RwLock<Option<String>>>,
     forward_to: Arc<Mutex<Option<String>>>,
     signer: RwLock<Option<RequestSigner>>,
@@ -78,16 +81,19 @@ impl HTTPRequester {
             crate::tls_config::resolve_ssl_verify(ssl_verify)?
         };
         let client_cert = ssl_client_cert.map(|(cert, key)| crate::tls_config::ClientCert::Pair(cert, key));
-        let client_builder = crate::tls_config::configure_reqwest_tls(
-            ReqwestClient::builder().timeout(timeout),
-            &verify,
-            client_cert.as_ref(),
-        )
-        .map_err(AppMeshError::ConfigurationError)?;
+        let tls_builder = |builder: reqwest::ClientBuilder| -> Result<reqwest::ClientBuilder> {
+            crate::tls_config::configure_reqwest_tls(builder, &verify, client_cert.as_ref())
+                .map_err(AppMeshError::ConfigurationError)
+        };
+        let client = tls_builder(ReqwestClient::builder().timeout(timeout))?.build()?;
+        // No total timeout (the server ends the stream itself and pings every
+        // 15s); a 60s read timeout still detects a dead peer between pings.
+        let stream_client = tls_builder(ReqwestClient::builder().read_timeout(Duration::from_secs(60)))?.build()?;
 
         Ok(Self {
             url,
-            client: client_builder.build()?,
+            client,
+            stream_client,
             access_token: Arc::new(RwLock::new(None)),
             forward_to: Arc::new(Mutex::new(None)),
             signer: RwLock::new(None),
@@ -179,6 +185,23 @@ impl HTTPRequester {
         fail_on_error: bool,
         signed_body_sha256: Option<String>,
     ) -> Result<reqwest::Response> {
+        self.execute_on(&self.client, method, path, body, headers, query, fail_on_error, signed_body_sha256).await
+    }
+
+    /// [`Self::execute`] on a caller-chosen client handle: SSE streams use the
+    /// no-total-timeout client so a long follow is not cut short.
+    #[allow(clippy::too_many_arguments)]
+    async fn execute_on(
+        &self,
+        client: &ReqwestClient,
+        method: Method,
+        path: &str,
+        body: Option<reqwest::Body>,
+        headers: Option<HashMap<String, String>>,
+        query: Option<HashMap<String, String>>,
+        fail_on_error: bool,
+        signed_body_sha256: Option<String>,
+    ) -> Result<reqwest::Response> {
         // Signed requests carry a percent-only encoded query on the wire
         // (space → %20, never '+'): reqwest's `.query()` form-encodes a space
         // as '+', which the daemon keeps literal, so the daemon-visible decoded
@@ -203,7 +226,7 @@ impl HTTPRequester {
         }
         debug!("{} {} {}", method, path, url);
 
-        let mut req = self.client.request(method.clone(), &url);
+        let mut req = client.request(method.clone(), &url);
 
         let all_headers = self.build_request_headers(&method, &wire_path, headers, query.as_ref(), signed_body_sha256);
         for (k, v) in all_headers {
@@ -260,13 +283,13 @@ impl Requester for HTTPRequester {
         fail_on_error: bool,
     ) -> Result<Option<reqwest::Response>> {
         // A streaming body cannot be hashed without buffering it. The streamed
-        // file endpoints are exempt (empty-string hash); a body-less request
-        // hashes the empty string; anything else cannot be signed.
+        // file and SSE endpoints are exempt (empty-string hash); a body-less
+        // request hashes the empty string; anything else cannot be signed.
         let signed_body_sha256 = {
             let signer = self.signer.read().unwrap_or_else(|e| e.into_inner());
             match signer.as_ref() {
                 None => None,
-                Some(_) if body.is_none() || is_file_endpoint(path) => {
+                Some(_) if body.is_none() || is_file_endpoint(path) || is_stream_endpoint(path) => {
                     Some(RequestSigner::body_sha256_hex(path, None))
                 }
                 Some(_) => {
@@ -276,7 +299,14 @@ impl Requester for HTTPRequester {
                 }
             }
         };
-        Ok(Some(self.execute(method, path, body, headers, query, fail_on_error, signed_body_sha256).await?))
+        Ok(Some(
+            self.execute_on(&self.stream_client, method, path, body, headers, query, fail_on_error, signed_body_sha256)
+                .await?,
+        ))
+    }
+
+    fn request_signer(&self) -> Option<RequestSigner> {
+        self.signer.read().unwrap_or_else(|e| e.into_inner()).clone()
     }
 
     fn set_request_signer(&self, signer: Option<RequestSigner>) {
@@ -443,7 +473,9 @@ impl AppMeshClient {
         self.prepare_bearer().await.map(|_| ())
     }
 
-    async fn prepare_bearer(&self) -> Result<Option<(Arc<dyn TokenProvider>, String)>> {
+    /// Push a fresh provider-managed bearer into the requester and return the
+    /// provider; `Ok(None)` without a provider (TCP/WSS SSE side channels read that token).
+    pub(crate) async fn prepare_bearer(&self) -> Result<Option<(Arc<dyn TokenProvider>, String)>> {
         let provider = self.token_provider.lock().unwrap_or_else(|error| error.into_inner()).clone();
         if let Some(provider) = provider {
             let token = provider.access_token().await?;
@@ -799,7 +831,7 @@ fn parse_numeric_header<T: std::str::FromStr>(name: &str, value: &http::HeaderVa
 /// Percent-encode a URL path segment: space becomes `%20` and `+` becomes
 /// `%2B`. Form encoding is wrong in a path — the daemon reads a `+` back as a
 /// literal plus.
-fn encode_path_segment(value: &str) -> String {
+pub(crate) fn encode_path_segment(value: &str) -> String {
     const HEX: &[u8; 16] = b"0123456789ABCDEF";
     let mut encoded = String::with_capacity(value.len());
     for byte in value.bytes() {
@@ -1230,6 +1262,11 @@ impl AppMeshClient {
 
             // Transport error or timeout: the app may still be running, so do not
             // delete it (matches the Go SDK, which removes the app only on a real exit).
+            // A 404 is different: the daemon purges the run registration shortly
+            // after exit, which must surface as AppRemoved, not a caller-side timeout.
+            if app_out.status_code == StatusCode::NOT_FOUND.as_u16() {
+                return Err(AppMeshError::AppRemoved);
+            }
             if app_out.status_code != StatusCode::OK.as_u16()
                 || (timeout > 0 && start_time.elapsed().as_secs() >= timeout as u64)
             {
@@ -1244,12 +1281,7 @@ impl AppMeshClient {
     pub async fn run_task(&self, name: &str, data: Value, timeout: i32) -> Result<String> {
         let timeout = if timeout <= 0 { 300 } else { timeout };
         let query = hmap! {HTTP_QUERY_KEY_TIMEOUT => timeout};
-        // A bare string is the payload itself — the daemon delivers the body as-is
-        // (Python/JS SDKs send strings raw); any other JSON value is sent as JSON.
-        let body_bytes = match data {
-            Value::String(text) => text.into_bytes(),
-            other => serde_json::to_vec(&other)?,
-        };
+        let body_bytes = task_body_bytes(data)?;
 
         let resp = self
             .send(
@@ -1273,6 +1305,489 @@ impl AppMeshClient {
             .await?;
         Ok(resp.status() == StatusCode::OK)
     }
+
+    /// Query map of the output stream route (Python `follow_output`).
+    pub(crate) fn output_stream_query(
+        stdout_position: i64,
+        process_uuid: &str,
+        follow: bool,
+        timeout: i32,
+    ) -> HashMap<String, String> {
+        let mut query = hmap! {
+            HTTP_QUERY_KEY_STDOUT_POSITION => stdout_position,
+            HTTP_QUERY_KEY_FOLLOW => if follow { "true" } else { "false" },
+            HTTP_QUERY_KEY_TIMEOUT => timeout,
+        };
+        if !process_uuid.is_empty() {
+            query.insert(HTTP_QUERY_KEY_PROCESS_UUID.into(), process_uuid.to_string());
+        }
+        query
+    }
+
+    /// Query map of the streaming task route.
+    pub(crate) fn task_stream_query(timeout: i32) -> HashMap<String, String> {
+        hmap! {HTTP_QUERY_KEY_TIMEOUT => timeout}
+    }
+
+    /// Stream an application's stdout incrementally over server-sent events
+    /// (`GET /appmesh/app/{name}/output/stream`; docs/source/Streaming.md).
+    ///
+    /// Replays from `stdout_position`, then (with `follow`) yields new output
+    /// until process exit, app removal, or `timeout`; the server reconciles the
+    /// replay/live boundary, so no position bookkeeping is needed.
+    ///
+    /// Each [`SseStream::next`] returns one stdout chunk; after `None` the
+    /// terminal marker is in [`SseStream::end`] (`exit_code`/`position` set on
+    /// a natural exit). An `error`/`timeout` end fails with
+    /// [`AppMeshError::RequestFailed`]/[`AppMeshError::ConnectionError`].
+    pub async fn follow_output(
+        &self,
+        app_name: &str,
+        stdout_position: i64,
+        process_uuid: &str,
+        follow: bool,
+        timeout: i32,
+    ) -> Result<SseStream> {
+        let path = format!("/appmesh/app/{}/output/stream", encode_path_segment(app_name));
+        let query = Self::output_stream_query(stdout_position, process_uuid, follow, timeout);
+        self.prepare_bearer().await?;
+        // SSE cannot ride a framed (TCP/WSS) transport; those clients use their REST side channel.
+        let Some(resp) = self.req.send_streaming(Method::GET, &path, None, None, Some(query), false).await? else {
+            return Err(AppMeshError::UnsupportedFeature {
+                feature: "follow_output".into(),
+                transport: "framed (use the TCP/WSS client side channel)".into(),
+            });
+        };
+        Ok(SseStream::new(SseKind::Output, check_sse_response(resp).await?))
+    }
+
+    /// Streaming task RPC (`POST /appmesh/app/{name}/task/stream`): the
+    /// counterpart of [`Self::run_task`] for continuous-output services (LLM
+    /// agents) whose worker pushes partials with `AppMeshWorker::send_task_partial`.
+    ///
+    /// Each [`SseStream::next`] returns one partial; the final payload (the
+    /// string `run_task` returns) is in [`SseEnd::result`] on reason "final".
+    pub async fn run_task_stream(&self, app_name: &str, data: Value, timeout: i32) -> Result<SseStream> {
+        let timeout = if timeout <= 0 { 300 } else { timeout };
+        let path = format!("/appmesh/app/{}/task/stream", encode_path_segment(app_name));
+        let query = Self::task_stream_query(timeout);
+        let body = task_body_bytes(data)?;
+        self.prepare_bearer().await?;
+        let Some(resp) = self
+            .req
+            .send_streaming(Method::POST, &path, Some(reqwest::Body::from(body)), None, Some(query), false)
+            .await?
+        else {
+            return Err(AppMeshError::UnsupportedFeature {
+                feature: "run_task_stream".into(),
+                transport: "framed (use the TCP/WSS client side channel)".into(),
+            });
+        };
+        Ok(SseStream::new(SseKind::Task, check_sse_response(resp).await?))
+    }
+
+    /// Inject bytes into the stdin of a running application
+    /// (`POST /appmesh/app/{name}/input`).
+    ///
+    /// Requires `stdin: "pipe"` (the daemon holds the write end open), pairing
+    /// writes with output read via [`Self::follow_output`]. `close` sends EOF
+    /// after this write; a full pipe answers 412 — retry with the remainder.
+    ///
+    /// Returns the number of bytes written.
+    pub async fn send_input(&self, app_name: &str, data: &[u8], close: bool, process_uuid: &str) -> Result<i64> {
+        let mut headers = hmap! {HTTP_HEADER_CONTENT_TYPE => "application/octet-stream"};
+        if close {
+            headers.insert(HTTP_HEADER_KEY_X_INPUT_CLOSE.to_string(), "true".to_string());
+        }
+        let mut query = hmap!();
+        if !process_uuid.is_empty() {
+            query.insert(HTTP_QUERY_KEY_PROCESS_UUID.into(), process_uuid.to_string());
+        }
+        let resp = self
+            .send(
+                Method::POST,
+                &format!("/appmesh/app/{}/input", encode_path_segment(app_name)),
+                Some(data),
+                Some(headers),
+                Some(query),
+                true,
+            )
+            .await?;
+        let json: Value = resp.json()?;
+        Ok(json.get("bytes_written").and_then(Value::as_i64).unwrap_or(0))
+    }
+
+    /// Run a one-shot application remotely and stream its stdout incrementally
+    /// (`run_app_async` + `follow_output` + `delete_app`) for continuous-output
+    /// processes that `run_app_sync` cannot show until completion.
+    ///
+    /// Each [`RunStream::next`] yields one stdout chunk; the temporary app is
+    /// always deleted when the stream terminates or the handle is dropped.
+    pub async fn stream_run(self: &Arc<Self>, app: &Application, max_time: i32, lifecycle: i32) -> Result<RunStream> {
+        let run = self.run_app_async(app, max_time, lifecycle).await?;
+        let stream = self.follow_output(&run.app_name, 0, &run.proc_uid, true, max_time.max(lifecycle)).await?;
+        Ok(RunStream::new(stream, Arc::clone(self), run.app_name))
+    }
+}
+
+// -- Streaming (SSE) ---------------------------------------------------------
+
+/// Task payload bytes: a bare string is the payload itself — the daemon
+/// delivers the body as-is (Python/JS SDKs send strings raw); any other JSON
+/// value is sent as JSON.
+pub(crate) fn task_body_bytes(data: Value) -> Result<Vec<u8>> {
+    match data {
+        Value::String(text) => Ok(text.into_bytes()),
+        other => serde_json::to_vec(&other).map_err(AppMeshError::from),
+    }
+}
+
+/// Terminal marker of a server-sent-events stream (the `end` frame; the value
+/// a Python generator returns as `SseEnd`). See docs/source/Streaming.md.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct SseEnd {
+    /// exit | removed | timeout | eof | final | disconnected | error | closed (peer cut the stream).
+    pub reason: String,
+    /// Output streams: process exit code when the reason is "exit".
+    pub exit_code: Option<i32>,
+    /// Output streams: final stdout byte cursor.
+    pub position: Option<i64>,
+    /// Task streams: HTTP status carried by an "error" end frame.
+    pub status: Option<u16>,
+    /// Error message of an "error" end frame.
+    pub message: Option<String>,
+    /// Task streams: final result payload (the string `run_task` would return).
+    pub result: Option<String>,
+}
+
+impl SseEnd {
+    /// Build the marker from an `end` frame payload (Python `end_from_payload`).
+    fn from_payload(payload: &Value, result: Option<String>) -> Self {
+        Self {
+            reason: payload.get("reason").and_then(Value::as_str).unwrap_or("closed").to_string(),
+            exit_code: payload.get("exit_code").and_then(Value::as_i64).map(|v| v as i32),
+            position: payload.get("position").and_then(Value::as_i64),
+            status: payload.get("status").and_then(Value::as_u64).map(|v| v as u16),
+            message: payload.get("message").and_then(Value::as_str).map(String::from),
+            result,
+        }
+    }
+
+    /// Turn an error/timeout terminal reason into the matching error
+    /// (Python `raise_on_error_end`); the natural ends pass.
+    fn check(&self) -> Result<()> {
+        match self.reason.as_str() {
+            "error" => {
+                let status = self
+                    .status
+                    .and_then(|s| StatusCode::from_u16(s).ok())
+                    .unwrap_or(StatusCode::INTERNAL_SERVER_ERROR);
+                Err(AppMeshError::RequestFailed {
+                    status,
+                    message: self.message.clone().unwrap_or_else(|| "stream failed with an error".into()),
+                })
+            }
+            "timeout" => Err(AppMeshError::ConnectionError(
+                self.message.clone().unwrap_or_else(|| "stream timed out".into()),
+            )),
+            "exit" | "removed" | "eof" | "final" | "disconnected" | "closed" => Ok(()),
+            reason => Err(AppMeshError::Other(format!("stream ended with unknown reason: {}", reason))),
+        }
+    }
+}
+
+/// Which SSE route a stream reads.
+#[derive(Debug, Clone, Copy)]
+pub(crate) enum SseKind {
+    /// `GET .../output/stream`: `stdout` chunks; `end` carries exit_code/position.
+    Output,
+    /// `POST .../task/stream`: `partial` chunks; `final` + `end` carry the result.
+    Task,
+}
+
+/// Incremental `text/event-stream` frame parser: a blank line dispatches a
+/// frame, `event:`/`data:` lines set its fields, `:` lines are heartbeats
+/// (Python `iter_sse_events`).
+struct SseParser {
+    event: String,
+    data: Vec<u8>,
+    has_data: bool,
+}
+
+impl SseParser {
+    fn new() -> Self {
+        Self { event: "message".to_string(), data: Vec::new(), has_data: false }
+    }
+
+    /// Feed one line (newline stripped); returns the frame once a blank line closes it.
+    fn feed_line(&mut self, line: &str) -> Result<Option<(String, Value)>> {
+        if line.is_empty() {
+            let event = std::mem::replace(&mut self.event, "message".to_string());
+            let data = std::mem::take(&mut self.data);
+            let has_data = std::mem::replace(&mut self.has_data, false);
+            if event == "message" && !has_data {
+                return Ok(None);
+            }
+            let payload = if data.is_empty() {
+                json!({})
+            } else {
+                serde_json::from_slice(&data)
+                    .map_err(|e| AppMeshError::SerializationError(format!("malformed SSE frame ({}): {}", event, e)))?
+            };
+            return Ok(Some((event, payload)));
+        }
+        if line.starts_with(':') {
+            return Ok(None); // heartbeat comment (": ping")
+        }
+        if let Some(value) = line.strip_prefix("event:") {
+            self.event = value.trim().to_string();
+        } else if let Some(value) = line.strip_prefix("data:") {
+            if self.has_data {
+                self.data.push(b'\n'); // multi-line data joins with a newline
+            }
+            self.data.extend_from_slice(value.trim_start().as_bytes());
+            self.has_data = true;
+        }
+        Ok(None)
+    }
+}
+
+/// Pop one newline-terminated line from `pending` (the CR of a CR-LF pair
+/// stripped); `None` when no complete line is buffered.
+fn pop_line(pending: &mut Vec<u8>) -> Option<String> {
+    let nl = pending.iter().position(|&b| b == b'\n')?;
+    let mut line: Vec<u8> = pending.drain(..=nl).collect();
+    line.pop(); // '\n'
+    if line.last() == Some(&b'\r') {
+        line.pop();
+    }
+    Some(String::from_utf8_lossy(&line).into_owned())
+}
+
+/// Incremental reader over a `text/event-stream` response opened by
+/// [`AppMeshClient::follow_output`] or [`AppMeshClient::run_task_stream`].
+pub struct SseStream {
+    resp: reqwest::Response,
+    parser: SseParser,
+    pending: Vec<u8>,
+    kind: SseKind,
+    /// Task streams: the `final` payload, attached to the terminal marker.
+    result: Option<String>,
+    terminal: Option<SseEnd>,
+}
+
+impl SseStream {
+    pub(crate) fn new(kind: SseKind, resp: reqwest::Response) -> Self {
+        Self { resp, parser: SseParser::new(), pending: Vec::new(), kind, result: None, terminal: None }
+    }
+
+    /// Yield the next incremental chunk; `None` once the terminal `end` frame
+    /// arrived (then [`Self::end`] is `Some`). An `error`/`timeout` end fails
+    /// with [`AppMeshError::RequestFailed`]/[`AppMeshError::ConnectionError`].
+    pub async fn next(&mut self) -> Result<Option<String>> {
+        if self.terminal.is_some() {
+            return Ok(None);
+        }
+        loop {
+            // Dispatch every complete line already buffered before reading more.
+            while let Some(line) = pop_line(&mut self.pending) {
+                if let Some((event, payload)) = self.parser.feed_line(&line)? {
+                    if let Some(chunk) = self.dispatch(&event, payload)? {
+                        return Ok(Some(chunk));
+                    }
+                    // The terminal end frame closes the stream; trailing lines are ignored.
+                    if self.terminal.is_some() {
+                        return Ok(None);
+                    }
+                }
+            }
+            match self.resp.chunk().await? {
+                Some(chunk) => self.pending.extend_from_slice(&chunk),
+                None => {
+                    // Peer closed without a terminal end frame (Python "closed").
+                    self.terminal = Some(SseEnd { reason: "closed".into(), ..Default::default() });
+                    return Ok(None);
+                }
+            }
+        }
+    }
+
+    /// Map one dispatched frame to a chunk or the terminal marker.
+    fn dispatch(&mut self, event: &str, payload: Value) -> Result<Option<String>> {
+        let field = |payload: &Value, key: &str| payload.get(key).and_then(Value::as_str).unwrap_or("").to_string();
+        match self.kind {
+            SseKind::Output => match event {
+                "stdout" => Ok(Some(field(&payload, "output"))),
+                "end" => self.finish(SseEnd::from_payload(&payload, None)),
+                _ => Ok(None),
+            },
+            SseKind::Task => match event {
+                "partial" => Ok(Some(field(&payload, "data"))),
+                "final" => {
+                    self.result = payload.get("result").and_then(Value::as_str).map(String::from);
+                    Ok(None)
+                }
+                "end" => {
+                    let result = self.result.take();
+                    self.finish(SseEnd::from_payload(&payload, result))
+                }
+                _ => Ok(None),
+            },
+        }
+    }
+
+    /// Record the terminal marker and map its reason to the stream result.
+    fn finish(&mut self, end: SseEnd) -> Result<Option<String>> {
+        self.terminal = Some(end.clone());
+        end.check().map(|_| None)
+    }
+
+    /// The terminal marker, present once `next()` returned `None` or failed.
+    pub fn end(&self) -> Option<&SseEnd> {
+        self.terminal.as_ref()
+    }
+
+    /// Consuming form of [`Self::end`].
+    pub fn into_end(self) -> Option<SseEnd> {
+        self.terminal
+    }
+}
+
+/// Output stream of a one-shot remote run ([`AppMeshClient::stream_run`]); the
+/// temporary app is deleted when the stream terminates or the handle drops.
+pub struct RunStream {
+    stream: SseStream,
+    client: Arc<AppMeshClient>,
+    app_name: String,
+    deleted: bool,
+}
+
+impl RunStream {
+    pub(crate) fn new(stream: SseStream, client: Arc<AppMeshClient>, app_name: String) -> Self {
+        Self { stream, client, app_name, deleted: false }
+    }
+
+    /// Next stdout chunk; `None` once the run finished (see [`Self::end`]).
+    pub async fn next(&mut self) -> Result<Option<String>> {
+        let item = self.stream.next().await;
+        // The run ends on the terminal frame or a stream error alike: the
+        // temporary app must not outlive the stream (Python deletes in `finally`).
+        if item.is_err() || matches!(item, Ok(None)) {
+            self.cleanup().await;
+        }
+        item
+    }
+
+    /// The terminal marker once the stream finished (see [`SseStream::end`]).
+    pub fn end(&self) -> Option<&SseEnd> {
+        self.stream.end()
+    }
+
+    /// Best-effort delete of the temporary run application.
+    async fn cleanup(&mut self) {
+        if !self.deleted {
+            self.deleted = true;
+            let _ = self.client.delete_app(&self.app_name).await;
+        }
+    }
+}
+
+impl Drop for RunStream {
+    fn drop(&mut self) {
+        // A caller dropping mid-stream still leaves no orphan app behind;
+        // without a runtime the delete is lost (the daemon reaps it by lifecycle).
+        if !self.deleted {
+            if let Ok(handle) = tokio::runtime::Handle::try_current() {
+                let client = Arc::clone(&self.client);
+                let app_name = std::mem::take(&mut self.app_name);
+                handle.spawn(async move {
+                    let _ = client.delete_app(&app_name).await;
+                });
+            } else {
+                warn!(
+                    "RunStream dropped outside a runtime; temporary app '{}' left for lifecycle cleanup",
+                    self.app_name
+                );
+            }
+        }
+    }
+}
+
+/// Fail a non-success stream response with the daemon's own message.
+async fn check_sse_response(resp: reqwest::Response) -> Result<reqwest::Response> {
+    if !resp.status().is_success() {
+        let status = resp.status();
+        let text = resp.text().await.unwrap_or_default();
+        return Err(AppMeshError::RequestFailed { status, message: text });
+    }
+    Ok(resp)
+}
+
+/// Build the REST side channel (client + base URL) shared by the TCP and WSS
+/// transports: same host as the framed transport, daemon REST port (default
+/// 6058), no total request timeout (a follow runs until its end event).
+pub(crate) fn build_sse_side_channel(
+    host: &str,
+    rest_port: Option<u16>,
+    verify: &crate::tls_config::SslVerify,
+    ssl_client_cert: Option<(String, String)>,
+    plain: bool,
+) -> Result<(ReqwestClient, String)> {
+    let scheme = if plain { "http" } else { "https" };
+    let base_url = format!("{}://{}:{}", scheme, host, rest_port.unwrap_or(DEFAULT_REST_PORT));
+    let client_cert = ssl_client_cert.map(|(cert, key)| crate::tls_config::ClientCert::Pair(cert, key));
+    let builder = if plain {
+        ReqwestClient::builder()
+    } else {
+        crate::tls_config::configure_reqwest_tls(ReqwestClient::builder(), verify, client_cert.as_ref())
+            .map_err(AppMeshError::ConfigurationError)?
+    };
+    // No total timeout (the server ends the stream itself and pings every 15s);
+    // a 60s read timeout still detects a dead peer between pings.
+    let client = builder
+        .read_timeout(Duration::from_secs(60))
+        .build()
+        .map_err(|e| AppMeshError::ConnectionError(format!("Failed to build REST side-channel client: {}", e)))?;
+    Ok((client, base_url))
+}
+
+/// Open a `text/event-stream` request over a direct HTTPS connection: the
+/// framed transports cannot carry a chunked stream, so TCP/WSS clients
+/// redirect here (same side-channel shape as their file transfers;
+/// Python `_sse_request`). Stream endpoints sign the empty-string body hash.
+// Two callers; the shape mirrors `Requester::send_streaming`.
+#[allow(clippy::too_many_arguments)]
+pub(crate) async fn open_sse_side_channel(
+    http: &ReqwestClient,
+    base_url: &str,
+    token: &str,
+    signer: Option<&RequestSigner>,
+    user_agent: &str,
+    method: Method,
+    path: &str,
+    query: Option<&HashMap<String, String>>,
+    body: Option<&[u8]>,
+) -> Result<reqwest::Response> {
+    let mut url = format!("{}{}", base_url, path);
+    // Percent-only wire encoding (space → %20): the daemon keeps a literal '+',
+    // so the daemon-visible decoded values match the signed ones.
+    if let Some(encoded) = query.and_then(crate::request_signature::encode_query) {
+        url.push('?');
+        url.push_str(&encoded);
+    }
+    let mut req = http
+        .request(method.clone(), &url)
+        .header(HTTP_HEADER_KEY_USER_AGENT, user_agent)
+        .header(HTTP_HEADER_JWT_AUTHORIZATION, format!("{}{}", HTTP_HEADER_AUTH_BEARER, token));
+    if let Some(signer) = signer {
+        for (key, value) in signer.sign_request(method.as_str(), path, query, None) {
+            req = req.header(key, value);
+        }
+    }
+    if let Some(body) = body {
+        req = req.body(body.to_vec());
+    }
+    check_sse_response(req.send().await?).await
 }
 
 // -- System Management ------------------------------------------------------
@@ -1627,6 +2142,85 @@ mod tests {
         // Principal IDs keep their separators encoded, never mangled.
         assert_eq!(encode_path_segment("system:appmesh"), "system%3Aappmesh");
         assert_eq!(encode_path_segment("oidc:ab@cd"), "oidc%3Aab%40cd");
+    }
+
+    // -- SSE stream framing ---------------------------------------------------
+
+    #[test]
+    fn test_sse_parser_frames_events_and_skips_heartbeats() {
+        let mut parser = SseParser::new();
+        // The 15s keep-alive comment never dispatches a frame.
+        assert!(parser.feed_line(": ping").unwrap().is_none());
+        assert!(parser.feed_line("event: stdout").unwrap().is_none());
+        assert!(parser.feed_line("data: {\"position\":0,\"output\":\"token1 \"}").unwrap().is_none());
+        let (event, payload) = parser.feed_line("").unwrap().unwrap();
+        assert_eq!(event, "stdout");
+        assert_eq!(payload["position"], 0);
+        assert_eq!(payload["output"], "token1 ");
+        // A comment-only block dispatches nothing and resets the frame state.
+        assert!(parser.feed_line(": ping").unwrap().is_none());
+        assert!(parser.feed_line("").unwrap().is_none());
+    }
+
+    #[test]
+    fn test_sse_parser_joins_multi_line_data() {
+        let mut parser = SseParser::new();
+        parser.feed_line("event: end").unwrap();
+        parser.feed_line("data: {\"reason\":\"exit\",").unwrap();
+        parser.feed_line("data:  \"exit_code\":0,\"position\":21}").unwrap();
+        let (event, payload) = parser.feed_line("").unwrap().unwrap();
+        assert_eq!(event, "end");
+        assert_eq!(payload["reason"], "exit");
+        assert_eq!(payload["exit_code"], 0);
+        assert_eq!(payload["position"], 21);
+    }
+
+    #[test]
+    fn test_sse_parser_rejects_malformed_json() {
+        let mut parser = SseParser::new();
+        parser.feed_line("event: stdout").unwrap();
+        parser.feed_line("data: {not json").unwrap();
+        assert!(matches!(parser.feed_line(""), Err(AppMeshError::SerializationError(_))));
+    }
+
+    #[test]
+    fn test_sse_end_from_payload_and_reason_mapping() {
+        let payload = json!({"reason":"error","status":412,"message":"pipe full"});
+        let end = SseEnd::from_payload(&payload, Some("final payload".into()));
+        assert_eq!(end.reason, "error");
+        assert_eq!(end.status, Some(412));
+        assert_eq!(end.result.as_deref(), Some("final payload"));
+        match end.check() {
+            Err(AppMeshError::RequestFailed { status, message }) => {
+                assert_eq!(status, StatusCode::PRECONDITION_FAILED);
+                assert_eq!(message, "pipe full");
+            }
+            _ => panic!("an error end must map to a request error"),
+        }
+
+        // A timeout end maps to a connection (timeout) error.
+        let timeout = SseEnd { reason: "timeout".into(), ..Default::default() };
+        assert!(matches!(timeout.check(), Err(AppMeshError::ConnectionError(_))));
+        // The natural ends pass through to the caller as the stream result.
+        for reason in ["exit", "removed", "eof", "final", "disconnected", "closed"] {
+            assert!(SseEnd { reason: reason.into(), ..Default::default() }.check().is_ok());
+        }
+        // An unknown reason from a newer daemon fails loudly.
+        assert!(matches!(
+            SseEnd { reason: "migrated".into(), ..Default::default() }.check(),
+            Err(AppMeshError::Other(_))
+        ));
+    }
+
+    #[test]
+    fn test_pop_line_handles_lf_crlf_and_partials() {
+        let mut pending = b"event: a\ndata: 1\r\n\r\npartial".to_vec();
+        assert_eq!(pop_line(&mut pending).unwrap(), "event: a");
+        assert_eq!(pop_line(&mut pending).unwrap(), "data: 1");
+        assert_eq!(pop_line(&mut pending).unwrap(), "");
+        // No newline yet: the partial line stays buffered.
+        assert!(pop_line(&mut pending).is_none());
+        assert_eq!(pending, b"partial");
     }
 
     // -- Request signing ------------------------------------------------------

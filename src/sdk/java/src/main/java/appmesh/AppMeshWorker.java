@@ -10,6 +10,8 @@ import java.util.concurrent.TimeUnit;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
+import org.json.JSONObject;
+
 /**
  * App Mesh worker SDK for Java (HTTP transport).
  *
@@ -148,5 +150,33 @@ public class AppMeshWorker {
             LOGGER.log(Level.SEVERE, "sendTaskResult failed with status {0}: {1}", new Object[] { status, err });
             throw new IOException("sendTaskResult failed with status " + status + ": " + err);
         }
+    }
+
+    /**
+     * Push an incremental result before the final reply. Delivered only when the caller
+     * opened the streaming task channel ({@code runTaskStream}); a one-shot {@code runTask}
+     * caller silently ignores it.
+     *
+     * @param partial incremental payload delivered to the streaming caller in order
+     * @return true when a streaming client received the partial
+     */
+    public boolean sendTaskPartial(String partial) throws IOException {
+        String[] env = getRuntimeEnv();
+        String pkey = env[0];
+        String appName = env[1];
+        String path = "/appmesh/app/" + URLEncoder.encode(appName, StandardCharsets.UTF_8.name()).replace("+", "%20")
+                + "/task/partial";
+
+        Map<String, String> headers = new HashMap<>();
+        headers.put("X-AppMesh-Process-Key", pkey);
+
+        HttpURLConnection conn = client.request("POST", path, partial, headers, null);
+        int status = conn.getResponseCode();
+        if (status != HttpURLConnection.HTTP_OK) {
+            String err = Utils.readErrorResponse(conn);
+            LOGGER.log(Level.SEVERE, "sendTaskPartial failed with status {0}: {1}", new Object[] { status, err });
+            throw new IOException("sendTaskPartial failed with status " + status + ": " + err);
+        }
+        return new JSONObject(Utils.readResponse(conn)).optBoolean("delivered", false);
     }
 }

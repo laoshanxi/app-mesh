@@ -540,15 +540,20 @@ class AppMeshClientTCP extends AppMeshClient {
    *   `{host, port}` object in either position.
    *
    * @param {Object|false|null} [sslConfig=null] - TLS config; same tri-state as AppMeshClient
- * (null=default CA, object=custom ca/cert/key, false=insecure).
+   * (null=default CA, object=custom ca/cert/key, false=insecure).
    * @param {Array<string, number>|{host: string, port: number}} [tcpAddress=['127.0.0.1', 6059]] - TCP server address
+   * @param {number} [restPort=6058] - REST port of the same daemon for the streaming side channel
+   * (followOutput / runTaskStream); also honored as a `restPort` key on the `{host, port}` address object
    */
-  constructor (sslConfig = null, tcpAddress = ['127.0.0.1', 6059]) {
+  constructor (sslConfig = null, tcpAddress = ['127.0.0.1', 6059], restPort = null) {
     // Accept the address-first object form: new AppMeshClientTCP({host, port}, sslConfig)
     if (_isAddressObject(sslConfig)) {
       const addr = sslConfig
       sslConfig = (Array.isArray(tcpAddress) || _isAddressObject(tcpAddress)) ? null : tcpAddress
       tcpAddress = addr
+    }
+    if (_isAddressObject(tcpAddress) && restPort == null) {
+      restPort = tcpAddress.restPort
     }
     tcpAddress = _normalizeTcpAddress(tcpAddress)
 
@@ -557,6 +562,10 @@ class AppMeshClientTCP extends AppMeshClient {
     this.tcpTransport = new TCPTransport(tcpAddress, sslConfig)
     this._demuxer = null
     this._demuxerEnablePromise = null
+    // The SSE side channel (_sseRequest) dials the daemon's REST listener on the same host.
+    this._restHost = tcpAddress[0]
+    this._restPort = restPort ?? 6058
+    this._restChannelClient = null
   }
 
   /**
@@ -570,6 +579,11 @@ class AppMeshClientTCP extends AppMeshClient {
     if (this.tcpTransport) {
       this.tcpTransport.close()
       this.tcpTransport = null
+    }
+    if (this._restChannelClient) {
+      // Release the streaming side channel's keep-alive sockets.
+      this._restChannelClient._client.defaults.httpsAgent?.destroy?.()
+      this._restChannelClient = null
     }
   }
 
@@ -761,6 +775,32 @@ class AppMeshClientTCP extends AppMeshClient {
       500: 'Internal Server Error'
     }
     return statusTexts[code] || 'Unknown'
+  }
+
+  /**
+   * Lazily build the direct-HTTPS client the streaming side channel uses.
+   * @private
+   */
+  _ensureRestChannel () {
+    if (!this._restChannelClient) {
+      this._restChannelClient = new AppMeshClient(`https://${this._restHost}:${this._restPort}`, this._sslConfig)
+    }
+    // Re-sync the token provider on every use so a later setBearerToken() reaches the side channel too.
+    if (this._tokenProvider && this._restChannelClient._tokenProvider !== this._tokenProvider) {
+      this._restChannelClient.setTokenProvider(this._tokenProvider)
+    }
+    return this._restChannelClient
+  }
+
+  /**
+   * Open an SSE stream over direct HTTPS to the daemon's REST listener: the framed transport
+   * answers one buffered frame and cannot carry a chunked event stream (bypassed like the
+   * WSS file data channel); plain request/response routes stay on the framed transport.
+   * @private
+   * @override
+   */
+  async _sseRequest (method, path, options = {}) {
+    return this._ensureRestChannel()._sseRequest(method, path, options)
   }
 
   /**

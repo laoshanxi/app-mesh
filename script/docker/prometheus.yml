@@ -11,7 +11,8 @@ scrape_configs:
       - targets: ["node_exporter:9100"]
   - job_name: "appmesh"
     scrape_interval: 10s
-    # /metrics needs no token, like a standard exporter endpoint.
+    # This stack runs with MetricsRequireAuth=false on a trusted Docker network;
+    # a default deployment needs config-view — give the scrape a bearer token.
     static_configs:
       - targets: ["appmesh_node:6061"]
 

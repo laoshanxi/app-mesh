@@ -45,6 +45,10 @@ public:
 	// Docker-authoritative exit verdict (inspect State.Running/ExitCode)
 	void reportBackendExit() override;
 
+	// Re-bind a recovered run to its container by name + ownership labels
+	// (inspect), refreshing the container ID and running cache.
+	void adoptRecoveredContainer() override;
+
 	// Image HEALTHCHECK verdict from container inspect (State.Health.Status)
 	std::optional<int> containerHealthVerdict() override;
 
@@ -56,9 +60,12 @@ public:
 	bool running() const override;
 
 protected:
+	// stdinPipe is rejected at registration (Application::FromJson) before a
+	// container run can be created; the parameter exists to satisfy the backend
+	// contract and stays unused here.
 	pid_t startImpl(std::string cmd, std::string execUser, std::string workDir, std::map<std::string, std::string> envMap,
 					std::shared_ptr<ResourceLimitation> limit, const std::string &stdoutFile,
-					const Json::Value &stdinFileContent, int maxStdoutSize) override;
+					const Json::Value &stdinFileContent, int maxStdoutSize, bool stdinPipe) override;
 	void terminateImpl() override;
 
 private:
