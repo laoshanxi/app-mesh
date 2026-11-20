@@ -12,7 +12,7 @@ pub struct Cli {
     #[command(subcommand)]
     pub command: Commands,
 
-    /// Server host URL (default: last used or wss://127.0.0.1:6058)
+    /// Server host URL (default: last used, or wss://127.0.0.1:6058; ws:// when the local daemon runs plaintext)
     #[arg(short = 'H', long = "host-url", global = true)]
     pub host_url: Option<String>,
 

@@ -13,6 +13,12 @@ on:
     types:
       - completed
 
+# Same race as release-image (runs delete each other's shared platform tags):
+# serialize in one group. No cancel-in-progress: a skipped same-SHA workflow_run
+# run would otherwise cancel the in-flight push build.
+concurrency:
+  group: ${{ github.workflow }}
+
 env:
   DOCKER_REGISTRY: docker.io
   DOCKER_IMAGE: laoshanxi/appmesh

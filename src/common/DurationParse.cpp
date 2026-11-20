@@ -25,10 +25,10 @@ int DurationParse::parse(const std::string &duration)
 	}
 	if (Utility::isNumber(duration))
 	{
-		// stoi() throws out_of_range (surfaced as a 500) on values beyond int;
-		// reject those as invalid input instead.
+		// stoi() throws out_of_range (surfaced as a 500) on values beyond int; reject those as invalid input.
+		// Negative values parse as negative seconds; callers own the sign check.
 		const long long seconds = std::stoll(duration);
-		if (seconds > std::numeric_limits<int>::max() || seconds < 0)
+		if (seconds > std::numeric_limits<int>::max() || seconds < std::numeric_limits<int>::min())
 			throw std::invalid_argument("duration is out of range: " + duration);
 		totalSeconds = static_cast<int>(seconds);
 		LOG_DBG << fname << "Numeric duration: <" << duration << "> = <" << totalSeconds << "> seconds";

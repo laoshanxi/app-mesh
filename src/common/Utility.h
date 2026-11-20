@@ -502,6 +502,9 @@ public:
 #define HTTP_HEADER_KEY_X_Timestamp "X-Timestamp"
 #define HTTP_HEADER_KEY_X_Nonce "X-Nonce"
 #define HTTP_HEADER_KEY_X_Signature "X-Signature"
+// Agent forwarding precheck marker: exempts exactly the bearer-only
+// GET /appmesh/principal/self probe from the signature requirement.
+#define HTTP_HEADER_KEY_X_Appmesh_Agent_Precheck "X-Appmesh-Agent-Precheck"
 #define HTTP_HEADER_KEY_X_App_Name "X-App-Name"
 #define HTTP_HEADER_KEY_X_Event_Type "X-Event-Type"
 #define HTTP_HEADER_KEY_X_Subscription_Id "X-Subscription-Id"

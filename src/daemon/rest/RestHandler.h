@@ -1,9 +1,14 @@
 // src/daemon/rest/RestHandler.h
 #pragma once
 
+#include <chrono>
 #include <cstdint>
 #include <functional>
+#include <mutex>
+#include <string>
+#include <vector>
 
+#include "../security/AuthReplicationTokens.h"
 #include "EventDispatcher.h"
 #include "PrometheusRest.h"
 #include "RestBase.h"
@@ -135,6 +140,21 @@ protected:
 private:
 	// Prometheus metrics exporter (composition, was a base class before)
 	std::shared_ptr<PrometheusRest> m_metrics;
+
+	/// Vault-sourced replication accept list for apiAuthReplicationPolicy,
+	/// refreshed on a short TTL: a Vault list is O(N) reads, and request floods
+	/// (the endpoint answers before authentication) must not hold a worker for
+	/// a Vault round trip per request. Keyed by (address, token file).
+	struct VaultTokenCache
+	{
+		std::mutex mutex;
+		std::chrono::steady_clock::time_point refreshedAt;
+		std::string address;
+		std::string tokenFile;
+		std::vector<AuthReplication::AcceptedToken> tokens;
+		bool valid = false;
+	};
+	VaultTokenCache m_vaultTokenCache;
 };
 
 using RESTHANDLER = RestHandler;

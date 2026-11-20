@@ -332,10 +332,11 @@ bool Utility::validateFilePath(const std::string &filePath, const std::string &a
 	if (!allowedBaseDir.empty() && !isPathTraversalSafe(allowedBaseDir, filePath))
 		return false;
 	// The daemon's own tree (binaries, TLS keys, bootstrap credentials, registry) is never
-	// transferable on either direction, whatever the jail allows. work/tmp is the shared
-	// scratch area (agent staging, drogon upload cache) and stays exchangeable.
-	const auto scratchDir = (fs::path(getHomeDir()) / APPMESH_WORK_DIR / APPMESH_WORK_TMP_DIR).string();
-	Utility::createDirectory(scratchDir); // the exemption must hold before the daemon first creates it
+	// transferable, whatever the jail allows; the scratch area follows the effective jail
+	// (created at startup, so validation stays side-effect free).
+	const auto scratchDir = allowedBaseDir.empty()
+								? (fs::path(getHomeDir()) / APPMESH_WORK_DIR / APPMESH_WORK_TMP_DIR).string()
+								: (fs::path(allowedBaseDir) / APPMESH_WORK_TMP_DIR).string();
 	if (isPathTraversalSafe(getHomeDir(), filePath) && !isPathTraversalSafe(scratchDir, filePath))
 		return false;
 	// The pseudo-fs check above is lexical; follow symlinks so a link planted
@@ -416,6 +417,14 @@ int Utility::openFileWithinJail(const std::string &filePath, bool forWrite, cons
 		if (::fstat(fd, &st) != 0 || !S_ISREG(st.st_mode))
 		{
 			// Directories (and anything non-regular) are not transferable payloads.
+			::close(fd);
+			return -1;
+		}
+		// A hardlink passes every path gate but still reads the excluded inode; serve single-link files only.
+		if (st.st_nlink != 1)
+		{
+			if (rejectedOut)
+				*rejectedOut = true;
 			::close(fd);
 			return -1;
 		}

@@ -50,7 +50,8 @@ func main() {
 	engineOption.PSK = psk
 	tcpClient, err := appmesh.NewTCPClient(engineOption)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "TCP client error:", err)
+		// Name the transport so a plain/TLS mismatch stands out from other errors.
+		fmt.Fprintf(os.Stderr, "TCP client error (transport: %s): %v\n", tlsconf.TransportName(), err)
 		os.Exit(1)
 	}
 	defer tcpClient.CloseConnection()

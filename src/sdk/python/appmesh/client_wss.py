@@ -12,7 +12,7 @@ import requests
 
 # Local imports
 from .client_http import AppMeshClient
-from .exceptions import AppMeshRequestError
+from .exceptions import AppMeshAuthError, AppMeshRequestError
 from .token_provider import TokenProvider
 from .wss_transport import WSSTransport
 from .transport_mixin import TransportClientMixin
@@ -143,9 +143,10 @@ class AppMeshClientWSS(TransportClientMixin, AppMeshClient):
         """
         if not local_file:
             local_file = Path(remote_file).name
-        header = {AppMeshClient._HTTP_HEADER_KEY_X_FILE_PATH: parse.quote(remote_file)}
-        # Control-channel precheck (permission/existence); raises on failure.
-        self._request_http(AppMeshClient._Method.GET, path="/appmesh/file/download", header=header)
+        # No control-channel precheck: the /ws side channel runs the identical
+        # daemon handler (auth, jail validation, 404, file-attribute headers),
+        # so a preflight GET only re-read the whole file on a forwarded download
+        # and delivered it as one giant discarded WS message.
         token = self._get_bearer_token()
         if not token:
             raise ValueError("File transfer requires a bearer token")
@@ -178,6 +179,10 @@ class AppMeshClientWSS(TransportClientMixin, AppMeshClient):
             if preserve_permissions:
                 AppMeshClient._apply_file_attributes(local_path, r.headers)
         else:
+            # Mirror _request_http's error mapping (401/403 stay AppMeshAuthError)
+            # now that the side channel is the only error source.
+            if r.status_code in (HTTPStatus.UNAUTHORIZED, HTTPStatus.FORBIDDEN):
+                raise AppMeshAuthError(f"HTTP {r.status_code}: {r.reason}", r.status_code)
             try:
                 r.raise_for_status()
             except requests.exceptions.HTTPError as e:

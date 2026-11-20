@@ -58,9 +58,13 @@ namespace
 		input.persistentTransport = request->isPersistentClientTransport();
 		input.fallbackNonce = request->m_uuid;
 		input.keyId = request->m_headers.get(HTTP_HEADER_KEY_X_Request_Key);
+		// An oversized key id is hostile input, not a signing key.
+		if (input.keyId.size() > 256)
+			input.keyId.clear();
 		input.timestamp = request->m_headers.get(HTTP_HEADER_KEY_X_Timestamp);
 		input.nonce = request->m_headers.get(HTTP_HEADER_KEY_X_Nonce);
 		input.signature = request->m_headers.get(HTTP_HEADER_KEY_X_Signature);
+		input.agentPrecheck = request->m_headers.get(HTTP_HEADER_KEY_X_Appmesh_Agent_Precheck) == "1";
 
 		const auto decision = RequestHardening::instance().evaluate(input);
 		if (decision.audit)

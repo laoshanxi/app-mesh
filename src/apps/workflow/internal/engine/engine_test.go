@@ -2,6 +2,8 @@ package engine
 
 import (
 	"context"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -224,5 +226,148 @@ func TestMessageOutputsPlainTextFailsStepClearly(t *testing.T) {
 	}
 	if stdout, _ := s["stdout"].(string); !strings.Contains(stdout, `message step "qa" produced no answer`) {
 		t.Fatalf("step stdout = %q, want the plain-text no-answer engine error", stdout)
+	}
+}
+
+// A message→message chain: the downstream message step's payload referencing the
+// upstream plain-text step's missing answer fails the downstream step clearly,
+// before any client call (recovered step state drives the upstream producer).
+func TestMessageChainDownstreamMessageMissFailsStep(t *testing.T) {
+	wf := &models.Workflow{
+		Name: "chain",
+		Jobs: map[string]*models.Job{
+			"j": {Name: "j", Steps: []models.Step{
+				{Name: "qa", Type: models.StepMessage,
+					Message: &models.MessageConfig{App: "py-task", Payload: "{}"}, Timeout: 30},
+				{Name: "follow", Type: models.StepMessage,
+					Message: &models.MessageConfig{App: "py-task",
+						Payload: `{"q":"${{ steps.qa.outputs.answer }}"}`}, Timeout: 30},
+			}},
+		},
+	}
+	var snap map[string]map[string]any
+	code, _ := RunWithContext(context.Background(), wf, nil, nil, "run6", 0, Options{
+		CompletedSteps: map[string]map[string]bool{"j": {"qa": true}},
+		RecoveredSteps: map[string]map[string]map[string]any{
+			"j": {"qa": {"stdout": "answer-from-py", "exit_code": 0, "status": "success",
+				"response": "answer-from-py", "outputs": nil}},
+		},
+		OnJobDone: func(_, _ string, _ string, steps map[string]map[string]any) { snap = steps },
+	})
+	if code != 1 {
+		t.Fatalf("exit %d, want 1 (downstream payload miss must fail the step)", code)
+	}
+	s := snap["follow"]
+	if s == nil || s["status"] != models.StatusFailure {
+		t.Fatalf("step result = %v, want failure", s)
+	}
+	if stdout, _ := s["stdout"].(string); !strings.Contains(stdout, `message step "qa" produced no answer`) {
+		t.Fatalf("step stdout = %q, want the plain-text no-answer engine error", stdout)
+	}
+}
+
+// A failed message step produces no outputs either: a downstream step that
+// survives it via continue-on-error fails with the did-not-succeed miss.
+func TestFailedMessageStepOutputsMissFailsDownstream(t *testing.T) {
+	wf := &models.Workflow{
+		Name: "flaky-ask",
+		Jobs: map[string]*models.Job{
+			"j": {Name: "j", Steps: []models.Step{
+				{Name: "qa", Type: models.StepMessage, ContinueOnError: true,
+					Message: &models.MessageConfig{App: "py-task", Payload: "{}"}, Timeout: 30},
+				{Name: "use", Type: models.StepCommand, Command: "echo got: ${{ steps.qa.outputs.answer }}"},
+			}},
+		},
+	}
+	var snap map[string]map[string]any
+	code, _ := RunWithContext(context.Background(), wf, nil, nil, "run7", 0, Options{
+		CompletedSteps: map[string]map[string]bool{"j": {"qa": true}},
+		RecoveredSteps: map[string]map[string]map[string]any{
+			"j": {"qa": {"stdout": "", "exit_code": 1, "status": "failure", "response": "boom", "outputs": nil}},
+		},
+		OnJobDone: func(_, _ string, _ string, steps map[string]map[string]any) { snap = steps },
+	})
+	if code != 1 {
+		t.Fatalf("exit %d, want 1 (outputs of a failed message step must miss)", code)
+	}
+	s := snap["use"]
+	if s == nil || s["status"] != models.StatusFailure {
+		t.Fatalf("step result = %v, want failure", s)
+	}
+	if stdout, _ := s["stdout"].(string); !strings.Contains(stdout, `message step "qa" did not succeed`) {
+		t.Fatalf("step stdout = %q, want the did-not-succeed miss", stdout)
+	}
+}
+
+// if: ${{ steps.qa.outputs.answer }} with the answer missing evaluates false
+// (empty string), so the step is skipped — not gated open by a truthy literal.
+func TestConditionMissingAnswerSkipsStep(t *testing.T) {
+	wf := &models.Workflow{
+		Name: "gated-ask",
+		Jobs: map[string]*models.Job{
+			"j": {Name: "j", Steps: []models.Step{
+				{Name: "qa", Type: models.StepMessage,
+					Message: &models.MessageConfig{App: "py-task", Payload: "{}"}, Timeout: 30},
+				{Name: "gated", Type: models.StepCommand, Command: "echo hi",
+					Condition: "${{ steps.qa.outputs.answer }}"},
+			}},
+		},
+	}
+	var snap map[string]map[string]any
+	code, _ := RunWithContext(context.Background(), wf, nil, nil, "run8", 0, Options{
+		CompletedSteps: map[string]map[string]bool{"j": {"qa": true}},
+		RecoveredSteps: map[string]map[string]map[string]any{
+			"j": {"qa": {"stdout": "answer-from-py", "exit_code": 0, "status": "success",
+				"response": "answer-from-py", "outputs": nil}},
+		},
+		OnJobDone: func(_, _ string, _ string, steps map[string]map[string]any) { snap = steps },
+	})
+	if code != 0 {
+		t.Fatalf("exit %d, want 0 (the gated step is skipped, not run against the nil client)", code)
+	}
+	if s := snap["gated"]; s == nil || s["status"] != models.StatusSkipped {
+		t.Fatalf("step result = %v, want skipped (missing answer must gate the condition closed)", s)
+	}
+}
+
+// A workflow_call output referencing a message step that never produced outputs
+// fails the sub-workflow call with the miss named in the reason.
+func TestSubWorkflowCallOutputsMissFailsCall(t *testing.T) {
+	dir := t.TempDir()
+	subDir := filepath.Join(dir, "sub-plain")
+	if err := os.MkdirAll(subDir, 0700); err != nil {
+		t.Fatal(err)
+	}
+	yaml := `
+name: sub-plain
+on:
+  workflow_call:
+    outputs:
+      answer:
+        value: "${{ jobs.j.steps.qa.outputs.answer }}"
+jobs:
+  j:
+    steps:
+      - name: qa
+        if: "1 == 2"
+        message:
+          app: py-task
+          payload: "{}"
+`
+	if err := os.WriteFile(filepath.Join(subDir, "workflow.yaml"), []byte(yaml), 0600); err != nil {
+		t.Fatal(err)
+	}
+	code, outputs, _, reason := runSubWorkflow(context.Background(), nil, "sub-plain", nil, 1,
+		Options{WorkflowBaseDir: dir})
+	if code != 1 {
+		t.Fatalf("exit %d, want 1 (a missed call output must fail the sub-workflow call)", code)
+	}
+	if len(outputs) != 0 {
+		t.Fatalf("outputs = %v, want none on a failed call", outputs)
+	}
+	for _, want := range []string{`workflow_call output "answer"`, `message step "qa" did not succeed`} {
+		if !strings.Contains(reason, want) {
+			t.Errorf("reason %q does not mention %q", reason, want)
+		}
 	}
 }

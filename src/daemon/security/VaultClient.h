@@ -23,6 +23,10 @@ public:
 		std::string address;   // scheme://host:port, e.g. http://appmesh_vault:8200
 		std::string tokenFile; // access credential file: one line = static service
 							   // token; two lines = AppRole (role_id, secret_id)
+		/// https verification, on by default; APPMESH_VAULT_TLS_SKIP_VERIFY opts out,
+		/// an empty caPath falls back to APPMESH_VAULT_CACERT then the system store.
+		bool verifyServer = true;
+		std::string caPath;
 	};
 
 	/// Lists every follower token as (token, label): one KV entry per label.
@@ -36,8 +40,8 @@ public:
 
 	/// AppRole machine login: exchanges (role_id, secret_id) for a Vault
 	/// client token. The standard issuance path for non-human identities.
-	static std::string loginAppRole(const std::string &address, const std::string &roleId,
-									const std::string &secretId);
+	/// TLS posture follows `config` (https verifies by default).
+	static std::string loginAppRole(const Config &config, const std::string &roleId, const std::string &secretId);
 
 	/// KV v2 mount and path prefix used by both the engine and the tooling.
 	static constexpr const char *KV_MOUNT = "secret";

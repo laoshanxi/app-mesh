@@ -391,3 +391,48 @@ func TestSetTokenReplacesProvider(t *testing.T) {
 	assert.Equal(t, 1, requests)
 	assert.Equal(t, 0, provider.refreshCount)
 }
+
+// httpSigner reads the attached signer off an HTTP-transport client for
+// state assertions (the Requester interface only exposes the setter).
+func httpSigner(t *testing.T, c *AppMeshClient) *requestSigner {
+	t.Helper()
+	hr, ok := c.req.(*HTTPRequester)
+	require.True(t, ok, "expected an HTTP-transport requester")
+	return hr.getRequestSigner()
+}
+
+// TestWithRequestSignatureRejectsIncompleteCredentials pins the enable path:
+// a non-empty key ID with an empty secret is an error (mirroring the sibling
+// SDKs), while an empty key ID stays the documented disable switch.
+func TestWithRequestSignatureRejectsIncompleteCredentials(t *testing.T) {
+	client, err := NewHTTPClient(Option{InsecureSkipVerify: true})
+	require.NoError(t, err)
+	defer client.Close()
+
+	err = client.WithRequestSignature(testKeyID, "")
+	require.Error(t, err, "an empty secret must not enable signing")
+	assert.Nil(t, httpSigner(t, client))
+
+	require.NoError(t, client.WithRequestSignature(testKeyID, testSecret))
+	require.NotNil(t, httpSigner(t, client))
+
+	require.NoError(t, client.WithRequestSignature("", ""))
+	assert.Nil(t, httpSigner(t, client), "an empty key ID must disable signing")
+}
+
+// TestNewHTTPClientRejectsPartialSignatureOption pins the Option contract: a
+// half-configured API key pair (key ID without secret, or a secret without
+// key ID) fails client construction instead of silently signing off.
+func TestNewHTTPClientRejectsPartialSignatureOption(t *testing.T) {
+	_, err := NewHTTPClient(Option{InsecureSkipVerify: true, RequestSignatureKeyID: testKeyID})
+	require.Error(t, err, "key ID without secret must fail construction")
+
+	_, err = NewHTTPClient(Option{InsecureSkipVerify: true, RequestSignatureSecret: testSecret})
+	require.Error(t, err, "secret without key ID must fail construction")
+
+	client, err := NewHTTPClient(Option{InsecureSkipVerify: true, RequestSignatureKeyID: testKeyID,
+		RequestSignatureSecret: testSecret})
+	require.NoError(t, err, "a complete pair must construct")
+	defer client.Close()
+	require.NotNil(t, httpSigner(t, client))
+}

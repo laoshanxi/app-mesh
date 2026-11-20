@@ -63,7 +63,10 @@ public:
 	struct JsonRest
 	{
 		JsonRest();
-		static std::shared_ptr<JsonRest> FromJson(const Json::Value &jsonObj);
+		/// `previous` seeds the invalid-value fallbacks on reload (SIGHUP):
+		/// an unusable hardening mode keeps the running setting instead of
+		/// silently resetting to the boot default.
+		static std::shared_ptr<JsonRest> FromJson(const Json::Value &jsonObj, const JsonRest *previous = nullptr);
 		Json::Value AsJson() const;
 
 		bool m_restEnabled;
@@ -100,7 +103,10 @@ public:
 	static std::string readConfiguration();
 	static void handleSignal();
 
-	static std::shared_ptr<Configuration> FromJson(Json::Value &jsonValue, bool applyEnv = false) noexcept(false);
+	/// `previous` (hot reload) seeds invalid-value fallbacks in the nested
+	/// FromJson parsers, so a bad reload keeps the running setting.
+	static std::shared_ptr<Configuration> FromJson(Json::Value &jsonValue, bool applyEnv = false,
+												   const Configuration *previous = nullptr) noexcept(false);
 	Json::Value AsJson();
 	void loadApps(const std::filesystem::path &appDir);
 	void saveConfigToDisk();

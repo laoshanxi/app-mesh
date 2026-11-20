@@ -5,10 +5,6 @@
 
 namespace
 {
-	// Entries at or past the horizon can never report Duplicate again because
-	// the replay window is clamped to <= 3600s where it is read.
-	constexpr auto SWEEP_HORIZON = std::chrono::seconds(3600);
-
 	std::string compositeKey(const std::string &namespaceKey, const std::string &nonce)
 	{
 		return namespaceKey + "\x1f" + nonce;
@@ -26,7 +22,7 @@ ReplayGuard::Verdict ReplayGuard::check(const std::string &namespaceKey, const s
 	if (existing != m_seen.end() && now - existing->second.recordedAt < window)
 		return Verdict::Duplicate;
 	if (m_seen.size() >= MAX_ENTRIES)
-		sweepLocked(now);
+		sweepLocked(now, window);
 	m_seen[key] = Entry{now, ++m_insertCounter};
 	return Verdict::First;
 }
@@ -43,11 +39,12 @@ void ReplayGuard::clear()
 	m_seen.clear();
 }
 
-void ReplayGuard::sweepLocked(std::chrono::steady_clock::time_point now)
+void ReplayGuard::sweepLocked(std::chrono::steady_clock::time_point now, std::chrono::seconds window)
 {
+	// Expired entries can never report Duplicate again; reclaim them first.
 	for (auto it = m_seen.begin(); it != m_seen.end();)
 	{
-		if (now - it->second.recordedAt >= SWEEP_HORIZON)
+		if (now - it->second.recordedAt >= window)
 			it = m_seen.erase(it);
 		else
 			++it;

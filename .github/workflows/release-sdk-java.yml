@@ -41,9 +41,14 @@ jobs:
         # Re-runs (e.g. after a history rewrite) must not fail on the
         # already-deployed artifact; deploying is idempotent here.
         run: |
-          VERSION=$(mvn --batch-mode -q help:evaluate -Dexpression=project.version -DforceEval | tail -n 1)
-          STATUS=$(curl -s -o /dev/null -w "%{http_code}" -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}"             "https://maven.pkg.github.com/laoshanxi/app-mesh/laoshanxi/appmesh/$VERSION/appmesh-$VERSION.pom")
-          if [ "$STATUS" = "200" ]; then
+          VERSION=$(mvn --batch-mode -q help:evaluate -Dexpression=project.version -DforceStdout)
+          [ -n "$VERSION" ] || { echo "failed to evaluate project version"; exit 1; }
+          BASE_URL="https://maven.pkg.github.com/laoshanxi/app-mesh/laoshanxi/appmesh/$VERSION"
+          # -L follows the registry's 301; no --fail: a 404 means "not yet
+          # published" and must fall through to the deploy branch below.
+          POM_STATUS=$(curl -sSL -o /dev/null -w '%{http_code}' -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" "$BASE_URL/appmesh-$VERSION.pom")
+          JAR_STATUS=$(curl -sSL -o /dev/null -w '%{http_code}' -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" "$BASE_URL/appmesh-$VERSION.jar")
+          if [ "$POM_STATUS" = "200" ] && [ "$JAR_STATUS" = "200" ]; then
             echo "laoshanxi:appmesh:$VERSION already deployed, skipping"
           else
             mvn --batch-mode deploy -DskipTests

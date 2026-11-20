@@ -203,11 +203,12 @@ read replicas. The engine implements the pull (no external tooling):
   bearer per line, each with a follower label. A single unlabeled line is
   the legacy shared token and keeps working. The packaged compose cluster
   provisions per-follower tokens at bootstrap
-  (`APPMESH_AUTH_REPLICATION_FOLLOWERS` names the follower set) and mounts
-  each follower's own `<label>.token` read-only through the
-  `appmesh_replication` volume — the projected-secret pattern used by
-  Kubernetes Secrets, with the same trust boundary as the plaintext Dex
-  listener.
+  (`APPMESH_AUTH_REPLICATION_FOLLOWERS` names the follower set) and
+  projects each follower's own `<label>.token` out of the
+  `appmesh_replication` volume as a read-only subpath mount — the
+  projected-secret pattern used by Kubernetes Secrets: a follower sees
+  exactly its one credential file, never the accept list, the owner's
+  material, or a sibling's token.
 - Per-follower tokens close the shared-secret exposure: one compromised
   follower is revoked alone, without re-keying the cluster. The engine
   re-reads the accept list on every pull and the follower re-reads its own
@@ -221,6 +222,9 @@ read replicas. The engine implements the pull (no external tooling):
   # the token in place (the follower picks it up on its next pull)
   /opt/appmesh/script/appmesh-auth.sh replication-token-list
   /opt/appmesh/script/appmesh-auth.sh replication-token-revoke slave1
+  # Vault source only: undo a revocation (deletes the tombstone, re-issues
+  # the token, AppRole and credential file)
+  /opt/appmesh/script/appmesh-auth.sh replication-token-restore slave1
   ```
 
   A pull with a revoked token is rejected with `401`; other followers keep
@@ -244,13 +248,31 @@ read replicas. The engine implements the pull (no external tooling):
     deleted (a revoked follower) is skipped by the list; the other
     followers keep pulling.
   - Each follower holds one scoped Vault machine identity — an AppRole
-    (role_id plus a one-time secret_id) whose policy reads its own KV entry
-    and issues its TLS leaf certificates from the cluster PKI — created by
-    the owner bootstrap and delivered once through the replication volume.
-    This is the single bootstrap credential; the replication bearers
-    themselves are never materialized. The policy is rewritten on every
-    bootstrap, so a follower provisioned before the PKI source gains its
-    issue path on the next bootstrap.
+    (role_id plus a secret_id that stays reusable for repeated logins
+    until the role is destroyed; see the note below) whose policy reads
+    its own KV entry and issues its TLS leaf certificates from the cluster
+    PKI — created by the owner bootstrap and delivered once through the
+    replication volume. This is the single bootstrap credential; the
+    replication bearers themselves are never materialized. The policy is
+    rewritten on every bootstrap, so a follower provisioned before the PKI
+    source gains its issue path on the next bootstrap.
+
+    The secret_id is deliberately NOT one-time: the node logs in with the
+    same pair on every pull and on every restart, so `secret_id_ttl` or
+    `secret_id_num_uses` would strand the follower mid-operation unless an
+    operator re-delivers credentials. Deployments that need bounded
+    secret_ids must pair them with a re-delivery path; the default trades
+    that strictness for unattended restarts.
+  - Revocation under this source is persistent, not a soft KV delete:
+    `replication-token-revoke <label>` writes a tombstone entry
+    (`<label>.revoked`) before deleting the accepted token, then destroys
+    the follower's AppRole and its policy. A restarted owner bootstrap
+    checks the tombstone first and never re-issues a revoked follower; a
+    follower still holding the old credential cannot log in (the role is
+    gone). Re-enabling is explicit: `replication-token-restore <label>`
+    deletes the tombstone and re-runs the issuance chain (fresh token,
+    AppRole, credential file). `replication-token-list` marks tombstoned
+    entries as `(revoked)`.
   - A Vault outage fails closed: pulls answer `503` and retry on the next
     cycle. Nothing opens without the source.
   - The packaged compose cluster ships this as an opt-in layer:
@@ -258,9 +280,40 @@ read replicas. The engine implements the pull (no external tooling):
     up -d` runs a real Vault server (file storage, an init sidecar that
     unseals after restarts, KV v2, AppRole and the audit device enabled)
     and switches the token source; the base cluster alone stays
-    file-based with no Vault dependency. Production hardening: TLS
-    listener, auto-unseal, periodic tokens, wrapped secret_id delivery,
-    and an HSM-backed seal.
+    file-based with no Vault dependency. Credential topology in the layer:
+    the engine-owner token lives in its own volume mounted only by the
+    master and the init sidecar, and each follower projects exactly its
+    own AppRole credential out of the replication volume (a read-only
+    subpath mount) — a follower can read neither the owner credential nor
+    any sibling's credential. The Vault listener is plaintext on the
+    trusted compose bridge network (a demo posture: the unseal key, root
+    token and node credentials cross that network in the clear);
+    production enables listener TLS and points every client at it with
+    `APPMESH_VAULT_CACERT`, plus auto-unseal, periodic tokens, wrapped
+    secret_id delivery, and an HSM-backed seal.
+- **Operating without Vault (offline recovery).** The Vault source is a
+  hard dependency of the owner's auth bootstrap: `appmesh-auth.sh service`
+  dies when Vault is unreachable, and the container restart policy retries
+  it forever — that is the current recovery loop, and it is deliberate
+  (fail closed, never serve replication decisions from a stale or absent
+  source). Operator procedures:
+
+  1. Restore Vault itself. The compose layer keeps Vault state in the
+     `appmesh_vault_data` volume and the init sidecar re-unseals
+     automatically after a restart, so recovery is usually "bring the
+     container back"; the owner then converges on its next bootstrap
+     attempt with no manual step.
+  2. Fall back to the file source when Vault is gone for good: unset
+     `APPMESH_AUTH_REPLICATION_TOKEN_SOURCE=vault` (and the
+     `APPMESH_*_VAULT_*` variables) on every node, restart, and let the
+     owner bootstrap provision the file accept list and per-follower
+     `<label>.token` files into `APPMESH_AUTH_REPLICATION_TOKEN_FILE`'s
+     directory. The follower credentials change in the switch, so each
+     follower must remount its projected token (compose: recreate the
+     follower containers) before its next pull. Issued TLS material stays
+     valid — leaves keep chaining to the CA already on disk; only new
+     issuance needs Vault again.
+
 - A follower with `APPMESH_AUTH_REPLICATION_FROM` (the owner's engine
   listener, `https://appmesh_master:6058` in compose, verified with the
   owner CA through `APPMESH_AUTH_REPLICATION_CA`) plus the token file pulls
@@ -362,9 +415,11 @@ The `appmesh_mcp` service runs the MCP server from the published
 `laoshanxi/appmesh:mcp` image: an OAuth resource server that validates caller
 tokens against the master's Dex and forwards the same token to the engine,
 which enforces RBAC. The compose file needs no source checkout. The master's
-TLS material lives in the `appmesh_tls` named volume; the service mounts the
-volume read-only and verifies the engine with the master CA. Followers keep
-their own CAs.
+TLS material lives in the `appmesh_tls` named volume; the MCP service and the
+followers mount exactly its `ca.pem` (a read-only subpath mount) to verify
+the engine — the master's private keys never cross a service boundary.
+Followers serve TLS under their own identities (self-signed, or Vault-issued
+under the optional layer); only verification trust is shared.
 
 The OAuth metadata advertises the in-network issuer, which a host client
 cannot resolve. A host client therefore passes a token from the password flow
@@ -461,7 +516,16 @@ setting reference is [TLS and certificates](../TLS.md#vault-pki-source):
    (`appmesh-node` by name, `APPMESH_SSL_VAULT_PKI_ROLE` to change it).
    The role issues both server and client leaves with the same name
    coverage as the self-signed generator — hostname, FQDN, local
-   addresses, and `APPMESH_SSL_EXTRA_SAN` peers.
+   addresses, and `APPMESH_SSL_EXTRA_SAN` peers — but is domain-scoped,
+   never `allow_any_name`: issuance is limited to the names in
+   `APPMESH_PKI_ALLOWED_DOMAINS` (comma-separated; the compose default
+   covers the cluster's hyphenated node names plus `localhost`), with
+   bare-domain matches only (`allow_bare_domains=true`,
+   `allow_subdomains=false`). A compromised node therefore cannot mint a
+   cluster-CA certificate for an arbitrary DNS name — a public domain or
+   another node's alias. A node whose name is not in the list fails its
+   issuance loudly; the init sidecar prints the effective domain list at
+   startup.
 3. Every node's `appmesh-auth.sh bootstrap` (the docker entrypoint runs it
    before the TLS check) requests its own five files: `ca.pem` plus the
    server and client pairs. There is no `ca-key.pem` by design: the CA
@@ -482,18 +546,26 @@ from certificates outright — an early validation no role knob disables
 (hashicorp/vault#31925) — so the compose layer dials a hyphenated network
 alias (`appmesh-master`) instead of the underscore service name and adds
 it to the owner's `APPMESH_SSL_EXTRA_SAN`; the issuer string follows the
-same alias so every node and client carries one canonical value.
-Physical clusters with RFC-legal FQDNs are unaffected. And the generated
-root must carry a subject (`common_name="AppMesh Root CA"`): an empty
-issuer name fails strict chain verification.
+same alias so every node and client carries one canonical value. The
+issuing role enforces hostnames again (`enforce_hostnames` at its default),
+so the bootstrap maps an underscore hostname onto its hyphenated form for
+the certificate's common_name. Physical clusters with RFC-legal FQDNs are
+unaffected. And the generated root must carry a subject
+(`common_name="AppMesh Root CA"`): an empty issuer name fails strict chain
+verification.
 
 The node credentials are the same Vault machine identities the
 replication tokens use: the owner issues with its service token, a
 follower with its AppRole (policy: read its own KV entry, issue TLS
-leaves). A Vault outage fails closed — bootstrap dies and the restart
-policy retries. Production hardening: replace the generated root with an
-intermediate CA signed by the organization root, shorten the role TTL
-under a renewal timer, and keep auto-unseal on the server.
+leaves). The owner's service token is minted with a 10-year TTL matching
+the CA root's horizon — nothing renews it — so the compose layer sets the
+cluster `max_lease_ttl` to the same value; without it the system default
+would clamp the token to 32 days and replication would silently die a
+month in. A Vault outage fails closed — bootstrap dies and the restart
+policy retries (see "Operating without Vault" above). Production
+hardening: replace the generated root with an intermediate CA signed by
+the organization root, shorten the role TTL under a renewal timer, and
+keep auto-unseal on the server.
 
 Do not copy only `ca.pem` onto a follower. The follower then trusts the
 shared CA, but it still serves its old self-signed certificate. Clients

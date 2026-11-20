@@ -249,6 +249,17 @@ func SubstituteForJobChecked(template string, ctx *Context, jobName string) (str
 	return s, err
 }
 
+// SubstituteValue substitutes a value field (env, workdir, docker_image, with-inputs,
+// workflow_call outputs); like the command paths, a message-outputs miss fails even
+// in lenient mode.
+func SubstituteValue(template string, ctx *Context, jobName string) (string, error) {
+	s, miss, err := substituteChecked(template, ctx, jobName)
+	if err == nil && miss != "" {
+		return "", errors.New(miss)
+	}
+	return s, err
+}
+
 // substituteChecked is SubstituteForJobChecked plus the first message-outputs miss (empty when none).
 func substituteChecked(template string, ctx *Context, jobName string) (string, string, error) {
 	var strictErr error
@@ -298,19 +309,21 @@ func SubstituteCommandText(template string, ctx *Context, jobName string) (strin
 // "a; rm -rf /" can never inject shell syntax into the command text.
 // An expression inside a single-quoted span is the exception — the shell never
 // expands variables there — so it is substituted textually with single quotes
-// escaped (see emitExpr).
+// escaped (see emitExpr). Commands the quote scanner cannot model (comments,
+// heredocs, ANSI-C quoting) lose that exception (quoteScannerUnsafe).
 func SubstituteForCommand(template string, ctx *Context, jobName string) (string, map[string]string, error) {
-	// $WF_E<N> is a reserved reference; if the command already uses one, a
-	// generated binding would shadow it. Fall back to direct substitution.
-	if strings.Contains(template, "$WF_E") {
-		s, miss, err := substituteChecked(template, ctx, jobName)
-		if err == nil && miss != "" {
-			return "", nil, errors.New(miss)
-		}
-		return s, nil, err
+	// The quote scanner does not model comments, heredocs or ANSI-C $'…'
+	// quoting, so its single-quote verdict inside such a command is untrusted.
+	// Bind every expression to $WF_E instead: for an unquoted heredoc body that
+	// is also the semantically correct form (the shell expands it there).
+	unsafeQuotes := quoteScannerUnsafe(template)
+	if unsafeQuotes {
+		logger.Warn("expression: command contains '#', '<<' or $' quoting; " +
+			"single-quote inline substitution disabled, values bind to $WF_E")
 	}
 	bindings := make(map[string]string)
 	byExpr := make(map[string]string)
+	nextRef := 0
 	var buildErr error
 	emitExpr := func(match, exprText string, inSingle bool) string {
 		resolved, ok := resolveExpr(exprText, match, ctx, jobName)
@@ -329,13 +342,20 @@ func SubstituteForCommand(template string, ctx *Context, jobName string) (string
 			}
 			return match
 		}
-		if inSingle {
+		if inSingle && !unsafeQuotes {
 			return strings.ReplaceAll(resolved, "'", `'\''`)
 		}
 		if ref, seen := byExpr[exprText]; seen {
 			return ref
 		}
-		ref := fmt.Sprintf("$WF_E%d", len(byExpr))
+		// $WF_E<N> is reserved: skip numbers the command already references as
+		// a whole token, so a binding never shadows the author's variable (and
+		// an unrelated name like $WF_ECHO_HOME forces no fallback at all).
+		for hasWFERef(template, nextRef) {
+			nextRef++
+		}
+		ref := fmt.Sprintf("$WF_E%d", nextRef)
+		nextRef++
 		byExpr[exprText] = ref
 		bindings[ref[1:]] = resolved
 		return ref
@@ -391,16 +411,43 @@ func SubstituteForCommand(template string, ctx *Context, jobName string) (string
 	return out, bindings, nil
 }
 
+// quoteScannerUnsafe reports a construct the single-quote scanner does not model ('#',
+// '<<', '$'…'): an apostrophe there flips the shell's quote state unseen, so later in-single verdicts are untrusted.
+func quoteScannerUnsafe(template string) bool {
+	return strings.Contains(template, "#") ||
+		strings.Contains(template, "<<") ||
+		strings.Contains(template, "$'")
+}
+
+// hasWFERef reports a whole-token $WF_E<n> reference; $WF_ECHO_HOME never counts.
+func hasWFERef(template string, n int) bool {
+	ref := fmt.Sprintf("$WF_E%d", n)
+	for from := 0; ; {
+		idx := strings.Index(template[from:], ref)
+		if idx < 0 {
+			return false
+		}
+		from += idx + len(ref)
+		if from == len(template) || !isWordByte(template[from]) {
+			return true
+		}
+	}
+}
+
+func isWordByte(b byte) bool {
+	return b == '_' || (b >= '0' && b <= '9') || (b >= 'a' && b <= 'z') || (b >= 'A' && b <= 'Z')
+}
+
 // SubstituteMessagePayload substitutes ${{ expr }} into a message-step payload.
-// A payload that is a JSON document substitutes with values JSON-escaped inside
-// string literals, so quotes or backslashes in an input cannot break the
-// document; any other payload substitutes textually (SubstituteForJobChecked).
+// A JSON payload substitutes with JSON-escaped values; any other payload
+// substitutes textually (SubstituteValue).
 func SubstituteMessagePayload(template string, ctx *Context, jobName string) (string, error) {
 	if !json.Valid([]byte(template)) {
-		return SubstituteForJobChecked(template, ctx, jobName)
+		return SubstituteValue(template, ctx, jobName)
 	}
 
 	var strictErr error
+	miss := ""
 	const exprOpen, exprClose = "${{", "}}"
 	var b strings.Builder
 	inString := false
@@ -414,6 +461,10 @@ func SubstituteMessagePayload(template string, ctx *Context, jobName string) (st
 						if ctx.Strict {
 							if strictErr == nil {
 								strictErr = fmt.Errorf("unresolved expression %s", match)
+							}
+						} else if msg := messageOutputMiss(match, exprText, ctx, jobName); msg != "" {
+							if miss == "" {
+								miss = msg
 							}
 						} else {
 							logger.Warn("expression: unresolved " + match + " embedded literally")
@@ -450,6 +501,9 @@ func SubstituteMessagePayload(template string, ctx *Context, jobName string) (st
 	if strictErr != nil {
 		return "", strictErr
 	}
+	if miss != "" {
+		return "", errors.New(miss)
+	}
 	return b.String(), nil
 }
 
@@ -465,8 +519,8 @@ func jsonEscapeStringContent(s string) string {
 	return out[1 : len(out)-1]
 }
 
-// messageOutputMiss reports an outputs reference at a completed message step
-// with no outputs (its App replied in plain text). Empty for anything else.
+// messageOutputMiss reports an outputs reference a message step cannot have
+// produced (no outputs, or the step did not succeed); empty otherwise.
 func messageOutputMiss(match, expr string, ctx *Context, jobName string) string {
 	path := expr
 	if m := toJSONPattern.FindStringSubmatch(expr); m != nil {
@@ -488,9 +542,16 @@ func messageOutputMiss(match, expr string, ctx *Context, jobName string) string 
 		return ""
 	}
 	s, ok := ctx.Steps[stepKey]
-	// Only a completed step qualifies; a skipped or failed one is already reported.
-	if !ok || s["status"] != models.StatusSuccess {
+	if !ok {
+		// Not run yet (or a parallel producer still running): only the generic
+		// unresolved warning applies — failing here would race parallel jobs.
 		return ""
+	}
+	// A step that did not succeed never produced outputs; references must fail
+	// or gate on it, not read a literal.
+	if status, _ := s["status"].(string); status != models.StatusSuccess {
+		return fmt.Sprintf("unresolved expression %s: message step %q did not succeed "+
+			"(status %q); it produced no outputs", match, stepID, status)
 	}
 	if outs, ok := s["outputs"].(map[string]string); ok && len(outs) > 0 {
 		return ""
@@ -519,12 +580,13 @@ func resolveExpr(expr, orig string, ctx *Context, jobName string) (string, bool)
 	return fmt.Sprintf("%v", val), true
 }
 
-// substituteExpr renders one condition operand; unresolved ones warn and stay literal.
+// substituteExpr renders one condition operand; an unresolved reference is the
+// empty string (falsy), never the literal braces text.
 func substituteExpr(expr string, ctx *Context, jobName, orig string) string {
 	resolved, ok := resolveExpr(expr, orig, ctx, jobName)
 	if !ok {
-		logger.Warn("expression: unresolved " + orig + " embedded literally")
-		return orig
+		logger.Warn("expression: unresolved " + orig + " in condition treated as empty")
+		return ""
 	}
 	return resolved
 }
@@ -894,6 +956,129 @@ func HasStatusFunction(condition string) bool {
 	return false
 }
 
+var numberLiteralPattern = regexp.MustCompile(`^-?\d+(?:\.\d+)?$`)
+
+// ValidateCondition applies the runtime condition lexer at load time: every operand must
+// be a quoted literal, number, boolean, status function, toJSON(path), or a checkRef-
+// accepted reference, surfacing author mistakes as load errors, not silent verdicts.
+func ValidateCondition(cond string, checkRef func(path string) error) error {
+	// Unwrap ${{ }} exactly like evalCondition: the braces hold author-written
+	// YAML text, so operators inside them are validated, not treated as data.
+	if strings.Contains(cond, "${{") {
+		cond = exprPattern.ReplaceAllStringFunc(cond, func(match string) string {
+			if inner := exprPattern.FindStringSubmatch(match); len(inner) == 2 {
+				return strings.TrimSpace(inner[1])
+			}
+			return match
+		})
+	}
+	return validateConditionExpr(strings.TrimSpace(cond), checkRef, false)
+}
+
+// validateConditionExpr validates one (sub-)expression. nested distinguishes
+// the whole condition (empty is the documented always-true default) from a
+// part inside it (empty is a missing operand).
+func validateConditionExpr(expr string, checkRef func(path string) error, nested bool) error {
+	if expr == "" {
+		if nested {
+			return fmt.Errorf("empty operand in condition")
+		}
+		return nil
+	}
+	// '===' is not an operator here: the runtime would split it as '==' with a
+	// leading-'=' right operand and misjudge the comparison. Spell out the fix.
+	if indexOutsideQuotes(expr, "===") >= 0 {
+		return fmt.Errorf("invalid condition %q: use '==' instead of '==='", expr)
+	}
+	// Whole-expression parentheses unwrap like evalCondition, so "((a && b))"
+	// validates as "a && b" instead of one opaque operand.
+	orig := expr
+	for {
+		inner, unwrapped := unwrapParens(expr)
+		if !unwrapped {
+			break
+		}
+		expr = strings.TrimSpace(inner)
+		if expr == "" {
+			return fmt.Errorf("empty parentheses in condition %q", orig)
+		}
+	}
+	if parts := splitTopLevel(expr, "||"); len(parts) > 1 {
+		return validateConditionParts(parts, "||", expr, checkRef)
+	}
+	if parts := splitTopLevel(expr, "&&"); len(parts) > 1 {
+		return validateConditionParts(parts, "&&", expr, checkRef)
+	}
+	if strings.HasPrefix(expr, "!") {
+		return validateConditionExpr(strings.TrimSpace(strings.TrimPrefix(expr, "!")), checkRef, true)
+	}
+	// Comparison operators in the same precedence order as evalComparison.
+	for _, op := range cmpOps {
+		idx := indexTopLevel(expr, op.sym)
+		if idx < 0 {
+			continue
+		}
+		left := strings.TrimSpace(expr[:idx])
+		right := strings.TrimSpace(expr[idx+len(op.sym):])
+		if left == "" || right == "" {
+			return fmt.Errorf("invalid condition %q: empty operand beside '%s'", expr, op.sym)
+		}
+		if err := validateConditionScalar(left, checkRef); err != nil {
+			return err
+		}
+		return validateConditionScalar(right, checkRef)
+	}
+	return validateConditionScalar(expr, checkRef)
+}
+
+func validateConditionParts(parts []string, op, expr string, checkRef func(path string) error) error {
+	for _, part := range parts {
+		if strings.TrimSpace(part) == "" {
+			return fmt.Errorf("dangling '%s' in condition %q", op, expr)
+		}
+		if err := validateConditionExpr(strings.TrimSpace(part), checkRef, true); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// validateConditionScalar validates one operand: a quoted or numeric literal,
+// a boolean, a status function, toJSON(path), or a context reference.
+func validateConditionScalar(op string, checkRef func(path string) error) error {
+	op = strings.TrimSpace(op)
+	// Operand grouping "(x)" unwraps like coerce before the value is read.
+	for {
+		inner, unwrapped := unwrapParens(op)
+		if !unwrapped {
+			break
+		}
+		op = strings.TrimSpace(inner)
+	}
+	if op == "" {
+		return fmt.Errorf("empty operand in condition")
+	}
+	if len(op) >= 2 && (op[0] == '\'' && op[len(op)-1] == '\'' || op[0] == '"' && op[len(op)-1] == '"') {
+		return nil // quoted literal: its content is data, never a reference
+	}
+	switch op {
+	case "true", "false", "success()", "failure()", "always()":
+		return nil
+	}
+	if numberLiteralPattern.MatchString(op) {
+		return nil
+	}
+	if m := toJSONPattern.FindStringSubmatch(op); m != nil {
+		return checkRef(strings.TrimSpace(m[1]))
+	}
+	// A bare name() that is not a status function above can never resolve;
+	// name it as a function rather than an unknown context root.
+	if strings.HasSuffix(op, "()") && !strings.ContainsAny(op, " \t") {
+		return fmt.Errorf("unknown function %q in condition (supported: success(), failure(), always())", op)
+	}
+	return checkRef(op)
+}
+
 func evalComparison(expr string, ctx *Context, jobName string) bool {
 	for _, op := range cmpOps {
 		idx := indexTopLevel(expr, op.sym)
@@ -979,7 +1164,26 @@ func coerce(token string, ctx *Context, jobName string) any {
 	if val, ok := ctx.resolveForJob(token, jobName); ok {
 		return val
 	}
+	// An unresolved context-shaped path is the empty value (GitHub semantics:
+	// missing reference → '' → falsy) — the literal path text would instead read
+	// as a truthy non-empty string and gate the step open. Free text operands
+	// (e.g. if: "true", if: deploy) keep the legacy truthy-string behavior.
+	if isContextPath(token) {
+		logger.Warn("expression: unresolved " + token + " in condition treated as empty")
+		return ""
+	}
 	return token
+}
+
+// isContextPath reports whether token is shaped like a context reference
+// (steps.x..., jobs.x..., inputs.x...) rather than free text.
+func isContextPath(token string) bool {
+	for _, root := range []string{"steps", "jobs", "job", "workflow", "inputs", "env"} {
+		if strings.HasPrefix(token, root+".") {
+			return true
+		}
+	}
+	return false
 }
 
 func toFloat(v any) (float64, bool) {

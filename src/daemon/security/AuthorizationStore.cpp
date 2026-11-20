@@ -7,6 +7,7 @@
 #include "../Configuration.h"
 #include "../application/Application.h"
 #include "AuthReplicator.h"
+#include "SecretProtector.h"
 #include "Security.h"
 
 #include <algorithm>
@@ -100,6 +101,23 @@ namespace
 		for (const auto &value : values)
 			array.append(value);
 		return array;
+	}
+
+	// SecretProtector ciphertext marker (same as Application.cpp); no prefix = legacy plaintext.
+	const char *PROTECTED_SECRET_PREFIX = "sp1:";
+
+	/// Encryption context bound to the key id, so a ciphertext moved between entries does not decrypt.
+	std::string apiKeySecretContext(const std::string &keyId)
+	{
+		return std::string("api_key") + '\0' + keyId;
+	}
+
+	/// Decrypt a persisted secret; a legacy plaintext value passes through, decryption failure throws.
+	std::string readStoredSecret(const std::string &keyId, const std::string &stored)
+	{
+		if (!Utility::startWith(stored, PROTECTED_SECRET_PREFIX))
+			return stored;
+		return SecretProtector::instance().unprotect(stored, apiKeySecretContext(keyId));
 	}
 
 	std::set<std::string> readStringSet(const Json::Value &value, const char *field)
@@ -318,21 +336,33 @@ AuthorizationStore::PolicyData AuthorizationStore::parsePolicy(const Json::Value
 		if (!authorization["api_keys"].isObject())
 			throw std::invalid_argument("Authorization.api_keys must be an object");
 		for (const auto &keyId : authorization["api_keys"].getMemberNames())
-		{
-			const auto &definition = authorization["api_keys"][keyId];
-			const auto principalId = GET_JSON_STR_VALUE(definition, "principal");
-			const auto secret = GET_JSON_STR_VALUE(definition, "secret");
-			// Dangling keys (principal removed by an external policy edit) are
-			// dropped with a warning instead of failing the whole policy load.
-			if (principalId.empty() || secret.empty() || data.principals.count(principalId) == 0)
 			{
-				LOG_WAR << "AuthorizationStore::parsePolicy() dropped request-signing API key <" << keyId
-						<< ">: principal is missing or the secret is empty";
-				continue;
+				const auto &definition = authorization["api_keys"][keyId];
+				const auto principalId = GET_JSON_STR_VALUE(definition, "principal");
+				// Decrypt for the wire snapshot; legacy plaintext entries load unchanged.
+				std::string secret;
+				try
+				{
+					secret = readStoredSecret(keyId, GET_JSON_STR_VALUE(definition, "secret"));
+				}
+				catch (const std::exception &)
+				{
+					LOG_WAR << "AuthorizationStore::parsePolicy() dropped request-signing API key <" << keyId
+							<< ">: the stored secret could not be decrypted; restore the SecretProtector master key "
+							   "or reissue the key";
+					continue;
+				}
+				// Dangling keys (principal removed by an external policy edit) are
+				// dropped with a warning instead of failing the whole policy load.
+				if (principalId.empty() || secret.empty() || data.principals.count(principalId) == 0)
+				{
+					LOG_WAR << "AuthorizationStore::parsePolicy() dropped request-signing API key <" << keyId
+							<< ">: principal is missing or the secret is empty";
+					continue;
+				}
+				ApiKey key{keyId, principalId, std::move(secret), GET_JSON_INT64_VALUE(definition, "created_at")};
+				data.apiKeys[keyId] = std::move(key);
 			}
-			ApiKey key{keyId, principalId, secret, GET_JSON_INT64_VALUE(definition, "created_at")};
-			data.apiKeys[keyId] = std::move(key);
-		}
 	}
 	return data;
 }
@@ -809,6 +839,9 @@ void AuthorizationStore::deleteRole(const std::string &role)
 Json::Value AuthorizationStore::issueApiKey(const std::string &principalId)
 {
 	const static char fname[] = "AuthorizationStore::issueApiKey() ";
+	if (principalId == SYSTEM_PRINCIPAL_ID)
+		throw AuthorizationException("API keys are not issued for the App Mesh system principal; sign requests with a "
+									 "user or service principal's key");
 	std::lock_guard guard(m_mutex);
 	requireWritablePolicyLocked();
 	mergeDiskPolicyLocked();
@@ -905,6 +938,12 @@ bool AuthorizationStore::apiKeySecret(const std::string &keyId, std::string &pri
 	auto found = m_apiKeys.find(keyId);
 	if (found == m_apiKeys.end())
 		return false;
+	// The key's validity is bound to its owner's status: disabling the
+	// principal revokes its keys (verification fails closed) without the
+	// delete-level cascade, and a dangling owner can never sign either.
+	auto owner = m_principals.find(found->second.principalId);
+	if (owner == m_principals.end() || !owner->second->active())
+		return false;
 	principalId = found->second.principalId;
 	secret = found->second.secret;
 	return true;
@@ -973,10 +1012,19 @@ void AuthorizationStore::mergeDiskPolicyLocked()
 					continue;
 				const auto &definition = authorization["api_keys"][keyId];
 				const auto principalId = GET_JSON_STR_VALUE(definition, "principal");
-				const auto secret = GET_JSON_STR_VALUE(definition, "secret");
+				std::string secret;
+				try
+				{
+					secret = readStoredSecret(keyId, GET_JSON_STR_VALUE(definition, "secret"));
+				}
+				catch (const std::exception &)
+				{
+					LOG_WAR << fname << "could not decrypt on-disk API key <" << keyId << ">; not adopted";
+					continue;
+				}
 				if (principalId.empty() || secret.empty() || m_principals.count(principalId) == 0)
 					continue;
-				ApiKey key{keyId, principalId, secret, GET_JSON_INT64_VALUE(definition, "created_at")};
+				ApiKey key{keyId, principalId, std::move(secret), GET_JSON_INT64_VALUE(definition, "created_at")};
 				m_apiKeys[keyId] = std::move(key);
 				LOG_INF << fname << "adopted on-disk API key <" << keyId << ">";
 			}
@@ -1004,7 +1052,8 @@ void AuthorizationStore::saveLocked() const
 	{
 		Json::Value entry;
 		entry["principal"] = key.principalId;
-		entry["secret"] = key.secret;
+		// At rest: encrypted; the replication wire snapshot stays plaintext for follower-side HMAC.
+		entry["secret"] = SecretProtector::instance().protect(key.secret, apiKeySecretContext(keyId));
 		entry["created_at"] = key.createdAt;
 		apiKeys[keyId] = std::move(entry);
 	}

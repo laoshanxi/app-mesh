@@ -12,7 +12,11 @@
 #include <io.h>
 #include <shlwapi.h>
 #include <windows.h>
+// sddl.h declares against the _WIN32_WINNT guard and relies on windows.h to
+// define it first, so it must come after (not before) windows.h.
+#include <sddl.h>
 
+#pragma comment(lib, "advapi32.lib")
 #pragma comment(lib, "shlwapi.lib")
 
 #include "../Utility.h"
@@ -20,6 +24,11 @@
 
 namespace os
 {
+	namespace
+	{
+		// Owner-only DACL (OWNER_RIGHTS, no inherited ACEs): the Windows form of POSIX 0600.
+		constexpr const char *OWNER_ONLY_SDDL = "D:P(A;;FA;;;OW)";
+	}
 
 	std::vector<std::string> ls(const std::string &directory)
 	{
@@ -155,7 +164,6 @@ namespace os
 	std::string createTmpFile(const std::string &fileName, const std::string &content, uint16_t mode)
 	{
 		const char *fname = "os::createTmpFile() ";
-		(void)mode;
 
 		try
 		{
@@ -197,9 +205,25 @@ namespace os
 			sa.nLength = sizeof(sa);
 			sa.bInheritHandle = FALSE;
 			sa.lpSecurityDescriptor = NULL;
+			// Owner-only mode gets an explicit DACL; descriptor failures fall
+			// back to the plain path, which errors out rather than weakening.
+			PSECURITY_DESCRIPTOR ownerOnly = NULL;
+			const bool ownerOnlyMode = (mode & 0600) != 0 && (mode & 0077) == 0;
+			if (ownerOnlyMode &&
+				!::ConvertStringSecurityDescriptorToSecurityDescriptorA(OWNER_ONLY_SDDL, SDDL_REVISION_1, &ownerOnly,
+																		nullptr))
+			{
+				LOG_WAR << fname << "could not build an owner-only DACL for mode <" << mode << ">, file <"
+						<< finalPath.string() << ">, error " << ::GetLastError();
+				::DeleteFileA(finalPath.string().c_str());
+				return {};
+			}
+			sa.lpSecurityDescriptor = ownerOnly;
 
 			HANDLE hFile = ::CreateFileA(finalPath.string().c_str(), GENERIC_WRITE, 0, &sa, CREATE_ALWAYS,
 										 FILE_ATTRIBUTE_TEMPORARY, NULL);
+			if (ownerOnly)
+				::LocalFree(ownerOnly);
 
 			if (hFile == INVALID_HANDLE_VALUE)
 			{

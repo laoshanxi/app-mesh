@@ -127,7 +127,8 @@ The principal ID is stable for one issuer and subject. The Engine does not use a
 - role bindings;
 - optional operating-system execution mappings;
 - the first-administrator role;
-- the durable first-administrator enrollment state.
+- the durable first-administrator enrollment state;
+- API request-signing keys (key id, owner principal, creation time, secret). Secrets are encrypted at rest with the node's secret master key; older files with cleartext secrets still load and are re-saved encrypted.
 
 It does not contain a password, refresh token, MFA seed, or directory group.
 
@@ -249,7 +250,9 @@ A request signature is produced with a per-principal API key. Manage keys throug
 | `GET /appmesh/security/apikeys` | List the caller's keys. `?all=1` lists every key and needs the `principal-list` permission. |
 | `DELETE /appmesh/security/apikey/<key_id>` | Revoke a key. The owner or the `principal-set` permission may revoke. |
 
-The response of `POST /appmesh/security/apikeys` contains the secret exactly once. Store it at the client. The daemon stores the key in the authorization file with mode `0600`. Cluster replication copies API keys to follower nodes with the rest of the policy. A principal may hold at most 10 keys. A revoked principal loses its keys.
+The response of `POST /appmesh/security/apikeys` contains the secret exactly once. Store it at the client. The daemon stores the key in the authorization file with mode `0600` on POSIX and an owner-only ACL on Windows; the secret is encrypted at rest. Cluster replication copies API keys to follower nodes with the rest of the policy — the replication snapshot carries the secrets so followers can verify signatures, so keep the replication listener on TLS. A principal may hold at most 10 keys. A principal that is disabled or deleted stops its keys from verifying; deleting a principal removes its keys.
+
+A key belongs to one principal for issuing and revocation, but the signature does not bind the key to the bearer on the wire: any valid key can sign a request that authenticates with any bearer. Enforce mode adds integrity, not a second authentication factor — it does not contain a stolen bearer token.
 
 ### Signature format
 
@@ -284,6 +287,8 @@ The daemon compares signatures in constant time. A request that fails verificati
 - The nonce cache is node-local. Each node rejects a nonce it has already served. Forwarded write requests reach the owner node, so the effective protection covers the write path.
 - Requests that carry no credential are exempt. Public routes stay reachable for browsers and probes.
 - Internal workflow capabilities are exempt. They are loopback-only and time-bound.
+- The signed surface is the canonical string only: method, path, query, body hash, timestamp, nonce. Request headers are not signed — `X-File-Path`, `X-File-Overwrite`, the file mode, user, and group headers, and `X-Target-Host` can be rewritten by a TLS-terminating proxy without breaking the signature. Signatures protect the request line and body, not header-based routing decisions.
+- `sortedQuery` joins decoded `key=value` pairs with `&` and does not re-encode, so two distinct raw query strings can share one canonical form (`a=1%26b%3D2` and `a=1&b=2` both canonicalize to `a=1&b=2`). Query consumers in this API are switches and filters; treat the query layer as replay-safe but not tamper-proof against a rewriting proxy.
 - A deployment that terminates TLS at a proxy should enable `RequestSignature` in `enforce` mode. The signature then survives the proxy hop.
 
 ## Removed interfaces

@@ -42,7 +42,7 @@ private:
 		std::uint64_t sequence;
 	};
 
-	void sweepLocked(std::chrono::steady_clock::time_point now);
+	void sweepLocked(std::chrono::steady_clock::time_point now, std::chrono::seconds window);
 
 	mutable std::mutex m_mutex;
 	std::unordered_map<std::string, Entry> m_seen;

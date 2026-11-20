@@ -41,9 +41,11 @@ const (
 	HTTPHeaderKeyAppmeshForwarded = "X-AppMesh-Forwarded"
 	HTTPHeaderKeyAppmeshRoute     = "X-AppMesh-Forward-Route"
 	HTTPHeaderKeyAppmeshProcess   = "X-AppMesh-Process-Key"
-	HTTPHeaderKeyXSendFileSocket  = "X-Send-File-Socket"
-	HTTPHeaderKeyXRecvFileSocket  = "X-Recv-File-Socket"
-	HTTPHeaderKeyFilePath         = "X-File-Path"
+	// Marks the bearer-only precheck the daemon exempts from signature enforcement.
+	HTTPHeaderKeyAgentPrecheck   = "X-Appmesh-Agent-Precheck"
+	HTTPHeaderKeyXSendFileSocket = "X-Send-File-Socket"
+	HTTPHeaderKeyXRecvFileSocket = "X-Recv-File-Socket"
+	HTTPHeaderKeyFilePath        = "X-File-Path"
 
 	// PermissionHostForward gates X-Target-Host forwarding on the engine; the
 	// agent enforces the same grant before it opens the outbound connection.
@@ -69,14 +71,22 @@ func stripInternalClientProof(r *http.Request) {
 	}
 }
 
-func validateForwardBearer(ctx context.Context, localConn *Connection, authorization string) (*Response, error) {
+// newForwardPrecheckRequest builds the bearer-only /appmesh/principal/self probe
+// gating X-Target-Host forwarding; the precheck marker exempts it from the
+// daemon's mandatory signature enforcement.
+func newForwardPrecheckRequest(authorization string) *Request {
 	request := &Request{appmesh.NewRequest()}
 	request.HTTPMethod = http.MethodGet
 	request.RequestURI = "/appmesh/principal/self"
 	request.ClientAddress = "agent-forward-check"
 	request.Headers[HTTPUserAgentHeaderName] = UserAgentAppmeshSDK
 	request.Headers[HTTPHeaderKeyAuthorization] = authorization
-	return localConn.sendRequestDataWithContext(ctx, request)
+	request.Headers[HTTPHeaderKeyAgentPrecheck] = "1"
+	return request
+}
+
+func validateForwardBearer(ctx context.Context, localConn *Connection, authorization string) (*Response, error) {
+	return localConn.sendRequestDataWithContext(ctx, newForwardPrecheckRequest(authorization))
 }
 
 func writeForwardValidationResponse(w http.ResponseWriter, response *Response) {
@@ -676,10 +686,17 @@ func ForwardAppMeshRequest(w http.ResponseWriter, r *http.Request, forwardingHos
 	if forwardingHost.Port() == "" {
 		targetHost = net.JoinHostPort(forwardingHost.Hostname(), strconv.Itoa(config.ConfigData.REST.RESTListenPort))
 	}
-	// Create a new request to be sent to the target server
-	targetURL := fmt.Sprintf("%s://%s%s?%s", forwardingHost.Scheme, targetHost, r.URL.Path, r.URL.RawQuery)
+	// Keep the percent-encoded path (RawPath); the target verifies signatures
+	// over the encoded bytes the client sent.
+	targetURL := &url.URL{
+		Scheme:   forwardingHost.Scheme,
+		Host:     targetHost,
+		Path:     r.URL.Path,
+		RawPath:  r.URL.RawPath,
+		RawQuery: r.URL.RawQuery,
+	}
 	logger.Debugf("Forwarding request: %s %s", r.Method, targetURL)
-	req, err := http.NewRequestWithContext(r.Context(), r.Method, targetURL, r.Body)
+	req, err := http.NewRequestWithContext(r.Context(), r.Method, targetURL.String(), r.Body)
 	if err != nil {
 		logger.Errorf("Failed to create forward request: %v", err)
 		utils.HTTPError(w, "failed to create forward request", http.StatusInternalServerError)

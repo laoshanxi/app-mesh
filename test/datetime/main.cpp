@@ -125,6 +125,13 @@ TEST_CASE("DurationParse ISO8601", "[Duration]")
 	REQUIRE_THROWS_AS(DurationParse::parse("P1M"), std::invalid_argument); // months unsupported
 	REQUIRE_THROWS_AS(DurationParse::parse("bogus"), std::invalid_argument);
 
+	// Negative numeric input returns negative seconds; callers own the sign check.
+	REQUIRE(DurationParse::parse("-1") == -1);
+	REQUIRE(DurationParse::parse("-90") == -90);
+	REQUIRE_NOTHROW(DurationParse::parse("-2147483648"));
+	REQUIRE_THROWS_AS(DurationParse::parse("2147483648"), std::invalid_argument); // beyond int
+	REQUIRE_THROWS_AS(DurationParse::parse("-2147483649"), std::invalid_argument);
+
 	REQUIRE(DurationParse::compose(90061) == "P1DT1H1M1S");
 	REQUIRE(DurationParse::compose(90061, true) == "P0W");
 	REQUIRE(DurationParse::parse(DurationParse::compose(3661)) == 3661);

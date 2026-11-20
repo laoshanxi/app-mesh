@@ -7,6 +7,7 @@ import (
 	"crypto/x509"
 	"crypto/x509/pkix"
 	"encoding/pem"
+	"fmt"
 	"math/big"
 	"net"
 	"os"
@@ -44,6 +45,9 @@ func TestApplyDefaultsToVerify(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Setenv(EnvVerify, tc.verifyEnv)
 			t.Setenv(EnvCA, tc.caEnv)
+			// Pin the transport probes away from a possible host /opt/appmesh:
+			// these cases assert the TLS-verification policy only.
+			t.Setenv(EnvTransport, "tls")
 			opt := appmesh.Option{}
 			Apply(&opt)
 			if opt.InsecureSkipVerify != tc.skipVerify {
@@ -71,6 +75,8 @@ func TestApplyVerifiesDaemonCertificate(t *testing.T) {
 
 	t.Setenv(EnvVerify, "")
 	t.Setenv(EnvCA, goodCA)
+	// Pin the transport to TLS: this test asserts certificate verification.
+	t.Setenv(EnvTransport, "tls")
 	opt := appmesh.Option{AppMeshURI: addr}
 	Apply(&opt)
 	if opt.InsecureSkipVerify {
@@ -163,4 +169,95 @@ func startTestTLSDaemon(t *testing.T) (addr, caFile string) {
 		}
 	}()
 	return ln.Addr().String(), caFile
+}
+
+// writeDaemonConfig writes a daemon config.yaml at rel (relative to the test's
+// config root) and returns the root.
+func writeDaemonConfig(t *testing.T, rel, content string) string {
+	t.Helper()
+	root := t.TempDir()
+	path := filepath.Join(root, rel)
+	if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte(content), 0600); err != nil {
+		t.Fatal(err)
+	}
+	return root
+}
+
+// sslConfig renders a daemon REST.SSL block with the given SSLEnabled value.
+func sslConfig(enabled bool) string {
+	return fmt.Sprintf("REST:\n  SSL:\n    SSLEnabled: %v\n", enabled)
+}
+
+// TestTransportPlainResolvesByEnvThenConfig pins the transport-selection
+// priority: APPMESH_ENGINE_TRANSPORT wins outright, otherwise the daemon's
+// effective config.yaml decides in the daemon's own search order
+// (work/config/config.yaml before config/config.yaml), and a missing key,
+// missing file or broken YAML fails closed to TLS.
+func TestTransportPlainResolvesByEnvThenConfig(t *testing.T) {
+	cases := []struct {
+		name      string
+		env       string
+		envSet    bool
+		workCfg   string
+		mainCfg   string
+		wantPlain bool
+	}{
+		{"env plain wins over TLS config", "plain", true, sslConfig(true), "", true},
+		{"env tls wins over plain config", "tls", true, sslConfig(false), "", false},
+		{"env unset, work config disables SSL", "", false, sslConfig(false), sslConfig(true), true},
+		{"env unset, work config enables SSL", "", false, sslConfig(true), sslConfig(false), false},
+		{"env unset, fallback config disables SSL", "", false, "", sslConfig(false), true},
+		{"env unset, absent key defaults to TLS", "", false, "REST:\n  SSL:\n", "", false},
+		{"env unset, no config defaults to TLS", "", false, "", "", false},
+		{"env unset, broken config fails closed to TLS", "", false, "\t:::not yaml:::", "", false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Setenv(EnvConfigRoot, t.TempDir()) // no config until one is written
+			if tc.envSet {
+				t.Setenv(EnvTransport, tc.env)
+			} else {
+				t.Setenv(EnvTransport, "") // empty behaves as unset
+			}
+			if tc.workCfg != "" {
+				t.Setenv(EnvConfigRoot, writeDaemonConfig(t, filepath.Join("work", "config", "config.yaml"), tc.workCfg))
+			} else if tc.mainCfg != "" {
+				t.Setenv(EnvConfigRoot, writeDaemonConfig(t, filepath.Join("config", "config.yaml"), tc.mainCfg))
+			}
+
+			if got := TransportPlain(); got != tc.wantPlain {
+				t.Fatalf("TransportPlain() = %v, want %v", got, tc.wantPlain)
+			}
+			wantName := "tls"
+			if tc.wantPlain {
+				wantName = "plain"
+			}
+			if got := TransportName(); got != wantName {
+				t.Fatalf("TransportName() = %q, want %q", got, wantName)
+			}
+		})
+	}
+}
+
+// TestApplyPlainSkipsCA pins the plain-mode Apply behavior: no CA is pinned
+// (a leftover or missing APPMESH_CA must not hard-fail client creation on a
+// plaintext daemon) and the TLS verification fields stay untouched.
+func TestApplyPlainSkipsCA(t *testing.T) {
+	t.Setenv(EnvTransport, "plain")
+	t.Setenv(EnvCA, filepath.Join(t.TempDir(), "absent-ca.pem"))
+
+	opt := appmesh.Option{}
+	Apply(&opt)
+	if !opt.PlainTransport {
+		t.Fatal("plain transport must be selected in plain mode")
+	}
+	if opt.SSLTrustedCA != nil {
+		t.Fatalf("plain mode must not pin a CA, got %q", *opt.SSLTrustedCA)
+	}
+	if opt.InsecureSkipVerify {
+		t.Fatal("plain mode must not touch InsecureSkipVerify")
+	}
 }

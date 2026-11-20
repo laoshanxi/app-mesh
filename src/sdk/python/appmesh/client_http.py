@@ -7,6 +7,7 @@
 import json
 import logging
 import os
+import re
 import sys
 import warnings
 from contextlib import suppress
@@ -33,6 +34,9 @@ from .streaming import SseEnd, end_from_payload, iter_sse_events, raise_on_error
 from .token_provider import StaticAccessTokenProvider, TokenProvider
 
 logger = logging.getLogger(__name__)
+
+# SSE stream routes sign the empty-body hash, the same exemption set as the JS SDK.
+_EMPTY_BODY_EXEMPT_STREAM_RE = re.compile(r"^/appmesh/app/[^/]+/(output|task)/stream$")
 
 
 class _RejectAllCookiesPolicy(DefaultCookiePolicy):
@@ -227,8 +231,8 @@ class AppMeshClient:
         self.request_timeout = request_timeout
         self._forward_to = None
 
-        self._api_key: Optional[str] = None
-        self._api_secret: Optional[str] = None
+        # One attribute holds the (key_id, secret) pair so enable/disable is a single assignment.
+        self._api_credentials: Optional[Tuple[str, str]] = None
         if api_key is not None or api_secret is not None:
             # Validate through the shared setter so partial pairs are rejected.
             self.enable_request_signature(api_key or "", api_secret or "")
@@ -337,33 +341,57 @@ class AppMeshClient:
             raise ValueError("key_id must be a non-empty string")
         if not isinstance(secret, str) or not secret:
             raise ValueError("secret must be a non-empty string")
-        self._api_key = key_id
-        self._api_secret = secret
+        self._api_credentials = (key_id, secret)
 
     def disable_request_signature(self) -> None:
         """Turn off request signing previously enabled via ``enable_request_signature``."""
-        self._api_key = None
-        self._api_secret = None
+        self._api_credentials = None
 
     def _request_signature_enabled(self) -> bool:
         """Signing is active only when both the key id and secret are set."""
-        return bool(self._api_key and self._api_secret)
+        return self._api_credentials is not None
 
     def _signature_headers(self, method: "AppMeshClient._Method", path: str, query: Optional[dict], body) -> dict:
         """Build the four signature headers for one HTTP request.
 
         ``body`` is the already-JSON-normalized body (str/bytes) or the raw
-        caller value. A callable body (a streamed upload) and the streamed file
-        endpoints sign the empty-string body hash — the documented exemption.
+        caller value. A callable body (a streamed upload) is accepted only on
+        the empty-body exempt paths (streamed file routes and SSE streams, the
+        JS SDK's ``isEmptyBodyExemptPath`` set) where it signs the empty-string
+        hash; anywhere else a lazily produced body cannot be hashed, so it is
+        rejected here instead of sending a request the daemon is bound to 401.
         """
+        if callable(body):
+            signing_path = request_signature.canonical_signing_path(path)
+            if (
+                signing_path not in request_signature.FILE_ENDPOINT_EMPTY_HASH_PATHS
+                and _EMPTY_BODY_EXEMPT_STREAM_RE.match(signing_path) is None
+            ):
+                raise ValueError(
+                    f"a callable body cannot be HMAC-signed on a non-exempt path ({path}); "
+                    "only the streamed file endpoints and SSE streams sign the empty-body hash"
+                )
+            body = None
+        key_id, secret = self._api_credentials or ("", "")
         return request_signature.signed_headers(
-            self._api_key,
-            self._api_secret,
+            key_id,
+            secret,
             method.value,
             path,
             query,
-            None if body is None or callable(body) else body,
+            body,
         )
+
+    @staticmethod
+    def _should_retry_unauthorized(signed: bool, resp: "requests.Response") -> bool:
+        """Whether a 401 justifies spending the provider's single-use refresh
+        token: an unsigned request's 401 is a bearer problem, but a signed
+        request rejected without an ``invalid_token`` WWW-Authenticate challenge
+        is a signature failure — force-refreshing there would burn the session
+        without fixing the request."""
+        if not signed:
+            return True
+        return "invalid_token" in resp.headers.get("WWW-Authenticate", "")
 
     def _append_signature_headers(self, headers: dict, method: str, path: str, query: Optional[dict] = None) -> None:
         """Attach the four signature headers to a caller-built request that does
@@ -371,9 +399,8 @@ class AppMeshClient:
         request). No-op when signing is not enabled. Streamed file endpoints
         sign the empty-string body hash — the streamed content is exempt."""
         if self._request_signature_enabled():
-            headers.update(
-                request_signature.signed_headers(self._api_key, self._api_secret, method, path, query, None)
-            )
+            key_id, secret = self._api_credentials or ("", "")
+            headers.update(request_signature.signed_headers(key_id, secret, method, path, query, None))
 
     def close(self) -> None:
         """Close the client and release resources."""
@@ -1198,7 +1225,9 @@ class AppMeshClient:
     ) -> requests.Response:
         """Make an HTTP request. A callable ``body`` is invoked per attempt and must
         return a closeable stream (a file opened for reading)."""
-        url = parse.urljoin(self.base_url, path)
+        # urljoin drops a base path prefix; keep it on the wire and in the signature.
+        base = self.base_url.rstrip("/")
+        url = base + path if path.startswith("/") else parse.urljoin(base, path)
 
         base_headers = header.copy() if header else {}
         caller_manages_auth = any(key.lower() == self._HTTP_HEADER_KEY_AUTH.lower() for key in base_headers)
@@ -1227,12 +1256,16 @@ class AppMeshClient:
         signing = self._request_signature_enabled()
         if signing:
             params = request_signature.encode_query(query)
-            # The signature must bind the path exactly as it reaches the daemon.
-            # requests re-quotes the URL before the wire (spaces and non-ASCII
-            # become %XX), so derive the wire path with the same quoting
-            # requests applies (requests.utils.requote_uri) and sign that —
-            # signing the caller's raw path would 401 on the daemon.
-            wire_path = requests.utils.requote_uri(parse.urlsplit(url).path)
+            # Prepare with requests itself and sign the prepared URL's path:
+            # requests repairs the URL on send, so a separately derived wire
+            # path can drift and the daemon would verify a different path.
+            wire_method = "GET" if method is AppMeshClient._Method.GET_STREAM else method.value
+            if method is AppMeshClient._Method.POST_STREAM:
+                wire_method = "POST"
+            prepared = requests.Request(method=wire_method, url=url, params=params).prepare()
+            wire_path = parse.urlsplit(prepared.url).path
+            url = prepared.url
+            params = None  # the query is already inside the prepared URL
 
         # Streaming/multipart bodies cannot be assumed replayable after a 401 response.
         replayable = body is None or isinstance(body, (str, bytes, bytearray)) or callable(body)
@@ -1292,6 +1325,7 @@ class AppMeshClient:
                     and replayable
                     and provider is not None
                     and provider.can_refresh
+                    and self._should_retry_unauthorized(signing, resp)
                 ):
                     rejected_token = bearer_token
                     resp.close()
@@ -1307,4 +1341,5 @@ class AppMeshClient:
             raise AppMeshAuthError("TokenProvider failed to replace a rejected access token", HTTPStatus.UNAUTHORIZED)
 
         except requests.exceptions.RequestException as e:
-            raise AppMeshRequestError(f"HTTP request failed: {e}") from e
+            status = getattr(getattr(e, "response", None), "status_code", None)
+            raise AppMeshRequestError(f"HTTP request failed: {e}", status) from e

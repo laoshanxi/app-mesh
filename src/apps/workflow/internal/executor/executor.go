@@ -73,11 +73,11 @@ func (e *StepExecutor) Close() {
 }
 
 func (e *StepExecutor) Execute(step *models.Step, env, secretEnv map[string]string) models.StepResult {
-	resolved, err := resolveEnv(env, e.Ctx, e.JobName)
+	resolved, err := resolveEnv(env, "env", e.Ctx, e.JobName)
 	if err != nil {
 		return fail(1, err.Error(), 0)
 	}
-	resolvedSecretEnv, err := resolveEnv(secretEnv, e.Ctx, e.JobName)
+	resolvedSecretEnv, err := resolveEnv(secretEnv, "secret_env", e.Ctx, e.JobName)
 	if err != nil {
 		return fail(1, err.Error(), 0)
 	}
@@ -156,16 +156,16 @@ func (e *StepExecutor) execCommand(step *models.Step, env, secretEnv map[string]
 		Metadata:  &metadata,
 	}
 	if step.Workdir != "" {
-		workdir, err := expression.SubstituteForJobChecked(step.Workdir, e.Ctx, e.JobName)
+		workdir, err := expression.SubstituteValue(step.Workdir, e.Ctx, e.JobName)
 		if err != nil {
-			return fail(1, err.Error(), 0)
+			return fail(1, fmt.Sprintf("workdir: %v", err), 0)
 		}
 		app.WorkingDir = &workdir
 	}
 	if step.DockerImage != "" {
-		image, err := expression.SubstituteForJobChecked(step.DockerImage, e.Ctx, e.JobName)
+		image, err := expression.SubstituteValue(step.DockerImage, e.Ctx, e.JobName)
 		if err != nil {
-			return fail(1, err.Error(), 0)
+			return fail(1, fmt.Sprintf("docker_image: %v", err), 0)
 		}
 		app.DockerImage = &image
 	}
@@ -275,17 +275,34 @@ func appLevelError(resp string) (string, bool) {
 // appLevelAnswer extracts the platform task-response convention's answer field
 // ({"status":"ok","data":{"answer":...}}, used by llm-agent) so pipelines can use
 // ${{ steps.<name>.outputs.answer }} instead of parsing the JSON envelope in shell.
-// nil when the response does not carry one.
+// Scalar answers (string/number/bool) become their text form; nil when the
+// response carries no answer, an empty string, or a non-scalar (object/array/null).
 func appLevelAnswer(resp string) map[string]string {
 	var env struct {
 		Data struct {
-			Answer string `json:"answer"`
+			Answer json.RawMessage `json:"answer"`
 		} `json:"data"`
 	}
-	if err := json.Unmarshal([]byte(resp), &env); err != nil || env.Data.Answer == "" {
+	if err := json.Unmarshal([]byte(resp), &env); err != nil || len(env.Data.Answer) == 0 {
 		return nil
 	}
-	return map[string]string{"answer": env.Data.Answer}
+	var val any
+	if err := json.Unmarshal(env.Data.Answer, &val); err != nil {
+		return nil
+	}
+	switch val.(type) {
+	case string, bool, float64:
+		text := strings.TrimSpace(string(env.Data.Answer))
+		// A string scalar keeps only its content, without the JSON quotes.
+		if s, ok := val.(string); ok {
+			text = s
+		}
+		if text == "" {
+			return nil
+		}
+		return map[string]string{"answer": text}
+	}
+	return nil // object, array or null: no scalar answer
 }
 
 // injectToken adds the run's Dex bearer as the "token" field of a JSON-object payload, for
@@ -322,9 +339,9 @@ func (e *StepExecutor) execWorkflow(step *models.Step, _, _ map[string]string) m
 
 	resolvedInputs := make(map[string]string)
 	for k, v := range step.With {
-		val, err := expression.SubstituteForJobChecked(v, e.Ctx, e.JobName)
+		val, err := expression.SubstituteValue(v, e.Ctx, e.JobName)
 		if err != nil {
-			return fail(1, err.Error(), 0)
+			return fail(1, fmt.Sprintf("with input %q: %v", k, err), 0)
 		}
 		resolvedInputs[k] = val
 	}
@@ -556,12 +573,12 @@ func (e *StepExecutor) clientForTarget() (*appmesh.AppMeshClient, error) {
 	return c.AppMeshClient, nil
 }
 
-func resolveEnv(env map[string]string, ctx *expression.Context, jobName string) (map[string]string, error) {
+func resolveEnv(env map[string]string, label string, ctx *expression.Context, jobName string) (map[string]string, error) {
 	out := make(map[string]string, len(env))
 	for k, v := range env {
-		val, err := expression.SubstituteForJobChecked(v, ctx, jobName)
+		val, err := expression.SubstituteValue(v, ctx, jobName)
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("%s %q: %w", label, k, err)
 		}
 		out[k] = val
 	}

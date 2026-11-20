@@ -118,6 +118,47 @@ public class RequestSignatureTest {
         assertEquals("", RequestSigner.canonicalQueryFromEncoded(null));
         // Non-ASCII round-trips through UTF-8 percent escapes.
         assertEquals("k=\u00e9", RequestSigner.canonicalQueryFromEncoded("k=%C3%A9"));
+        // Dedup is on the DECODED key: "%61" decodes to "a" (first wins), while
+        // "a%61" decodes to "aa" and stays a distinct entry.
+        assertEquals("a=1", RequestSigner.canonicalQueryFromEncoded("a=1&%61=2"));
+        assertEquals("a=1&aa=2", RequestSigner.canonicalQueryFromEncoded("a=1&a%61=2"));
+    }
+
+    @Test
+    public void canonicalQueryFromEncodedKeepsEmptySegmentsLikeDaemon() {
+        // An empty segment inserts ("", "") and the canonical output keeps its
+        // "=" (the daemon parser loop has no empty-segment skip); a trailing '&'
+        // adds no segment because the loop ends at the string bounds.
+        assertEquals("=&a=1&b=2", RequestSigner.canonicalQueryFromEncoded("a=1&&b=2"));
+        assertEquals("=", RequestSigner.canonicalQueryFromEncoded("&&"));
+        assertEquals("a=1", RequestSigner.canonicalQueryFromEncoded("a=1&"));
+    }
+
+    @Test
+    public void crossLanguageGoldenSignatureVectors() {
+        // The same five vectors are pinned by the daemon C++, Go, JavaScript,
+        // Python, and Rust test suites; path/query are the wire-encoded forms
+        // fed straight into the canonical layer (fixed timestamp and nonce, no
+        // time window).
+        String[][] vectors = {
+            {"GET", "/appmesh/app/100%25", "", "", "1700000000", "nonce-golden-0001",
+                "1036298fce978dab3ca5393a17c8dbeafcd22e8394585a96ce5a60ad39694d8c"},
+            {"GET", "/appmesh/app/list", "flag=true&name=dh-bot", "", "1700000001", "nonce-golden-0002",
+                "0c9287088c6ca609fad7436f3f4646451faa8e180733e28e10e4eee11f34a9c5"},
+            {"POST", "/appmesh/file/download", "", "", "1700000002", "nonce-golden-0003",
+                "dea6aa318b1fc84f8ffaadc859e4b36a90a9d6c5619f737dd037c78e5d17ac7d"},
+            {"GET", "/appmesh/app/%E4%B8%AD%E6%96%87", "a=1%26b%3D2", "", "1700000003", "nonce-golden-0004",
+                "6cf618bfb9264d61d5b23dbaa42d366f59054bce99b9addab3253f98aaadb0ab"},
+            {"POST", "/appmesh/appmesh/run", "", "{\"command\":\"echo hi\"}", "1700000004", "nonce-golden-0005",
+                "0a8de849eda2abf6389d40f11299aaf09e7b440615a6ee0c7e01012a92a1f876"},
+        };
+        RequestSigner signer = new RequestSigner("ak-golden", "golden-secret");
+        for (String[] v : vectors) {
+            byte[] body = v[3].getBytes(StandardCharsets.UTF_8);
+            String canonical = RequestSigner.canonicalString(v[0], v[1], v[2],
+                    RequestSigner.sha256Hex(body), v[4], v[5]);
+            assertEquals(v[6], signer.sign(canonical), "vector " + v[5]);
+        }
     }
 
     @Test
@@ -272,6 +313,57 @@ public class RequestSignatureTest {
             second.disconnect();
             assertNull(observedSignature.get(), "signature must be opt-in");
             assertNull(observedKey.get(), "key id must disappear with the signer");
+        } finally {
+            client.close();
+        }
+    }
+
+    /**
+     * A baseURL with a path prefix (reverse-proxy deployments): the prefix is part
+     * of the wire path, so the signature must bind the path the server actually
+     * received — signing the bare caller path would 401 on the daemon.
+     */
+    @Test
+    public void baseURLPathPrefixIsSignedAndSent() throws Exception {
+        AtomicReference<String> observedSignature = new AtomicReference<>();
+        AtomicReference<String> observedKey = new AtomicReference<>();
+        AtomicReference<String> observedTimestamp = new AtomicReference<>();
+        AtomicReference<String> observedNonce = new AtomicReference<>();
+        AtomicReference<String> observedMethod = new AtomicReference<>();
+        AtomicReference<String> observedPath = new AtomicReference<>();
+
+        server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+        server.createContext("/", (HttpExchange exchange) -> {
+            observedSignature.set(exchange.getRequestHeaders().getFirst("X-Signature"));
+            observedKey.set(exchange.getRequestHeaders().getFirst("X-Request-Key"));
+            observedTimestamp.set(exchange.getRequestHeaders().getFirst("X-Timestamp"));
+            observedNonce.set(exchange.getRequestHeaders().getFirst("X-Nonce"));
+            observedMethod.set(exchange.getRequestMethod());
+            observedPath.set(exchange.getRequestURI().getRawPath());
+            exchange.getResponseHeaders().set("Content-Type", "text/plain");
+            byte[] reply = "ok".getBytes(StandardCharsets.UTF_8);
+            exchange.sendResponseHeaders(200, reply.length);
+            exchange.getResponseBody().write(reply);
+            exchange.close();
+        });
+        server.start();
+
+        AppMeshClient client = new AppMeshClient.Builder()
+                .baseURL("http://127.0.0.1:" + server.getAddress().getPort() + "/pfx")
+                .requestSignature(KEY_ID, SECRET)
+                .build();
+        try {
+            HttpURLConnection connection = client.request("GET", "/appmesh/app/demo", null, null, null);
+            assertEquals(200, connection.getResponseCode());
+            connection.disconnect();
+
+            assertEquals("/pfx/appmesh/app/demo", observedPath.get(), "the prefix must reach the wire");
+            // Daemon-side verification against the received path.
+            RequestSigner verifier = new RequestSigner(KEY_ID, SECRET);
+            String canonical = RequestSigner.canonicalString(observedMethod.get(), observedPath.get(), "",
+                    RequestSigner.sha256Hex(new byte[0]), observedTimestamp.get(), observedNonce.get());
+            assertEquals(verifier.sign(canonical), observedSignature.get(),
+                    "the signature must bind the prefixed wire path");
         } finally {
             client.close();
         }

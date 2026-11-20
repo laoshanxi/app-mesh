@@ -148,7 +148,11 @@ func (r *Response) writeToHTTPResponse(w http.ResponseWriter, req *http.Request)
 				// protocol problem, not the client's.
 				status = http.StatusBadGateway
 			case errors.Is(err, os.ErrNotExist), errors.Is(err, syscall.EISDIR), errors.Is(err, syscall.ENOTDIR):
-				status = http.StatusBadRequest
+				// These can only come from the agent's own staging temp file
+				// (work/tmp/<uuid>), i.e. local infrastructure trouble — 500,
+				// like the daemon maps its own internal failures (a missing
+				// remote file arrives as the daemon's 404, never as this error).
+				status = http.StatusInternalServerError
 			}
 			utils.HTTPError(w, err.Error(), status)
 		}

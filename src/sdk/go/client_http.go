@@ -46,6 +46,9 @@ type Option struct {
 	// InsecureSkipVerify disables server certificate verification (testing only; same as SSLTrustedCA = "").
 	InsecureSkipVerify bool
 
+	// PlainTransport dials the TCP frame port without TLS (daemon SSL.SSLEnabled=false).
+	PlainTransport bool
+
 	JWTToken string // Access token set directly without a network call.
 
 	// TokenProvider supplies and refreshes access tokens (see token_provider.go).
@@ -129,8 +132,13 @@ func newHTTPClientWithRequester(options Option, r Requester) (*AppMeshClient, er
 	}
 	// Applies to every transport: a TCP/WSS requester arrives here without the option.
 	req.setForwardTo(options.ForwardTo)
-	if options.RequestSignatureKeyID != "" {
-		req.setRequestSigner(newRequestSigner(options.RequestSignatureKeyID, options.RequestSignatureSecret))
+	// A partial API-key pair is a misconfiguration; enabling requires both halves.
+	if options.RequestSignatureKeyID != "" || options.RequestSignatureSecret != "" {
+		signer, err := newRequestSigner(options.RequestSignatureKeyID, options.RequestSignatureSecret)
+		if err != nil {
+			return nil, err
+		}
+		req.setRequestSigner(signer)
 	}
 
 	c := &AppMeshClient{
@@ -179,12 +187,18 @@ func (r *AppMeshClient) ClearToken() {
 // signatures"). The key pair comes from POST /appmesh/security/apikeys; the
 // secret is kept in memory only and never logged. The signature is an
 // integrity layer on top of the bearer token, not a replacement for it.
-func (r *AppMeshClient) WithRequestSignature(keyID, secret string) {
+// An empty key ID disables signing; an empty secret is an error.
+func (r *AppMeshClient) WithRequestSignature(keyID, secret string) error {
 	if keyID == "" {
 		r.req.setRequestSigner(nil)
-		return
+		return nil
 	}
-	r.req.setRequestSigner(newRequestSigner(keyID, secret))
+	signer, err := newRequestSigner(keyID, secret)
+	if err != nil {
+		return err
+	}
+	r.req.setRequestSigner(signer)
+	return nil
 }
 
 // GetToken returns the current in-memory access token.

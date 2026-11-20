@@ -794,3 +794,133 @@ jobs:
 		}
 	}
 }
+
+// P2-4: operands are tokenized with the runtime lexer at load time, so an unknown root,
+// '===', an empty/dangling operand or an unknown function is a load error, not a silent one.
+func TestConditionOperandValidation(t *testing.T) {
+	const header = `
+name: cond-validate
+on:
+  manual:
+    inputs:
+      n:
+        type: string
+        default: "3"
+jobs:
+  build:
+    steps:
+      - name: make
+        command: "echo ok"
+      - name: use
+        command: "echo done"
+        if: 'COND'
+`
+	load := func(cond string) error {
+		// YAML single-quote escaping: the condition must stay one scalar value.
+		path := writeTmp(t, strings.ReplaceAll(header, "COND", strings.ReplaceAll(cond, "'", "''")))
+		_, err := LoadWorkflow(path)
+		return err
+	}
+	rejected := []struct{ cond, wantErr string }{
+		{`${{ stepz.make.stdout == 'x' }}`, "unknown context root"}, // (a) typo'd root
+		{"stepz.make.stdout == 'x'", "unknown context root"},        // (d) bare, unknown root
+		{"inputs.bogus_root == '1'", "input is not declared"},       // (d) bare, undeclared input
+		{`${{ inputs.n === '3' }}`, "use '==' instead of '==='"},    // (c) === misjudged at runtime
+		{"inputs.n === '3'", "use '==' instead of '==='"},           // bare ===
+		{`${{ inputs.n == }}`, "empty operand"},                     // empty right operand
+		{`${{ == '3' }}`, "empty operand"},                          // empty left operand
+		{`${{ inputs.n == '3' || }}`, "dangling"},                   // dangling ||
+		{`${{ cancelled() }}`, "unknown function"},                  // not a status function here
+		{`${{ steps.ghost.stdout == 'x' }}`, "is not defined"},      // undefined step still caught
+	}
+	for _, c := range rejected {
+		err := load(c.cond)
+		if err == nil || !strings.Contains(err.Error(), c.wantErr) {
+			t.Errorf("condition %q: want error containing %q, got %v", c.cond, c.wantErr, err)
+		}
+	}
+	accepted := []string{
+		`success()`,
+		`steps.make.exit_code == 0`, // bare comparison
+		`inputs.n == '3'`,           // bare, declared input
+		`(steps.make.exit_code == 0 && inputs.n != '9') || always()`, // grouping + status function
+		`${{ steps.make.stdout == "steps.ghost.stdout" }}`,           // P2-6: quoted literal is data
+		`${{ inputs.n == '===' }}`,                                   // '===' inside quotes is data
+		`${{ !failure() }}`,
+		`${{ true }}`,
+		`false`,
+	}
+	for _, cond := range accepted {
+		if err := load(cond); err != nil {
+			t.Errorf("condition %q rejected: %v", cond, err)
+		}
+	}
+}
+
+// P2-6: a quoted literal that looks like a reference is not one; unquoted it still is.
+func TestConditionQuotedLiteralNotAReference(t *testing.T) {
+	path := writeTmp(t, `
+name: quoted-literal
+jobs:
+  build:
+    steps:
+      - name: make
+        command: "echo ok"
+      - name: use
+        command: "echo done"
+        if: '${{ steps.make.stdout == "steps.ghost.stdout" }}'
+`)
+	if _, err := LoadWorkflow(path); err != nil {
+		t.Fatalf("quoted literal must not be validated as a reference: %v", err)
+	}
+	path = writeTmp(t, `
+name: quoted-literal2
+jobs:
+  build:
+    steps:
+      - name: make
+        command: "echo ok"
+      - name: use
+        command: "echo done"
+        if: '${{ steps.make.stdout == steps.ghost.stdout }}'
+`)
+	if _, err := LoadWorkflow(path); err == nil || !strings.Contains(err.Error(), "ghost") {
+		t.Fatalf("unquoted ghost step must be rejected, got %v", err)
+	}
+}
+
+// P3: the trigger subscribes only to START/EXIT/HEALTH/STATUS/REMOVED; any
+// other event value would load but never fire, so it is a parse error.
+func TestAppEventUnknownEventRejected(t *testing.T) {
+	path := writeTmp(t, `
+name: bad-event-type
+on:
+  app_event:
+    app: collector
+    events: [STDOUT]
+jobs:
+  build:
+    steps:
+      - name: greet
+        command: "echo hello"
+`)
+	if _, err := LoadWorkflow(path); err == nil ||
+		!strings.Contains(err.Error(), "STDOUT") || !strings.Contains(err.Error(), "START") {
+		t.Fatalf("expected STDOUT rejection listing valid events, got %v", err)
+	}
+	path = writeTmp(t, `
+name: good-event-types
+on:
+  app_event:
+    app: collector
+    events: [START, EXIT, HEALTH, STATUS, REMOVED]
+jobs:
+  build:
+    steps:
+      - name: greet
+        command: "echo hello"
+`)
+	if _, err := LoadWorkflow(path); err != nil {
+		t.Fatalf("known events must load: %v", err)
+	}
+}

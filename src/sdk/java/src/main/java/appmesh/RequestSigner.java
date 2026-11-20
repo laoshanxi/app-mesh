@@ -174,10 +174,13 @@ public final class RequestSigner {
 
     /**
      * Canonical query built from the encoded query string exactly as it goes on the wire
-     * (HTTP transport). Mirrors the daemon parser: split on {@code &}, split each pair at the
-     * first {@code =}, decode each component with {@code %XX}-only decoding ({@code +} stays
-     * literal, a malformed escape keeps the whole raw component, a duplicate key keeps its
-     * first occurrence), then sort.
+     * (HTTP transport). Mirrors the daemon parser loop: split on {@code &}, split each pair
+     * at the first {@code =}, decode each component with {@code %XX}-only decoding
+     * ({@code +} stays literal, a malformed escape keeps the whole raw component), dedup
+     * decoded-key-first-wins (daemon {@code std::map::emplace}), then sort. An empty
+     * segment ({@code a=1&&b=2}) inserts {@code ("", "")} and the canonical output keeps
+     * its {@code =}; a trailing {@code &} adds no segment (the daemon loop ends at its
+     * bounds).
      */
     public static String canonicalQueryFromEncoded(String encodedQuery) {
         if (encodedQuery == null || encodedQuery.isEmpty()) {
@@ -185,16 +188,13 @@ public final class RequestSigner {
         }
         Map<String, String> decoded = new HashMap<>();
         int pos = 0;
-        while (pos <= encodedQuery.length()) {
+        while (pos < encodedQuery.length()) {
             int amp = encodedQuery.indexOf('&', pos);
             String pair = amp < 0 ? encodedQuery.substring(pos) : encodedQuery.substring(pos, amp);
-            if (!pair.isEmpty()) {
-                int eq = pair.indexOf('=');
-                String key = eq < 0 ? pair : pair.substring(0, eq);
-                String value = eq < 0 ? "" : pair.substring(eq + 1);
-                // std::map::emplace semantics on the daemon: the first value for a key wins.
-                decoded.putIfAbsent(percentDecode(key), percentDecode(value));
-            }
+            int eq = pair.indexOf('=');
+            String key = eq < 0 ? pair : pair.substring(0, eq);
+            String value = eq < 0 ? "" : pair.substring(eq + 1);
+            decoded.putIfAbsent(percentDecode(key), percentDecode(value));
             if (amp < 0) {
                 break;
             }

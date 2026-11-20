@@ -11,7 +11,9 @@
 #   appm -H wss://appmesh_master:6058 -F appmesh_slave1 view
 # The CLI speaks WSS on 6058, not the REST port 6060 (the Go agent). The master's
 # TLS material lives in the appmesh_tls volume: the CA survives container
-# re-creation, and the MCP service mounts it read-only to verify the engine.
+# re-creation, and the followers and the MCP service mount only that ca.pem
+# (a read-only subpath mount) to verify the engine — the private keys never
+# leave the master.
 # The optional docker-compose.vault.yaml layer replaces the self-signed
 # generation with central issuance: every node's leaf certificates come from
 # the Vault PKI engine (APPMESH_SSL_SOURCE=vault).
@@ -52,18 +54,22 @@ services:
       # APPMESH_AUTH_REPLICATION_TOKEN_FILE holds one bearer per follower
       # ("<token> <label>"); an unlabeled line is the legacy shared token.
       # The declared follower set is provisioned at bootstrap with per-follower
-      # token files in the shared volume (projected-secret pattern): revoking
-      # one follower never touches the others. Deployments that prefer a
+      # token files in the shared volume (projected-secret pattern): each
+      # follower mounts exactly its own file (subpath mount below), so
+      # revoking one follower never touches the others and no follower reads
+      # the accept list or a sibling's token. Deployments that prefer a
       # secrets service layer docker-compose.vault.yaml on top.
       - APPMESH_AUTH_REPLICATION_TOKEN_FILE=/opt/appmesh/work/auth/replication/replication-token
       - APPMESH_AUTH_REPLICATION_FOLLOWERS=appmesh_slave1 appmesh_slave2 appmesh_llm
     volumes:
       # Keep the generated TLS material in a named volume: the CA survives
-      # container re-creation, and the MCP service mounts the same volume
-      # read-only to verify the engine certificate. Followers keep their own
-      # CAs; only the master and the MCP service share this one.
+      # container re-creation. The followers and the MCP service mount only
+      # its ca.pem (a read-only subpath mount) to verify the engine; the
+      # private keys stay with the master.
       - appmesh_tls:/opt/appmesh/ssl
-      # Replication token shared with the followers (they mount it read-only).
+      # Replication credentials, written by this owner only. Each follower
+      # projects exactly its own token file out of the volume (see the
+      # follower services); no follower mounts the volume itself.
       - appmesh_replication:/opt/appmesh/work/auth/replication
     healthcheck:
       # Gates follower startup on authentication readiness. The daemon's
@@ -102,17 +108,15 @@ services:
       appmesh_master:
         condition: service_healthy
         restart: true
-    # A master restart (docker restart, crash, compose) leaves a running UI in
-    # an orphaned network namespace: 443 dies and nothing re-creates the
-    # container. Docker does not restart on unhealthy, so the probe stops nginx
-    # itself; restart: always then re-creates the container into the live
-    # namespace.
+    # The image exits by itself after 60s of upstream unreachability and restart: always
+    # re-creates the container. The probe reports only and must not kill: probes run
+    # during start_period too, before the image has bound 443.
     healthcheck:
-      test: ["CMD-SHELL", "curl -fsk https://localhost:443/health >/dev/null 2>&1 || kill -QUIT 1"]
+      test: ["CMD-SHELL", "curl -fsk https://localhost:443/health >/dev/null 2>&1"]
       interval: 10s
       timeout: 5s
       retries: 3
-      start_period: 15s
+      start_period: 70s
     # Shares the master's network namespace. The image itself waits for the
     # loopback API upstream before nginx binds 443, and exits after 60s of
     # unreachability so restart: always re-creates the container into the
@@ -143,16 +147,34 @@ services:
       # Cluster authorization replication (follower side): pull the owner's
       # policy so a follower serves forwarded requests without a manual
       # authorization.yaml copy. Each follower presents its OWN token file,
-      # provisioned by the owner bootstrap into the shared volume; revoke or
-      # rotate one follower without touching the others.
+      # projected read-only out of the shared volume; revoke or rotate one
+      # follower without touching the others.
       - APPMESH_AUTH_REPLICATION_FROM=https://appmesh_master:6058
       - APPMESH_AUTH_REPLICATION_TOKEN_FILE=/opt/appmesh/work/auth/replication/appmesh_slave1.token
       - APPMESH_AUTH_REPLICATION_CA=/mnt/appmesh-tls/ca.pem
     volumes:
-      # The per-follower replication token (read-only). The policy is pulled
-      # from the owner's engine listener over TLS, verified with the owner CA.
-      - appmesh_replication:/opt/appmesh/work/auth/replication:ro
-      - appmesh_tls:/mnt/appmesh-tls:ro
+      # Only this follower's own replication token, projected read-only out
+      # of the shared volume (subpath mount; the owner bootstrap creates the
+      # file before the health gate lets followers start): a follower must
+      # not see the accept list, the owner's material, or a sibling's token.
+      # The policy is pulled from the owner's engine listener over TLS,
+      # verified with the owner CA below. Under the Vault layer the same
+      # projected path carries the follower's AppRole credential instead.
+      - type: volume
+        source: appmesh_replication
+        target: /opt/appmesh/work/auth/replication/appmesh_slave1.token
+        read_only: true
+        volume:
+          subpath: appmesh_slave1.token
+      # Only the owner CA, never its private keys: the follower verifies the
+      # owner's engine listener with it and serves TLS under its own
+      # self-signed (or, under the Vault layer, centrally issued) identity.
+      - type: volume
+        source: appmesh_tls
+        target: /mnt/appmesh-tls/ca.pem
+        read_only: true
+        volume:
+          subpath: ca.pem
     cap_drop:
       - ALL
     security_opt:
@@ -187,8 +209,19 @@ services:
       - APPMESH_AUTH_REPLICATION_TOKEN_FILE=/opt/appmesh/work/auth/replication/appmesh_llm.token
       - APPMESH_AUTH_REPLICATION_CA=/mnt/appmesh-tls/ca.pem
     volumes:
-      - appmesh_replication:/opt/appmesh/work/auth/replication:ro
-      - appmesh_tls:/mnt/appmesh-tls:ro
+      # Own token + owner CA only, like appmesh_slave1 above.
+      - type: volume
+        source: appmesh_replication
+        target: /opt/appmesh/work/auth/replication/appmesh_llm.token
+        read_only: true
+        volume:
+          subpath: appmesh_llm.token
+      - type: volume
+        source: appmesh_tls
+        target: /mnt/appmesh-tls/ca.pem
+        read_only: true
+        volume:
+          subpath: ca.pem
     cap_drop:
       - ALL
     security_opt:
@@ -219,8 +252,19 @@ services:
       - APPMESH_AUTH_REPLICATION_TOKEN_FILE=/opt/appmesh/work/auth/replication/appmesh_slave2.token
       - APPMESH_AUTH_REPLICATION_CA=/mnt/appmesh-tls/ca.pem
     volumes:
-      - appmesh_replication:/opt/appmesh/work/auth/replication:ro
-      - appmesh_tls:/mnt/appmesh-tls:ro
+      # Own token + owner CA only, like appmesh_slave1 above.
+      - type: volume
+        source: appmesh_replication
+        target: /opt/appmesh/work/auth/replication/appmesh_slave2.token
+        read_only: true
+        volume:
+          subpath: appmesh_slave2.token
+      - type: volume
+        source: appmesh_tls
+        target: /mnt/appmesh-tls/ca.pem
+        read_only: true
+        volume:
+          subpath: ca.pem
     cap_drop:
       - ALL
     security_opt:
@@ -259,9 +303,15 @@ services:
       # No outbound pypi version probe from the MCP container.
       - FASTMCP_CHECK_FOR_UPDATES=off
     volumes:
-      # The master's TLS material, read-only (the shared appmesh_tls volume);
-      # the server uses ca.pem to verify the engine.
-      - appmesh_tls:/mnt/appmesh-tls:ro
+      # Only the master CA (a read-only subpath mount of the shared
+      # appmesh_tls volume): the server verifies the engine with it; the
+      # master's private keys are shared with no other service.
+      - type: volume
+        source: appmesh_tls
+        target: /mnt/appmesh-tls/ca.pem
+        read_only: true
+        volume:
+          subpath: ca.pem
     ports:
       # MCP endpoint for host AI clients. Plaintext on host loopback only,
       # the same posture as the Dex port; the bearer token carries the auth.
@@ -284,7 +334,9 @@ services:
         max-file: "1"
 
 volumes:
-  # The master's TLS material; shared read-only with the MCP service.
+  # The master's TLS material; only its ca.pem is shared (read-only subpath
+  # mounts) with the followers and the MCP service.
   appmesh_tls:
-  # Cluster replication token; written by the owner, read-only everywhere else.
+  # Cluster replication credentials; written by the owner. Each follower
+  # mounts exactly its own <label>.token as a read-only subpath mount.
   appmesh_replication:

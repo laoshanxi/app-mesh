@@ -37,7 +37,11 @@ fn apply_request_signer(client: &Arc<AppMeshClientWSS>, cli: &Cli) {
         secret => secret,
     };
     match (flag_or_env(&cli.api_key, "APPMESH_API_KEY"), secret) {
-        (Some(key_id), Some(secret)) => client.set_request_signer(Some(RequestSigner::new(key_id, secret))),
+        (Some(key_id), Some(secret)) => match RequestSigner::new(key_id, secret) {
+            Ok(signer) => client.set_request_signer(Some(signer)),
+            // Unreachable in practice: the values above are non-empty; stay loud anyway.
+            Err(err) => eprintln!("Warning: request signing is unavailable ({err}); requests are sent unsigned."),
+        },
         (None, None) => {}
         _ => eprintln!(
             "Warning: request signing needs both an API key id and secret (--api-key/--api-secret or \

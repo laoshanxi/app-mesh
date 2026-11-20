@@ -83,6 +83,8 @@ func (w *WSSConnection) Connect(u *url.URL, sslClientCert, sslClientCertKey, ssl
 	if err != nil {
 		return fmt.Errorf("failed to dial wss %s: %w", u.String(), err)
 	}
+	// gorilla defaults to no read limit; 160 MiB clears the daemon's 128 MiB forward ceiling.
+	conn.SetReadLimit(160 << 20)
 
 	w.muConn.Lock()
 	w.conn = conn

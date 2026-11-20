@@ -22,7 +22,9 @@ on Linux and macOS, `C:\local\appmesh` on Windows.
 | `VerifyServer` | `false` | `true` verifies the peer certificate on outgoing connections. The packaged value is `false` because the generated certificates are self-signed. |
 
 Override a key with `APPMESH_REST_SSL_<Key>`, for example
-`APPMESH_REST_SSL_VerifyServer=true`.
+`APPMESH_REST_SSL_VerifyServer=true`. `SSLEnabled` must stay a bare YAML
+boolean: a quoted `"false"` is a string, and the daemon rejects the
+configuration at startup instead of guessing the listener mode.
 
 Listeners: `6058` serves HTTPS REST and WSS, `6059` the TCP frame API over TLS,
 and `6060` the Go agent entry (same `REST.SSL` settings; the daemon does not
@@ -137,3 +139,34 @@ Set `REST.SSL.SSLEnabled: false` only when a trusted gateway terminates TLS:
 every listener accepts plaintext and the certificate paths are ignored. Keep
 the listeners on the trusted network segment, and enable request signatures.
 See [Security](Security.md#deployment-behind-a-tls-terminating-gateway).
+
+### What crosses the wire readable
+
+With TLS off, everything a request carries is readable — and changeable — by
+anyone who can reach the listener: bearer tokens and cookie sessions in
+headers, HMAC request signatures (the signature proves who sent the request,
+not secrecy: the signed body stays cleartext), uploaded and downloaded file
+content, and command I/O. Terminate TLS at the trusted gateway before any
+untrusted network; the listeners themselves must stay on the trusted segment.
+
+### Internal consumers of the plaintext setting
+
+- The daemon's Docker API backend reaches the agent through the shared REST
+  listener and selects its scheme from the effective SSL configuration
+  (`http://` when `SSLEnabled=false`), so Docker calls follow the listener
+  mode automatically.
+- The workflow engine dials the Engine with the same rule: the
+  `APPMESH_ENGINE_TRANSPORT` environment variable decides first (`plain` or
+  `tls`), then the `SSLEnabled` value of the daemon's effective configuration
+  file (`work/config/config.yaml` shadows the packaged `config/config.yaml`),
+  and TLS when neither says plaintext.
+- The CLI infers the local endpoint scheme (`ws://` vs `wss://`) from the same
+  chain: the `APPMESH_REST_SSL_SSLEnabled` override, then the effective
+  `config.yaml` `SSLEnabled`. An explicit `-H ws://…` or `-H http://…` always
+  wins for any endpoint.
+- The container entry point decides whether to prepare certificate material
+  with the same resolution: the `APPMESH_REST_SSL_SSLEnabled` override, then
+  `work/config/config.yaml` over the packaged `config/config.yaml`, then TLS.
+- The `/swagger/` redirect selects the OpenAPI URL scheme (`http://` when
+  `SSLEnabled=false`) from the effective SSL configuration, so the document
+  URL resolves against the plaintext listener as well.

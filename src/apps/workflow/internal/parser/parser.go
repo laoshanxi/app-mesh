@@ -9,6 +9,7 @@ import (
 
 	"gopkg.in/yaml.v3"
 
+	"github.com/laoshanxi/app-mesh/src/apps/workflow/internal/expression"
 	"github.com/laoshanxi/app-mesh/src/apps/workflow/internal/models"
 	"github.com/laoshanxi/app-mesh/src/apps/workflow/internal/schedule"
 )
@@ -17,6 +18,18 @@ var safeNamePattern = regexp.MustCompile(`^[a-zA-Z0-9_-]+$`)
 
 // inputKeyPattern: input keys must be usable as env var names.
 var inputKeyPattern = regexp.MustCompile(`^[a-zA-Z_][a-zA-Z0-9_]*$`)
+
+// appEventNames mirrors the trigger subscription set (trigger/events.go); STDOUT is too high frequency.
+var appEventNames = []string{"START", "EXIT", "HEALTH", "STATUS", "REMOVED"}
+
+func isKnownAppEvent(ev string) bool {
+	for _, name := range appEventNames {
+		if ev == name {
+			return true
+		}
+	}
+	return false
+}
 
 // LoadWorkflow reads and parses a workflow YAML file.
 func LoadWorkflow(path string) (*models.Workflow, error) {
@@ -127,6 +140,14 @@ func LoadWorkflow(path string) (*models.Workflow, error) {
 			if wf.On.AppEvent.App == "" || len(wf.On.AppEvent.Events) == 0 {
 				return nil, fmt.Errorf("app_event trigger requires app and events")
 			}
+			// The event listener subscribes with exactly the appEventNames set;
+			// any other value would load but never fire.
+			for _, ev := range wf.On.AppEvent.Events {
+				if !isKnownAppEvent(ev) {
+					return nil, fmt.Errorf("app_event event %q is not supported (valid events: %s)",
+						ev, strings.Join(appEventNames, ", "))
+				}
+			}
 		}
 	}
 	// Validate env keys wherever declared (workflow, job, step): env keys become
@@ -191,14 +212,6 @@ var (
 	toJSONRefPattern  = regexp.MustCompile(`^toJSON\((.+)\)$`)
 	stepFieldPattern  = regexp.MustCompile(`^(stdout|exit_code|status|response|outputs)$`)
 	workflowRefFields = map[string]bool{"name": true, "run_id": true}
-
-	// conditionExprPattern matches what the runtime evaluator accepts in an
-	// `if:` block beyond a plain path: status functions, operators, literals.
-	// Value fields (command, env, ...) resolve paths only and stay strict.
-	conditionExprPattern = regexp.MustCompile(`\b(?:always|success|failure)\(\)|\|\||&&|==|[<>!]|^(?:true|false)$|^-?\d+(?:\.\d+)?$`)
-	// conditionRefPattern extracts the resolvable references out of such an
-	// expression, e.g. `steps.build.exit_code` from `steps.build.exit_code >= 0`.
-	conditionRefPattern = regexp.MustCompile(`\b(?:steps|jobs|inputs|env|workflow|job)(?:\.[A-Za-z0-9_-]+)+`)
 )
 
 // validateExpressionRefs fails a workflow whose ${{ }} paths reference names
@@ -349,36 +362,19 @@ func validateExpressionRefs(wf *models.Workflow) error {
 		}
 	}
 
-	// checkCondition validates one `if:` block: the runtime evaluator accepts a
-	// full expression here, so operator-bearing blocks validate each
-	// context-rooted operand instead of the whole text being one path.
-	checkCondition := func(where, path, jobName string) error {
-		inner := strings.TrimSpace(path)
-		if m := toJSONRefPattern.FindStringSubmatch(inner); m != nil {
-			inner = strings.TrimSpace(m[1])
-		}
-		if conditionExprPattern.MatchString(inner) {
-			for _, ref := range conditionRefPattern.FindAllString(inner, -1) {
-				if err := checkPath(where, ref, jobName); err != nil {
-					return err
-				}
-			}
-			return nil
-		}
-		return checkPath(where, inner, jobName)
+	// checkConditionString validates one `if:` block with the runtime evaluator's
+	// own lexer (expression.ValidateCondition): every operand must be a literal,
+	// a status function or a resolvable reference — quoted literals are data and
+	// never count as references. Bare (non-${{ }}) conditions take the same path.
+	checkConditionString := func(where, s, jobName string) error {
+		return expression.ValidateCondition(s, func(ref string) error {
+			return checkPath(where, ref, jobName)
+		})
 	}
 
 	checkString := func(where, s, jobName string) error {
 		for _, m := range exprRefPattern.FindAllStringSubmatch(s, -1) {
 			if err := checkPath(where, m[1], jobName); err != nil {
-				return err
-			}
-		}
-		return nil
-	}
-	checkConditionString := func(where, s, jobName string) error {
-		for _, m := range exprRefPattern.FindAllStringSubmatch(s, -1) {
-			if err := checkCondition(where, m[1], jobName); err != nil {
 				return err
 			}
 		}

@@ -31,6 +31,7 @@
 use crate::constants::{
     HTTP_HEADER_KEY_X_NONCE, HTTP_HEADER_KEY_X_REQUEST_KEY, HTTP_HEADER_KEY_X_SIGNATURE, HTTP_HEADER_KEY_X_TIMESTAMP,
 };
+use crate::error::AppMeshError;
 use ring::hmac::{self, Key};
 use sha2::{Digest, Sha256};
 use std::collections::HashMap;
@@ -46,7 +47,7 @@ use uuid::Uuid;
 /// ```no_run
 /// use appmesh::{ClientBuilder, RequestSigner};
 ///
-/// let signer = RequestSigner::new("ak-3f9c2a81b0d4", "the-secret-once-issued");
+/// let signer = RequestSigner::new("ak-3f9c2a81b0d4", "the-secret-once-issued")?;
 /// let client = ClientBuilder::new()
 ///     .url("https://127.0.0.1:6060")
 ///     .request_signer(signer)
@@ -68,9 +69,19 @@ impl std::fmt::Debug for RequestSigner {
 
 impl RequestSigner {
     /// Create a signer for `key_id` with the secret issued by
-    /// `POST /appmesh/security/apikeys` (returned exactly once).
-    pub fn new(key_id: impl Into<String>, secret: impl Into<String>) -> Self {
-        Self { key_id: key_id.into(), secret: secret.into() }
+    /// `POST /appmesh/security/apikeys` (returned exactly once). An empty key
+    /// id or secret is rejected here (same wording as the sibling SDKs) instead
+    /// of producing a signer whose every request would 401.
+    pub fn new(key_id: impl Into<String>, secret: impl Into<String>) -> Result<Self, AppMeshError> {
+        let key_id = key_id.into();
+        let secret = secret.into();
+        if key_id.trim().is_empty() {
+            return Err(AppMeshError::ConfigurationError("key_id must be a non-empty string".into()));
+        }
+        if secret.is_empty() {
+            return Err(AppMeshError::ConfigurationError("secret must be a non-empty string".into()));
+        }
+        Ok(Self { key_id, secret })
     }
 
     /// The API key id sent as `X-Request-Key`.
@@ -283,6 +294,13 @@ pub(crate) fn new_nonce() -> String {
     Uuid::new_v4().simple().to_string()
 }
 
+/// Whether a 401 may spend the single-use refresh token: only an unsigned request
+/// (bearer problem) or an `invalid_token` challenge qualifies; a signature failure
+/// must not burn the session.
+pub(crate) fn should_refresh_on_unauthorized(signed: bool, www_authenticate: Option<&str>) -> bool {
+    !signed || www_authenticate.is_some_and(|v| v.contains("invalid_token"))
+}
+
 /// Unix time in seconds, as the `X-Timestamp` string.
 pub(crate) fn unix_timestamp() -> String {
     SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_secs().to_string()
@@ -383,14 +401,14 @@ mod tests {
     fn sign_matches_openssl_known_answer_vector() {
         // openssl dgst -sha256 -hmac 'test-secret' over the canonical string
         // below produces this digest; pins key handling and hex encoding.
-        let signer = RequestSigner::new("ak-test", "test-secret");
+        let signer = RequestSigner::new("ak-test", "test-secret").expect("signer");
         let canonical = canonical_string("GET", "/appmesh/applications", "a=1&b=2", EMPTY_SHA256, "1000", "nonce-1");
         assert_eq!(signer.sign(&canonical), "6e48966b712f5b5e762f3d934b9cdd8d103ab889c238d84c2098e32093e860c2");
     }
 
     #[test]
     fn sign_verify_roundtrip_and_rejection() {
-        let signer = RequestSigner::new("ak-test", "test-secret");
+        let signer = RequestSigner::new("ak-test", "test-secret").expect("signer");
         let canonical = canonical_string("PUT", "/appmesh/app/example", "k=v", EMPTY_SHA256, "1700000000", "abc123");
         let signature = signer.sign(&canonical);
 
@@ -399,7 +417,7 @@ mod tests {
         let tampered = canonical_string("DELETE", "/appmesh/app/example", "k=v", EMPTY_SHA256, "1700000000", "abc123");
         assert!(!signer.verify(&tampered, &signature));
         // Wrong secret is rejected.
-        assert!(!RequestSigner::new("ak-test", "other-secret").verify(&canonical, &signature));
+        assert!(!RequestSigner::new("ak-test", "other-secret").expect("signer").verify(&canonical, &signature));
         // Malformed signature values are rejected, not mis-parsed.
         assert!(!signer.verify(&canonical, "not-hex-!!"));
         assert!(!signer.verify(&canonical, ""));
@@ -442,7 +460,7 @@ mod tests {
         assert_eq!(canonical_signing_path("/appmesh/file/delete"), "/appmesh/file/delete");
         assert_eq!(canonical_signing_path("/appmesh/applications"), "/appmesh/applications");
 
-        let signer = RequestSigner::new("ak-ws", "test-secret");
+        let signer = RequestSigner::new("ak-ws", "test-secret").expect("signer");
         let ws = signer.sign_request("GET", "/appmesh/file/download/ws", None, Some(b"file-bytes"));
         let timestamp = ws.get(HTTP_HEADER_KEY_X_TIMESTAMP).expect("timestamp").clone();
         let nonce = ws.get(HTTP_HEADER_KEY_X_NONCE).expect("nonce").clone();
@@ -507,7 +525,7 @@ mod tests {
 
     #[test]
     fn sign_request_attaches_the_four_headers() {
-        let signer = RequestSigner::new("ak-3f9c2a81b0d4", "test-secret");
+        let signer = RequestSigner::new("ak-3f9c2a81b0d4", "test-secret").expect("signer");
         let body = br#"{"command":"echo hi"}"#;
         let mut query = HashMap::new();
         query.insert("b".to_string(), "2".to_string());
@@ -547,7 +565,7 @@ mod tests {
     fn sign_wire_message_fills_framed_request_headers() {
         use crate::wire_messages::RequestMessage;
 
-        let signer = RequestSigner::new("ak-wire", "test-secret");
+        let signer = RequestSigner::new("ak-wire", "test-secret").expect("signer");
         let mut message = RequestMessage::new();
         message.uuid = "6ba7b810-9dad-11d1-80b4-00c04fd430c8".to_string();
         message.http_method = "PUT".to_string();
@@ -576,9 +594,87 @@ mod tests {
 
     #[test]
     fn debug_never_renders_the_secret() {
-        let signer = RequestSigner::new("ak-debug", "super-secret-value");
+        let signer = RequestSigner::new("ak-debug", "super-secret-value").expect("signer");
         let rendered = format!("{:?}", signer);
         assert!(rendered.contains("ak-debug"));
         assert!(!rendered.contains("super-secret-value"));
+    }
+
+    #[test]
+    fn new_rejects_empty_key_id_or_secret() {
+        assert!(RequestSigner::new("ak-test", "test-secret").is_ok());
+        assert!(RequestSigner::new("", "test-secret").is_err());
+        assert!(RequestSigner::new("ak-test", "").is_err());
+    }
+
+    #[test]
+    fn cross_language_golden_signature_vectors() {
+        // The same five vectors are pinned by the daemon C++, Go, Java,
+        // JavaScript, and Python test suites; path/query are the wire-encoded
+        // forms fed straight into the canonical layer (fixed timestamp and
+        // nonce, so no time window is involved).
+        let vectors: &[(&str, &str, &str, &[u8], &str, &str, &str)] = &[
+            (
+                "GET",
+                "/appmesh/app/100%25",
+                "",
+                b"",
+                "1700000000",
+                "nonce-golden-0001",
+                "1036298fce978dab3ca5393a17c8dbeafcd22e8394585a96ce5a60ad39694d8c",
+            ),
+            (
+                "GET",
+                "/appmesh/app/list",
+                "flag=true&name=dh-bot",
+                b"",
+                "1700000001",
+                "nonce-golden-0002",
+                "0c9287088c6ca609fad7436f3f4646451faa8e180733e28e10e4eee11f34a9c5",
+            ),
+            (
+                "POST",
+                "/appmesh/file/download",
+                "",
+                b"",
+                "1700000002",
+                "nonce-golden-0003",
+                "dea6aa318b1fc84f8ffaadc859e4b36a90a9d6c5619f737dd037c78e5d17ac7d",
+            ),
+            (
+                "GET",
+                "/appmesh/app/%E4%B8%AD%E6%96%87",
+                "a=1%26b%3D2",
+                b"",
+                "1700000003",
+                "nonce-golden-0004",
+                "6cf618bfb9264d61d5b23dbaa42d366f59054bce99b9addab3253f98aaadb0ab",
+            ),
+            (
+                "POST",
+                "/appmesh/appmesh/run",
+                "",
+                b"{\"command\":\"echo hi\"}",
+                "1700000004",
+                "nonce-golden-0005",
+                "0a8de849eda2abf6389d40f11299aaf09e7b440615a6ee0c7e01012a92a1f876",
+            ),
+        ];
+        let signer = RequestSigner::new("ak-golden", "golden-secret").expect("signer");
+        for (method, path, query, body, timestamp, nonce, expected) in vectors {
+            let canonical = canonical_string(method, path, query, &sha256_hex(body), timestamp, nonce);
+            assert_eq!(signer.sign(&canonical), *expected, "vector {nonce}");
+        }
+    }
+
+    #[test]
+    fn unauthorized_refresh_gate_is_bearer_blame_only() {
+        // Unsigned 401s always justify a refresh; a signed 401 only when the
+        // server pins the blame on the bearer (invalid_token challenge).
+        assert!(should_refresh_on_unauthorized(false, None));
+        assert!(should_refresh_on_unauthorized(false, Some("Basic")));
+        assert!(!should_refresh_on_unauthorized(true, None));
+        assert!(!should_refresh_on_unauthorized(true, Some("Bearer error=\"invalid_request\"")));
+        assert!(should_refresh_on_unauthorized(true, Some("Bearer error=\"invalid_token\"")));
     }
 }

@@ -14,7 +14,8 @@ class DurationParse
 public:
 	/// @brief Convert ISO8601 Duration string to seconds
 	/// @param duration : ISO8601 Duration, "PT8S","PT5M", "PT6M4S"
-	/// @return total seconds
+	/// @return total seconds; a negative numeric input returns negative seconds,
+	///         callers validate the sign for their context
 	static int parse(const std::string &duration);
 
 	/// @brief Convert seconds to ISO8601 Duration string
