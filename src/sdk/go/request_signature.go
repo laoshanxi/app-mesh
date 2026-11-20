@@ -61,8 +61,22 @@ type requestSigner struct {
 
 // newRequestSigner builds a signer from an API key id and its secret (the
 // POST /appmesh/security/apikeys response returns the secret exactly once).
-func newRequestSigner(keyID, secret string) *requestSigner {
-	return &requestSigner{keyID: keyID, secret: []byte(secret)}
+// An empty key ID or secret is rejected at construction (same wording as the sibling SDKs).
+func newRequestSigner(keyID, secret string) (*requestSigner, error) {
+	if strings.TrimSpace(keyID) == "" {
+		return nil, fmt.Errorf("key_id must be a non-empty string")
+	}
+	if secret == "" {
+		return nil, fmt.Errorf("secret must be a non-empty string")
+	}
+	return &requestSigner{keyID: keyID, secret: []byte(secret)}, nil
+}
+
+// shouldRefreshOnUnauthorized reports whether a 401 may spend the single-use refresh
+// token: only an unsigned request (bearer problem) or an invalid_token challenge
+// qualifies; a signature failure must not burn the session.
+func shouldRefreshOnUnauthorized(signed bool, wwwAuthenticate string) bool {
+	return !signed || strings.Contains(wwwAuthenticate, "invalid_token")
 }
 
 // sha256Hex returns the lowercase hex SHA-256 of data; an empty or nil input

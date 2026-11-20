@@ -23,10 +23,15 @@
 # This file runs the real Vault server binary with file storage and a sidecar
 # that initializes, unseals (including after restarts), enables KV v2, the
 # AppRole auth method, the audit device, the PKI engine, and creates the
-# scoped owner token. Production hardening: TLS listener, auto-unseal
-# (KMS/HSM), periodic tokens, secret_id wrapped delivery instead of the
-# volume, and an intermediate CA signed by the organization root instead of
-# the generated root.
+# scoped owner token. Credential topology: the owner token lives in its own
+# volume mounted only by the master and the init sidecar; each follower
+# projects its own AppRole credential out of the replication volume (subpath
+# mount), so no follower reads the owner token or a sibling's credential.
+#
+# Demo boundary: the Vault listener is plaintext on the compose bridge, so
+# unseal keys and node credentials cross that network in the clear — trusted
+# single-host demo only. Production: listener TLS + APPMESH_VAULT_CACERT,
+# auto-unseal, and an intermediate CA under the organization root.
 #
 # Compose notes: the `configs: content:` inline form needs docker compose
 # >= 2.23.1, and `file:` paths resolve against the project directory (the
@@ -81,14 +86,11 @@ services:
         target: /vault-init/vault-init.sh
         mode: 0755
     volumes:
-      # init.json holds the unseal keys and the root token: never shared
-      # beyond this container.
+      # init.json (unseal keys, root token) stays in this sidecar-only state volume.
       - appmesh_vault_init:/vault-init-state
-      # The owner service token for the engine lands in the replication
-      # volume the master already mounts read-write. The data and audit
-      # volumes are mounted so the root sidecar can fix their ownership for
-      # the official image's uid-1000 server user.
-      - appmesh_replication:/replication
+      # Owner token volume: written here, read by the master, never by a follower.
+      # The data/audit volumes let the root sidecar fix ownership for the image's uid-1000 user.
+      - appmesh_vault_owner:/vault-owner
       - appmesh_vault_data:/vault/data
       - appmesh_vault_audit:/vault/audit
     depends_on:
@@ -110,12 +112,12 @@ services:
         aliases:
           - appmesh-master
     environment:
-      # Secrets-service source: the owner verifies against Vault KV v2 on
-      # every pull; the file accept list below stays as the fallback for
-      # deployments without a secrets service.
+      # Secrets-service source: the owner verifies against Vault KV v2 on every
+      # pull (the file accept list stays as the fallback). The owner's service
+      # token comes from the appmesh_vault_owner volume, never the shared one.
       - APPMESH_AUTH_REPLICATION_TOKEN_SOURCE=vault
       - APPMESH_AUTH_REPLICATION_TOKEN_VAULT_ADDR=http://appmesh_vault:8200
-      - APPMESH_AUTH_REPLICATION_TOKEN_VAULT_TOKEN_FILE=/opt/appmesh/work/auth/replication/owner.vault-token
+      - APPMESH_AUTH_REPLICATION_TOKEN_VAULT_TOKEN_FILE=/opt/appmesh/work/auth/vault-owner/owner.vault-token
       # The issuer must stay one identical string on every node and client;
       # under this layer it is the hyphenated alias.
       - APPMESH_AUTH_ISSUER=http://appmesh-master:6062/auth
@@ -125,8 +127,11 @@ services:
       # hostname from the SAN).
       - APPMESH_SSL_SOURCE=vault
       - APPMESH_SSL_VAULT_ADDR=http://appmesh_vault:8200
-      - APPMESH_SSL_VAULT_TOKEN_FILE=/opt/appmesh/work/auth/replication/owner.vault-token
+      - APPMESH_SSL_VAULT_TOKEN_FILE=/opt/appmesh/work/auth/vault-owner/owner.vault-token
       - APPMESH_SSL_EXTRA_SAN=appmesh-master
+    volumes:
+      # Engine-owner credential, read-only; no follower mounts this volume.
+      - appmesh_vault_owner:/opt/appmesh/work/auth/vault-owner:ro
     depends_on:
       appmesh_vault_init:
         condition: service_started
@@ -142,25 +147,40 @@ services:
     environment:
       # Each follower reads its own replication token from Vault on every
       # pull, so a rotation propagates within one pull cycle without a
-      # restart. The AppRole credential file (role_id + secret_id, policy:
-      # read its own KV entry and issue TLS leaves) is the single bootstrap
-      # secret, reused for the node's own certificates.
+      # restart. The AppRole credential (role_id + secret_id, policy: read
+      # its own KV entry and issue TLS leaves) is the single bootstrap
+      # secret, reused for the node's own certificates. It is projected at
+      # the same path the base file carries its bearer token: same mount
+      # target, subpath retargeted below.
       - APPMESH_AUTH_REPLICATION_TOKEN_SOURCE=vault
       - APPMESH_AUTH_REPLICATION_TOKEN_VAULT_ADDR=http://appmesh_vault:8200
-      - APPMESH_AUTH_REPLICATION_TOKEN_VAULT_TOKEN_FILE=/opt/appmesh/work/auth/replication/appmesh_slave1.vault-token
+      - APPMESH_AUTH_REPLICATION_TOKEN_VAULT_TOKEN_FILE=/opt/appmesh/work/auth/replication/appmesh_slave1.token
       - APPMESH_AUTH_REPLICATION_LABEL=appmesh_slave1
-      # Central TLS: the owner's ssl volume (mounted read-only below) carries
-      # the Vault CA after its bootstrap, so the base file's replication CA
-      # path stays valid under both sources and both script generations.
+      # Central TLS: the owner's ssl volume (its ca.pem is mounted read-only
+      # below) carries the Vault CA after its bootstrap, so the base file's
+      # replication CA path stays valid under both sources and both script
+      # generations.
       - APPMESH_SSL_SOURCE=vault
       - APPMESH_SSL_VAULT_ADDR=http://appmesh_vault:8200
-      - APPMESH_SSL_VAULT_TOKEN_FILE=/opt/appmesh/work/auth/replication/appmesh_slave1.vault-token
+      - APPMESH_SSL_VAULT_TOKEN_FILE=/opt/appmesh/work/auth/replication/appmesh_slave1.token
       - APPMESH_SSL_EXTRA_SAN=appmesh-slave1
       # Dial names follow the master's hyphenated alias: the certificate SAN
       # the TLS pulls verify against carries it, not the underscore name.
       - APPMESH_AUTH_ISSUER=http://appmesh-master:6062/auth
       - APPMESH_AUTH_ACCESS_URL=http://appmesh-master:6062/auth
       - APPMESH_AUTH_REPLICATION_FROM=https://appmesh-master:6058
+    volumes:
+      # Overrides the base file's mount at the same target: under this layer
+      # the projected path carries this follower's AppRole credential
+      # (<label>.vault-token in the volume) instead of a file-source bearer.
+      # Still exactly one file — the accept list, the owner token and every
+      # sibling credential stay invisible to the follower.
+      - type: volume
+        source: appmesh_replication
+        target: /opt/appmesh/work/auth/replication/appmesh_slave1.token
+        read_only: true
+        volume:
+          subpath: appmesh_slave1.vault-token
 
   appmesh_llm:
     # Hyphenated alias + SAN coverage like the other followers.
@@ -171,15 +191,23 @@ services:
     environment:
       - APPMESH_AUTH_REPLICATION_TOKEN_SOURCE=vault
       - APPMESH_AUTH_REPLICATION_TOKEN_VAULT_ADDR=http://appmesh_vault:8200
-      - APPMESH_AUTH_REPLICATION_TOKEN_VAULT_TOKEN_FILE=/opt/appmesh/work/auth/replication/appmesh_llm.vault-token
+      - APPMESH_AUTH_REPLICATION_TOKEN_VAULT_TOKEN_FILE=/opt/appmesh/work/auth/replication/appmesh_llm.token
       - APPMESH_AUTH_REPLICATION_LABEL=appmesh_llm
       - APPMESH_SSL_SOURCE=vault
       - APPMESH_SSL_VAULT_ADDR=http://appmesh_vault:8200
-      - APPMESH_SSL_VAULT_TOKEN_FILE=/opt/appmesh/work/auth/replication/appmesh_llm.vault-token
+      - APPMESH_SSL_VAULT_TOKEN_FILE=/opt/appmesh/work/auth/replication/appmesh_llm.token
       - APPMESH_SSL_EXTRA_SAN=appmesh-llm
       - APPMESH_AUTH_ISSUER=http://appmesh-master:6062/auth
       - APPMESH_AUTH_ACCESS_URL=http://appmesh-master:6062/auth
       - APPMESH_AUTH_REPLICATION_FROM=https://appmesh-master:6058
+    volumes:
+      # AppRole credential projected at the base bearer path, like slave1.
+      - type: volume
+        source: appmesh_replication
+        target: /opt/appmesh/work/auth/replication/appmesh_llm.token
+        read_only: true
+        volume:
+          subpath: appmesh_llm.vault-token
 
   appmesh_slave2:
     # Hyphenated alias + SAN coverage like the other followers.
@@ -190,15 +218,23 @@ services:
     environment:
       - APPMESH_AUTH_REPLICATION_TOKEN_SOURCE=vault
       - APPMESH_AUTH_REPLICATION_TOKEN_VAULT_ADDR=http://appmesh_vault:8200
-      - APPMESH_AUTH_REPLICATION_TOKEN_VAULT_TOKEN_FILE=/opt/appmesh/work/auth/replication/appmesh_slave2.vault-token
+      - APPMESH_AUTH_REPLICATION_TOKEN_VAULT_TOKEN_FILE=/opt/appmesh/work/auth/replication/appmesh_slave2.token
       - APPMESH_AUTH_REPLICATION_LABEL=appmesh_slave2
       - APPMESH_SSL_SOURCE=vault
       - APPMESH_SSL_VAULT_ADDR=http://appmesh_vault:8200
-      - APPMESH_SSL_VAULT_TOKEN_FILE=/opt/appmesh/work/auth/replication/appmesh_slave2.vault-token
+      - APPMESH_SSL_VAULT_TOKEN_FILE=/opt/appmesh/work/auth/replication/appmesh_slave2.token
       - APPMESH_SSL_EXTRA_SAN=appmesh-slave2
       - APPMESH_AUTH_ISSUER=http://appmesh-master:6062/auth
       - APPMESH_AUTH_ACCESS_URL=http://appmesh-master:6062/auth
       - APPMESH_AUTH_REPLICATION_FROM=https://appmesh-master:6058
+    volumes:
+      # AppRole credential projected at the base bearer path, like slave1.
+      - type: volume
+        source: appmesh_replication
+        target: /opt/appmesh/work/auth/replication/appmesh_slave2.token
+        read_only: true
+        volume:
+          subpath: appmesh_slave2.vault-token
 
   appmesh_mcp:
     environment:
@@ -210,10 +246,12 @@ services:
       - APPMESH_AUTH_ACCESS_URL=http://appmesh-master:6062/auth
 
 volumes:
-  # Vault server state, audit log, and the operator sidecar's init material.
+  # Vault server state, audit log, the operator sidecar's init material, and
+  # the engine-owner token shared only between the sidecar and the master.
   appmesh_vault_data:
   appmesh_vault_audit:
   appmesh_vault_init:
+  appmesh_vault_owner:
 
 configs:
   vault_config:
@@ -225,6 +263,11 @@ configs:
         address     = "0.0.0.0:8200"
         tls_disable = true
       }
+      # Cluster-wide ceiling: the init sidecar mints the engine-owner service
+      # token with -ttl=87600h (10 years, the CA root's horizon); without
+      # this the system default (768h) would clamp it and the cluster would
+      # stop replicating a month in, since nothing renews a service token.
+      max_lease_ttl = "87600h"
       disable_mlock = true
   vault_init:
     # Mounted verbatim: configs with a file source are not interpolated, so

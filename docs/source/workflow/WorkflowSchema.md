@@ -157,7 +157,7 @@ Fires when a registered App emits a matching event.
 | Field | Type | Required | Default | Description |
 |-------|------|----------|---------|-------------|
 | `app` | string | yes | — | Name of the App to watch. |
-| `events` | list[string] | yes | — | Event types to match. Values: `START`, `EXIT`, `HEALTH`, `STATUS`, `REMOVED`. STDOUT is not a valid trigger event — use an external log-watcher App for stdout-based automation. |
+| `events` | list[string] | yes | — | Event types to match. Values: `START`, `EXIT`, `HEALTH`, `STATUS`, `REMOVED`. Any other value is rejected when the workflow is added. STDOUT is not a valid trigger event — use an external log-watcher App for stdout-based automation. |
 | `condition` | string | no | — | Simple expression evaluated against event data. `exit_code` is supported (`return_code` is an accepted alias). Operators: `==`, `!=`. Example: `"exit_code == 0"`. |
 
 ```yaml
@@ -521,6 +521,24 @@ and escapes embedded single quotes, so the value stays one closed quoted word:
 - name: parse
   command: "echo '${{ steps.ask.response }}' | python3 -c \"import sys, json; print(json.load(sys.stdin)['data']['answer'])\""
 ```
+
+**Commands containing `#`, `<<` or `$'` never inline.** A comment, a heredoc
+and ANSI-C `$'…'` quoting each hide the real quote state from the engine's
+scanner, so inside such a command every expression — single-quoted spans
+included — takes the `$WF_E<N>` environment form instead (the engine logs one
+warning). An unquoted heredoc body expands the reference, which is the correct
+reading for a heredoc; a single-quoted span does not expand it, so
+restructure the command (double quotes, or drop the comment/heredoc) when the
+value must appear inside single quotes.
+
+**Windows shell steps do not expand expressions.** On Windows a `command`
+step with `shell: true` (the default) runs through cmd.exe — the daemon wraps
+it in a temporary `.bat` — which does not expand POSIX `$WF_E<N>` references
+and has no single quotes, so expression values never reach the command. Use
+`shell: false` (the engine substitutes values into the argument list itself,
+no shell involved) or keep expressions out of Windows shell commands. This is
+a platform limitation of shell steps, not of the engine host: the engine may
+run on a different OS than the target node.
 
 Keep such a command step small: the engine runs it as an App command line,
 which the daemon caps at 2048 characters. A full LLM response (JSON-escaped

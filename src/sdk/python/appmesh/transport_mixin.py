@@ -99,6 +99,10 @@ class TransportClientMixin:
         )
         provider = None if caller_manages_auth else self._token_provider
         rejected_token = None
+        # Snapshot for the 401 gate below (same rule as the HTTP transport): a
+        # signed request only refreshes when the server pins the blame on the
+        # bearer (see AppMeshClient._should_retry_unauthorized).
+        signing = self._request_signature_enabled()
 
         for attempt in range(2):
             transport = self._transport
@@ -163,10 +167,11 @@ class TransportClientMixin:
                 # message uuid serves as the nonce (Security.md, "Signature
                 # format"). Applied after the uuid, headers, query and body are
                 # final and before serialization, with a fresh uuid per attempt.
+                key_id, secret = self._api_credentials or ("", "")
                 appmesh_request.headers.update(
                     request_signature.signed_headers(
-                        self._api_key,
-                        self._api_secret,
+                        key_id,
+                        secret,
                         method.value,
                         path,
                         appmesh_request.query,
@@ -205,6 +210,7 @@ class TransportClientMixin:
                 and attempt == 0
                 and provider is not None
                 and provider.can_refresh
+                and self._should_retry_unauthorized(signing, response)
             ):
                 rejected_token = token
                 continue

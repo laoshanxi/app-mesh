@@ -193,6 +193,19 @@ class PasswordGrantProviderTests(unittest.TestCase):
         ):
             self._provider(_TokenSession(), token_url=url)
 
+    def test_env_allows_plain_http_on_non_loopback(self):
+        # APPMESH_AUTH_ALLOW_HTTP (the documented digital-human opt-in, same
+        # semantics as the Rust CLI) admits plain HTTP on a trusted network;
+        # "0"/"false"/"no"/empty stay fail-closed like an unset variable.
+        plain = "http://auth.example:6060/auth/token"
+        for enabled in ("1", "true", "yes"):
+            with patch.dict(os.environ, {"APPMESH_AUTH_ALLOW_HTTP": enabled}):
+                self._provider(_TokenSession(), token_url=plain)
+        for disabled in ("", "0", "false", "no"):
+            with patch.dict(os.environ, {"APPMESH_AUTH_ALLOW_HTTP": disabled}):
+                with self.assertRaisesRegex(ValueError, "must use HTTPS"):
+                    self._provider(_TokenSession(), token_url=plain)
+
     def test_credential_source_validation(self):
         session = _TokenSession()
         with self.assertRaisesRegex(ValueError, "exactly one"):

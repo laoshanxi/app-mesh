@@ -50,14 +50,20 @@ func NewTCPClient(options Option) (*AppMeshClientTCP, error) {
 	if restPort <= 0 {
 		restPort = defaultRESTPort
 	}
+	// A plaintext-frame daemon serves plaintext REST too.
+	restScheme := parsed.Scheme
+	if options.PlainTransport {
+		restScheme = "http"
+	}
 
 	// Set up TCP requester and client.
 	tcpRequester := &TCPRequester{
-		TCPConnection: NewTCPConnection(),
-		baseURL:       *parsed,
-		psk:           options.PSK,
-		connectAddr:   connectAddr,
-		restBase:      url.URL{Scheme: parsed.Scheme, Host: net.JoinHostPort(parsed.Hostname(), strconv.Itoa(restPort))},
+		TCPConnection:  NewTCPConnection(),
+		baseURL:        *parsed,
+		psk:            options.PSK,
+		connectAddr:    connectAddr,
+		plainTransport: options.PlainTransport,
+		restBase:       url.URL{Scheme: restScheme, Host: net.JoinHostPort(parsed.Hostname(), strconv.Itoa(restPort))},
 	}
 
 	// Create the AppMeshClientTCP.
@@ -76,7 +82,12 @@ func NewTCPClient(options Option) (*AppMeshClientTCP, error) {
 	tcpRequester.sslClientCertKey = tcpClient.sslClientCertKey
 	tcpRequester.sslCAFile = tcpClient.sslCAFile
 
-	if err := tcpRequester.Connect(connectAddr, tcpClient.sslClientCert, tcpClient.sslClientCertKey,
+	// Plain mode dials the frame port without a TLS handshake.
+	if options.PlainTransport {
+		if err := tcpRequester.ConnectPlain(connectAddr); err != nil {
+			return nil, err
+		}
+	} else if err := tcpRequester.Connect(connectAddr, tcpClient.sslClientCert, tcpClient.sslClientCertKey,
 		tcpClient.sslCAFile); err != nil {
 		return nil, err
 	}
@@ -122,8 +133,9 @@ func (c *AppMeshClientTCP) DownloadFileContext(ctx context.Context, remoteFile, 
 		localFile = filepath.Base(remoteFile)
 	}
 
+	// Encode: the daemon percent-decodes X-File-Path once, so a raw %2F/%2E would resolve elsewhere.
 	headers := map[string]string{
-		headerFilePath:       remoteFile,
+		headerFilePath:       escapeRemoteFilePath(remoteFile),
 		headerRecvFileSocket: "true",
 	}
 
@@ -201,7 +213,7 @@ func (c *AppMeshClientTCP) UploadFileContext(ctx context.Context, localFile, rem
 	defer file.Close()
 
 	headers := map[string]string{
-		headerFilePath:       remoteFile,
+		headerFilePath:       escapeRemoteFilePath(remoteFile),
 		headerSendFileSocket: "true",
 	}
 
@@ -267,6 +279,9 @@ func (t *TCPRequester) sseRequest(ctx context.Context, method string, apiPath st
 		scheme := t.baseURL.Scheme
 		if scheme == "" {
 			scheme = "https"
+		}
+		if t.plainTransport {
+			scheme = "http"
 		}
 		base = url.URL{Scheme: scheme, Host: net.JoinHostPort(t.baseURL.Hostname(), strconv.Itoa(defaultRESTPort))}
 	}

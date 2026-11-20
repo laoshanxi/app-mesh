@@ -33,9 +33,8 @@ func TestConstructorKeepsForwardToForEveryTransport(t *testing.T) {
 	}
 }
 
-// A WSS file transfer is two hops: a control request over the WebSocket and a
-// data request over HTTP(S). Both must carry the forwarding target, otherwise the
-// gateway stores or serves the file itself while reporting success.
+// A WSS upload is two hops (control + data request), a download goes straight to its
+// data request; every request still sent must carry the forwarding target.
 func TestWSSFileDataChannelCarriesForwardTarget(t *testing.T) {
 	var mu sync.Mutex
 	controlTargets := map[string]string{} // control request URI -> X-Target-Host
@@ -105,7 +104,8 @@ func TestWSSFileDataChannelCarriesForwardTarget(t *testing.T) {
 	want := "appmesh_slave1" // sent as given: the server resolves its own service port
 	mu.Lock()
 	defer mu.Unlock()
-	assert.Equal(t, want, controlTargets[restPathDownload], "download control request")
+	// Download no longer sends a control request; it must not fall back to a non-forwarded hop.
+	assert.NotContains(t, controlTargets, restPathDownload, "download must not send a control request")
 	assert.Equal(t, want, controlTargets[restPathUpload], "upload control request")
 	assert.Equal(t, want, dataTargets["/appmesh/file/download/ws"], "download data request")
 	assert.Equal(t, want, dataTargets["/appmesh/file/upload/ws"], "upload data request")

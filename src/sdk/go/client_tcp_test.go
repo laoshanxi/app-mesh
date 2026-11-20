@@ -1,6 +1,7 @@
 package appmesh
 
 import (
+	"net"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -103,4 +104,50 @@ func TestAppmeshTCPOperations(t *testing.T) {
 	_, stillPresent := tagsAfter[tagName]
 	require.False(t, stillPresent, "TCP label should be absent after deletion")
 
+}
+
+// startPlainFrameListener stands in for a daemon frame port that answers
+// plaintext (SSL.SSLEnabled=false) by accepting and immediately dropping TCP
+// connections: enough for the SDK to distinguish a plain dial (connect OK)
+// from a TLS dial (handshake failure).
+func startPlainFrameListener(t *testing.T) string {
+	t.Helper()
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	require.NoError(t, err)
+	t.Cleanup(func() { ln.Close() })
+	go func() {
+		for {
+			conn, err := ln.Accept()
+			if err != nil {
+				return
+			}
+			conn.Close()
+		}
+	}()
+	return ln.Addr().String()
+}
+
+// TestNewTCPClientPlainTransportSelection pins the dial-mode selection: with
+// PlainTransport the client connects to a plaintext frame port and reconnects
+// in plain mode after the connection drops, while the default TLS mode fails
+// its handshake against the same plaintext port.
+func TestNewTCPClientPlainTransportSelection(t *testing.T) {
+	addr := startPlainFrameListener(t)
+
+	client, err := NewTCPClient(Option{AppMeshURI: addr, PlainTransport: true})
+	require.NoError(t, err, "plain dial against a plaintext frame port must connect")
+	require.True(t, client.tcpReq.Connected(), "plain client must report connected")
+	// The SSE side channel follows the transport: a plaintext daemon serves
+	// plaintext REST too.
+	require.Equal(t, "http", client.tcpReq.restBase.Scheme, "SSE side channel scheme")
+
+	client.CloseConnection()
+	require.False(t, client.tcpReq.Connected(), "connection must drop after CloseConnection")
+	require.NoError(t, client.tcpReq.ensureConnected(), "reconnect must redial in plain mode")
+	require.True(t, client.tcpReq.Connected(), "plain reconnect must succeed")
+	client.CloseConnection()
+
+	// Default mode dials TLS, so the same plaintext port fails the handshake.
+	_, err = NewTCPClient(Option{AppMeshURI: addr, InsecureSkipVerify: true})
+	require.Error(t, err, "TLS dial against a plaintext port must fail its handshake")
 }

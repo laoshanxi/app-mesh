@@ -467,11 +467,8 @@ impl AppMeshClientWSS {
         } else {
             local_file
         };
-        let mut headers = HashMap::new();
-        headers.insert(HTTP_HEADER_KEY_X_FILE_PATH.into(), encode_file_path(remote_file));
-
-        let resp = self.client.raw_request(Method::GET, "/appmesh/file/download", None, Some(headers), None, true).await?;
-
+        // No control-GET preflight: the /ws side channel runs the identical daemon
+        // handler, so a preflight only re-read the whole file into a discarded WS message.
         let auth_token = self.client.get_access_token().ok_or_else(|| AppMeshError::RequestFailed {
             status: StatusCode::UNAUTHORIZED,
             message: "File transfer requires a bearer token".into(),
@@ -533,7 +530,7 @@ impl AppMeshClientWSS {
         }
 
         if preserve_permissions {
-            let _ = AppMeshClient::apply_file_attributes(&temp_path, resp.headers());
+            let _ = AppMeshClient::apply_file_attributes(&temp_path, response.headers());
         }
         if let Err(e) = std::fs::rename(&temp_path, local_path) {
             let _ = std::fs::remove_file(&temp_path);

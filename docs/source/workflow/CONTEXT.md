@@ -55,7 +55,7 @@ Step references are scoped to the current Job. Cross-job references use the `job
 - **`${{ steps.<name>.exit_code }}`** — Integer exit code.
 - **`${{ steps.<name>.status }}`** — `success`, `failure`, or `skipped`.
 - **`${{ steps.<name>.response }}`** — Response body from a message Step.
-- **`${{ steps.<name>.outputs.<key> }}`** — Output from a workflow Step's `workflow_call` outputs (evaluated in-process from sub-workflow expression context).
+- **`${{ steps.<name>.outputs.<key> }}`** — Output from a workflow Step's `workflow_call` outputs (evaluated in-process from sub-workflow expression context). A message Step also exposes its app-level answer as `outputs.answer`.
 - **`${{ jobs.<name>.status }}`** — Status of a completed Job.
 - **`${{ jobs.<name>.steps.<step>.* }}`** — Cross-job step reference.
 - **`${{ job.status }}`** — Aggregate status of the current Job.

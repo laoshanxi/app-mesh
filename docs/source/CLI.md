@@ -125,7 +125,7 @@ Commands:
   help      Print this message or the help of the given subcommand(s)
 
 Options:
-  -H, --host-url <HOST_URL>      Server host URL (default: last used or wss://127.0.0.1:6058)
+  -H, --host-url <HOST_URL>      Server host URL (default: last used, or wss://127.0.0.1:6058; ws:// when the local daemon runs plaintext)
   -F, --forward-to <FORWARD_TO>  Forward request to target host
   --ca-cert <PATH>               CA bundle trusted for the Engine certificate
   --no-verify                    Skip Engine TLS certificate verification (insecure; remembered for a remote endpoint)

@@ -13,7 +13,10 @@ def get_version():
     # principal-based authorization. This is intentionally a major release.
     # 3.0.20 adds the streaming surface: follow_output/run_task_stream/
     # stream_run generators, send_input, worker send_task_partial.
-    return "3.0.20"
+    # 3.0.21 signs the exact prepared wire path (requests' own URL repair),
+    # keeps a base-URL path prefix in the signature and on the wire, swaps the
+    # signing key/secret pair atomically, and reads APPMESH_AUTH_ALLOW_HTTP.
+    return "3.0.21"
 
 
 # Dependencies

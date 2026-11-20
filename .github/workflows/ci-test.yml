@@ -151,6 +151,12 @@ jobs:
             # here instead of being silently refreshed by the first cargo run.
             CARGO_TARGET_DIR=/tmp/cargo-target-ubuntu22 cargo test --locked
             CARGO_TARGET_DIR=/tmp/cargo-target-ubuntu22 cargo test --test remote_test -- --ignored --test-threads=1 --skip cli_
+
+            # SDK request-signature unit tests: the shared golden vectors keep
+            # every signing implementation aligned with the daemon.
+            set -e
+            cd /work/src/sdk/python && python3 -m unittest discover -s test/unit -q
+            CARGO_TARGET_DIR=/tmp/cargo-target-sdk22 cargo test --manifest-path /work/src/sdk/rust/Cargo.toml -q
             '
 
       - name: test ubuntu:24
@@ -246,4 +252,17 @@ jobs:
             # here instead of being silently refreshed by the first cargo run.
             CARGO_TARGET_DIR=/tmp/cargo-target-ubuntu24 cargo test --locked
             CARGO_TARGET_DIR=/tmp/cargo-target-ubuntu24 cargo test --test remote_test -- --ignored --test-threads=1 --skip cli_
+
+            # SDK request-signature unit tests: the shared golden vectors keep
+            # every signing implementation aligned with the daemon. The JS
+            # (ESM) and Java suites run in this container only: ubuntu24 apt
+            # ships node 18 and installs maven cleanly, ubuntu22 apt node is
+            # too old for ESM.
+            set -e
+            cd /work/src/sdk/python && python3 -m unittest discover -s test/unit -q
+            CARGO_TARGET_DIR=/tmp/cargo-target-sdk24 cargo test --manifest-path /work/src/sdk/rust/Cargo.toml -q
+            apt install -y -qq nodejs npm >/dev/null
+            cd /work/src/sdk/javascript && npm install --no-audit --no-fund >/dev/null && node test/unit_test.js
+            apt install -y -qq maven >/dev/null
+            cd /work/src/sdk/java && mvn -q test -Dtest=RequestSignatureTest
             '

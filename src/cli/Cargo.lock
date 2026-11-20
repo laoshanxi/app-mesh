@@ -99,7 +99,7 @@ dependencies = [
 
 [[package]]
 name = "appmesh"
-version = "3.0.21"
+version = "3.0.22"
 dependencies = [
  "async-trait",
  "base64 0.23.1",

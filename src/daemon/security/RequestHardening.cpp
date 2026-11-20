@@ -95,14 +95,15 @@ RequestHardening::Decision RequestHardening::evaluate(const Input &input)
 		return decision;
 
 	// 1. Signature layer (anti-tamper).
+	bool signatureValid = false;
 	if (signatureMode != "off")
 	{
 		if (hasSignatureHeaders)
 		{
 			const auto verification =
 				RequestSignature::verify(input.method, input.path, RequestSignature::canonicalQuery(input.query),
-										  input.body, input.bodySize, input.keyId, input.timestamp, input.nonce,
-										  input.signature, std::chrono::seconds(window));
+										 input.body, input.bodySize, input.keyId, input.timestamp, input.nonce,
+										 input.signature, std::chrono::seconds(window));
 			if (!verification.valid)
 			{
 				if (signatureMode == "enforce")
@@ -115,22 +116,35 @@ RequestHardening::Decision RequestHardening::evaluate(const Input &input)
 				decision.audit = true;
 				decision.reason = "invalid request signature: " + verification.reason;
 			}
+			else
+				signatureValid = true;
 		}
 		else if (authenticated)
 		{
-			if (signatureMode == "enforce")
+			// The agent's bearer-only precheck cannot sign; exempting it exposes
+			// only whether the bearer is valid, and the handler still checks it.
+			const bool agentPrecheck = input.agentPrecheck && input.method == "GET" &&
+									   input.path == "/appmesh/principal/self";
+			if (!agentPrecheck)
 			{
-				decision.action = Decision::Action::Reject;
-				decision.status = 401;
+				if (signatureMode == "enforce")
+				{
+					decision.action = Decision::Action::Reject;
+					decision.status = 401;
+					decision.reason = "request signature required";
+					return decision;
+				}
+				// Audit counts unsigned traffic too, so operators see what enforce would cut.
+				decision.audit = true;
 				decision.reason = "request signature required";
-				return decision;
 			}
-			// Audit also surfaces traffic that never signed, so an operator
-			// can count what enforce would cut off, not only failed attempts.
-			decision.audit = true;
-			decision.reason = "request signature required";
 		}
 	}
+
+	// Only accountable identities reach the guard; anonymous traffic would
+	// otherwise bloat the cache or churn out legitimate nonces.
+	if (!authenticated && !signatureValid)
+		return decision;
 
 	// 2. Replay layer (nonce dedup). The namespace pins a nonce to one
 	// identity so parallel users cannot cross-block each other.
@@ -160,11 +174,11 @@ RequestHardening::Decision RequestHardening::evaluate(const Input &input)
 			// dedup window alone bounds requests that do not. The same +30s
 			// grace as the signature verifier keeps the two layers from
 			// disagreeing on a timestamp at the window edge.
+			const auto acceptance = window + 30;
 			if (isDigits(input.timestamp))
 			{
 				const auto claimed = std::stoll(input.timestamp);
 				const auto now = nowSeconds();
-				const auto acceptance = window + 30;
 				if (claimed < now - acceptance || claimed > now + acceptance)
 				{
 					if (replayMode == "enforce")
@@ -181,15 +195,21 @@ RequestHardening::Decision RequestHardening::evaluate(const Input &input)
 			}
 			// Namespace by the credential the authenticators see, so scheme
 			// or spacing variants of one bearer share one namespace; an API
-			// key names its own bucket when no bearer is present.
+			// key names its own bucket when no bearer is present. The key id is
+			// hashed (like the bearer credential) so a hostile oversized
+			// X-Request-Key cannot bloat a cache entry.
 			std::string namespaceKey;
 			if (!input.transportPrincipal.empty())
 				namespaceKey = input.transportPrincipal;
 			else if (const auto credential = Utility::bearerCredential(input.bearer); !credential.empty())
 				namespaceKey = "bearer:" + RequestSignature::sha256Hex(credential.data(), credential.size()).substr(0, 16);
 			if (namespaceKey.empty())
-				namespaceKey = input.keyId.empty() ? "anonymous" : "key:" + input.keyId;
-			if (m_guard.check(namespaceKey, nonce, std::chrono::seconds(window)) == ReplayGuard::Verdict::Duplicate)
+				namespaceKey = input.keyId.empty()
+								   ? "anonymous"
+								   : "key:" + RequestSignature::sha256Hex(input.keyId.data(), input.keyId.size()).substr(0, 16);
+			// Memory window equals the timestamp acceptance window: forgetting
+			// earlier would re-admit a replay whose timestamp still passes.
+			if (m_guard.check(namespaceKey, nonce, std::chrono::seconds(acceptance)) == ReplayGuard::Verdict::Duplicate)
 			{
 				if (replayMode == "enforce")
 				{

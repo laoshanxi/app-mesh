@@ -772,6 +772,19 @@ class AppMeshClient {
     if (!canRefresh || typeof provider.refreshAccessToken !== 'function' || !_isReplayableBody(config.data)) {
       return response;
     }
+    // A signed request's 401 is terminal unless the server pins the blame on
+    // the bearer (WWW-Authenticate ... invalid_token): refresh tokens are
+    // single-use, so force-refreshing on a signature rejection would burn the
+    // session without fixing the request.
+    if (this._requestSigner) {
+      const headers = response.headers || {};
+      const challenge = typeof headers.get === 'function'
+        ? headers.get('WWW-Authenticate')
+        : (headers['WWW-Authenticate'] || headers['www-authenticate']);
+      if (!challenge || !challenge.includes('invalid_token')) {
+        return response;
+      }
+    }
 
     const rejectedToken = _extractBearerToken(config.headers) ?? (await this._getAccessToken());
     const newToken = await provider.refreshAccessToken(rejectedToken);

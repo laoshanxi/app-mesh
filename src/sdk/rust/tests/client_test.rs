@@ -83,7 +83,7 @@ mod tests {
             .create_async()
             .await;
 
-        let signer = RequestSigner::new("ak-e2e", "e2e-secret");
+        let signer = RequestSigner::new("ak-e2e", "e2e-secret").expect("signer");
         let client = ClientBuilder::new()
             .url(server.url())
             .danger_accept_invalid_certs(true)

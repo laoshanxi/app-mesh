@@ -1520,10 +1520,11 @@ public class AppMeshClient implements Closeable {
             }
         }
 
-        // Request signature (opt-in): sign the method exactly as sent on the wire.
+        // Sign the path exactly as sent: a baseURL path prefix is part of the
+        // wire path, so the signed path comes from the final URL (sign == send).
         RequestSigner signer = this.requestSigner;
         if (signer != null) {
-            signer.attach(allHeaders, method.toUpperCase(), path,
+            signer.attach(allHeaders, method.toUpperCase(), url.getPath(),
                     encodedQuery == null ? "" : RequestSigner.canonicalQueryFromEncoded(encodedQuery), bodyBytes);
         }
 

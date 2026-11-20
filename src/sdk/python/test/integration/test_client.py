@@ -11,6 +11,7 @@ Usage:
     python3 -m unittest integration.test_client.TestWSS         # WSS only
     python3 -m unittest integration.test_client.TestWSSRest     # REST-over-WSS
 """
+import copy
 import os
 import sys
 import tempfile
@@ -71,6 +72,25 @@ class TestHTTP(ProtocolTestMixin, AppOutputMixin, PrincipalManagementMixin, Task
         result = self.client.set_config({"REST": {"SSL": {"VerifyServer": True}}})
         self.assertTrue(result["REST"]["SSL"]["VerifyServer"])
         self.client.set_config({"REST": {"SSL": {"VerifyServer": False}}})
+
+    def test_16a_config_round_trip(self):
+        """GET config echoed back with one field changed must be accepted (UI flow).
+
+        The echo includes REST.SSL.SSLEnabled; posting it back unchanged is an
+        accepted no-op, changing it stays a 400 startup-only error.
+        """
+        config.attach_test_bearer(self.client)
+        document = self.client.get_config()
+        document["REST"]["SSL"]["VerifyServer"] = not document["REST"]["SSL"].get("VerifyServer", False)
+        updated = self.client.set_config(document)
+        self.assertEqual(updated["REST"]["SSL"]["VerifyServer"], document["REST"]["SSL"]["VerifyServer"])
+        # The echoed SSLEnabled round-trips as an unchanged no-op; flipping it is a 400.
+        updated2 = self.client.set_config(copy.deepcopy(document))
+        self.assertEqual(updated2["REST"]["SSL"]["SSLEnabled"], document["REST"]["SSL"]["SSLEnabled"])
+        changed = copy.deepcopy(document)
+        changed["REST"]["SSL"]["SSLEnabled"] = not changed["REST"]["SSL"]["SSLEnabled"]
+        with self.assertRaises(requests.exceptions.HTTPError):
+            self.client.set_config(changed)
 
     def test_17_forward_to(self):
         """HTTP-specific: forward_to header."""

@@ -12,6 +12,7 @@
 #include <catch.hpp>
 #include <chrono>
 #include <string>
+#include <thread>
 
 namespace
 {
@@ -245,6 +246,17 @@ TEST_CASE("AuthReplication token file accepts per-follower tokens", "[security][
 		REQUIRE(AuthReplication::matchToken("", "x").empty());
 		REQUIRE(AuthReplication::matchToken("# only a comment\n\n", "x").empty());
 	}
+
+	SECTION("lengths differing by a multiple of 256 do not prefix-match")
+	{
+		// 300 ^ 44 truncates to zero in an unsigned char; the comparison must
+		// be full-length so a 44-byte prefix of a 300-byte token stays wrong.
+		const std::string token(300, 'x');
+		const std::string file = token + "\n";
+		REQUIRE(AuthReplication::matchToken(file, std::string(300, 'x')) == "shared");
+		REQUIRE(AuthReplication::matchToken(file, std::string(44, 'x')).empty());
+		REQUIRE(AuthReplication::matchToken(file, std::string(300, 'y')).empty());
+	}
 }
 
 TEST_CASE("RequestHardening enforces replay protection per mode", "[security][hardening]")
@@ -307,21 +319,34 @@ TEST_CASE("RequestHardening enforces replay protection per mode", "[security][ha
 		REQUIRE(replayed.status == 409);
 	}
 
-	SECTION("bearer-less signed requests namespace by API key")
+	SECTION("unauthenticated signed-looking traffic never feeds the guard")
 	{
-		// Distinct keys never cross-block each other's nonces.
+		// Replay-only deployments have no verification result to trust, so
+		// dedup applies to authenticated traffic only: an anonymous flood of
+		// key ids and nonces must not allocate (or churn) guard entries.
 		HardeningConfigGuard guard("enforce", "off");
 		auto input = makeInput();
 		input.bearer.clear();
 		input.keyId = "key-one";
-		input.nonce = "shared-nonce";
+		input.nonce = "anon-nonce";
+		const auto sizeBefore = RequestHardening::instance().guard().size();
 		REQUIRE(RequestHardening::instance().evaluate(input).action == RequestHardening::Decision::Action::Allow);
-		input.keyId = "key-two";
+		// The same nonce replays as new: nothing was recorded to reject it.
 		REQUIRE(RequestHardening::instance().evaluate(input).action == RequestHardening::Decision::Action::Allow);
-		input.keyId = "key-one";
-		const auto replayed = RequestHardening::instance().evaluate(input);
-		REQUIRE(replayed.action == RequestHardening::Decision::Action::Reject);
-		REQUIRE(replayed.status == 409);
+		REQUIRE(RequestHardening::instance().guard().size() == sizeBefore);
+	}
+
+	SECTION("authenticated requests with an oversized key id stay bounded")
+	{
+		// A hostile 256MB-frame X-Request-Key must not bloat guard state; the
+		// namespace hashes it, and Worker drops values over 256 bytes anyway.
+		HardeningConfigGuard guard("enforce", "off");
+		auto input = makeInput();
+		input.keyId = std::string(4096, 'k');
+		input.nonce = freshNonce("oversized");
+		const auto sizeBefore = RequestHardening::instance().guard().size();
+		REQUIRE(RequestHardening::instance().evaluate(input).action == RequestHardening::Decision::Action::Allow);
+		REQUIRE(RequestHardening::instance().guard().size() == sizeBefore + 1);
 	}
 
 	SECTION("cluster replication pulls are exempt (own token auth)")
@@ -415,5 +440,133 @@ TEST_CASE("RequestHardening enforces replay protection per mode", "[security][ha
 		const auto decision = RequestHardening::instance().evaluate(input);
 		REQUIRE(decision.action == RequestHardening::Decision::Action::Reject);
 		REQUIRE(decision.reason.find("timestamp") != std::string::npos);
+	}
+}
+
+TEST_CASE("RequestHardening exempts the agent forwarding precheck from the signature requirement", "[security][hardening]")
+{
+	const auto precheckInput = [] {
+		RequestHardening::Input input;
+		input.method = "GET";
+		input.path = "/appmesh/principal/self";
+		input.bearer = "Bearer some.jwt.token";
+		input.agentPrecheck = true;
+		return input;
+	};
+
+	SECTION("enforce: the marked bearer-only precheck passes, not even audited")
+	{
+		HardeningConfigGuard guard("off", "enforce");
+		const auto decision = RequestHardening::instance().evaluate(precheckInput());
+		REQUIRE(decision.action == RequestHardening::Decision::Action::Allow);
+		REQUIRE_FALSE(decision.audit); // exempt by design, not a tolerated violation
+	}
+
+	SECTION("enforce: the exemption is exactly that one request shape")
+	{
+		HardeningConfigGuard guard("off", "enforce");
+		const auto rejected = [](const RequestHardening::Input &input) {
+			const auto decision = RequestHardening::instance().evaluate(input);
+			REQUIRE(decision.action == RequestHardening::Decision::Action::Reject);
+			REQUIRE(decision.status == 401);
+			REQUIRE(decision.reason.find("signature required") != std::string::npos);
+		};
+		auto input = precheckInput();
+		input.agentPrecheck = false;
+		rejected(input); // no marker header
+		input = precheckInput();
+		input.method = "POST";
+		rejected(input); // wrong method
+		input = precheckInput();
+		input.path = "/appmesh/applications";
+		rejected(input); // wrong path
+	}
+}
+
+TEST_CASE("RequestHardening replay memory matches the timestamp acceptance window", "[security][hardening]")
+{
+	const auto makeEdgeInput = [](const char *noncePrefix, std::int64_t timestamp) {
+		RequestHardening::Input input;
+		input.method = "GET";
+		input.path = "/appmesh/applications";
+		input.bearer = "Bearer some.jwt.token";
+		input.nonce = freshNonce(noncePrefix);
+		input.timestamp = std::to_string(timestamp);
+		return input;
+	};
+
+	SECTION("a timestamp at window+29 is accepted and the nonce is still a duplicate")
+	{
+		HardeningConfigGuard guard("enforce", "off", 10);
+		const auto input = makeEdgeInput("edge29", nowSeconds() - (10 + 29));
+		REQUIRE(RequestHardening::instance().evaluate(input).action == RequestHardening::Decision::Action::Allow);
+		const auto replayed = RequestHardening::instance().evaluate(input);
+		REQUIRE(replayed.action == RequestHardening::Decision::Action::Reject);
+		REQUIRE(replayed.status == 409);
+	}
+
+	SECTION("a timestamp at window+31 is rejected by the timestamp layer first")
+	{
+		HardeningConfigGuard guard("enforce", "off", 10);
+		const auto input = makeEdgeInput("edge31", nowSeconds() - (10 + 31));
+		const auto decision = RequestHardening::instance().evaluate(input);
+		REQUIRE(decision.action == RequestHardening::Decision::Action::Reject);
+		REQUIRE(decision.status == 401);
+		REQUIRE(decision.reason.find("timestamp") != std::string::npos);
+	}
+
+	SECTION("a nonce first seen `window` seconds ago is still a duplicate")
+	{
+		// The memory window runs to window+30 like the acceptance window;
+		// without that alignment this replay at window+epsilon would pass
+		// both layers. Slow on purpose: real time must cross the window.
+		HardeningConfigGuard guard("enforce", "off", 10);
+		const auto input = makeEdgeInput("edge-slow", nowSeconds());
+		REQUIRE(RequestHardening::instance().evaluate(input).action == RequestHardening::Decision::Action::Allow);
+		std::this_thread::sleep_for(std::chrono::milliseconds(10300));
+		const auto replayed = RequestHardening::instance().evaluate(input);
+		REQUIRE(replayed.action == RequestHardening::Decision::Action::Reject);
+		REQUIRE(replayed.status == 409);
+	}
+}
+
+TEST_CASE("RequestSignature golden vectors fix the cross-language wire format", "[security][hardening]")
+{
+	// The same constants five SDK test suites assert against; the fixed
+	// timestamp keeps this on the canonicalString+sign layer, under no time
+	// window. key_id "ak-golden", secret "golden-secret".
+	struct Vector
+	{
+		const char *method;
+		const char *path;
+		const char *query;
+		const char *body;
+		const char *timestamp;
+		const char *nonce;
+		const char *signature;
+	};
+	const Vector vectors[] = {
+		{"GET", "/appmesh/app/100%25", "", "", "1700000000", "nonce-golden-0001",
+		 "1036298fce978dab3ca5393a17c8dbeafcd22e8394585a96ce5a60ad39694d8c"},
+		{"GET", "/appmesh/app/list", "flag=true&name=dh-bot", "", "1700000001", "nonce-golden-0002",
+		 "0c9287088c6ca609fad7436f3f4646451faa8e180733e28e10e4eee11f34a9c5"},
+		{"POST", "/appmesh/file/download", "", "", "1700000002", "nonce-golden-0003",
+		 "dea6aa318b1fc84f8ffaadc859e4b36a90a9d6c5619f737dd037c78e5d17ac7d"},
+		{"GET", "/appmesh/app/%E4%B8%AD%E6%96%87", "a=1%26b%3D2", "", "1700000003", "nonce-golden-0004",
+		 "6cf618bfb9264d61d5b23dbaa42d366f59054bce99b9addab3253f98aaadb0ab"},
+		{"POST", "/appmesh/appmesh/run", "", "{\"command\":\"echo hi\"}", "1700000004", "nonce-golden-0005",
+		 "0a8de849eda2abf6389d40f11299aaf09e7b440615a6ee0c7e01012a92a1f876"},
+	};
+	const std::string secret = "golden-secret";
+	for (const auto &vector : vectors)
+	{
+		INFO("golden vector nonce <" << vector.nonce << ">");
+		const auto bodyHash = RequestSignature::sha256Hex(vector.body, std::char_traits<char>::length(vector.body));
+		if (*vector.body == '\0')
+			REQUIRE(bodyHash == "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855");
+		const auto canonical =
+			RequestSignature::canonicalString(vector.method, vector.path, vector.query, bodyHash, vector.timestamp,
+											  vector.nonce);
+		REQUIRE(RequestSignature::sign(secret, canonical) == vector.signature);
 	}
 }

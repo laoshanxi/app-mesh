@@ -526,6 +526,16 @@ example above.
 
 An access token authenticates the caller. A deployment that also needs per-request integrity or replay rejection enables the request hardening layers. These are independent of OAuth: issue a signing API key, then enable `REST.RequestReplayProtection` and `REST.RequestSignature`. See the Security guide, section "Request replay protection and signatures".
 
+The order matters: with `REST.RequestSignature: enforce` every authenticated route, including `POST /appmesh/security/apikeys`, requires a valid signature. A fresh deployment that enforces from the first boot cannot issue a key over the API, and a principal that revokes its last key cannot issue itself a new one.
+
+Recovery when no valid key remains:
+
+1. On the daemon host, set `REST.RequestSignature: audit` (or `off`) in the effective configuration and reload with SIGHUP — mode changes apply without a restart.
+2. Issue a new key with `POST /appmesh/security/apikeys` using a bearer token.
+3. Set the mode back to `enforce` and reload again.
+
+A principal without any key can also be re-keyed by an administrator who still holds a valid key: the issue endpoint accepts `{"principal": "<id>"}` with the `principal-update` permission.
+
 ### Identities and clients
 
 | Item | Value |

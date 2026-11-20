@@ -8,6 +8,10 @@ startup_phase: normal
 env:
   # Verify the daemon REST callback (self-signed cert) during principal lookup.
   APPMESH_CA: /opt/appmesh/ssl/ca.pem
+  # Daemon frame/REST transport: "plain" when the daemon runs SSL.SSLEnabled=false
+  # (TLS by default). Unset auto-detects from the daemon's config.yaml; the CA
+  # above is ignored in plain mode.
+  # APPMESH_ENGINE_TRANSPORT: plain
 behavior:
   exit: restart
 metadata:

@@ -140,6 +140,28 @@ struct FileUploadInfo
 			m_rejected = true;
 			return;
 		}
+#if !defined(_WIN32)
+		// An overwrite publishes a fresh inode: record the replaced file's attributes now,
+		// before the temp exists (a later stat could see a concurrent writer's file).
+		if (m_overwrite)
+		{
+			const int statDirFd = ::open(parentDir.c_str(), O_RDONLY | O_DIRECTORY | O_CLOEXEC);
+			if (statDirFd >= 0)
+			{
+				struct stat st
+				{
+				};
+				if (::fstatat(statDirFd, std::filesystem::path(uploadFilePath).filename().c_str(), &st,
+							  AT_SYMLINK_NOFOLLOW) == 0 &&
+					S_ISREG(st.st_mode))
+				{
+					m_preservedSt = st;
+					m_hasPreserved = true;
+				}
+				::close(statDirFd);
+			}
+		}
+#endif
 		// Open through the jailed helper: the fd is pinned to a verified in-jail
 		// inode, so a directory component swapped to a symlink cannot move the temp
 		// file (or its later rename) out of the jail. m_dirFd keeps the pinned
@@ -236,6 +258,9 @@ struct FileUploadInfo
 			return CommitResult::Failed;
 		const std::string tempLeaf = std::filesystem::path(m_tempPath).filename().string();
 		const std::string destLeaf = std::filesystem::path(m_filePath).filename().string();
+		// Flush the data before the rename publishes it; a failed fsync only warns (fsync-less filesystems).
+		if (m_file.is_open() && ::fsync(m_file.fd()) != 0)
+			LOG_WAR << "FileUploadInfo::commit() fsync failed: " << last_error_msg();
 		if (m_overwrite)
 		{
 			// renameat against the pinned parent keeps the final landing spot inside
@@ -243,6 +268,7 @@ struct FileUploadInfo
 			if (::renameat(m_dirFd, tempLeaf.c_str(), m_dirFd, destLeaf.c_str()) != 0)
 				return CommitResult::Failed;
 			m_committed = true;
+			restorePreservedAttributes();
 			return CommitResult::Committed;
 		}
 		if (::linkat(m_dirFd, tempLeaf.c_str(), m_dirFd, destLeaf.c_str(), 0) == 0)
@@ -279,6 +305,33 @@ struct FileUploadInfo
 	bool m_committed = false;
 	bool m_overwrite = false;
 	bool m_rejected = false; // the resolved temp location failed the jail check
+#if !defined(_WIN32)
+	// Attributes of the replaced file, replayed onto the committed inode when the client sent none.
+	struct stat m_preservedSt
+	{
+	};
+	bool m_hasPreserved = false;
+
+	// The rename swapped in a fresh inode (0644/daemon owner): replay the replaced
+	// file's attributes where the client sent no explicit header (applyFilePermission
+	// keeps applying those); a non-root fchown failure warns and continues.
+	void restorePreservedAttributes()
+	{
+		if (!m_hasPreserved || !m_file.is_open())
+			return;
+		const auto userIt = m_requestHeaders.find(HTTP_HEADER_KEY_file_user);
+		const auto groupIt = m_requestHeaders.find(HTTP_HEADER_KEY_file_group);
+		if ((userIt == m_requestHeaders.end() || userIt->second.empty()) &&
+			(groupIt == m_requestHeaders.end() || groupIt->second.empty()))
+		{
+			if (::fchown(m_file.fd(), m_preservedSt.st_uid, m_preservedSt.st_gid) != 0)
+				LOG_WAR << "FileUploadInfo::restorePreservedAttributes() fchown failed: " << last_error_msg();
+		}
+		const auto modeIt = m_requestHeaders.find(HTTP_HEADER_KEY_file_mode);
+		if (modeIt == m_requestHeaders.end() || modeIt->second.empty())
+			::fchmod(m_file.fd(), m_preservedSt.st_mode & 07777);
+	}
+#endif
 };
 
 // Manages socket file upload/download state for a single TCP connection.

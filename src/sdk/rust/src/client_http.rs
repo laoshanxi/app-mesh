@@ -208,22 +208,19 @@ impl HTTPRequester {
         // values would differ from the signed ones. Unsigned requests keep the
         // library-default `.query()` serialization untouched.
         let signing = signed_body_sha256.is_some();
-        // Sign and send the wire path, not the caller's raw string: the url
-        // crate normalizes escapes to uppercase and percent-encodes invalid
-        // characters, so the daemon would otherwise verify a different path
-        // than the one signed (Python/JS/Go already sign their wire form).
-        let wire_path = reqwest::Url::parse(&self.url)
-            .ok()
-            .and_then(|base| base.join(path).ok())
-            .map(|url| url.path().to_string())
-            .unwrap_or_else(|| path.to_string());
-        let mut url = format!("{}{}", self.url, wire_path);
+        // Sign the exact URL reqwest sends: the url crate normalizes escapes, and
+        // `Url::join` would drop a base path prefix from the signed path.
+        let mut url = format!("{}{}", self.url, path);
         if signing {
             if let Some(encoded) = query.as_ref().and_then(crate::request_signature::encode_query) {
                 url.push('?');
                 url.push_str(&encoded);
             }
         }
+        let wire_path = reqwest::Url::parse(&url)
+            .ok()
+            .map(|parsed| parsed.path().to_string())
+            .unwrap_or_else(|| path.to_string());
         debug!("{} {} {}", method, path, url);
 
         let mut req = client.request(method.clone(), &url);
@@ -504,8 +501,15 @@ impl AppMeshClient {
         // provider's refresh grant (Python SDK parity: refresh once after a 401 when
         // the request body can be re-sent). The rejected token is passed along so the
         // provider can coalesce racing refreshes instead of issuing a second grant.
+        // A signed request only spends the single-use refresh token when the server
+        // pins the 401 on the bearer (should_refresh_on_unauthorized).
+        let signed = self.req.request_signer().is_some();
         let response = self.req.send(method.clone(), path, body, headers.clone(), query.clone(), false).await?;
-        if response.status() == StatusCode::UNAUTHORIZED && provider.can_refresh() {
+        let www_authenticate = response.headers().get("WWW-Authenticate").and_then(|v| v.to_str().ok());
+        if response.status() == StatusCode::UNAUTHORIZED
+            && provider.can_refresh()
+            && crate::request_signature::should_refresh_on_unauthorized(signed, www_authenticate)
+        {
             if let Ok(tokens) = provider.refresh_access_token(&sent_token).await {
                 self.req.handle_token_update(Some(tokens.access_token));
                 return self.req.send(method, path, body, headers, query, fail_on_error).await;
@@ -2233,7 +2237,7 @@ mod tests {
             HTTPRequester::new("https://127.0.0.1:6060".to_string(), None, None, None, false).expect("requester");
         assert!(requester.signing_body_sha("/appmesh/app/example", Some(b"body")).is_none());
 
-        requester.set_request_signer(Some(RequestSigner::new("ak-http", "test-secret")));
+        requester.set_request_signer(Some(RequestSigner::new("ak-http", "test-secret").expect("signer")));
         let body = br#"{"command":"echo hi"}"#;
         let mut query = HashMap::new();
         query.insert("b".to_string(), "2".to_string());
@@ -2247,7 +2251,7 @@ mod tests {
             requester.signing_body_sha("/appmesh/app/example", Some(body)),
         );
 
-        let signer = RequestSigner::new("ak-http", "test-secret");
+        let signer = RequestSigner::new("ak-http", "test-secret").expect("signer");
         assert_eq!(headers.get(HTTP_HEADER_KEY_X_REQUEST_KEY).unwrap(), "ak-http");
         let timestamp = headers.get(HTTP_HEADER_KEY_X_TIMESTAMP).unwrap();
         let nonce = headers.get(HTTP_HEADER_KEY_X_NONCE).unwrap();
@@ -2291,7 +2295,7 @@ mod tests {
         assert!(!plain.contains_key(HTTP_HEADER_KEY_X_SIGNATURE));
 
         // Streamed file endpoints hash the empty string even with a body.
-        requester.set_request_signer(Some(RequestSigner::new("ak-http", "test-secret")));
+        requester.set_request_signer(Some(RequestSigner::new("ak-http", "test-secret").expect("signer")));
         assert_eq!(
             requester.signing_body_sha("/appmesh/file/upload", Some(b"file-bytes")).unwrap(),
             crate::request_signature::sha256_hex(b"")
@@ -2349,7 +2353,7 @@ mod tests {
 
         let requester =
             HTTPRequester::new(format!("http://{}", addr), None, None, None, false).expect("requester");
-        requester.set_request_signer(Some(RequestSigner::new("ak-wire", "wire-secret")));
+        requester.set_request_signer(Some(RequestSigner::new("ak-wire", "wire-secret").expect("signer")));
 
         let body = br#"{"command":"echo hi"}"#.to_vec();
         let mut query = HashMap::new();
@@ -2395,6 +2399,71 @@ mod tests {
         let canonical = format!("PUT\n{}\nq=two words\n{}\n{}\n{}", wire_path, body_hash, timestamp, nonce);
         let expected = hex(hmac::sign(&Key::new(hmac::HMAC_SHA256, b"wire-secret"), canonical.as_bytes()).as_ref());
         assert_eq!(signature, expected, "signature must verify against the wire-derived canonical string");
+    }
+
+    /// A base URL with a path prefix (reverse-proxy deployments): the prefix is
+    /// part of the wire path, so the signed path must equal the path on the
+    /// request line (`Url::join` drops the prefix for absolute paths — signing
+    /// it would 401 on the daemon).
+    #[tokio::test]
+    async fn test_signed_request_with_base_path_prefix_signs_the_sent_path() {
+        use ring::hmac::{self, Key};
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        let server = tokio::spawn(async move {
+            let (mut socket, _) = listener.accept().await.expect("client connect");
+            let mut raw = Vec::new();
+            let mut chunk = [0u8; 2048];
+            loop {
+                let n = socket.read(&mut chunk).await.expect("read headers");
+                assert!(n > 0, "client closed before sending a full request");
+                raw.extend_from_slice(&chunk[..n]);
+                if raw.windows(4).position(|w| w == b"\r\n\r\n").is_some() {
+                    break;
+                }
+            }
+            socket.write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\n{}").await.expect("write response");
+            String::from_utf8_lossy(&raw).into_owned()
+        });
+
+        let requester = HTTPRequester::new(format!("http://{addr}/pfx"), None, None, None, false).expect("requester");
+        requester.set_request_signer(Some(RequestSigner::new("ak-pfx", "pfx-secret").expect("signer")));
+        let resp = requester
+            .send(Method::GET, "/appmesh/app/example", None, None, None, true)
+            .await
+            .expect("request succeeds");
+        assert_eq!(resp.status(), 200);
+
+        let text = server.await.expect("server finished");
+        let request_line = text.split("\r\n").next().expect("request line");
+        let wire_path = request_line.split(' ').nth(1).expect("request target");
+        assert_eq!(wire_path, "/pfx/appmesh/app/example", "the base path prefix must reach the wire");
+
+        let header = |name: &str| -> String {
+            text.split("\r\n")
+                .skip(1)
+                .take_while(|l| !l.is_empty())
+                .find(|l| l.split(':').next().unwrap_or("").eq_ignore_ascii_case(name))
+                .and_then(|l| l.splitn(2, ':').nth(1))
+                .map(|v| v.trim().to_string())
+                .unwrap_or_else(|| panic!("header {name} missing"))
+        };
+        let canonical = format!(
+            "GET\n{}\n{}\n{}\n{}\n{}",
+            wire_path,
+            "",
+            crate::request_signature::sha256_hex(b""),
+            header("x-timestamp"),
+            header("x-nonce")
+        );
+        let expected = hex_of(hmac::sign(&Key::new(hmac::HMAC_SHA256, b"pfx-secret"), canonical.as_bytes()).as_ref());
+        assert_eq!(header("x-signature"), expected, "the signature must bind the prefixed wire path");
+    }
+
+    fn hex_of(bytes: &[u8]) -> String {
+        bytes.iter().map(|b| format!("{b:02x}")).collect()
     }
 
     #[test]

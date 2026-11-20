@@ -76,6 +76,9 @@ TEST_CASE("Utility Test", "[Utility]")
 	SECTION("file API path gate")
 	{
 		const std::string home = Utility::getHomeDir();
+		// The caller owns the scratch directory's creation; validation has no side effects.
+		const std::string scratch = home + "/work/tmp";
+		REQUIRE(Utility::createDirectory(scratch));
 		// The daemon's own tree is refused even when no jail is configured...
 		REQUIRE_FALSE(Utility::validateFilePath(selfPath, ""));
 		REQUIRE_FALSE(Utility::validateFilePath(home, ""));
@@ -85,6 +88,9 @@ TEST_CASE("Utility Test", "[Utility]")
 		// work/tmp is the shared scratch area and stays exchangeable.
 		REQUIRE(Utility::validateFilePath(home + "/work/tmp/file", ""));
 		REQUIRE(Utility::validateFilePath(home + "/work/tmp/uploads/tmp/00/f", ""));
+		// A non-empty jail derives its own <base>/tmp exchange area.
+		REQUIRE(Utility::validateFilePath(scratch + "/file", home + "/work"));
+		REQUIRE_FALSE(Utility::validateFilePath(home + "/work/other/file", home + "/work"));
 		// The rest of work/ (apps, auth, config) is still refused.
 		REQUIRE_FALSE(Utility::validateFilePath(home + "/work/apps/app.yaml", ""));
 		REQUIRE_FALSE(Utility::validateFilePath(home + "/work/auth/secrets/x", ""));
@@ -268,6 +274,32 @@ TEST_CASE("openFileWithinJail fd verification", "[Utility][security]"){
 		fs::remove(path, ec);
 	}
 
+	SECTION("a hardlink is rejected: the fd must serve the one and only link")
+	{
+		// The link's own path passes the gate; only the inode's link count catches it.
+		const std::string original = scratch + "/fd_link_orig.txt";
+		const std::string hardLink = scratch + "/fd_link_alias.txt";
+		{
+			std::ofstream f(original, std::ios::binary | std::ios::trunc);
+			f << "BENIGN";
+		}
+		fs::remove(hardLink, ec);
+		REQUIRE(::link(original.c_str(), hardLink.c_str()) == 0);
+		std::string resolved;
+		bool rejected = false;
+		REQUIRE(Utility::openFileWithinJail(hardLink, false, jail, resolved, &rejected) == -1);
+		REQUIRE(rejected);
+		// The original is equally multi-link while the alias exists, single-link again once it is gone.
+		REQUIRE(Utility::openFileWithinJail(original, false, jail, resolved, &rejected) == -1);
+		REQUIRE(rejected);
+		fs::remove(hardLink, ec);
+		const int fd = Utility::openFileWithinJail(original, false, jail, resolved, &rejected);
+		REQUIRE(fd >= 0);
+		REQUIRE_FALSE(rejected);
+		::close(fd);
+		fs::remove(original, ec);
+	}
+
 	SECTION("final component swapped to a symlink into the auth tree is rejected")
 	{
 		fs::create_directories(home + "/work/auth", ec);
@@ -313,10 +345,12 @@ TEST_CASE("openFileWithinJail fd verification", "[Utility][security]"){
 
 	SECTION("an explicit jail applies to the resolved fd location")
 	{
-		const std::string exchange = scratch + "/exchange";
+		// Outside the home tree: only the explicit jail logic is exercised here.
+		const std::string exchange = "/tmp/appmesh_fd_explicit_jail";
+		fs::remove_all(exchange, ec);
 		fs::create_directories(exchange, ec);
 		const std::string inside = exchange + "/in.txt";
-		const std::string outside = scratch + "/out.txt";
+		const std::string outside = "/tmp/appmesh_fd_explicit_jail_out.txt";
 		for (const auto &path : {inside, outside})
 		{
 			std::ofstream f(path, std::ios::binary | std::ios::trunc);
@@ -324,9 +358,13 @@ TEST_CASE("openFileWithinJail fd verification", "[Utility][security]"){
 		}
 		std::string resolved;
 		bool rejected = false;
-		REQUIRE(Utility::openFileWithinJail(inside, false, exchange, resolved, &rejected) >= 0);
+		const int fd = Utility::openFileWithinJail(inside, false, exchange, resolved, &rejected);
+		REQUIRE(fd >= 0);
+		::close(fd);
 		REQUIRE(Utility::openFileWithinJail(outside, false, exchange, resolved, &rejected) == -1);
 		REQUIRE(rejected);
+		fs::remove(outside, ec);
+		fs::remove_all(exchange, ec);
 	}
 
 	SECTION("upload temp files are exclusive (O_EXCL) and jail-checked")

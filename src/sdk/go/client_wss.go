@@ -111,19 +111,8 @@ func (c *AppMeshClientWSS) DownloadFileContext(ctx context.Context, remoteFile, 
 		localFile = filepath.Base(remoteFile)
 	}
 
-	headers := map[string]string{
-		headerFilePath: remoteFile,
-	}
-
-	status, msg, _, err := c.get(restPathDownload, nil, headers)
-	if err != nil {
-		return fmt.Errorf("download request failed: %w", err)
-	}
-	if status != http.StatusOK {
-		return newAPIErrorText("download file", status, string(msg),
-			fmt.Sprintf("failed to download %q: status=%d msg=%s", remoteFile, status, msg))
-	}
-
+	// No control-channel preflight: the /ws side channel runs the identical daemon
+	// handler, so a preflight only re-read the whole file into a discarded WS message.
 	accessToken := c.wssReq.getAccessToken()
 	if accessToken == "" {
 		return fmt.Errorf("file transfer requires a bearer token")
@@ -148,7 +137,7 @@ func (c *AppMeshClientWSS) DownloadFileContext(ctx context.Context, remoteFile, 
 	}
 	req = req.WithContext(ctx)
 	req.Header.Set("Authorization", auth)
-	req.Header.Set(headerFilePath, remoteFile)
+	req.Header.Set(headerFilePath, escapeRemoteFilePath(remoteFile))
 	if target := c.forwardTarget(); target != "" {
 		req.Header.Set(headerTargetHost, target)
 	}
@@ -212,7 +201,7 @@ func (c *AppMeshClientWSS) UploadFileContext(ctx context.Context, localFile, rem
 	defer f.Close()
 
 	headers := map[string]string{
-		headerFilePath: remoteFile,
+		headerFilePath: escapeRemoteFilePath(remoteFile),
 	}
 
 	if applyFileAttributes {
@@ -258,7 +247,7 @@ func (c *AppMeshClientWSS) UploadFileContext(ctx context.Context, localFile, rem
 	}
 	req = req.WithContext(ctx)
 	req.Header.Set("Authorization", auth)
-	req.Header.Set(headerFilePath, remoteFile)
+	req.Header.Set(headerFilePath, escapeRemoteFilePath(remoteFile))
 	req.Header.Set("Content-Type", "application/octet-stream")
 	if target := c.forwardTarget(); target != "" {
 		req.Header.Set(headerTargetHost, target)

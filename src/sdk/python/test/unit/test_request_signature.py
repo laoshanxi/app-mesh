@@ -9,7 +9,9 @@ vectors below are the ones fixed by the daemon's test/security/request_hardening
 import hashlib
 import hmac
 import tempfile
+import threading
 import unittest
+from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
 from unittest import mock
 from urllib import parse
@@ -259,9 +261,10 @@ class TestHeadersAttached(unittest.TestCase):
         self.assertEqual(headers["X-Timestamp"], str(int(headers["X-Timestamp"])))
         nonce = headers["X-Nonce"]
         self.assertTrue(nonce)
-        # The wire query must be percent-encoded (no '+'-for-space) so the
-        # daemon-visible decoded value equals the signed value.
-        wire_query = put.call_args.kwargs["params"]
+        # The signed request carries its query inside the prepared URL (signing
+        # and sending share one prepared request), percent-encoded (no
+        # '+'-for-space) so the daemon-visible decoded value equals the signed one.
+        wire_query = parse.urlsplit(put.call_args.kwargs["url"]).query
         self.assertNotIn("+", wire_query)
         self.assertIn("k=two%20words", wire_query)
         decoded = {"k": parse.unquote(wire_query.split("=", 1)[1])}
@@ -306,7 +309,8 @@ class TestHeadersAttached(unittest.TestCase):
                 query={"k": "two words"},
             )
         kwargs = delete.call_args.kwargs
-        wire_query = kwargs["params"]
+        # Signed requests embed the query in the prepared URL they send.
+        wire_query = parse.urlsplit(kwargs["url"]).query
         self.assertIn("k=two%20words", wire_query)
         headers = kwargs["headers"]
         decoded = {"k": parse.unquote(wire_query.split("=", 1)[1])}
@@ -447,6 +451,140 @@ class TestSignatureOptIn(unittest.TestCase):
         self.assertTrue(client._request_signature_enabled())
         client.disable_request_signature()
         self.assertFalse(client._request_signature_enabled())
+
+
+def _start_capture_server():
+    """Start a loopback HTTP server that records the exact request line,
+    headers, and body the client put on the wire — the exact inputs the
+    daemon's signature verifier canonicalizes. Returns (server, captures)."""
+    captures = []
+
+    class Handler(BaseHTTPRequestHandler):
+        def _capture(self):
+            length = int(self.headers.get("Content-Length") or 0)
+            body = self.rfile.read(length) if length else b""
+            captures.append({"method": self.command, "target": self.path,
+                             "headers": self.headers, "body": body})
+            payload = b"{}"
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(payload)))
+            self.end_headers()
+            self.wfile.write(payload)
+
+        do_GET = do_PUT = do_POST = do_DELETE = _capture
+
+        def log_message(self, *args):
+            pass
+
+    server = HTTPServer(("127.0.0.1", 0), Handler)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    return server, captures
+
+
+class TestSignedWirePath(unittest.TestCase):
+    """The signed path must equal the path on the wire byte-for-byte. The mock
+    session tests above cannot see requests' own URL repair, so these cases go
+    through a real loopback server and verify daemon-style against the captured
+    request line."""
+
+    def _signed_get(self, base_url, path):
+        client = AppMeshClient(base_url=base_url, ssl_verify=True)
+        client.enable_request_signature("ak-3f9c2a81b0d4", KAT_SECRET)
+        try:
+            client._request_http(AppMeshClient._Method.GET, path=path)
+        finally:
+            client.close()
+
+    def test_signed_path_equals_wire_path(self):
+        # (caller path, wire path): a bare "%" is repaired to %25 (the classic
+        # 401), a lowercase escape is normalized to uppercase hex, non-ASCII is
+        # percent-encoded; %2F and %2Ab are already wire form and must not move.
+        cases = [
+            ("/appmesh/app/100%", "/appmesh/app/100%25"),
+            ("/appmesh/app/a%2ab", "/appmesh/app/a%2Ab"),
+            ("/appmesh/app/中文", "/appmesh/app/%E4%B8%AD%E6%96%87"),
+            ("/appmesh/app/a%2Fb", "/appmesh/app/a%2Fb"),
+            ("/appmesh/app/a%2Ab", "/appmesh/app/a%2Ab"),
+        ]
+        server, captures = _start_capture_server()
+        try:
+            base = f"http://127.0.0.1:{server.server_port}"
+            for caller_path, _ in cases:
+                self._signed_get(base, caller_path)
+            self.assertEqual(len(captures), len(cases))
+            for (caller_path, expected_wire), captured in zip(cases, captures):
+                wire_path = captured["target"].split("?", 1)[0]
+                self.assertEqual(wire_path, expected_wire, caller_path)
+                headers = captured["headers"]
+                self.assertTrue(
+                    _verify(headers["X-Request-Key"], KAT_SECRET, headers["X-Timestamp"],
+                            headers["X-Nonce"], headers["X-Signature"],
+                            "GET", wire_path, "", b""),
+                    f"signature must verify against the wire path for {caller_path}",
+                )
+        finally:
+            server.shutdown()
+            server.server_close()
+
+    def test_base_url_path_prefix_is_signed_and_sent(self):
+        # A base URL with a path prefix (reverse-proxy deployments): the prefix
+        # must reach the wire AND the signature — urljoin used to drop it.
+        server, captures = _start_capture_server()
+        try:
+            self._signed_get(f"http://127.0.0.1:{server.server_port}/pfx", "/appmesh/app/example")
+            captured = captures[0]
+            wire_path = captured["target"].split("?", 1)[0]
+            self.assertEqual(wire_path, "/pfx/appmesh/app/example")
+            headers = captured["headers"]
+            self.assertTrue(
+                _verify(headers["X-Request-Key"], KAT_SECRET, headers["X-Timestamp"],
+                        headers["X-Nonce"], headers["X-Signature"],
+                        "GET", wire_path, "", b""),
+            )
+        finally:
+            server.shutdown()
+            server.server_close()
+
+
+# Cross-language golden vectors (mirrored by the daemon C++, Go, Java,
+# JavaScript, and Rust test suites): they pin the canonical layout and the HMAC
+# itself with a fixed timestamp and nonce (no time-window involvement). The
+# path/query values are the wire-encoded forms.
+GOLDEN_SECRET = "golden-secret"
+GOLDEN_VECTORS = [
+    # (method, wire path, canonical query, body, timestamp, nonce, signature)
+    ("GET", "/appmesh/app/100%25", "", b"", "1700000000", "nonce-golden-0001",
+     "1036298fce978dab3ca5393a17c8dbeafcd22e8394585a96ce5a60ad39694d8c"),
+    ("GET", "/appmesh/app/list", "flag=true&name=dh-bot", b"", "1700000001", "nonce-golden-0002",
+     "0c9287088c6ca609fad7436f3f4646451faa8e180733e28e10e4eee11f34a9c5"),
+    ("POST", "/appmesh/file/download", "", b"", "1700000002", "nonce-golden-0003",
+     "dea6aa318b1fc84f8ffaadc859e4b36a90a9d6c5619f737dd037c78e5d17ac7d"),
+    ("GET", "/appmesh/app/%E4%B8%AD%E6%96%87", "a=1%26b%3D2", b"", "1700000003", "nonce-golden-0004",
+     "6cf618bfb9264d61d5b23dbaa42d366f59054bce99b9addab3253f98aaadb0ab"),
+    ("POST", "/appmesh/appmesh/run", "", b'{"command":"echo hi"}', "1700000004", "nonce-golden-0005",
+     "0a8de849eda2abf6389d40f11299aaf09e7b440615a6ee0c7e01012a92a1f876"),
+]
+
+
+class TestCrossLanguageGoldenVectors(unittest.TestCase):
+    """Every SDK (and the daemon) must produce these exact signatures."""
+
+    def test_canonical_and_signature_match_the_vectors(self):
+        for method, path, query, body, timestamp, nonce, expected in GOLDEN_VECTORS:
+            canonical = request_signature.canonical_string(
+                method, path, query, request_signature.sha256_hex(body), timestamp, nonce
+            )
+            self.assertEqual(request_signature.sign(GOLDEN_SECRET, canonical), expected, path)
+            # The header helper agrees when handed the wire forms directly (a
+            # string query is already canonical; no body → empty-string hash).
+            headers = request_signature.signed_headers(
+                "ak-golden", GOLDEN_SECRET, method, path, query, body,
+                timestamp=timestamp, nonce=nonce,
+            )
+            self.assertEqual(headers["X-Signature"], expected, path)
+            self.assertEqual(headers["X-Request-Key"], "ak-golden")
 
 
 if __name__ == "__main__":

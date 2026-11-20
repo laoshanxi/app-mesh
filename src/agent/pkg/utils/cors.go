@@ -46,6 +46,7 @@ var allowedHeaders = []string{
 	"X-File-Mode",
 	"X-File-User",
 	"X-File-Group",
+	"X-File-Overwrite",
 }
 
 // CORSConfig holds the configuration for CORS

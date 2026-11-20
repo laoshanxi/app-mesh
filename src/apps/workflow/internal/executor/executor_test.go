@@ -2,6 +2,7 @@ package executor
 
 import (
 	"encoding/json"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -120,5 +121,98 @@ func TestExecCommandMessageOutputsMissFailsBeforeShell(t *testing.T) {
 	if !strings.Contains(res.Response, `unresolved expression ${{ steps.qa.outputs.answer }}`) ||
 		!strings.Contains(res.Response, `message step "qa" produced no answer`) {
 		t.Fatalf("response = %q, want the plain-text no-answer engine error", res.Response)
+	}
+}
+
+func TestAppLevelAnswer(t *testing.T) {
+	cases := []struct {
+		name, resp string
+		want       map[string]string
+	}{
+		{"string answer", `{"status":"ok","data":{"answer":"42"}}`, map[string]string{"answer": "42"}},
+		{"number answer", `{"status":"ok","data":{"answer":42}}`, map[string]string{"answer": "42"}},
+		{"float answer", `{"data":{"answer":1.5}}`, map[string]string{"answer": "1.5"}},
+		{"true answer", `{"data":{"answer":true}}`, map[string]string{"answer": "true"}},
+		{"false answer is still a scalar", `{"data":{"answer":false}}`, map[string]string{"answer": "false"}},
+		{"object answer is plain text", `{"data":{"answer":{"nested":1}}}`, nil},
+		{"array answer is plain text", `{"data":{"answer":[1,2]}}`, nil},
+		{"null answer is plain text", `{"data":{"answer":null}}`, nil},
+		{"empty string answer is plain text", `{"data":{"answer":""}}`, nil},
+		{"missing answer field", `{"status":"ok","data":{}}`, nil},
+		{"missing data field", `{"status":"ok"}`, nil},
+		{"plain text", `hello`, nil},
+		{"json array", `[1,2]`, nil},
+		{"empty", ``, nil},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			got := appLevelAnswer(c.resp)
+			if !reflect.DeepEqual(got, c.want) {
+				t.Errorf("appLevelAnswer(%q) = %v, want %v", c.resp, got, c.want)
+			}
+		})
+	}
+}
+
+// An env value referencing a missing outputs.answer fails the step before any
+// App runs, naming both the env key and the missing output.
+func TestExecuteEnvMessageOutputsMissFails(t *testing.T) {
+	ectx := expression.NewContext()
+	ectx.SetStepResult("j", "qa", "answer-from-py", 0, "success", "answer-from-py", nil)
+	ectx.MarkMessageStep("j", "qa")
+	e := &StepExecutor{Ctx: ectx, JobName: "j"}
+	res := e.Execute(&models.Step{Name: "use", Type: models.StepCommand, Command: "echo hi"},
+		map[string]string{"ANSWER": "${{ steps.qa.outputs.answer }}"}, nil)
+	if res.Status != models.StatusFailure {
+		t.Fatalf("result = %+v, want failure", res)
+	}
+	for _, want := range []string{`env "ANSWER"`, `unresolved expression ${{ steps.qa.outputs.answer }}`,
+		`message step "qa" produced no answer`} {
+		if !strings.Contains(res.Response, want) {
+			t.Errorf("response %q does not mention %q", res.Response, want)
+		}
+	}
+}
+
+// workdir and docker_image share the miss contract; both fail before any App runs.
+func TestExecCommandWorkdirAndImageMissFail(t *testing.T) {
+	ectx := expression.NewContext()
+	ectx.SetStepResult("j", "qa", "answer-from-py", 0, "success", "answer-from-py", nil)
+	ectx.MarkMessageStep("j", "qa")
+	e := &StepExecutor{Ctx: ectx, JobName: "j"}
+
+	res := e.execCommand(&models.Step{Name: "use", Type: models.StepCommand, Command: "echo hi",
+		Workdir: "/w/${{ steps.qa.outputs.answer }}"}, nil, nil)
+	if res.Status != models.StatusFailure || !strings.Contains(res.Response, "workdir") ||
+		!strings.Contains(res.Response, `message step "qa" produced no answer`) {
+		t.Fatalf("workdir result = %+v, want failure naming workdir and the miss", res)
+	}
+
+	res = e.execCommand(&models.Step{Name: "use2", Type: models.StepCommand, Command: "echo hi",
+		DockerImage: "img:${{ steps.qa.outputs.answer }}"}, nil, nil)
+	if res.Status != models.StatusFailure || !strings.Contains(res.Response, "docker_image") ||
+		!strings.Contains(res.Response, `message step "qa" produced no answer`) {
+		t.Fatalf("docker_image result = %+v, want failure naming docker_image and the miss", res)
+	}
+}
+
+// execMessage drives the message→message chain: a downstream payload referencing
+// the upstream plain-text step's missing answer fails before any client call.
+func TestExecMessageDownstreamPayloadMissFails(t *testing.T) {
+	ectx := expression.NewContext()
+	ectx.SetStepResult("j", "qa", "answer-from-py", 0, "success", "answer-from-py", nil)
+	ectx.MarkMessageStep("j", "qa")
+	e := &StepExecutor{Ctx: ectx, JobName: "j"}
+
+	res := e.execMessage(&models.Step{Name: "follow", Type: models.StepMessage,
+		Message: &models.MessageConfig{App: "py-task", Payload: `{"q":"${{ steps.qa.outputs.answer }}"}`}})
+	if res.Status != models.StatusFailure || !strings.Contains(res.Response, `message step "qa" produced no answer`) {
+		t.Fatalf("json payload result = %+v, want failure with the plain-text no-answer error", res)
+	}
+
+	res = e.execMessage(&models.Step{Name: "follow2", Type: models.StepMessage,
+		Message: &models.MessageConfig{App: "py-task", Payload: `ask: ${{ steps.qa.outputs.answer }}`}})
+	if res.Status != models.StatusFailure || !strings.Contains(res.Response, `message step "qa" produced no answer`) {
+		t.Fatalf("plain payload result = %+v, want failure with the plain-text no-answer error", res)
 	}
 }

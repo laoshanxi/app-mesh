@@ -19,11 +19,11 @@ on:
       - main
 
 # Overlapping runs race on the shared platform tags (3.0.1-amd64/-arm64 ...):
-# one run's tag cleanup deletes what another run is about to fold into a
-# manifest, so keep a single pipeline alive and let the newest run win.
+# one run's tag cleanup deletes what another run folds into a manifest, so serialize
+# in one group. No cancel-in-progress: a skipped same-SHA workflow_run run would
+# otherwise cancel the in-flight push build.
 concurrency:
   group: ${{ github.workflow }}
-  cancel-in-progress: true
 
 env:
   DOCKER_REGISTRY: docker.io

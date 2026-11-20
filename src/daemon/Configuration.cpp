@@ -97,7 +97,8 @@ void Configuration::instance(std::shared_ptr<Configuration> config)
 	m_instance = std::move(config);
 }
 
-std::shared_ptr<Configuration> Configuration::FromJson(Json::Value &jsonValue, bool applyEnv)
+std::shared_ptr<Configuration> Configuration::FromJson(Json::Value &jsonValue, bool applyEnv,
+													   const Configuration *previous)
 {
 	try
 	{
@@ -127,7 +128,7 @@ std::shared_ptr<Configuration> Configuration::FromJson(Json::Value &jsonValue, b
 	// REST
 	if (HAS_JSON_FIELD(jsonValue, JSON_KEY_REST))
 	{
-		config->m_rest = JsonRest::FromJson(jsonValue[JSON_KEY_REST]);
+		config->m_rest = JsonRest::FromJson(jsonValue[JSON_KEY_REST], previous ? previous->m_rest.get() : nullptr);
 	}
 
 	// Docker
@@ -979,7 +980,7 @@ void Configuration::hotUpdate(Json::Value &jsonValue)
 		// Reapply environment overrides after merging the patch.
 		auto effectiveJson = this->AsJson();
 		JSON::mergePatch(effectiveJson, jsonValue);
-		auto newConfig = Configuration::FromJson(effectiveJson, true);
+		auto newConfig = Configuration::FromJson(effectiveJson, true, this);
 		// Base config
 		if (HAS_JSON_FIELD(jsonValue, JSON_KEY_BaseConfig))
 		{
@@ -1110,32 +1111,66 @@ bool Configuration::overrideConfigWithEnv(Json::Value &jsonConfig)
 			auto envKey = env.substr(0, pos);
 			auto envVal = env.substr(pos + 1);
 			auto keys = Utility::splitString(envKey, "_");
+			// A created leaf has no declared type to coerce against; take the
+			// shape of the environment value itself (int, bool, else string).
+			const auto envLeafValue = [&envVal]() {
+				if (!envVal.empty() && envVal.find_first_not_of("0123456789") == std::string::npos)
+				{
+					try
+					{
+						return Json::Value(std::stoi(envVal));
+					}
+					catch (const std::exception &)
+					{
+						// out-of-range integers stay strings
+					}
+				}
+				if (envVal == "true" || envVal == "false")
+					return Json::Value(envVal == "true");
+				return Json::Value(envVal);
+			};
+			const auto dottedPath = [&keys](size_t upto) {
+				std::string path;
+				for (size_t i = 1; i <= upto; i++)
+					path += (path.empty() ? "" : ".") + keys[i];
+				return path;
+			};
 			Json::Value *json = &jsonConfig;
 			for (size_t i = 1; i < keys.size(); i++)
 			{
 				auto jsonKey = keys[i];
-				if (json->isMember(jsonKey))
+				if (jsonKey.empty())
+					break;
+				// find the last level
+				if (i == (keys.size() - 1))
 				{
-					// find the last level
-					if (i == (keys.size() - 1))
+					// Create a missing scalar leaf from the environment; never synthesize objects.
+					if (!json->isMember(jsonKey))
 					{
-						// override json value
-						if (applyEnvConfig((*json)[jsonKey], envVal))
-						{
-							applyConfig = true;
-							LOG_INF << fname << "Configuration <" << envKey << "> overridden with environment value <"
-									<< Utility::maskSecret(envVal) << ">";
-						}
-						else
-						{
-							LOG_WAR << fname << "Failed to apply environment value for configuration <" << envKey << ">";
-						}
+						(*json)[jsonKey] = envLeafValue();
+						LOG_WAR << fname << "Configuration key <" << dottedPath(i) << "> created from environment <"
+								<< envKey << ">";
+					}
+					// override json value
+					if (applyEnvConfig((*json)[jsonKey], envVal))
+					{
+						applyConfig = true;
+						LOG_INF << fname << "Configuration <" << envKey << "> overridden with environment value <"
+								<< Utility::maskSecret(envVal) << ">";
 					}
 					else
 					{
-						// switch to next level
-						json = &((*json)[jsonKey]);
+						LOG_WAR << fname << "Failed to apply environment value for configuration <" << envKey << ">";
 					}
+				}
+				else if (json->isMember(jsonKey))
+				{
+					// switch to next level
+					json = &((*json)[jsonKey]);
+				}
+				else
+				{
+					break;
 				}
 			}
 		}
@@ -1338,11 +1373,18 @@ const Json::Value Configuration::getAgentAppJson() const
 	return restApp;
 }
 
-std::shared_ptr<Configuration::JsonRest> Configuration::JsonRest::FromJson(const Json::Value &jsonValue)
+std::shared_ptr<Configuration::JsonRest> Configuration::JsonRest::FromJson(const Json::Value &jsonValue,
+																		   const JsonRest *previous)
 {
 	const static char fname[] = "Configuration::JsonRest::FromJson() ";
 
 	auto rest = std::make_shared<JsonRest>();
+	// An invalid value on reload keeps the previous mode instead of the boot default.
+	if (previous)
+	{
+		rest->m_requestReplayProtection = previous->m_requestReplayProtection;
+		rest->m_requestSignature = previous->m_requestSignature;
+	}
 	rest->m_restListenPort = GET_JSON_INT_VALUE(jsonValue, JSON_KEY_RestListenPort);
 	rest->m_restListenAddress = GET_JSON_STR_VALUE(jsonValue, JSON_KEY_RestListenAddress);
 	rest->m_tcpApiPort = GET_JSON_INT_VALUE(jsonValue, JSON_KEY_TcpApiPort);
@@ -1378,16 +1420,20 @@ std::shared_ptr<Configuration::JsonRest> Configuration::JsonRest::FromJson(const
 			field = mode;
 		else if (!mode.empty())
 			LOG_WAR << "Configuration::JsonRest::FromJson() ignored invalid <" << key << "> value <" << mode
-					<< ">, expected off | audit | enforce";
+					 << ">, expected off | audit | enforce";
 	};
 	normalizeMode(JSON_KEY_RequestReplayProtection, rest->m_requestReplayProtection);
 	normalizeMode(JSON_KEY_RequestSignature, rest->m_requestSignature);
 	rest->m_requestReplayWindowSeconds = GET_JSON_INT_VALUE(jsonValue, JSON_KEY_RequestReplayWindowSeconds);
-	if (rest->m_requestReplayWindowSeconds < 10 || rest->m_requestReplayWindowSeconds > 3600)
-	{
-		LOG_DBG << fname << "Default value <" << DEFAULT_REQUEST_REPLAY_WINDOW_SECONDS << "> will be used for "
-				<< JSON_KEY_RequestReplayWindowSeconds;
+	if (!HAS_JSON_FIELD(jsonValue, JSON_KEY_RequestReplayWindowSeconds))
 		rest->m_requestReplayWindowSeconds = DEFAULT_REQUEST_REPLAY_WINDOW_SECONDS;
+	else if (rest->m_requestReplayWindowSeconds < 10 || rest->m_requestReplayWindowSeconds > 3600)
+	{
+		// Clamp instead of dropping the operator's tuning to the default.
+		const auto clamped = std::clamp(rest->m_requestReplayWindowSeconds, 10, 3600);
+		LOG_WAR << fname << JSON_KEY_RequestReplayWindowSeconds << " value <" << rest->m_requestReplayWindowSeconds
+				<< "> is outside [10, 3600]; clamped to <" << clamped << ">";
+		rest->m_requestReplayWindowSeconds = clamped;
 	}
 	SET_JSON_INT_VALUE(jsonValue, JSON_KEY_PrometheusExporterListenPort, rest->m_promListenPort);
 	// Rejecting a value keeps the previous one instead of failing the whole load.

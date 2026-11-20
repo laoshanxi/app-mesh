@@ -121,8 +121,7 @@ staticPasswords:
     hash: __APPMESH_AUTH_INITIAL_ADMIN_PASSWORD_HASH__
     username: __APPMESH_AUTH_INITIAL_ADMIN_USERNAME__
     userID: __APPMESH_AUTH_INITIAL_ADMIN_USER_ID__
-  # Read-only viewer identity. Its (issuer, subject) Principal is pre-seeded in
-  # the packaged authorization.yaml with the appmesh-viewer role.
+  # Read-only viewer identity; bootstrap seeds its Principal for the configured issuer.
   - email: __APPMESH_AUTH_INITIAL_GUEST_EMAIL__
     hash: __APPMESH_AUTH_INITIAL_GUEST_PASSWORD_HASH__
     username: __APPMESH_AUTH_INITIAL_GUEST_USERNAME__

@@ -28,6 +28,15 @@ const (
 	testSecret = "unit-test-secret"
 )
 
+// mustRequestSigner builds the test signer, asserting the now-fallible
+// constructor (newRequestSigner rejects an empty key ID or secret).
+func mustRequestSigner(t *testing.T) *requestSigner {
+	t.Helper()
+	signer, err := newRequestSigner(testKeyID, testSecret)
+	require.NoError(t, err)
+	return signer
+}
+
 func TestSha256HexKnownAnswer(t *testing.T) {
 	assert.Equal(t, emptyBodySha256, sha256Hex(nil), "sha256 of no body must hash the empty string")
 	assert.Equal(t, emptyBodySha256, sha256Hex([]byte{}))
@@ -89,7 +98,7 @@ func signFramedRequest(t *testing.T) *Request {
 	request.Body = []byte(`{"name":"demo"}`)
 	request.Query = map[string]string{"timeout": "6", "lifecycle": "0"}
 
-	applyRequestSignature(request, newRequestSigner(testKeyID, testSecret))
+	applyRequestSignature(request, mustRequestSigner(t))
 	return request
 }
 
@@ -136,7 +145,7 @@ func TestApplyRequestSignatureSignsEmptyBodyOnFileEndpoints(t *testing.T) {
 		request.HTTPMethod = http.MethodPost
 		request.RequestURI = tc.path
 		request.Body = []byte("file bytes must not be hashed")
-		applyRequestSignature(request, newRequestSigner(testKeyID, testSecret))
+		applyRequestSignature(request, mustRequestSigner(t))
 
 		expected := signCanonical([]byte(testSecret), canonicalRequestString(http.MethodPost, tc.signPath, "",
 			emptyBodySha256, request.Headers[headerTimestamp], request.UUID))
@@ -168,7 +177,7 @@ func TestSignHTTPRequestHashesBodyAndSetsHeaders(t *testing.T) {
 	require.NoError(t, err)
 	query := url.Values{"timeout": []string{"6"}}
 
-	require.NoError(t, signHTTPRequest(req, query, newRequestSigner(testKeyID, testSecret)))
+	require.NoError(t, signHTTPRequest(req, query, mustRequestSigner(t)))
 
 	assert.Equal(t, testKeyID, req.Header.Get(headerRequestKey))
 	nonce := req.Header.Get(headerNonce)
@@ -191,7 +200,7 @@ func TestSignHTTPRequestKeepsStreamedFileBodiesUntouched(t *testing.T) {
 	req, err := http.NewRequest(http.MethodPost, "https://127.0.0.1:6060/appmesh/file/upload", fileBody)
 	require.NoError(t, err)
 
-	require.NoError(t, signHTTPRequest(req, nil, newRequestSigner(testKeyID, testSecret)))
+	require.NoError(t, signHTTPRequest(req, nil, mustRequestSigner(t)))
 
 	expected := signCanonical([]byte(testSecret), canonicalRequestString(http.MethodPost, "/appmesh/file/upload",
 		"", emptyBodySha256, req.Header.Get(headerTimestamp), req.Header.Get(headerNonce)))
@@ -209,7 +218,7 @@ func TestSignHTTPRequestSignsWsRouteAsStrippedPath(t *testing.T) {
 	req, err := http.NewRequest(http.MethodGet, "https://127.0.0.1:6060/appmesh/file/download/ws", nil)
 	require.NoError(t, err)
 
-	require.NoError(t, signHTTPRequest(req, nil, newRequestSigner(testKeyID, testSecret)))
+	require.NoError(t, signHTTPRequest(req, nil, mustRequestSigner(t)))
 
 	expected := signCanonical([]byte(testSecret), canonicalRequestString(http.MethodGet, "/appmesh/file/download",
 		"", emptyBodySha256, req.Header.Get(headerTimestamp), req.Header.Get(headerNonce)))
@@ -356,14 +365,40 @@ func TestWithRequestSignatureTogglesSigningAtRuntime(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, 0, signed)
 
-	client.WithRequestSignature(testKeyID, testSecret)
+	require.NoError(t, client.WithRequestSignature(testKeyID, testSecret))
 	_, err = client.GetMetrics()
 	require.NoError(t, err)
 	assert.Equal(t, 1, signed)
 
 	// An empty key ID disables signing again.
-	client.WithRequestSignature("", "")
+	require.NoError(t, client.WithRequestSignature("", ""))
 	_, err = client.GetMetrics()
 	require.NoError(t, err)
 	assert.Equal(t, 1, signed)
+}
+
+// TestNewRequestSignerRejectsEmptyCredentials pins the sibling-SDK contract:
+// signing requires a non-empty key ID and secret.
+func TestNewRequestSignerRejectsEmptyCredentials(t *testing.T) {
+	for _, tc := range []struct {
+		name       string
+		keyID      string
+		secret     string
+		wantErrMsg string
+	}{
+		{"empty key ID", "", testSecret, "key_id"},
+		{"blank key ID", "  ", testSecret, "key_id"},
+		{"empty secret", testKeyID, "", "secret"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			signer, err := newRequestSigner(tc.keyID, tc.secret)
+			require.Error(t, err)
+			assert.Nil(t, signer)
+			assert.Contains(t, err.Error(), tc.wantErrMsg)
+		})
+	}
+
+	signer, err := newRequestSigner(testKeyID, testSecret)
+	require.NoError(t, err)
+	assert.Equal(t, testKeyID, signer.keyID)
 }

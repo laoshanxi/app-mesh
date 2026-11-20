@@ -191,6 +191,15 @@ class OAuthClient(TokenProvider):
             return dict(self._tokens)
 
     @staticmethod
+    def _env_allows_plain_http() -> bool:
+        """The ``APPMESH_AUTH_ALLOW_HTTP`` opt-in for a plain-HTTP authentication
+        service on a trusted network, with the same semantics as the Rust CLI:
+        any value except empty/``0``/``false``/``no`` enables it; unset stays
+        fail-closed."""
+        value = os.environ.get("APPMESH_AUTH_ALLOW_HTTP")
+        return value is not None and value.strip().lower() not in ("", "0", "false", "no")
+
+    @staticmethod
     def _normalize_base_url(value: str, name: str, allow_plain_http: bool = False) -> str:
         """Validate and normalize an absolute HTTP(S) service base URL."""
         if not isinstance(value, str) or not value.strip():
@@ -211,11 +220,16 @@ class OAuthClient(TokenProvider):
             or port is not None and not 0 < port < 65536
         ):
             raise ValueError(name + " must be an absolute HTTP(S) URL without credentials, query, or fragment")
-        if parsed.scheme == "http" and not allow_plain_http and not OAuthClient._is_loopback_host(parsed.hostname):
+        if (
+            parsed.scheme == "http"
+            and not allow_plain_http
+            and not OAuthClient._env_allows_plain_http()
+            and not OAuthClient._is_loopback_host(parsed.hostname)
+        ):
             raise ValueError(
                 name
-                + " must use HTTPS unless it targets loopback; set allow_plain_http=True to allow plain HTTP on a trusted "
-                    "network"
+                + " must use HTTPS unless it targets loopback; set allow_plain_http=True or APPMESH_AUTH_ALLOW_HTTP=1 "
+                    "to allow plain HTTP on a trusted network"
             )
         return candidate
 

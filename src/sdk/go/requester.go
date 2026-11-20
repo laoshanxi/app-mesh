@@ -146,6 +146,9 @@ func (h *HTTPRequester) SendContext(ctx context.Context, method string, apiPath 
 			return 0, nil, nil, err
 		}
 	}
+	// Snapshot for the 401 gate below: a signed request only refreshes when the
+	// server pins the blame on the bearer (shouldRefreshOnUnauthorized).
+	signed := h.getRequestSigner() != nil
 
 	// Buffer the body only when a 401 refresh-retry may replay it. Streaming
 	// bodies (e.g. the file-upload pipe) are not replayable and keep the
@@ -177,7 +180,8 @@ func (h *HTTPRequester) SendContext(ctx context.Context, method string, apiPath 
 		return 0, nil, nil, err
 	}
 
-	if resp.StatusCode == http.StatusUnauthorized && replayable {
+	if resp.StatusCode == http.StatusUnauthorized && replayable &&
+		shouldRefreshOnUnauthorized(signed, resp.Header.Get("WWW-Authenticate")) {
 		resp.Body.Close()
 		var retryBody io.Reader
 		if body != nil {
@@ -426,6 +430,7 @@ type TCPRequester struct {
 	// Connection parameters retained so a later request can transparently
 	// re-establish a connection lost to a transport error (as the Python SDK does).
 	connectAddr      net.Addr
+	plainTransport   bool // reconnect without TLS (daemon SSL.SSLEnabled=false)
 	sslClientCert    string
 	sslClientCertKey string
 	sslCAFile        string
@@ -491,12 +496,26 @@ func (t *TCPRequester) SendContext(ctx context.Context, method, apiPath string, 
 	return resp.HTTPStatus, resp.Body, respHeaders, nil
 }
 
+// framedHeaderGet reads a framed header case-insensitively (the daemon forwards its original casing).
+func framedHeaderGet(headers map[string]string, name string) string {
+	if v, ok := headers[name]; ok {
+		return v
+	}
+	for k, v := range headers {
+		if strings.EqualFold(k, name) {
+			return v
+		}
+	}
+	return ""
+}
+
 // sendWithRetry issues the TCP request, replaying it exactly once with a
 // refreshed bearer when the first attempt returns 401 and a refresh-capable
 // provider is attached.
 func (t *TCPRequester) sendWithRetry(ctx context.Context, method string, u url.URL, queries url.Values,
 	headers map[string]string, body io.Reader, bodyBytes []byte, refreshable bool, provider TokenProvider) (*Response,
 	error) {
+	signed := t.getRequestSigner() != nil
 	for attempt := 0; ; attempt++ {
 		bodyReader := body
 		if bodyBytes != nil {
@@ -535,7 +554,8 @@ func (t *TCPRequester) sendWithRetry(ctx context.Context, method string, u url.U
 		if err != nil {
 			return nil, err
 		}
-		if resp.HTTPStatus == http.StatusUnauthorized && refreshable && attempt == 0 {
+		if resp.HTTPStatus == http.StatusUnauthorized && refreshable && attempt == 0 &&
+			shouldRefreshOnUnauthorized(signed, framedHeaderGet(resp.Headers, "WWW-Authenticate")) {
 			if newToken, rerr := t.refreshRejectedToken(provider, token); rerr != nil {
 				// Refresh failed: surface the original 401 response with the error.
 				return resp, rerr
@@ -657,14 +677,18 @@ func (t *TCPRequester) enableDemuxer() {
 	t.demuxer.start()
 }
 
-// ensureConnected re-establishes the TLS connection when a previous transport
-// error closed it, mirroring the Python SDK's connect-on-next-request recovery.
+// ensureConnected re-establishes the connection when a previous transport error
+// closed it, mirroring the Python SDK's connect-on-next-request recovery: a
+// plain redial for a plaintext daemon, TLS otherwise.
 func (t *TCPRequester) ensureConnected() error {
 	if t.TCPConnection.Connected() {
 		return nil
 	}
 	if t.connectAddr == nil {
 		return fmt.Errorf("not connected")
+	}
+	if t.plainTransport {
+		return t.ConnectPlain(t.connectAddr)
 	}
 	return t.Connect(t.connectAddr, t.sslClientCert, t.sslClientCertKey, t.sslCAFile)
 }
@@ -785,6 +809,7 @@ func (w *WSSRequester) SendContext(ctx context.Context, method string, apiPath s
 func (w *WSSRequester) sendWithRetry(ctx context.Context, method string, u url.URL, queries url.Values,
 	headers map[string]string, body io.Reader, bodyBytes []byte, refreshable bool, provider TokenProvider) (*Response,
 	error) {
+	signed := w.getRequestSigner() != nil
 	for attempt := 0; ; attempt++ {
 		bodyReader := body
 		if bodyBytes != nil {
@@ -824,7 +849,8 @@ func (w *WSSRequester) sendWithRetry(ctx context.Context, method string, u url.U
 		if err != nil {
 			return nil, err
 		}
-		if resp.HTTPStatus == http.StatusUnauthorized && refreshable && attempt == 0 {
+		if resp.HTTPStatus == http.StatusUnauthorized && refreshable && attempt == 0 &&
+			shouldRefreshOnUnauthorized(signed, framedHeaderGet(resp.Headers, "WWW-Authenticate")) {
 			if newToken, rerr := w.refreshRejectedToken(provider, token); rerr != nil {
 				// Refresh failed: surface the original 401 response with the error.
 				return resp, rerr

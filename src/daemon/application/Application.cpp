@@ -577,6 +577,15 @@ void Application::FromJson(const std::shared_ptr<Application> &app, const Json::
 	DurationParse duration;
 	app->m_bufferTimeValue = GET_JSON_STR_INT_TEXT(jsonObj, JSON_KEY_APP_stop_grace_period);
 	app->m_bufferTime = duration.parse(app->m_bufferTimeValue);
+	if (app->m_bufferTime < 0)
+	{
+		// Legacy releases persisted negative grace periods: clamp on recovery, reject on registration.
+		if (!fromRecover)
+			throw std::invalid_argument("stop_grace_period must not be negative: " + app->m_bufferTimeValue);
+		LOG_WAR << fname << "Negative stop_grace_period <" << app->m_bufferTimeValue << "> for application <"
+				<< app->m_name << ">, clamped to 0";
+		app->m_bufferTime = 0;
+	}
 
 	const bool hasInterval = HAS_JSON_FIELD(jsonObj, JSON_KEY_APP_interval);
 	const bool hasCronSchedule = HAS_JSON_FIELD(jsonObj, JSON_KEY_APP_cron_schedule);

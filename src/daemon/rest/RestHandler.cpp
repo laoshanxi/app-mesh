@@ -470,6 +470,11 @@ std::string RestHandler::normalizedHttpRoute(
 		normalized.replace(position, capture.size(), ":param");
 		position += 6;
 	}
+	// Anchors are regex syntax, not route text; keep them out of the metric label.
+	if (!normalized.empty() && normalized.front() == '^')
+		normalized.erase(normalized.begin());
+	if (!normalized.empty() && normalized.back() == '$')
+		normalized.pop_back();
 	return normalized;
 }
 
@@ -690,7 +695,9 @@ void RestHandler::apiSwagger(const std::shared_ptr<HttpRequest> &message)
 
 	auto host = message->m_headers.get(web::http::header_names::host);
 
-	std::string swaggerUrl = "https://petstore.swagger.io/?url=https://" + host + "/openapi.yaml";
+	// The openapi URL must use the scheme this daemon actually serves.
+	const std::string scheme = Configuration::instance()->getSslEnabled() ? "https" : "http";
+	std::string swaggerUrl = "https://petstore.swagger.io/?url=" + scheme + "://" + host + "/openapi.yaml";
 	std::map<std::string, std::string> headers;
 	headers[web::http::header_names::location] = std::move(swaggerUrl);
 
@@ -1061,6 +1068,12 @@ void RestHandler::apiFileUpload(const std::shared_ptr<HttpRequest> &message)
 		return;
 
 	std::error_code pathEc;
+	// Same leaf rule as the drogon face: a symlink leaf answers a misleading 409 or silently swaps the link.
+	if (std::filesystem::is_symlink(file, pathEc))
+	{
+		message->reply(web::http::status_codes::BadRequest, Utility::text2json("Symlinks not allowed"));
+		return;
+	}
 	if (std::filesystem::is_directory(file, pathEc))
 	{
 		message->reply(web::http::status_codes::BadRequest, Utility::text2json("destination is a directory"));
@@ -1129,8 +1142,7 @@ void RestHandler::apiFileUpload(const std::shared_ptr<HttpRequest> &message)
 	{
 		message->reply(web::http::status_codes::OK, body, headers);
 	}
-	// set permission
-	Utility::applyFilePermission(file, message->m_headers);
+	// Attribute headers ride the committed fd on every face; no path-based apply remains.
 }
 
 void RestHandler::apiFileDelete(const std::shared_ptr<HttpRequest> &message)
@@ -1253,9 +1265,15 @@ void RestHandler::apiBasicConfigSet(const std::shared_ptr<HttpRequest> &message)
 		collectUnknownConfigKeys(json, current, "", unknown);
 		if (!unknown.empty())
 			throw std::invalid_argument("unknown configuration field(s): " + unknown);
-		// A hot update never rebinds a listener: reject instead of a fake 200.
+		// A hot update never rebinds a listener; an unchanged value is the
+		// idempotent no-op of posting the GET document back.
 		if (json.get(JSON_KEY_REST, Json::Value()).get(JSON_KEY_SSL, Json::Value()).isMember(JSON_KEY_SSLEnabled))
-			throw std::invalid_argument("REST.SSL.SSLEnabled is startup-only: set it in config.yaml and restart the daemon");
+		{
+			const auto &requested = json[JSON_KEY_REST][JSON_KEY_SSL][JSON_KEY_SSLEnabled];
+			if (!(requested.isBool() && requested.asBool() == Configuration::instance()->getSslEnabled()))
+				throw std::invalid_argument(
+					"REST.SSL.SSLEnabled is startup-only: set it in config.yaml and restart the daemon");
+		}
 	}
 	Configuration::instance()->hotUpdateAndSave(json);
 
@@ -1570,7 +1588,8 @@ void RestHandler::apiApiKeyIssue(const std::shared_ptr<HttpRequest> &message)
 	const auto issued = Security::instance()->issueApiKey(target);
 	LOG_INF << fname << "API key <" << issued["key_id"].asString() << "> issued to <" << target << "> by <" << principalId
 			<< ">";
-	message->reply(web::http::status_codes::OK, issued);
+	// The secret is shown exactly once; no intermediary may retain it.
+	message->reply(web::http::status_codes::OK, issued, {{"Cache-Control", "no-store"}});
 }
 
 void RestHandler::apiApiKeyDelete(const std::shared_ptr<HttpRequest> &message)
@@ -1604,10 +1623,8 @@ void RestHandler::apiAuthReplicationPolicy(const std::shared_ptr<HttpRequest> &m
 		LOG_DBG << fname << "replication policy requested but no replication token source is configured";
 		throw NotFoundException("Path not found");
 	}
-	// The bearer is verified against the accepted set on every request:
-	// a file source is re-read per request, a Vault source is listed fresh
-	// per request, so revoking one follower (file edit or KV delete) takes
-	// effect on that follower's next pull without a restart.
+	// The bearer is checked against the accepted set on every request (a short
+	// TTL for a Vault source), so revocation lands on the next pull.
 	const auto authorization = Utility::stdStringTrim(message->m_headers.get(HTTP_HEADER_JWT_Authorization));
 	constexpr char scheme[] = "Bearer ";
 	std::string presented;
@@ -1619,19 +1636,42 @@ void RestHandler::apiAuthReplicationPolicy(const std::shared_ptr<HttpRequest> &m
 		// Vault is the single source of truth: issuing and revoking are KV
 		// operations through the operator tooling, and a Vault outage fails
 		// the pull closed (the follower retries next cycle).
-		VaultClient::Config config{
-			vaultAddress, Utility::stdStringTrim(Utility::getenv("APPMESH_AUTH_REPLICATION_TOKEN_VAULT_TOKEN_FILE"))};
-		try
+		const auto vaultTokenFile = Utility::stdStringTrim(Utility::getenv("APPMESH_AUTH_REPLICATION_TOKEN_VAULT_TOKEN_FILE"));
+		VaultClient::Config config{vaultAddress, vaultTokenFile};
+		// A Vault list is N+1 requests; the TTL cache stops a flood from holding
+		// this worker. Only a successful list refreshes; an empty set is a result.
+		constexpr auto TOKEN_CACHE_TTL = std::chrono::seconds(3);
+		std::vector<AuthReplication::AcceptedToken> tokens;
+		bool cached = false;
 		{
-			matchedLabel = AuthReplication::matchToken(VaultClient::listReplicationTokens(config), presented);
+			std::lock_guard<std::mutex> lock(m_vaultTokenCache.mutex);
+			cached = m_vaultTokenCache.valid && m_vaultTokenCache.address == vaultAddress &&
+					 m_vaultTokenCache.tokenFile == vaultTokenFile &&
+					 std::chrono::steady_clock::now() - m_vaultTokenCache.refreshedAt < TOKEN_CACHE_TTL;
+			if (cached)
+				tokens = m_vaultTokenCache.tokens;
 		}
-		catch (const std::exception &e)
+		if (!cached)
 		{
-			LOG_WAR << fname << "replication token source unavailable: " << e.what();
-			message->reply(web::http::status_codes::ServiceUnavailable,
-						   Utility::text2json("replication token source unavailable"));
-			return;
+			try
+			{
+				tokens = VaultClient::listReplicationTokens(config);
+			}
+			catch (const std::exception &e)
+			{
+				LOG_WAR << fname << "replication token source unavailable: " << e.what();
+				message->reply(web::http::status_codes::ServiceUnavailable,
+							   Utility::text2json("replication token source unavailable"));
+				return;
+			}
+			std::lock_guard<std::mutex> lock(m_vaultTokenCache.mutex);
+			m_vaultTokenCache.address = vaultAddress;
+			m_vaultTokenCache.tokenFile = vaultTokenFile;
+			m_vaultTokenCache.tokens = tokens;
+			m_vaultTokenCache.refreshedAt = std::chrono::steady_clock::now();
+			m_vaultTokenCache.valid = true;
 		}
+		matchedLabel = AuthReplication::matchToken(tokens, presented);
 	}
 	else
 	{
@@ -2092,7 +2132,8 @@ void RestHandler::apiAppAdd(const std::shared_ptr<HttpRequest> &message)
 	const auto bodyName = GET_JSON_STR_VALUE(jsonApp, JSON_KEY_APP_name);
 	if (bodyName.empty())
 		throw std::invalid_argument("application name is required in the request body");
-	if (!urlName.empty() && urlName != bodyName)
+	// regexSearch throws instead of returning empty, so urlName is always populated here.
+	if (urlName != bodyName)
 		throw std::invalid_argument("application name in the URL and the request body must match");
 
 	auto appName = normalizeAppName(bodyName);

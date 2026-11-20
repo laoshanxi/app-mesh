@@ -677,11 +677,111 @@ paths:
     post:
       tags: [Configuration]
       summary: Update runtime configuration
+      description: >-
+        REST.RequestSignature and REST.RequestReplayProtection (off | audit |
+        enforce) and REST.RequestReplayWindowSeconds (10-3600, default 300)
+        govern request signing and replay protection; all three reload with
+        SIGHUP, and an invalid mode value keeps the previous setting.
+        REST.SSL.SSLEnabled is startup-only: posting it back unchanged is an
+        accepted no-op, changing it is rejected with 400 (set it in
+        config.yaml and restart).
       responses:
         "200": { description: Updated runtime configuration. }
         "400": { $ref: "#/components/responses/BadRequest" }
         "401": { $ref: "#/components/responses/Unauthorized" }
         "403": { $ref: "#/components/responses/Forbidden" }
+
+  /appmesh/security/apikeys:
+    get:
+      tags: [Authorization]
+      summary: List request-signing API keys
+      description: >-
+        Lists the caller's keys as {key_id, principal, created_at}; the secret
+        is never returned. The all query parameter lists every principal's
+        keys and requires the principal-list permission.
+      parameters:
+        - name: all
+          in: query
+          required: false
+          schema: { type: string }
+          description: Any value selects the admin view (principal-list permission required).
+      responses:
+        "200":
+          description: API key list without secrets.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    key_id: { type: string }
+                    principal: { type: string }
+                    created_at: { type: integer, format: int64 }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+    post:
+      tags: [Authorization]
+      summary: Issue a request-signing API key
+      description: >-
+        Issues a key for the caller, or for the principal named in the body
+        when the caller holds the principal-update permission. The secret is
+        returned exactly once in this response (Cache-Control: no-store). Not
+        issued for the system principal. Bootstrap note: with
+        REST.RequestSignature=enforce every authenticated route, this one
+        included, requires a valid signature, so issue a key before enabling
+        enforce.
+      parameters:
+        - $ref: "#/components/parameters/RequestSignatureKey"
+        - $ref: "#/components/parameters/RequestSignatureTimestamp"
+        - $ref: "#/components/parameters/RequestSignatureNonce"
+        - $ref: "#/components/parameters/RequestSignatureSignature"
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                principal: { type: string, description: Target principal; defaults to the caller. }
+      responses:
+        "200":
+          description: The issued key; the only response that ever contains the secret.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  key_id: { type: string }
+                  principal: { type: string }
+                  secret: { type: string }
+                  created_at: { type: integer, format: int64 }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /appmesh/security/apikey/{key_id}:
+    delete:
+      tags: [Authorization]
+      summary: Revoke a request-signing API key
+      description: >-
+        Revokes the caller's own key, or any key with the principal-update
+        permission. Revocation is immediate on the issuing node and reaches
+        followers with the replication pull interval.
+      parameters:
+        - name: key_id
+          in: path
+          required: true
+          schema: { type: string }
+        - $ref: "#/components/parameters/RequestSignatureKey"
+        - $ref: "#/components/parameters/RequestSignatureTimestamp"
+        - $ref: "#/components/parameters/RequestSignatureNonce"
+        - $ref: "#/components/parameters/RequestSignatureSignature"
+      responses:
+        "204": { description: Revoked. }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
 
   /appmesh/file/download:
     get:
@@ -755,6 +855,11 @@ paths:
           required: false
           schema: { type: string }
           description: Owner group name or gid applied to the uploaded file.
+        - name: X-File-Overwrite
+          in: header
+          required: false
+          schema: { type: string, enum: ["true"] }
+          description: Set to "true" to replace an existing file; any other value is ignored.
       requestBody:
         required: true
         content:
@@ -767,6 +872,27 @@ paths:
         "401": { $ref: "#/components/responses/Unauthorized" }
         "403": { $ref: "#/components/responses/Forbidden" }
         "409": { description: File already exists. }
+
+  /appmesh/file/delete:
+    delete:
+      tags: [Files]
+      summary: Delete a file
+      description: >-
+        Unlinks a regular file inside the file jail. Directories and symlink
+        leaves are refused.
+      parameters:
+        - name: X-File-Path
+          in: header
+          required: true
+          schema: { type: string }
+          description: Remote file path as percent-encoded UTF-8 (space as %20, not +).
+      responses:
+        "200": { description: File deleted. }
+        "400": { description: The X-File-Path header is missing. }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { description: File not found or the path is a directory. }
+        "500": { description: Failed to remove the file. }
 
   /appmesh/labels:
     get:
@@ -856,6 +982,35 @@ components:
             offline_access: Allow refresh tokens for trusted clients.
 
   parameters:
+    RequestSignatureKey:
+      name: X-Request-Key
+      in: header
+      required: true
+      schema: { type: string }
+      description: The API key id naming the signing secret (POST /appmesh/security/apikeys issues both).
+    RequestSignatureTimestamp:
+      name: X-Timestamp
+      in: header
+      required: true
+      schema: { type: string }
+      description: Epoch seconds, at most 12 digits; accepted within the replay window plus a 30 s clock-skew allowance.
+    RequestSignatureNonce:
+      name: X-Nonce
+      in: header
+      required: true
+      schema: { type: string }
+      description: Unique per request, at most 128 bytes, no whitespace; remembered for the replay window plus 30 s.
+    RequestSignatureSignature:
+      name: X-Signature
+      in: header
+      required: true
+      schema: { type: string }
+      description: >-
+        Hex HMAC-SHA256 over the canonical string "METHOD\nPATH\nQUERY\n
+        BODY_SHA256_HEX\nTIMESTAMP\nNONCE". PATH is the percent-encoded
+        request path as sent on the wire; QUERY sorts the decoded parameters
+        as key=value joined with &. File-route bodies hash as the empty
+        string; other request headers are not covered.
     PrincipalId:
       name: principal_id
       in: path
@@ -999,7 +1154,8 @@ components:
             Share bits for principals other than the owner, encoded as two decimal
             digits <other><group>. Only the tens (other) digit is enforced:
             1 = deny, 2 = read, 3 = read and write (write implies read).
-            0 (default) makes the application accessible to every principal.
+            Absent defaults to 11 (owner-only); 0 makes the application accessible
+            to every principal and must be requested explicitly.
             Accepted values: 0, or 10-39 with the first digit 1, 2 or 3.
             Holders of app-view-all bypass these bits for read access and holders
             of app-manage-all for every operation.

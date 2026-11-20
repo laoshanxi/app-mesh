@@ -792,10 +792,10 @@ func runSubWorkflow(ctx context.Context, client *appmesh.AppMeshClient, wfName s
 	if subCtx != nil && wf.On.WorkflowCall != nil && len(wf.On.WorkflowCall.Outputs) > 0 {
 		outputs = make(map[string]string)
 		for name, out := range wf.On.WorkflowCall.Outputs {
-			val, err := expression.SubstituteForJobChecked(out.Value, subCtx, "")
+			val, err := expression.SubstituteValue(out.Value, subCtx, "")
 			if err != nil {
-				// One unresolved output fails the sub-workflow call.
-				outputErr = err
+				// One unresolved output (including a message-outputs miss) fails the sub-workflow call.
+				outputErr = fmt.Errorf("workflow_call output %q: %w", name, err)
 				break
 			}
 			outputs[name] = val

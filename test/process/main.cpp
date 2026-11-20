@@ -5,6 +5,7 @@
 #define CATCH_CONFIG_MAIN // This tells Catch to provide a main() - only do this in one cpp file
 #include "../../src/daemon/process/ForkExec.h"
 #include "../../src/daemon/process/StdoutPump.h"
+#include "../../src/daemon/rest/drogon/FileTransferHandler.h"
 #include <catch.hpp>
 
 #include <algorithm>
@@ -14,9 +15,13 @@
 #include <cstdio>
 #include <cstdlib>
 #include <fcntl.h>
+#include <filesystem>
+#include <fstream>
+#include <iterator>
 #include <memory>
 #include <mutex>
 #include <string>
+#include <sys/stat.h>
 #include <sys/time.h>
 #include <sys/wait.h>
 #include <thread>
@@ -295,3 +300,86 @@ TEST_CASE("forkExec reports a failed step synchronously, before any run exists",
 	REQUIRE(result.pid > 0);
 	REQUIRE(waitExit(result.pid) == 0);
 }
+
+#if !defined(_WIN32)
+// Overwrite publishes a fresh inode: the replaced attributes must survive and the payload must hit disk before the rename.
+TEST_CASE("FileUploadInfo overwrite commit", "[rest][security]")
+{
+	namespace fs = std::filesystem;
+	const std::string jail = "/tmp/appmesh_upload_commit_jail";
+	const std::string dest = jail + "/tmp/dest.txt";
+	std::error_code ec;
+	fs::remove_all(jail, ec);
+	REQUIRE(Utility::createDirectory(jail + "/tmp"));
+	auto statMode = [&dest](struct stat &st) { REQUIRE(::stat(dest.c_str(), &st) == 0); };
+
+	SECTION("overwrite replays the replaced file's mode and owner")
+	{
+		{
+			std::ofstream f(dest, std::ios::binary | std::ios::trunc);
+			f << "OLD";
+		}
+		REQUIRE(::chmod(dest.c_str(), 0640) == 0);
+		struct stat before
+		{
+		};
+		statMode(before);
+
+		HttpHeaderMap headers; // no attribute headers: the original attributes win
+		FileUploadInfo upload(dest, dest + ".part", headers, true, jail);
+		REQUIRE(upload.m_file.is_open());
+		upload.m_file.write("NEW!", 4);
+		REQUIRE(upload.m_file.good());
+		REQUIRE(upload.commit() == FileUploadInfo::CommitResult::Committed);
+
+		struct stat after
+		{
+		};
+		statMode(after);
+		REQUIRE((after.st_mode & 07777) == 0640); // replayed, not the temp default 0644
+		REQUIRE(after.st_uid == before.st_uid);
+		REQUIRE(after.st_gid == before.st_gid);
+		std::ifstream in(dest, std::ios::binary);
+		std::string content((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+		REQUIRE(content == "NEW!");
+		REQUIRE_FALSE(fs::exists(dest + ".part", ec)); // the temp name is gone
+	}
+
+	SECTION("explicit client attribute headers beat the replay")
+	{
+		{
+			std::ofstream f(dest, std::ios::binary | std::ios::trunc);
+			f << "OLD";
+		}
+		REQUIRE(::chmod(dest.c_str(), 0600) == 0);
+		HttpHeaderMap headers;
+		headers.emplace(HTTP_HEADER_KEY_file_mode, "416"); // 0640 in decimal, as fileAttributeHeaders sends it
+		FileUploadInfo upload(dest, dest + ".part", headers, true, jail);
+		upload.m_file.write("NEW", 3);
+		REQUIRE(upload.commit() == FileUploadInfo::CommitResult::Committed);
+		// The faces apply explicit headers after the commit on the still-open fd.
+		Utility::applyFilePermission(dest, headers, upload.fd());
+
+		struct stat after
+		{
+		};
+		statMode(after);
+		REQUIRE((after.st_mode & 07777) == 0640);
+	}
+
+	SECTION("a fresh (non-overwrite) commit keeps the temp default mode")
+	{
+		HttpHeaderMap headers;
+		FileUploadInfo upload(dest, dest + ".part", headers, false, jail);
+		upload.m_file.write("FRESH", 5);
+		REQUIRE(upload.commit() == FileUploadInfo::CommitResult::Committed);
+		struct stat after
+		{
+		};
+		statMode(after);
+		REQUIRE((after.st_mode & 07777) == 0644);
+	}
+
+	fs::remove_all(jail, ec);
+}
+#endif

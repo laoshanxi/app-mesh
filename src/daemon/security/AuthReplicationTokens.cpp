@@ -40,9 +40,13 @@ namespace AuthReplication
 		std::string matched;
 		for (const auto &accepted : tokens)
 		{
-			volatile unsigned char diff = presented.size() ^ accepted.token.size();
-			const auto compared = std::min(presented.size(), accepted.token.size());
-			for (size_t i = 0; i < compared; ++i)
+			// Length must match exactly: folding the size delta into the
+			// unsigned-char diff would let sizes differing by a multiple of
+			// 256 fall through to a prefix comparison.
+			if (presented.size() != accepted.token.size())
+				continue;
+			volatile unsigned char diff = 0;
+			for (size_t i = 0; i < presented.size(); ++i)
 				diff |= static_cast<unsigned char>(presented[i]) ^ static_cast<unsigned char>(accepted.token[i]);
 			if (diff == 0)
 				matched = accepted.label;

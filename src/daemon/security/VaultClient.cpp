@@ -15,6 +15,8 @@ namespace
 	// A Vault outage must not take the pull loop's thread for a long ride;
 	// one short retry smooths a leader election blip.
 	constexpr int READ_ATTEMPTS = 2;
+	const char *ENV_VAULT_CACERT = "APPMESH_VAULT_CACERT";
+	const char *ENV_VAULT_TLS_SKIP_VERIFY = "APPMESH_VAULT_TLS_SKIP_VERIFY";
 
 	/// Vault HTTP failure with the status attached, so a caller can tell one
 	/// revoked entry (404) from an outage.
@@ -23,6 +25,20 @@ namespace
 		VaultRequestError(const std::string &message, int status) : std::runtime_error(message), status(status) {}
 		const int status;
 	};
+
+	/// https verifies by default (APPMESH_VAULT_CACERT or the system store);
+	/// only APPMESH_VAULT_TLS_SKIP_VERIFY opts out. Inert for http addresses.
+	ClientSSLConfig vaultTlsConfig(const VaultClient::Config &config)
+	{
+		ClientSSLConfig ssl;
+		ssl.m_verify_server = config.verifyServer;
+		const auto skip = Utility::stdStringTrim(Utility::getenv(ENV_VAULT_TLS_SKIP_VERIFY));
+		if (skip == "1" || skip == "true")
+			ssl.m_verify_server = false;
+		ssl.m_ca_location = !config.caPath.empty() ? config.caPath
+												   : Utility::stdStringTrim(Utility::getenv(ENV_VAULT_CACERT));
+		return ssl;
+	}
 
 	/// Resolves the credential file into a Vault access token: one line is a
 	/// static service token, two lines are an AppRole machine identity that
@@ -39,7 +55,7 @@ namespace
 		second = Utility::stdStringTrim(second);
 		if (first.empty())
 			throw std::runtime_error("Vault token file <" + config.tokenFile + "> is empty");
-		return second.empty() ? first : VaultClient::loginAppRole(config.address, first, second);
+		return second.empty() ? first : VaultClient::loginAppRole(config, first, second);
 	}
 
 	std::shared_ptr<HttpResponse> vaultRequest(const VaultClient::Config &config, const std::string &path,
@@ -47,12 +63,13 @@ namespace
 	{
 		const auto token = resolveAccessToken(config);
 		std::map<std::string, std::string> headers{{"X-Vault-Token", token}};
+		const auto ssl = vaultTlsConfig(config);
 		std::string lastError;
 		int lastStatus = 0;
 		for (int attempt = 0; attempt < READ_ATTEMPTS; ++attempt)
 		{
 			const auto response =
-				RestClient::request(config.address, method, path, "", headers, {}, REQUEST_TIMEOUT_SECONDS, nullptr);
+				RestClient::request(config.address, method, path, "", headers, {}, REQUEST_TIMEOUT_SECONDS, &ssl);
 			if (response && response->statusCode >= 200 && response->statusCode < 300)
 				return response;
 			lastStatus = response ? response->statusCode : 0;
@@ -119,15 +136,15 @@ std::vector<AuthReplication::AcceptedToken> VaultClient::listReplicationTokens(c
 	return tokens;
 }
 
-std::string VaultClient::loginAppRole(const std::string &address, const std::string &roleId,
-									   const std::string &secretId)
+std::string VaultClient::loginAppRole(const Config &config, const std::string &roleId, const std::string &secretId)
 {
 	Json::Value body(Json::objectValue);
 	body["role_id"] = roleId;
 	body["secret_id"] = secretId;
 	// AppRole login takes no X-Vault-Token: issue it directly.
-	const auto response = RestClient::request(address, web::http::methods::POST, "/v1/auth/approle/login",
-											  JSON::dump(body), {}, {}, REQUEST_TIMEOUT_SECONDS, nullptr);
+	const auto ssl = vaultTlsConfig(config);
+	const auto response = RestClient::request(config.address, web::http::methods::POST, "/v1/auth/approle/login",
+											  JSON::dump(body), {}, {}, REQUEST_TIMEOUT_SECONDS, &ssl);
 	std::string lastError =
 		response ? "HTTP " + std::to_string(response->statusCode) : std::string("transport failure");
 	if (response && response->statusCode == 200)

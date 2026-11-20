@@ -12,8 +12,8 @@ use std::sync::{Arc, Mutex};
 use uuid::Uuid;
 
 use crate::client_http::{
-    build_sse_side_channel, encode_path_segment, open_sse_side_channel, task_body_bytes, AppMeshClient, RunStream,
-    SseKind, SseStream,
+    build_sse_side_channel, encode_file_path, encode_path_segment, open_sse_side_channel, task_body_bytes,
+    AppMeshClient, RunStream, SseKind, SseStream,
 };
 use crate::constants::*;
 use crate::error::AppMeshError;
@@ -362,7 +362,8 @@ impl AppMeshClientTCP {
             local_file
         };
         let mut headers = HashMap::new();
-        headers.insert(HTTP_HEADER_KEY_X_FILE_PATH.into(), remote_file.to_string());
+        // Encode: the daemon percent-decodes X-File-Path once, so a raw %2F/%2E would resolve elsewhere.
+        headers.insert(HTTP_HEADER_KEY_X_FILE_PATH.into(), encode_file_path(remote_file));
         headers.insert(HTTP_HEADER_KEY_X_RECV_FILE_SOCKET.into(), "true".into());
 
         let resp = self.client.raw_request(Method::GET, "/appmesh/file/download", None, Some(headers), None, true).await?;
@@ -402,7 +403,7 @@ impl AppMeshClientTCP {
     pub async fn delete_file(&self, remote_file: &str) -> Result<()> {
         self.ensure_no_active_demuxer()?;
         let mut headers = HashMap::new();
-        headers.insert(HTTP_HEADER_KEY_X_FILE_PATH.into(), remote_file.to_string());
+        headers.insert(HTTP_HEADER_KEY_X_FILE_PATH.into(), encode_file_path(remote_file));
         self.client.raw_request(Method::DELETE, "/appmesh/file/delete", None, Some(headers), None, true).await?;
         Ok(())
     }
@@ -438,7 +439,7 @@ impl AppMeshClientTCP {
         }
 
         let mut headers = HashMap::new();
-        headers.insert(HTTP_HEADER_KEY_X_FILE_PATH.into(), remote_file.to_string());
+        headers.insert(HTTP_HEADER_KEY_X_FILE_PATH.into(), encode_file_path(remote_file));
         headers.insert(HTTP_HEADER_CONTENT_TYPE.into(), "application/octet-stream".into());
         headers.insert(HTTP_HEADER_KEY_X_SEND_FILE_SOCKET.into(), "true".into());
         if overwrite {

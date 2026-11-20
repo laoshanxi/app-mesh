@@ -2,6 +2,7 @@ package trigger
 
 import (
 	"context"
+	"strings"
 	"testing"
 
 	"github.com/laoshanxi/app-mesh/src/apps/workflow/internal/engine"
@@ -142,5 +143,39 @@ func TestResumePathSkipsTerminalJobAndKeepsItsSteps(t *testing.T) {
 	}
 	if got := ectx.Steps["j.work"]; got["stdout"] != "did-work" {
 		t.Fatalf("terminal job step data not restored into expressions: %v", got)
+	}
+}
+
+// A concurrency group referencing context that cannot exist at trigger time
+// (steps.*) fails the resume terminally instead of running without the group or
+// embedding literal ${{ }} text into the group name.
+func TestResumeRunBadConcurrencyGroupFailsTerminally(t *testing.T) {
+	h := newResumeHarness(t)
+	wf := resumeWorkflow()
+	wf.Concurrency = &models.ConcurrencyConfig{Group: "ci-${{ steps.build.outputs.tag }}"}
+	runID := "run-resume-badgroup"
+	h.cp.SaveRunning(wf.Name, runID, "manual", "actor", nil, []string{"j"})
+
+	h.svc.resumeRun(wf, runID, "manual", "actor", nil)
+
+	rec := h.cp.GetRunRecord(wf.Name, runID)
+	if rec == nil || rec.Status != "failure" {
+		t.Fatalf("record = %+v, want a terminally failed run", rec)
+	}
+	if !strings.Contains(rec.Error, "concurrency group") ||
+		!strings.Contains(rec.Error, "steps.build.outputs.tag") {
+		t.Fatalf("error = %q, want the concurrency-group unresolved-expression reason", rec.Error)
+	}
+	// The index entry matches, so the aborted run is not reported running.
+	for _, idx := range h.svc.wdir.ListRuns(wf.Name) {
+		if idx.RunID == runID && idx.Status != "failure" {
+			t.Fatalf("index status = %q, want failure", idx.Status)
+		}
+	}
+	// Not retried: the record no longer counts as stale for RecoverStale.
+	for _, stale := range h.cp.RecoverStale(h.svc.wdir.BaseDir()) {
+		if stale.RunID == runID {
+			t.Fatalf("aborted run %s must not be recoverable as stale", runID)
+		}
 	}
 }

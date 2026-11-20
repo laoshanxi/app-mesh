@@ -51,6 +51,17 @@ void FileTransferHandler::prepareTransfer(Response &resp, int clientId)
 			return;
 		}
 
+		// Same leaf rule as the drogon face: a symlink leaf answers a misleading 409 or silently swaps the link.
+		std::error_code linkEc;
+		if (fs::is_symlink(fs::path(fileName), linkEc))
+		{
+			auto msg = JSON::dump(Utility::text2json("Symlinks not allowed"));
+			resp.http_status = web::http::status_codes::BadRequest;
+			resp.body = std::vector<std::uint8_t>(msg.begin(), msg.end());
+			LOG_ERR << fname << "Upload target is a symlink | ClientID=" << clientId << " | FilePath=" << fileName;
+			return;
+		}
+
 		// Temp file lives in the destination's directory (unique suffix) so the
 		// commit stays on the same filesystem and never leaves a partial file.
 		const auto tempName = fileName + "." + Utility::shortID() + ".part";

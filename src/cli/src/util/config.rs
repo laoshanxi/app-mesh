@@ -7,6 +7,11 @@ use std::path::{Path, PathBuf};
 
 pub const DEFAULT_WSS_PORT: u16 = 6058;
 
+/// Same override the daemon applies on config.yaml (it also creates the leaf
+/// when the file lacks it), so the CLI's local transport inference must honor
+/// it too. See docs/source/TLS.md.
+pub const ENV_REST_SSL_ENABLED: &str = "APPMESH_REST_SSL_SSLEnabled";
+
 /// Persisted config version 2: endpoint transport, verification, absolute CA path.
 pub const CONFIG_VERSION: u32 = 2;
 
@@ -289,7 +294,7 @@ fn lock_holder_dead(path: &Path) -> bool {
             // tokens can outlast it. Only a holder that has held for many
             // times the window is declared gone — that is the recycled-pid or
             // zombie case, not a slow refresh.
-            return !lock_older_than(path, HOLDER_PID_STALE_AFTER);
+            return lock_older_than(path, HOLDER_PID_STALE_AFTER);
         }
     }
     lock_older_than(path, SESSION_LOCK_STALE_AFTER)
@@ -535,13 +540,32 @@ fn persist_config_at(path: &Path, cfg: &CliConfig) {
     }
 }
 
+/// Resolve the daemon's effective plaintext state: the
+/// APPMESH_REST_SSL_SSLEnabled env override wins over the config.yaml value,
+/// mirroring the daemon (Configuration::applyEnvConfig for a bool target: a
+/// numeric value enables when > 0, any other string enables only when exactly
+/// "true"; an empty value therefore disables). Malformed input the daemon's
+/// std::stoi would tolerate ("5x") is treated as non-numeric here.
+fn env_ssl_plain(value: Option<&str>, file_plain: bool) -> bool {
+    match value {
+        None => file_plain,
+        Some(v) => match v.parse::<i64>() {
+            Ok(n) => n <= 0,
+            Err(_) => v != "true",
+        },
+    }
+}
+
 /// Read daemon config.yaml for TLS config and WSS port.
 pub fn load_daemon_config() -> (Option<(String, u16)>, DaemonTlsConfig) {
+    // The env override applies even when no config file is found: the daemon
+    // creates the missing leaf, so it alone can switch the listeners to plain.
+    let ssl_env = std::env::var(ENV_REST_SSL_ENABLED).ok();
     let appmesh_home = detect_appmesh_home();
     let config_path = appmesh_home.as_ref().and_then(|home| detect_daemon_config_file(home));
 
     let Some(config_path) = config_path else {
-        return (None, DaemonTlsConfig::default());
+        return (None, DaemonTlsConfig { plain: env_ssl_plain(ssl_env.as_deref(), false), ..DaemonTlsConfig::default() });
     };
 
     let Ok(content) = std::fs::read_to_string(&config_path) else {
@@ -622,7 +646,7 @@ pub fn load_daemon_config() -> (Option<(String, u16)>, DaemonTlsConfig) {
         client_cert: client_cert.map(|p| resolve_path(&home, &p)),
         client_key: client_key.map(|p| resolve_path(&home, &p)),
         verify_server,
-        plain,
+        plain: env_ssl_plain(ssl_env.as_deref(), plain),
     };
 
     (address, tls)
@@ -711,6 +735,26 @@ mod tests {
 
     fn write_config(path: &Path, json: &str) {
         std::fs::write(path, json).expect("write test config");
+    }
+
+    #[test]
+    fn env_ssl_plain_mirrors_the_daemon_coercion() {
+        // Unset: the config.yaml value decides.
+        assert!(!env_ssl_plain(None, false));
+        assert!(env_ssl_plain(None, true));
+        // "false" and any non-"true" string switch to plain, like the daemon.
+        assert!(env_ssl_plain(Some("false"), false));
+        assert!(env_ssl_plain(Some("false"), true));
+        assert!(env_ssl_plain(Some(""), true));
+        assert!(env_ssl_plain(Some("TRUE"), false));
+        assert!(!env_ssl_plain(Some("true"), true));
+        assert!(!env_ssl_plain(Some("true"), false));
+        // Numeric coercion: > 0 keeps TLS, zero or negative goes plain.
+        assert!(!env_ssl_plain(Some("1"), true));
+        assert!(!env_ssl_plain(Some("+5"), true));
+        assert!(env_ssl_plain(Some("0"), false));
+        assert!(env_ssl_plain(Some("00"), false));
+        assert!(env_ssl_plain(Some("-2"), false));
     }
 
     #[test]
