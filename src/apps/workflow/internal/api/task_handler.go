@@ -31,6 +31,7 @@ import (
 	"github.com/laoshanxi/app-mesh/src/apps/workflow/internal/dag"
 	"github.com/laoshanxi/app-mesh/src/apps/workflow/internal/logger"
 	"github.com/laoshanxi/app-mesh/src/apps/workflow/internal/parser"
+	"github.com/laoshanxi/app-mesh/src/apps/workflow/internal/tlsconf"
 	"github.com/laoshanxi/app-mesh/src/apps/workflow/internal/trigger"
 	"github.com/laoshanxi/app-mesh/src/apps/workflow/internal/workdir"
 	appmesh "github.com/laoshanxi/app-mesh/src/sdk/go"
@@ -120,12 +121,11 @@ func newPrincipalHTTPClient(opts appmesh.Option) (*http.Client, string, error) {
 	if err != nil || (parsed.Scheme != "http" && parsed.Scheme != "https") || parsed.Host == "" {
 		return nil, "", fmt.Errorf("APPMESH_ENGINE_URL must be an absolute HTTP(S) URL")
 	}
-	verify := !strings.EqualFold(os.Getenv("APPMESH_ENGINE_TLS_VERIFY"), "false") &&
-		os.Getenv("APPMESH_ENGINE_TLS_VERIFY") != "0"
+	verify := tlsconf.VerifyEnabled()
 	tlsConfig := &tls.Config{MinVersion: tls.VersionTLS12, InsecureSkipVerify: !verify}
 	// CA pinning is TLS-only; a leftover APPMESH_CA must not fail a plaintext daemon.
 	if !opts.PlainTransport {
-		if caPath := os.Getenv("APPMESH_CA"); caPath != "" {
+		if caPath := os.Getenv(tlsconf.EnvCA); caPath != "" {
 			pem, err := os.ReadFile(caPath)
 			if err != nil {
 				return nil, "", fmt.Errorf("read App Mesh CA: %w", err)

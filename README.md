@@ -144,7 +144,7 @@ Agents are just managed Apps: the same RBAC, scheduling, secrets, health checks,
 - **[LLM agent runtime](src/apps/llm-agent)** — a thin wrapper over the [Claude Agent SDK](https://code.claude.com/docs/en/agent-sdk/python) hosted as a managed App. Runs Claude (Anthropic API, Amazon Bedrock, Google Vertex), or any other model — DeepSeek, Qwen, GLM, MiniMax, or anything OpenAI-compatible behind a gateway. Model credentials stay in secured (`-z`) env vars, never in files.
 - **Sessions are stable working directories** — send again with the same `session_id` to continue a conversation, `session_close` to wipe it; the agent itself stores no history.
 
-**Two consumption models, one substrate** ([design](docs/source/workflow/LLMAgentWorkflowDesign.md), [SOP](src/apps/llm-agent/SOP.md))
+**Two consumption models, one substrate** ([design](src/apps/llm-agent/README.md), [SOP](src/apps/llm-agent/SOP.md))
 
 - **Batch / DAG** — a shared long-lived App answers each call with a final structured result; ideal for pipelines and batch scoring.
 - **Interactive chat** — a per-session worker App streams tokens live to the web UI's Chat page; direct Task API + subscribe, no workflow engine in the path.
@@ -177,7 +177,7 @@ Agents are just managed Apps: the same RBAC, scheduling, secrets, health checks,
 **AI & automation**
 
 - [Remote build-and-run sandbox for AI coding assistants](https://app-mesh.readthedocs.io/en/latest/REMOTE_SANDBOX.html)
-- [LLM agent runtime hosted as an App Mesh app](src/apps/llm-agent) · [architecture and workflow design](docs/source/workflow/LLMAgentWorkflowDesign.md) ([SOP](src/apps/llm-agent/SOP.md))
+- [LLM agent runtime hosted as an App Mesh app](src/apps/llm-agent) · [architecture and workflow design](src/apps/llm-agent/README.md) ([SOP](src/apps/llm-agent/SOP.md))
 - [Manage App Mesh from AI clients via MCP (HTTP + OAuth)](src/integrations/mcp-server)
 
 **Computing**

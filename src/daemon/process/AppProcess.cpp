@@ -921,7 +921,7 @@ pid_t AppProcess::startImpl(std::string cmd, std::string user, std::string workD
 	}
 #endif
 
-	const auto defaultWorkDir = (fs::path(Configuration::instance()->getWorkDir()) / APPMESH_WORK_TMP_DIR).string();
+	const auto defaultWorkDir = Configuration::instance()->getWorkTmpDir();
 	if (workDir.empty())
 		workDir = defaultWorkDir;
 	else if (!Utility::isDirExist(workDir))

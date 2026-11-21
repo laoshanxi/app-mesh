@@ -458,7 +458,7 @@ func (c sseSideChannel) open(ctx context.Context, method string, apiPath string,
 	if err != nil {
 		return 0, nil, nil, err
 	}
-	req.Header.Set("Authorization", "Bearer "+c.token)
+	req.Header.Set(headerAuthorization, headerBearerSpace+c.token)
 	req.Header.Set(userAgentHeaderName, c.agent)
 	for k, v := range headers {
 		req.Header.Set(k, v)

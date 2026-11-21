@@ -376,12 +376,12 @@ func (r *AppMeshClient) getAppOutput(ctx context.Context, appName string, stdout
 		HTTPBody:    string(body),
 	}
 
-	if exitStr := hdr.Get("X-Exit-Code"); exitStr != "" {
+	if exitStr := hdr.Get(headerExitCode); exitStr != "" {
 		if ec, err := strconv.Atoi(exitStr); err == nil {
 			resp.ExitCode = &ec
 		}
 	}
-	if posStr := hdr.Get("X-Output-Position"); posStr != "" {
+	if posStr := hdr.Get(headerOutputPosition); posStr != "" {
 		if pos, err := strconv.ParseInt(posStr, 10, 64); err == nil {
 			resp.OutputPosition = &pos
 		}
@@ -676,7 +676,7 @@ func (r *AppMeshClient) RunAppSyncChecked(app Application, maxTime int, lifecycl
 	if err != nil {
 		return 0, "", false, fmt.Errorf("run app sync request failed: %w", err)
 	}
-	if ec := hdr.Get("X-Exit-Code"); ec != "" {
+	if ec := hdr.Get(headerExitCode); ec != "" {
 		if v, err2 := strconv.Atoi(ec); err2 == nil {
 			exitCode, ok = v, true
 		}

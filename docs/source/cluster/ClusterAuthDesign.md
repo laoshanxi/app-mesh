@@ -200,8 +200,7 @@ read replicas. The engine implements the pull (no external tooling):
 
 - The owner publishes the replication accept list into
   `APPMESH_AUTH_REPLICATION_TOKEN_FILE` when that variable is set: one
-  bearer per line, each with a follower label. A single unlabeled line is
-  the legacy shared token and keeps working. The packaged compose cluster
+  bearer per line, each with a follower label. The packaged compose cluster
   provisions per-follower tokens at bootstrap
   (`APPMESH_AUTH_REPLICATION_FOLLOWERS` names the follower set) and
   projects each follower's own `<label>.token` out of the

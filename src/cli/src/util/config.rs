@@ -12,6 +12,14 @@ pub const DEFAULT_WSS_PORT: u16 = 6058;
 /// it too. See docs/source/TLS.md.
 pub const ENV_REST_SSL_ENABLED: &str = "APPMESH_REST_SSL_SSLEnabled";
 
+/// Deployment env names; the single spelling of each key.
+pub const ENV_API_SECRET: &str = "APPMESH_API_SECRET";
+pub const ENV_API_KEY: &str = "APPMESH_API_KEY";
+pub const ENV_BEARER_TOKEN: &str = "APPMESH_BEARER_TOKEN";
+pub const ENV_HOME: &str = "APPMESH_HOME";
+pub const ENV_AUTH_ALLOW_HTTP: &str = "APPMESH_AUTH_ALLOW_HTTP";
+pub const ENV_AUTH_ACCESS_URL: &str = "APPMESH_AUTH_ACCESS_URL";
+
 /// Persisted config version 2: endpoint transport, verification, absolute CA path.
 pub const CONFIG_VERSION: u32 = 2;
 
@@ -438,10 +446,7 @@ fn pin_ca_path(path: &Path) -> Option<PathBuf> {
 }
 
 pub fn load_last_endpoint() -> Option<RememberedEndpoint> {
-    let (cfg, warning) = load_config_at(&config_path())?;
-    if let Some(warning) = warning {
-        eprintln!("{}", warning);
-    }
+    let cfg = load_config_at(&config_path())?;
     remembered_endpoint(&cfg)
 }
 
@@ -455,60 +460,17 @@ fn remembered_endpoint(cfg: &CliConfig) -> Option<RememberedEndpoint> {
     })
 }
 
-/// Read the persisted config, upgrading a version 1 file in place.
-fn load_config_at(path: &Path) -> Option<(CliConfig, Option<String>)> {
+/// Read the persisted config. A newer CLI's file is returned untouched:
+/// rewriting it from this version would drop that format's fields.
+fn load_config_at(path: &Path) -> Option<CliConfig> {
     let content = std::fs::read_to_string(path).ok()?;
-    let mut cfg: CliConfig = serde_json::from_str(&content).ok()?;
-    let (changed, warning) = normalize_config(&mut cfg);
-    if changed {
-        persist_config_at(path, &cfg);
-    }
-    Some((cfg, warning))
-}
-
-/// Drop an endpoint whose remembered CA cannot be replayed from another working directory.
-fn normalize_config(cfg: &mut CliConfig) -> (bool, Option<String>) {
-    // A newer CLI owns the format: read known fields, never rewrite or repair.
-    // An unusable CA surfaces later as the CA loader's own error.
-    if cfg.version > CONFIG_VERSION {
-        return (false, None);
-    }
-    let mut changed = cfg.version < CONFIG_VERSION;
-    cfg.version = CONFIG_VERSION;
-
-    if cfg.last_host.is_none() && cfg.last_ca_cert.is_some() {
-        cfg.last_ca_cert = None;
-        changed = true;
-    }
-
-    let mut warning = None;
-    if let Some(ca) = cfg.last_ca_cert.clone() {
-        if !(ca.is_absolute() && ca.exists()) {
-            changed = true;
-            if cfg.last_verify_server {
-                let host = cfg.last_host.take().unwrap_or_default();
-                let port = cfg.last_port.take().unwrap_or(DEFAULT_WSS_PORT);
-                warning = Some(format!(
-                    "Warning: discarded the remembered Engine endpoint {}://{}:{} because its CA certificate '{}' \
-                     cannot be reused; run 'appm logon' to choose an endpoint.",
-                    if cfg.last_plain { "ws" } else { "wss" },
-                    host,
-                    port,
-                    ca.display()
-                ));
-                cfg.last_plain = false;
-                cfg.last_verify_server = true;
-            }
-            cfg.last_ca_cert = None;
-        }
-    }
-    (changed, warning)
+    serde_json::from_str(&content).ok()
 }
 
 fn persist_config(cfg: &CliConfig) {
     let path = config_path();
     // Never replace a newer CLI's file: this version would drop its fields.
-    if let Some((existing, _)) = load_config_at(&path) {
+    if let Some(existing) = load_config_at(&path) {
         if existing.version > CONFIG_VERSION {
             return;
         }
@@ -653,7 +615,7 @@ pub fn load_daemon_config() -> (Option<(String, u16)>, DaemonTlsConfig) {
 }
 
 fn detect_appmesh_home() -> Option<PathBuf> {
-    if let Ok(home) = std::env::var("APPMESH_HOME") {
+    if let Ok(home) = std::env::var(ENV_HOME) {
         let p = PathBuf::from(home);
         if p.exists() {
             return Some(p);
@@ -758,78 +720,6 @@ mod tests {
     }
 
     #[test]
-    fn legacy_relative_ca_discards_the_remembered_endpoint() {
-        // A relative CA cannot be replayed from another working directory.
-        let dir = tempfile::tempdir().expect("create config directory");
-        let path = dir.path().join("config.json");
-        write_config(&path, r#"{"last_host":"127.0.0.1","last_port":17058,"last_ca_cert":"ca.pem"}"#);
-
-        let (cfg, warning) = load_config_at(&path).expect("load legacy config");
-        assert_eq!(cfg.version, CONFIG_VERSION);
-        assert!(cfg.last_host.is_none(), "unreplayable endpoint must be dropped");
-        assert!(cfg.last_ca_cert.is_none());
-        assert!(warning.expect("discard must be reported").contains("ca.pem"));
-
-        // The repaired file must not resurrect the endpoint on the next run.
-        let (cfg, warning) = load_config_at(&path).expect("reload repaired config");
-        assert!(cfg.last_host.is_none());
-        assert!(warning.is_none(), "repair must be a one-time warning");
-    }
-
-    #[test]
-    fn legacy_missing_ca_discards_the_remembered_endpoint() {
-        let dir = tempfile::tempdir().expect("create config directory");
-        let path = dir.path().join("config.json");
-        let missing = dir.path().join("gone.pem");
-        write_config(
-            &path,
-            &format!(
-                r#"{{"last_host":"10.0.0.5","last_port":6058,"last_ca_cert":{}}}"#,
-                serde_json::to_string(&missing).expect("serialize path")
-            ),
-        );
-
-        let (cfg, warning) = load_config_at(&path).expect("load legacy config");
-        assert!(cfg.last_host.is_none());
-        assert!(warning.is_some());
-    }
-
-    #[test]
-    fn legacy_absolute_ca_survives_the_upgrade() {
-        let dir = tempfile::tempdir().expect("create config directory");
-        let ca = dir.path().join("ca.pem");
-        std::fs::write(&ca, "-----BEGIN CERTIFICATE-----\n").expect("write CA");
-        let path = dir.path().join("config.json");
-        write_config(
-            &path,
-            &format!(
-                r#"{{"last_host":"10.0.0.5","last_port":6058,"last_ca_cert":{}}}"#,
-                serde_json::to_string(&ca).expect("serialize path")
-            ),
-        );
-
-        let (cfg, warning) = load_config_at(&path).expect("load legacy config");
-        assert_eq!(cfg.last_host.as_deref(), Some("10.0.0.5"));
-        assert_eq!(cfg.last_ca_cert.as_deref(), Some(ca.as_path()));
-        assert!(!cfg.last_plain, "legacy endpoints were TLS");
-        assert!(cfg.last_verify_server, "legacy endpoints verified the peer");
-        assert!(warning.is_none());
-        assert_eq!(cfg.version, CONFIG_VERSION);
-    }
-
-    #[test]
-    fn legacy_endpoint_without_ca_survives_the_upgrade() {
-        let dir = tempfile::tempdir().expect("create config directory");
-        let path = dir.path().join("config.json");
-        write_config(&path, r#"{"last_host":"engine.example","last_port":6058}"#);
-
-        let (cfg, warning) = load_config_at(&path).expect("load legacy config");
-        assert_eq!(cfg.last_host.as_deref(), Some("engine.example"));
-        assert!(cfg.last_ca_cert.is_none());
-        assert!(warning.is_none());
-    }
-
-    #[test]
     fn endpoint_transport_settings_roundtrip() {
         let dir = tempfile::tempdir().expect("create config directory");
         let path = dir.path().join("config.json");
@@ -847,8 +737,7 @@ mod tests {
                 last_verify_server: false,
             },
         );
-        let (cfg, warning) = load_config_at(&path).expect("reload config");
-        assert!(warning.is_none());
+        let cfg = load_config_at(&path).expect("reload config");
         assert_eq!(cfg.last_host.as_deref(), Some("10.0.0.5"));
         assert_eq!(cfg.last_ca_cert.as_deref(), Some(ca.as_path()));
         assert!(!cfg.last_plain);
@@ -871,14 +760,15 @@ mod tests {
                 last_verify_server: true,
             },
         );
-        let (cfg, warning) = load_config_at(&path).expect("reload config");
-        assert!(warning.is_none());
+        let cfg = load_config_at(&path).expect("reload config");
         assert!(cfg.last_plain, "the no-TLS choice must survive");
         assert_eq!(cfg.last_host.as_deref(), Some("gateway.example"));
     }
 
     #[test]
-    fn missing_ca_is_dropped_when_verification_is_off() {
+    fn stored_fields_load_as_written() {
+        // The loader never repairs or drops fields; an unusable CA path
+        // surfaces later as the CA loader's own error.
         let dir = tempfile::tempdir().expect("create config directory");
         let path = dir.path().join("config.json");
         let missing = dir.path().join("gone.pem");
@@ -890,10 +780,9 @@ mod tests {
             ),
         );
 
-        let (cfg, warning) = load_config_at(&path).expect("load config");
-        assert_eq!(cfg.last_host.as_deref(), Some("10.0.0.5"), "verification is off, so the endpoint still works");
-        assert!(cfg.last_ca_cert.is_none());
-        assert!(warning.is_none(), "an unused CA path is not a user-visible problem");
+        let cfg = load_config_at(&path).expect("load config");
+        assert_eq!(cfg.last_host.as_deref(), Some("10.0.0.5"));
+        assert_eq!(cfg.last_ca_cert.as_deref(), Some(missing.as_path()));
     }
 
     #[test]
@@ -908,11 +797,10 @@ mod tests {
         );
         write_config(&path, &content);
 
-        let (cfg, warning) = load_config_at(&path).expect("load future config");
+        let cfg = load_config_at(&path).expect("load future config");
         assert_eq!(cfg.version, 99);
         assert_eq!(cfg.last_host.as_deref(), Some("10.0.0.5"));
         assert_eq!(cfg.last_ca_cert.as_deref(), Some(missing.as_path()));
-        assert!(warning.is_none());
         assert_eq!(std::fs::read_to_string(&path).expect("read future config"), content);
     }
 

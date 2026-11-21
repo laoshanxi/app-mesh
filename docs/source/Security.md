@@ -291,20 +291,7 @@ The daemon compares signatures in constant time. A request that fails verificati
 - `sortedQuery` joins decoded `key=value` pairs with `&` and does not re-encode, so two distinct raw query strings can share one canonical form (`a=1%26b%3D2` and `a=1&b=2` both canonicalize to `a=1&b=2`). Query consumers in this API are switches and filters; treat the query layer as replay-safe but not tamper-proof against a rewriting proxy.
 - A deployment that terminates TLS at a proxy should enable `RequestSignature` in `enforce` mode. The signature then survives the proxy hop.
 
-## Removed interfaces
-
-The Engine does not provide these interfaces:
-
-- local username and password login;
-- daemon-issued identity tokens;
-- token renewal or a token blacklist;
-- authentication cookies;
-- local user and group management;
-- password changes;
-- Engine-managed TOTP;
-- an upstream identity-provider proxy.
-
-The public authentication endpoints are:
+## Public authentication endpoints
 
 | Endpoint | Purpose |
 | --- | --- |

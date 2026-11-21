@@ -38,10 +38,8 @@ $DexConfigTemplate = Join-Path $AppMeshRoot "config\dex.yaml"
 $DexRuntimeDir = Join-Path $AuthStateDir "dex"
 $DexRuntimeConfig = Join-Path $DexRuntimeDir "dex.yaml"
 $AdminCredentials = Join-Path $AuthSecretDir "initial-admin-credentials"
-$LegacyAdminCredentials = Join-Path $AuthSecretDir "dex-initial-admin-credentials"
 $AdminMarker = Join-Path $AuthSecretDir "dex-initial-admin-initialized"
 $GuestCredentials = Join-Path $AuthSecretDir "initial-viewer-credentials"
-$LegacyGuestCredentials = Join-Path $AuthSecretDir "dex-initial-guest-credentials"
 $GuestMarker = Join-Path $AuthSecretDir "dex-initial-guest-initialized"
 $AutomationClientFile = Join-Path $AuthSecretDir "automation-client"
 $AuthorizationTemplate = Join-Path $AppMeshRoot "config\authorization.yaml"
@@ -359,14 +357,6 @@ function Initialize-AuthState {
     Ensure-PrivateDirectory $AuthStateDir
     Ensure-PrivateDirectory $AuthSecretDir
     Ensure-PrivateDirectory $DexRuntimeDir
-    if ((Test-Path -LiteralPath $LegacyAdminCredentials -PathType Leaf) -and -not (Test-Path -LiteralPath $AdminCredentials)) {
-        Assert-PlainFile $LegacyAdminCredentials "legacy administrator credential"
-        Move-Item -LiteralPath $LegacyAdminCredentials -Destination $AdminCredentials
-    }
-    if ((Test-Path -LiteralPath $LegacyGuestCredentials -PathType Leaf) -and -not (Test-Path -LiteralPath $GuestCredentials)) {
-        Assert-PlainFile $LegacyGuestCredentials "legacy viewer credential"
-        Move-Item -LiteralPath $LegacyGuestCredentials -Destination $GuestCredentials
-    }
     Ensure-InitialCredential $AdminCredentials $AdminMarker $AdminEmail $AdminUsername $AdminUserId "administrator"
     Ensure-InitialCredential $GuestCredentials $GuestMarker $GuestEmail $GuestUsername $GuestUserId "guest"
     Ensure-AutomationClient

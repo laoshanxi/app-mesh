@@ -22,20 +22,6 @@
 namespace fs = std::filesystem;
 #define ARRAY_LEN(T) (sizeof(T) / sizeof(T[0]))
 
-template <typename TargetType, typename SourceType>
-std::shared_ptr<TargetType> dynamic_pointer_cast_if(const std::shared_ptr<SourceType> &ptr)
-{
-	auto result = std::dynamic_pointer_cast<TargetType>(ptr);
-	return result;
-}
-
-#define SAFE_DELETE(ptr)                                                                                                    \
-	do                                                                                                                      \
-	{                                                                                                                       \
-		delete (ptr);                                                                                                       \
-		(ptr) = nullptr;                                                                                                    \
-	} while (0)
-
 // Expand micro variable (microkey=microvalue)
 #define __MICRO_KEY__(str) #str               // No expand micro
 #define __MICRO_VAR__(str) __MICRO_KEY__(str) // Expand micro
@@ -53,11 +39,6 @@ std::shared_ptr<TargetType> dynamic_pointer_cast_if(const std::shared_ptr<Source
 		(x) = (y);                                                                                                          \
 		LOG_INF << fname << "Configuration value updated: " << #x;                                                          \
 	}
-
-template <typename T> std::shared_ptr<T> make_shared_array(size_t size)
-{
-	return std::shared_ptr<T>(new T[size], std::default_delete<T[]>());
-}
 
 // Get attribute from json Object
 #define GET_JSON_STR_VALUE(jsonObj, key)                                                                                    \
@@ -83,16 +64,6 @@ template <typename T> std::shared_ptr<T> make_shared_array(size_t size)
 		HAS_JSON_FIELD(jsonObj, key)                                                                                        \
 			? ((jsonObj)[key].isString() ? (jsonObj)[key].asString() : std::to_string((jsonObj)[key].asInt64()))            \
 			: std::string(""))
-
-#define CLOSE_STREAM(streamPtr)                                                                                             \
-	do                                                                                                                      \
-	{                                                                                                                       \
-		if (streamPtr != nullptr && streamPtr->is_open())                                                                   \
-		{                                                                                                                   \
-			streamPtr->close();                                                                                             \
-			streamPtr = nullptr;                                                                                            \
-		}                                                                                                                   \
-	} while (false)
 
 #if defined(_WIN32)
 #define DEV_NULL "NUL"
@@ -153,15 +124,12 @@ inline const Json::Value EMPTY_STR_JSON; // null value
 class Utility
 {
 public:
-	Utility();
-	virtual ~Utility();
-
 	// OS related
 	static const std::string getExecutablePath();
 	static const std::string &getBinDir();
 	static const std::string &getHomeDir();
+	static const std::string getWorkConfigFilePath(const std::string &configFile);
 	static const std::string getConfigFilePath(const std::string &configFile, bool write = false);
-	static const std::string getBinaryName();
 	static bool isDirExist(const std::string &path);
 	static bool isFileExist(const std::string &path);
 	static bool isPathTraversalSafe(const std::string &baseDir, const std::string &filePath);
@@ -249,6 +217,7 @@ public:
 	// the path.
 	static void applyFilePermission(const std::string &file, HttpHeaderMap headers, int fd = -1);
 	static std::string getenv(const std::string &envName, const std::string &defaultValue = "");
+	static std::string getenvTrimmed(const std::string &envName, const std::string &defaultValue = "");
 	static std::map<std::string, std::string> getenvs();
 
 	// Base64
@@ -269,7 +238,6 @@ public:
 	// Locale encoding
 	static std::string fileBytesToUtf8(const std::string &input); // Detect and convert non-UTF-8 stdout/log bytes to UTF-8
 	static std::string localEncodingToUtf8(const std::string &input); // Used for read windows system attributes
-	static std::string utf8ToLocalEncoding(const std::string &input); // Used for CLI correct display
 	static bool isValidUTF8(const std::string &str);
 	// Length (2-4) of the UTF-8 sequence led by c, or 0 when c is not a valid
 	// lead byte (continuation byte alone, C0/C1 overlong lead, or above U+10FFFF).
@@ -291,7 +259,6 @@ public:
 	static void addExtraAppTimeReferStr(Json::Value &jsonObj);
 	static void initDateTimeZone(const std::string &posixTimezone, bool writeLog);
 
-	static const std::string readStdin2End();
 	static std::string escapeCommandLine(const std::string &input);
 	static std::string maskSecret(const std::string &secret, size_t visibleChars = 2, const std::string &mask = "***");
 
@@ -483,6 +450,8 @@ public:
 #define HTTP_HEADER_JWT_Authorization web::http::header_names::authorization
 #define HTTP_HEADER_JWT_Bearer "Bearer"
 #define HTTP_HEADER_JWT_BearerSpace "Bearer "
+// WWW-Authenticate challenge value; concatenate ", error=..." spellings onto it.
+#define HTTP_HEADER_VALUE_BEARER_CHALLENGE "Bearer realm=\"appmesh\""
 #define HTTP_HEADER_KEY_exit_code "X-Exit-Code"
 #define HTTP_HEADER_KEY_output_pos "X-Output-Position"
 #define HTTP_HEADER_KEY_file_path "X-File-Path"
@@ -519,6 +488,7 @@ public:
 #define HTTP_QUERY_KEY_stdout_maxsize "stdout_maxsize"
 #define HTTP_QUERY_KEY_stdout_timeout "timeout"
 #define HTTP_QUERY_KEY_process_uuid "process_uuid"
+#define JSON_KEY_process_uuid "process_uuid"
 #define HTTP_QUERY_KEY_html "html"
 #define HTTP_QUERY_KEY_json "json"
 #define HTTP_QUERY_KEY_timeout "timeout"

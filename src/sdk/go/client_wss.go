@@ -20,7 +20,7 @@ type AppMeshClientWSS struct {
 func NewWSSClient(options Option) (*AppMeshClientWSS, error) {
 	uri := options.AppMeshURI
 	if uri == "" {
-		uri = "https://127.0.0.1:6058"
+		uri = DefaultWSSURI
 	}
 	parsed, err := ParseURL(uri)
 	if err != nil {
@@ -28,12 +28,7 @@ func NewWSSClient(options Option) (*AppMeshClientWSS, error) {
 	}
 
 	// ensure scheme is wss/ws
-	switch parsed.Scheme {
-	case "https":
-		parsed.Scheme = "wss"
-	case "http":
-		parsed.Scheme = "ws"
-	}
+	ensureWScheme(parsed)
 
 	wssRequester := &WSSRequester{
 		WSSConnection: NewWSSConnection(),
@@ -117,7 +112,7 @@ func (c *AppMeshClientWSS) DownloadFileContext(ctx context.Context, remoteFile, 
 	if accessToken == "" {
 		return fmt.Errorf("file transfer requires a bearer token")
 	}
-	auth := "Bearer " + accessToken
+	auth := headerBearerSpace + accessToken
 
 	// Prepare HTTP URL for streaming endpoint
 	base := c.wssReq.baseURL
@@ -136,7 +131,7 @@ func (c *AppMeshClientWSS) DownloadFileContext(ctx context.Context, remoteFile, 
 		return err
 	}
 	req = req.WithContext(ctx)
-	req.Header.Set("Authorization", auth)
+	req.Header.Set(headerAuthorization, auth)
 	req.Header.Set(headerFilePath, escapeRemoteFilePath(remoteFile))
 	if target := c.forwardTarget(); target != "" {
 		req.Header.Set(headerTargetHost, target)
@@ -228,7 +223,7 @@ func (c *AppMeshClientWSS) UploadFileContext(ctx context.Context, localFile, rem
 	if accessToken == "" {
 		return fmt.Errorf("file transfer requires a bearer token")
 	}
-	auth := "Bearer " + accessToken
+	auth := headerBearerSpace + accessToken
 
 	base := c.wssReq.baseURL
 	scheme := "https"
@@ -246,7 +241,7 @@ func (c *AppMeshClientWSS) UploadFileContext(ctx context.Context, localFile, rem
 		return err
 	}
 	req = req.WithContext(ctx)
-	req.Header.Set("Authorization", auth)
+	req.Header.Set(headerAuthorization, auth)
 	req.Header.Set(headerFilePath, escapeRemoteFilePath(remoteFile))
 	req.Header.Set("Content-Type", "application/octet-stream")
 	if target := c.forwardTarget(); target != "" {

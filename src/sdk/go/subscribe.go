@@ -284,7 +284,7 @@ func (d *MessageDemuxer) dispatchEvent(resp *Response) {
 
 	subID := event.SubscriptionID
 	if subID == "" {
-		if v, ok := resp.Headers["X-Subscription-Id"]; ok {
+		if v, ok := resp.Headers[headerSubscriptionId]; ok {
 			subID = v
 		}
 	}

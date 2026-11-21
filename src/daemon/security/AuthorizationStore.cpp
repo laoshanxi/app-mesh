@@ -7,6 +7,7 @@
 #include "../Configuration.h"
 #include "../application/Application.h"
 #include "AuthReplicator.h"
+#include "AuthReplicationTokens.h"
 #include "SecretProtector.h"
 #include "Security.h"
 
@@ -19,8 +20,6 @@
 namespace
 {
 	const std::string SYSTEM_PRINCIPAL_ID = "system:appmesh";
-	const char *AUTH_MODE_ENV = "APPMESH_AUTH_MODE";
-	const char *AUTH_ROLE_ENV = "APPMESH_AUTH_ROLE";
 	const char *BUILTIN_AUTH_MODE = "builtin";
 	const char *EXTERNAL_AUTH_MODE = "external";
 	const char *AUTH_STACK_CONFIG_FILE = "auth-stack.yaml";
@@ -103,7 +102,7 @@ namespace
 		return array;
 	}
 
-	// SecretProtector ciphertext marker (same as Application.cpp); no prefix = legacy plaintext.
+	// SecretProtector ciphertext marker (same as Application.cpp).
 	const char *PROTECTED_SECRET_PREFIX = "sp1:";
 
 	/// Encryption context bound to the key id, so a ciphertext moved between entries does not decrypt.
@@ -112,11 +111,12 @@ namespace
 		return std::string("api_key") + '\0' + keyId;
 	}
 
-	/// Decrypt a persisted secret; a legacy plaintext value passes through, decryption failure throws.
+	/// Decrypt a persisted secret; a value without the ciphertext marker (or that
+	/// fails decryption) throws.
 	std::string readStoredSecret(const std::string &keyId, const std::string &stored)
 	{
 		if (!Utility::startWith(stored, PROTECTED_SECRET_PREFIX))
-			return stored;
+			throw std::invalid_argument("api key secret is not encrypted");
 		return SecretProtector::instance().unprotect(stored, apiKeySecretContext(keyId));
 	}
 
@@ -221,14 +221,13 @@ void AuthorizationStore::init()
 	const static char fname[] = "AuthorizationStore::init() ";
 	// Replica mode decides where the policy loads from and persists to; it must
 	// be established before the first load.
-	const auto replicationSource = Utility::stdStringTrim(Utility::getenv("APPMESH_AUTH_REPLICATION_FROM"));
+	const auto replicationSource = Utility::getenvTrimmed(AuthReplication::ENV_FROM);
 	if (!replicationSource.empty())
 	{
 		m_replicaMode = true;
 		// The cache is a follower-local accelerator, never a hand-edited policy
 		// file; work/auth/replication/ cannot host it (mounted read-only).
-		m_replicaCacheFile =
-			(fs::path(Utility::getHomeDir()) / APPMESH_WORK_DIR / APPMESH_WORK_CONFIG_DIR / "replica-policy.yaml").string();
+		m_replicaCacheFile = Utility::getWorkConfigFilePath("replica-policy.yaml");
 	}
 
 	Json::Value root;
@@ -339,7 +338,7 @@ AuthorizationStore::PolicyData AuthorizationStore::parsePolicy(const Json::Value
 			{
 				const auto &definition = authorization["api_keys"][keyId];
 				const auto principalId = GET_JSON_STR_VALUE(definition, "principal");
-				// Decrypt for the wire snapshot; legacy plaintext entries load unchanged.
+				// Decrypt for the wire snapshot.
 				std::string secret;
 				try
 				{
@@ -348,8 +347,8 @@ AuthorizationStore::PolicyData AuthorizationStore::parsePolicy(const Json::Value
 				catch (const std::exception &)
 				{
 					LOG_WAR << "AuthorizationStore::parsePolicy() dropped request-signing API key <" << keyId
-							<< ">: the stored secret could not be decrypted; restore the SecretProtector master key "
-							   "or reissue the key";
+							<< ">: the stored secret is not a readable encrypted secret; restore the "
+							   "SecretProtector master key or reissue the key";
 					continue;
 				}
 				// Dangling keys (principal removed by an external policy edit) are
@@ -1019,7 +1018,8 @@ void AuthorizationStore::mergeDiskPolicyLocked()
 				}
 				catch (const std::exception &)
 				{
-					LOG_WAR << fname << "could not decrypt on-disk API key <" << keyId << ">; not adopted";
+					LOG_WAR << fname << "stored secret of on-disk API key <" << keyId
+							<< "> is not a readable encrypted secret; not adopted";
 					continue;
 				}
 				if (principalId.empty() || secret.empty() || m_principals.count(principalId) == 0)
@@ -1135,14 +1135,13 @@ void AuthorizationStore::initializeFirstAdminEnrollment()
 	std::lock_guard guard(m_mutex);
 	const auto authMode = Utility::getenv(AUTH_MODE_ENV, BUILTIN_AUTH_MODE);
 	if (authMode != BUILTIN_AUTH_MODE && authMode != EXTERNAL_AUTH_MODE)
-		throw std::invalid_argument("APPMESH_AUTH_MODE must be builtin or external");
+		throw std::invalid_argument(std::string(AUTH_MODE_ENV) + " must be builtin or external");
 	m_builtinAuthentication = authMode == BUILTIN_AUTH_MODE;
 
 	// Versions before automatic subject-pinned enrollment generated a second
 	// owner-only proof. It is no longer accepted, so remove any stale copy during
 	// the upgrade instead of leaving obsolete credential material behind.
-	const auto legacyProofPath =
-		(fs::path(Utility::getHomeDir()) / APPMESH_WORK_DIR / "auth" / "secrets" / "first-admin-enrollment-token").string();
+	const auto legacyProofPath = SecretProtector::secretsFilePath("first-admin-enrollment-token");
 	if (Utility::isFileExist(legacyProofPath))
 		Utility::removeFile(legacyProofPath);
 

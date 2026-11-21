@@ -4,6 +4,7 @@ use std::sync::{Arc, Mutex, MutexGuard};
 
 use crate::app::Cli;
 use crate::util::config;
+use crate::util::config::{ENV_API_KEY, ENV_API_SECRET, ENV_BEARER_TOKEN};
 
 pub fn get_current_url(cli: &Cli) -> String {
     if let Some(ref url) = cli.host_url {
@@ -31,12 +32,12 @@ fn apply_request_signer(client: &Arc<AppMeshClientWSS>, cli: &Cli) {
             .map(|value| value.trim().to_string())
             .filter(|value| !value.is_empty())
     };
-    let secret = match flag_or_env(&cli.api_secret, "APPMESH_API_SECRET") {
+    let secret = match flag_or_env(&cli.api_secret, ENV_API_SECRET) {
         // argv is visible to every process through `ps`; `-` keeps the secret out of it.
         Some(secret) if secret == "-" => read_secret_from_stdin(),
         secret => secret,
     };
-    match (flag_or_env(&cli.api_key, "APPMESH_API_KEY"), secret) {
+    match (flag_or_env(&cli.api_key, ENV_API_KEY), secret) {
         (Some(key_id), Some(secret)) => match RequestSigner::new(key_id, secret) {
             Ok(signer) => client.set_request_signer(Some(signer)),
             // Unreachable in practice: the values above are non-empty; stay loud anyway.
@@ -117,7 +118,7 @@ pub async fn build_client_with_auth(cli: &Cli) -> Result<Arc<AppMeshClientWSS>> 
     // packaged Python tools. The token is used as-is until it expires: there is
     // no refresh token and no local sign-in session, so `appm logon` remains the
     // path for interactive use.
-    if let Ok(token) = std::env::var("APPMESH_BEARER_TOKEN") {
+    if let Ok(token) = std::env::var(ENV_BEARER_TOKEN) {
         if !token.trim().is_empty() {
             client.client().set_token(token.trim());
             return Ok(client);

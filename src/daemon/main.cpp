@@ -33,6 +33,7 @@
 #include "../common/os/pstree.h"
 #include "Configuration.h"
 #include "HealthCheckTask.h"
+#include "security/AuthorizationStore.h"
 #include "PersistManager.h"
 #include "ResourceCollection.h"
 #include "application/Application.h"
@@ -150,7 +151,7 @@ void AppMeshDaemon::logStartupEnvironment()
 {
 	const static char fname[] = "AppMeshDaemon::logStartupEnvironment() ";
 	LOG_INF << fname << "LANG=<" << (Utility::getenv("LANG")) << "> LC_ALL=<" << (Utility::getenv("LC_ALL"))
-			<< "> APPMESH_AUTH_MODE=<" << (Utility::getenv("APPMESH_AUTH_MODE")) << ">";
+			<< "> APPMESH_AUTH_MODE=<" << (Utility::getenv(AUTH_MODE_ENV)) << ">";
 }
 
 int AppMeshDaemon::run(int argc, char *argv[])
@@ -307,7 +308,7 @@ void AppMeshDaemon::initializeDirectories()
 	// Create working directories
 	Utility::createDirectory(config->getWorkDir());
 
-	const auto tmpDir = (fs::path(config->getWorkDir()) / APPMESH_WORK_TMP_DIR).string();
+	const auto tmpDir = config->getWorkTmpDir();
 	const auto outputDir = (fs::path(config->getWorkDir()) / "stdout").string();
 	const auto inputDir = (fs::path(config->getWorkDir()) / "stdin").string();
 	const auto shellDir = (fs::path(config->getWorkDir()) / "shell").string();
@@ -574,7 +575,7 @@ void AppMeshDaemon::runMainLoop()
 
 	// Change to temp directory
 	auto config = Configuration::instance();
-	const auto tmpDir = (fs::path(config->getWorkDir()) / APPMESH_WORK_TMP_DIR).string();
+	const auto tmpDir = config->getWorkTmpDir();
 	fs::current_path(tmpDir);
 	LOG_INF << fname << "Entered working directory: " << fs::current_path().string();
 
@@ -651,7 +652,7 @@ void AppMeshDaemon::startStartupApplications()
 	// Managed app commands are authored relative to work/tmp (for example,
 	// ../../script/appmesh-auth.sh). Enter the same directory used by the main
 	// scheduler before launching any readiness phase.
-	const auto tmpDir = (fs::path(config->getWorkDir()) / APPMESH_WORK_TMP_DIR).string();
+	const auto tmpDir = config->getWorkTmpDir();
 	fs::current_path(tmpDir);
 	LOG_INF << fname << "Entered working directory: " << fs::current_path().string();
 

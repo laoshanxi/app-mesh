@@ -38,10 +38,19 @@ import org.json.JSONObject;
 public class AppMeshClient implements Closeable {
     private static final Logger LOGGER = Logger.getLogger(AppMeshClient.class.getName());
 
-    private static final String AUTHORIZATION_HEADER = "Authorization";
+    // Wire-header names shared with the transport subclasses (same package).
+    static final String AUTHORIZATION_HEADER = "Authorization";
+    static final String BEARER_PREFIX = "Bearer ";
+    static final String X_TARGET_HOST_HEADER = "X-Target-Host";
+    static final String X_FILE_PATH_HEADER = "X-File-Path";
+    static final String X_EXIT_CODE_HEADER = "X-Exit-Code";
+    static final String X_OUTPUT_POSITION_HEADER = "X-Output-Position";
+    static final String X_INPUT_CLOSE_HEADER = "X-Input-Close";
+    static final String X_SEND_FILE_SOCKET_HEADER = "X-Send-File-Socket";
+    static final String X_RECV_FILE_SOCKET_HEADER = "X-Recv-File-Socket";
+    static final String X_APPMESH_PROCESS_KEY_HEADER = "X-AppMesh-Process-Key";
     private static final String HTTP_USER_AGENT_HEADER_NAME = "User-Agent";
     private static final String HTTP_USER_AGENT = "appmesh/java";
-    private static final String BEARER_PREFIX = "Bearer ";
     private static final String CONTENT_TYPE_HEADER = "Content-Type";
     private static final String ACCEPT_HEADER = "Accept";
     private static final String JSON_CONTENT_TYPE = "application/json";
@@ -751,7 +760,7 @@ public class AppMeshClient implements Closeable {
         response.httpSuccess = conn.getResponseCode() == HttpURLConnection.HTTP_OK;
         response.httpBody = Utils.readResponseSafe(conn);
 
-        String exitCodeStr = conn.getHeaderField("X-Exit-Code");
+        String exitCodeStr = conn.getHeaderField(X_EXIT_CODE_HEADER);
         if (exitCodeStr != null && !exitCodeStr.isEmpty()) {
             try {
                 response.exitCode = Integer.parseInt(exitCodeStr);
@@ -760,7 +769,7 @@ public class AppMeshClient implements Closeable {
             }
         }
 
-        String outputPositionStr = conn.getHeaderField("X-Output-Position");
+        String outputPositionStr = conn.getHeaderField(X_OUTPUT_POSITION_HEADER);
         if (outputPositionStr != null && !outputPositionStr.isEmpty()) {
             try {
                 response.outputPosition = Long.parseLong(outputPositionStr);
@@ -787,7 +796,7 @@ public class AppMeshClient implements Closeable {
             query.put("lifecycle", String.valueOf(lifecycle));
         }
         HttpURLConnection conn = request("POST", "/appmesh/app/syncrun", appJson, null, query);
-        String exitCodeHeader = conn.getHeaderField("X-Exit-Code");
+        String exitCodeHeader = conn.getHeaderField(X_EXIT_CODE_HEADER);
         Integer exitCode = null;
         if (exitCodeHeader != null && !exitCodeHeader.isEmpty()) {
             try {
@@ -1029,7 +1038,7 @@ public class AppMeshClient implements Closeable {
         Map<String, String> headers = null;
         if (close) {
             headers = new HashMap<>();
-            headers.put("X-Input-Close", "true");
+            headers.put(X_INPUT_CLOSE_HEADER, "true");
         }
         Map<String, String> params = null;
         if (processUuid != null && !processUuid.isEmpty()) {
@@ -1061,7 +1070,7 @@ public class AppMeshClient implements Closeable {
      */
     public boolean downloadFile(String filePath, String localFile, boolean applyFileAttributes) throws IOException {
         Map<String, String> headers = new HashMap<>(commonHeaders());
-        headers.put("X-File-Path", encodeURIComponent(filePath));
+        headers.put(X_FILE_PATH_HEADER, encodeURIComponent(filePath));
 
         HttpURLConnection conn = request("GET", "/appmesh/file/download", null, headers, null);
         // A JSON reply without Content-Disposition is a legacy placeholder, not content.
@@ -1124,7 +1133,7 @@ public class AppMeshClient implements Closeable {
      */
     public boolean uploadFile(File localFile, String remoteFile, boolean preservePermissions) throws IOException {
         Map<String, String> headers = new HashMap<>(commonHeaders());
-        headers.put("X-File-Path", encodeURIComponent(remoteFile));
+        headers.put(X_FILE_PATH_HEADER, encodeURIComponent(remoteFile));
 
         File file = localFile;
         if (!file.exists()) {
@@ -1347,7 +1356,7 @@ public class AppMeshClient implements Closeable {
             headers.put(AUTHORIZATION_HEADER, BEARER_PREFIX + token);
         }
         if (this.forwardTo != null && !this.forwardTo.isEmpty()) {
-            headers.put("X-Target-Host", this.forwardTo);
+            headers.put(X_TARGET_HOST_HEADER, this.forwardTo);
         }
         return headers;
     }
@@ -1364,7 +1373,7 @@ public class AppMeshClient implements Closeable {
             return null;
         }
         Map<String, String> headers = new HashMap<>();
-        headers.put("X-Target-Host", forwardingHost);
+        headers.put(X_TARGET_HOST_HEADER, forwardingHost);
         return headers;
     }
 

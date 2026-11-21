@@ -3,6 +3,7 @@
 #include "Worker.h"
 
 #include <memory>
+#include <optional>
 #include <set>
 #include <utility>
 
@@ -81,6 +82,27 @@ namespace
 			return false;
 		}
 		return true;
+	}
+
+	/// Bearer authentication for the frame and gateway paths: returns the
+	/// principal id, or nullopt after the failure reply went out (503 for an
+	/// unavailable authentication backend, 401 + challenge for a bad bearer).
+	std::optional<std::string> authenticateBearerOrReply(const std::shared_ptr<HttpRequest> &request)
+	{
+		try
+		{
+			return Security::authenticateBearerAuthorization(request->m_headers.get(HTTP_HEADER_JWT_Authorization)).id();
+		}
+		catch (const AuthenticationUnavailableException &e)
+		{
+			request->reply(web::http::status_codes::ServiceUnavailable, Utility::text2json(e.what()));
+		}
+		catch (const std::exception &e)
+		{
+			request->reply(web::http::status_codes::Unauthorized, Utility::text2json(e.what()),
+						   {{"WWW-Authenticate", HTTP_HEADER_VALUE_BEARER_CHALLENGE ", error=\"invalid_token\""}});
+		}
+		return std::nullopt;
 	}
 
 	// An undecodable payload keeps its envelope: the correlation uuid is read
@@ -311,26 +333,13 @@ bool Worker::process(const std::shared_ptr<HttpRequest> &request)
 
 	if (!request->transportPrincipalId().empty() && request->m_headers.contains(HTTP_HEADER_JWT_Authorization))
 	{
-		try
-		{
-			const auto framePrincipal =
-				Security::authenticateBearerAuthorization(request->m_headers.get(HTTP_HEADER_JWT_Authorization));
-			if (framePrincipal.id() != request->transportPrincipalId())
-			{
-				request->reply(web::http::status_codes::Forbidden,
-							   Utility::text2json("WebSocket frame cannot change the session principal"));
-				return true;
-			}
-		}
-		catch (const AuthenticationUnavailableException &e)
-		{
-			request->reply(web::http::status_codes::ServiceUnavailable, Utility::text2json(e.what()));
+		const auto framePrincipal = authenticateBearerOrReply(request);
+		if (!framePrincipal)
 			return true;
-		}
-		catch (const std::exception &e)
+		if (*framePrincipal != request->transportPrincipalId())
 		{
-			request->reply(web::http::status_codes::Unauthorized, Utility::text2json(e.what()),
-						   {{"WWW-Authenticate", "Bearer realm=\"appmesh\", error=\"invalid_token\""}});
+			request->reply(web::http::status_codes::Forbidden,
+						   Utility::text2json("WebSocket frame cannot change the session principal"));
 			return true;
 		}
 	}
@@ -374,7 +383,7 @@ bool Worker::process(const std::shared_ptr<HttpRequest> &request)
 		{
 			request->reply(web::http::status_codes::Unauthorized,
 						   Utility::text2json("Forwarded requests require bearer authentication"),
-						   {{"WWW-Authenticate", "Bearer realm=\"appmesh\""}});
+						   {{"WWW-Authenticate", HTTP_HEADER_VALUE_BEARER_CHALLENGE}});
 			return true;
 		}
 		// A WebSocket frame with a bearer was already checked against the pinned
@@ -384,21 +393,10 @@ bool Worker::process(const std::shared_ptr<HttpRequest> &request)
 		std::string gatewayPrincipalId = request->transportPrincipalId();
 		if (gatewayPrincipalId.empty())
 		{
-			try
-			{
-				gatewayPrincipalId = Security::authenticateBearerAuthorization(request->m_headers.get(HTTP_HEADER_JWT_Authorization)).id();
-			}
-			catch (const AuthenticationUnavailableException &e)
-			{
-				request->reply(web::http::status_codes::ServiceUnavailable, Utility::text2json(e.what()));
+			const auto gatewayPrincipal = authenticateBearerOrReply(request);
+			if (!gatewayPrincipal)
 				return true;
-			}
-			catch (const std::exception &e)
-			{
-				request->reply(web::http::status_codes::Unauthorized, Utility::text2json(e.what()),
-							   {{"WWW-Authenticate", "Bearer realm=\"appmesh\", error=\"invalid_token\""}});
-				return true;
-			}
+			gatewayPrincipalId = *gatewayPrincipal;
 		}
 		// The outbound connection itself is a capability: without this gate any
 		// authenticated principal could probe the network through open/closed/

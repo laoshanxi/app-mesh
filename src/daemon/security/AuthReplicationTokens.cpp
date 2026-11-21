@@ -6,11 +6,6 @@
 
 #include "../../common/Utility.h"
 
-namespace
-{
-	constexpr const char *DEFAULT_LABEL = "shared";
-}
-
 namespace AuthReplication
 {
 	std::vector<AcceptedToken> parseTokenFile(const std::string &fileContent)
@@ -25,12 +20,11 @@ namespace AuthReplication
 				continue;
 			const auto separator = trimmed.find_first_of(" \t");
 			if (separator == std::string::npos)
-			{
-				tokens.push_back({trimmed, DEFAULT_LABEL});
-				continue;
-			}
+				continue; // a line without a label is not an accepted entry
 			auto label = Utility::stdStringTrim(trimmed.substr(separator));
-			tokens.push_back({trimmed.substr(0, separator), label.empty() ? DEFAULT_LABEL : label});
+			if (label.empty())
+				continue;
+			tokens.push_back({trimmed.substr(0, separator), label});
 		}
 		return tokens;
 	}

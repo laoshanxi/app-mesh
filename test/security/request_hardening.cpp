@@ -211,19 +211,18 @@ TEST_CASE("RequestSignature verifyWithSecret accepts a correct signature and rej
 
 TEST_CASE("AuthReplication token file accepts per-follower tokens", "[security][replication]")
 {
-	SECTION("legacy single unlabeled token keeps the shared behavior")
+	SECTION("an unlabeled line is not an accepted entry")
 	{
 		const std::string file = "abc123\n";
-		REQUIRE(AuthReplication::parseTokenFile(file).size() == 1);
-		REQUIRE(AuthReplication::matchToken(file, "abc123") == "shared");
-		REQUIRE(AuthReplication::matchToken(file, "abc124").empty());
+		REQUIRE(AuthReplication::parseTokenFile(file).empty());
+		REQUIRE(AuthReplication::matchToken(file, "abc123").empty());
 		REQUIRE(AuthReplication::matchToken(file, "").empty());
 	}
 
 	SECTION("labeled lines match their own token only")
 	{
-		const std::string file = "tok-a\n# comment\ntok-b slave1\ntok-c\t slave2 \n";
-		REQUIRE(AuthReplication::matchToken(file, "tok-a") == "shared");
+		const std::string file = "tok-a master\n# comment\ntok-b slave1\ntok-c\t slave2 \n";
+		REQUIRE(AuthReplication::matchToken(file, "tok-a") == "master");
 		REQUIRE(AuthReplication::matchToken(file, "tok-b") == "slave1");
 		REQUIRE(AuthReplication::matchToken(file, "tok-c") == "slave2");
 		REQUIRE(AuthReplication::matchToken(file, "tok-d").empty());
@@ -232,13 +231,13 @@ TEST_CASE("AuthReplication token file accepts per-follower tokens", "[security][
 
 	SECTION("revocation is a file edit: removed lines stop matching")
 	{
-		std::string file = "tok-a\n";
-		REQUIRE(AuthReplication::matchToken(file, "tok-a") == "shared");
-		file = "tok-a\ntok-b slave1\n";
+		std::string file = "tok-a master\n";
+		REQUIRE(AuthReplication::matchToken(file, "tok-a") == "master");
+		file = "tok-a master\ntok-b slave1\n";
 		REQUIRE(AuthReplication::matchToken(file, "tok-b") == "slave1");
-		file = "tok-a\n"; // slave1 revoked
+		file = "tok-a master\n"; // slave1 revoked
 		REQUIRE(AuthReplication::matchToken(file, "tok-b").empty());
-		REQUIRE(AuthReplication::matchToken(file, "tok-a") == "shared");
+		REQUIRE(AuthReplication::matchToken(file, "tok-a") == "master");
 	}
 
 	SECTION("empty and comment-only files match nothing")
@@ -252,8 +251,8 @@ TEST_CASE("AuthReplication token file accepts per-follower tokens", "[security][
 		// 300 ^ 44 truncates to zero in an unsigned char; the comparison must
 		// be full-length so a 44-byte prefix of a 300-byte token stays wrong.
 		const std::string token(300, 'x');
-		const std::string file = token + "\n";
-		REQUIRE(AuthReplication::matchToken(file, std::string(300, 'x')) == "shared");
+		const std::string file = token + " master\n";
+		REQUIRE(AuthReplication::matchToken(file, std::string(300, 'x')) == "master");
 		REQUIRE(AuthReplication::matchToken(file, std::string(44, 'x')).empty());
 		REQUIRE(AuthReplication::matchToken(file, std::string(300, 'y')).empty());
 	}

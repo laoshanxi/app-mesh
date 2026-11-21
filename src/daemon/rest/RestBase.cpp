@@ -32,7 +32,7 @@ namespace
 		auto matches = [&metadata](const char *field, const std::string &expected)
 		{ return metadata.isMember(field) && metadata[field].isString() && metadata[field].asString() == expected; };
 		if (!matches("type", "workflow-step") || !matches("workflow_id", claims.workflowId) ||
-			!matches("run_id", claims.runId) || !matches("process_uuid", claims.processUuid))
+			!matches("run_id", claims.runId) || !matches(JSON_KEY_process_uuid, claims.processUuid))
 		{
 			throw AuthorizationException("workflow temporary application is not bound to this run capability");
 		}
@@ -263,7 +263,7 @@ void RestBase::handleRest(
 	{
 		LOG_WAR << fname << "401 Unauthorized " << message->m_method << ":" << path << " - " << e.what();
 		message->reply(web::http::status_codes::Unauthorized, Utility::text2json(e.what()),
-					   {{"WWW-Authenticate", "Bearer realm=\"appmesh\", error=\"invalid_token\""}});
+					   {{"WWW-Authenticate", HTTP_HEADER_VALUE_BEARER_CHALLENGE ", error=\"invalid_token\""}});
 	}
 	catch (const Json::Exception &e)
 	{
@@ -325,12 +325,7 @@ std::string RestBase::getBearerToken(const std::shared_ptr<HttpRequest> &message
 	if (!message->m_headers.count(HTTP_HEADER_JWT_Authorization))
 		throw std::domain_error("No authentication token provided");
 
-	const auto token = Utility::bearerCredential(message->m_headers.find(HTTP_HEADER_JWT_Authorization)->second);
-	if (token.empty())
-		throw std::domain_error("Authorization header must use the Bearer scheme");
-	if (token.empty() || token.find_first_of(" \t\r\n") != std::string::npos)
-		throw std::domain_error("Bearer token is empty or malformed");
-	return token;
+	return Security::validatedBearerToken(message->m_headers.find(HTTP_HEADER_JWT_Authorization)->second);
 }
 
 std::string RestBase::permissionCheck(const std::shared_ptr<HttpRequest> &message, const std::string &permission)

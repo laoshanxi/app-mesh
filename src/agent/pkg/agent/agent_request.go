@@ -66,6 +66,17 @@ func newRequestFromHTTP(req *http.Request) (*Request, error) {
 	return r, nil
 }
 
+// markFileTransferHeaders arms the daemon's socket file channel for a
+// download (X-Recv-File-Socket) or upload (X-Send-File-Socket) request.
+func markFileTransferHeaders(request *Request) {
+	switch request.RequestURI {
+	case RestPathDownload:
+		request.Headers[HTTPHeaderKeyXRecvFileSocket] = "true"
+	case RestPathUpload:
+		request.Headers[HTTPHeaderKeyXSendFileSocket] = "true"
+	}
+}
+
 // loadBodyFromHTTP reads and processes the HTTP request body
 func (r *Request) loadBodyFromHTTP(req *http.Request) error {
 	defer req.Body.Close()

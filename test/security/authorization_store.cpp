@@ -122,22 +122,18 @@ TEST_CASE("api key secrets are encrypted at rest and plaintext on the wire", "[s
 		REQUIRE(secret == plaintext);
 	}
 
-	SECTION("a legacy plaintext secret still loads and re-saves encrypted")
+	SECTION("a plaintext secret is dropped")
 	{
 		Json::Value root = policyRoot(principalId);
 		Json::Value entry;
 		entry["principal"] = principalId;
-		entry["secret"] = "legacy-plaintext-secret";
+		entry["secret"] = "plaintext-secret";
 		entry["created_at"] = 1700000000;
-		root["Authorization"]["api_keys"]["ak-legacy"] = entry;
-		AuthorizationStore legacy;
-		REQUIRE(legacy.applyReplicatedPolicy(root));
+		root["Authorization"]["api_keys"]["ak-plain"] = entry;
+		AuthorizationStore plain;
+		REQUIRE(plain.applyReplicatedPolicy(root));
 		std::string owner, secret;
-		REQUIRE(legacy.apiKeySecret("ak-legacy", owner, secret));
-		REQUIRE(secret == "legacy-plaintext-secret");
-		legacy.save();
-		const auto onDisk = readFile(Utility::getConfigFilePath(APPMESH_AUTHORIZATION_CONFIG_FILE, true));
-		REQUIRE(onDisk.find("legacy-plaintext-secret") == std::string::npos);
+		REQUIRE_FALSE(plain.apiKeySecret("ak-plain", owner, secret));
 	}
 
 	SECTION("an undecryptable stored secret drops that key only")

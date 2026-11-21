@@ -83,7 +83,7 @@ std::shared_ptr<Snapshot> Snapshot::FromJson(const Json::Value &obj)
 const std::string &Snapshot::filePath()
 {
 	static const std::string path =
-		(std::filesystem::path(Configuration::instance()->getWorkDir()) / APPMESH_WORK_TMP_DIR / SNAPSHOT_FILE_NAME)
+		(std::filesystem::path(Configuration::instance()->getWorkTmpDir()) / SNAPSHOT_FILE_NAME)
 			.string();
 	return path;
 }

@@ -88,7 +88,7 @@ public class AppMeshWorker {
         }
 
         Map<String, String> headers = new HashMap<>();
-        headers.put("X-AppMesh-Process-Key", pkey);
+        headers.put(AppMeshClient.X_APPMESH_PROCESS_KEY_HEADER, pkey);
 
         while (!stopped) {
             long attemptStart = System.nanoTime();
@@ -140,7 +140,7 @@ public class AppMeshWorker {
                 + "/task";
 
         Map<String, String> headers = new HashMap<>();
-        headers.put("X-AppMesh-Process-Key", pkey);
+        headers.put(AppMeshClient.X_APPMESH_PROCESS_KEY_HEADER, pkey);
 
         String body = result == null ? "" : new String(result, StandardCharsets.UTF_8);
         HttpURLConnection conn = client.request("PUT", path, body, headers, null);
@@ -168,7 +168,7 @@ public class AppMeshWorker {
                 + "/task/partial";
 
         Map<String, String> headers = new HashMap<>();
-        headers.put("X-AppMesh-Process-Key", pkey);
+        headers.put(AppMeshClient.X_APPMESH_PROCESS_KEY_HEADER, pkey);
 
         HttpURLConnection conn = client.request("POST", path, partial, headers, null);
         int status = conn.getResponseCode();

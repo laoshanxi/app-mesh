@@ -3,6 +3,7 @@ package engine
 import (
 	"context"
 	"fmt"
+	"maps"
 	"os"
 	"path/filepath"
 	"sync"
@@ -376,12 +377,7 @@ func runJob(job *models.Job, exec *executor.StepExecutor, ectx *expression.Conte
 		if opts.RecoveredSteps != nil {
 			if jobSteps, ok := opts.RecoveredSteps[job.Name]; ok {
 				for stepName, data := range jobSteps {
-					exitCode := toIntFromAny(data["exit_code"])
-					stdout, _ := data["stdout"].(string)
-					status, _ := data["status"].(string)
-					response, _ := data["response"].(string)
-					outputs, _ := data["outputs"].(map[string]string)
-					ectx.SetStepResult(job.Name, stepName, stdout, exitCode, status, response, outputs)
+					restoreRecoveredStep(ectx, job.Name, stepName, data)
 				}
 			}
 		}
@@ -421,12 +417,7 @@ func runJob(job *models.Job, exec *executor.StepExecutor, ectx *expression.Conte
 				if !completedSteps[stepName] {
 					continue
 				}
-				exitCode := toIntFromAny(data["exit_code"])
-				stdout, _ := data["stdout"].(string)
-				status, _ := data["status"].(string)
-				response, _ := data["response"].(string)
-				outputs, _ := data["outputs"].(map[string]string)
-				ectx.SetStepResult(job.Name, stepName, stdout, exitCode, status, response, outputs)
+				status := restoreRecoveredStep(ectx, job.Name, stepName, data)
 				log.StepSkipped(stepName, "recovered from checkpoint: "+status)
 			}
 		}
@@ -672,14 +663,23 @@ func persistStep(opts *Options, jobName, stepName, stdout string, exitCode int, 
 	})
 }
 
+// restoreRecoveredStep loads one checkpointed step's saved result into the
+// expression context so recovery keeps cross-job/step expressions working.
+// It returns the saved status for the caller's logging.
+func restoreRecoveredStep(ectx *expression.Context, jobName, stepName string, data map[string]any) string {
+	exitCode := toIntFromAny(data["exit_code"])
+	stdout, _ := data["stdout"].(string)
+	status, _ := data["status"].(string)
+	response, _ := data["response"].(string)
+	outputs, _ := data["outputs"].(map[string]string)
+	ectx.SetStepResult(jobName, stepName, stdout, exitCode, status, response, outputs)
+	return status
+}
+
 func mergeEnv(base, overlay map[string]string) map[string]string {
 	out := make(map[string]string, len(base)+len(overlay))
-	for k, v := range base {
-		out[k] = v
-	}
-	for k, v := range overlay {
-		out[k] = v
-	}
+	maps.Copy(out, base)
+	maps.Copy(out, overlay)
 	return out
 }
 
@@ -881,8 +881,6 @@ func cloneStringMap(m map[string]string) map[string]string {
 		return nil
 	}
 	out := make(map[string]string, len(m))
-	for k, v := range m {
-		out[k] = v
-	}
+	maps.Copy(out, m)
 	return out
 }

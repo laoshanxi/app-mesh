@@ -5,6 +5,7 @@
 #include <cstdio>
 #include <filesystem>
 #include <fstream>
+#include <optional>
 #include <set>
 
 #include <boost/algorithm/string_regex.hpp>
@@ -50,6 +51,21 @@ namespace
 			return true;
 		}
 		return false;
+	}
+
+	// Shared X-File-Path prologue of the file endpoints: replies (400/403) and
+	// returns empty when the header is missing or the path fails the jail.
+	std::optional<std::string> requiredFilePath(const std::shared_ptr<HttpRequest> &message)
+	{
+		if (0 == message->m_headers.count(HTTP_HEADER_KEY_file_path))
+		{
+			message->reply(web::http::status_codes::BadRequest, Utility::text2json("header 'X-File-Path' not found"));
+			return std::nullopt;
+		}
+		const auto file = Utility::decodeHeaderFilePath(message->m_headers.find(HTTP_HEADER_KEY_file_path)->second);
+		if (rejectFilePath(message, file))
+			return std::nullopt;
+		return file;
 	}
 
 	// Serialize a permission set as a JSON string array
@@ -977,14 +993,10 @@ void RestHandler::apiFileDownload(const std::shared_ptr<HttpRequest> &message)
 	const static char fname[] = "RestHandler::apiFileDownload() ";
 
 	permissionCheck(message, PERMISSION_KEY_file_download);
-	if (0 == message->m_headers.count(HTTP_HEADER_KEY_file_path))
-	{
-		message->reply(web::http::status_codes::BadRequest, Utility::text2json("header 'X-File-Path' not found"));
+	const auto filePath = requiredFilePath(message);
+	if (!filePath)
 		return;
-	}
-	const auto file = Utility::decodeHeaderFilePath(message->m_headers.find(HTTP_HEADER_KEY_file_path)->second);
-	if (rejectFilePath(message, file))
-		return;
+	const auto &file = *filePath;
 
 	if (!Utility::isFileExist(file))
 	{
@@ -1061,14 +1073,10 @@ void RestHandler::apiFileUpload(const std::shared_ptr<HttpRequest> &message)
 {
 	const static char fname[] = "RestHandler::apiFileUpload() ";
 	permissionCheck(message, PERMISSION_KEY_file_upload);
-	if (0 == message->m_headers.count(HTTP_HEADER_KEY_file_path))
-	{
-		message->reply(web::http::status_codes::BadRequest, Utility::text2json("header 'X-File-Path' not found"));
+	const auto filePath = requiredFilePath(message);
+	if (!filePath)
 		return;
-	}
-	const auto file = Utility::decodeHeaderFilePath(message->m_headers.find(HTTP_HEADER_KEY_file_path)->second);
-	if (rejectFilePath(message, file))
-		return;
+	const auto &file = *filePath;
 
 	std::error_code pathEc;
 	// Same leaf rule as the drogon face: a symlink leaf answers a misleading 409 or silently swaps the link.
@@ -1152,14 +1160,10 @@ void RestHandler::apiFileDelete(const std::shared_ptr<HttpRequest> &message)
 {
 	const static char fname[] = "RestHandler::apiFileDelete() ";
 	permissionCheck(message, PERMISSION_KEY_file_delete);
-	if (0 == message->m_headers.count(HTTP_HEADER_KEY_file_path))
-	{
-		message->reply(web::http::status_codes::BadRequest, Utility::text2json("header 'X-File-Path' not found"));
+	const auto filePath = requiredFilePath(message);
+	if (!filePath)
 		return;
-	}
-	const auto file = Utility::decodeHeaderFilePath(message->m_headers.find(HTTP_HEADER_KEY_file_path)->second);
-	if (rejectFilePath(message, file))
-		return;
+	const auto &file = *filePath;
 
 	// Pin-then-verify delete: unlinkat targets the dirfd-pinned parent re-verified
 	// against the jail, so a symlink swap cannot steer the delete outside the jail.
@@ -1341,7 +1345,7 @@ void RestHandler::apiWorkflowCapability(const std::shared_ptr<HttpRequest> &mess
 		capabilityAudience = InternalCapability::Audience::WorkflowControl;
 		workflowId = "__control__";
 		runId = processUuid;
-		ownerPrincipalId = "internal:workflow-controller:" + processUuid;
+		ownerPrincipalId = WORKFLOW_CONTROLLER_PRINCIPAL_PREFIX + processUuid;
 		allowedOperations = {PERMISSION_KEY_view_all_app, PERMISSION_KEY_app_subscribe};
 	}
 	else if (audience == InternalCapability::audienceName(InternalCapability::Audience::WorkflowRun))
@@ -1400,7 +1404,7 @@ void RestHandler::apiWorkflowCapability(const std::shared_ptr<HttpRequest> &mess
 	response["capability"] = capability;
 	response["expires_at"] = expiresAt;
 	response["owner_principal_id"] = ownerPrincipalId;
-	response["process_uuid"] = processUuid;
+	response[JSON_KEY_process_uuid] = processUuid;
 	message->reply(web::http::status_codes::OK, response);
 }
 
@@ -1444,11 +1448,11 @@ void RestHandler::apiWorkflowCleanupOrphans(const std::shared_ptr<HttpRequest> &
 		const auto &metadata = definition[JSON_KEY_APP_metadata];
 		if (!metadata.isMember("type") || !metadata["type"].isString() || metadata["type"].asString() != "workflow-step" ||
 			!metadata.isMember("workflow_id") || !metadata["workflow_id"].isString() || !metadata.isMember("run_id") ||
-			!metadata["run_id"].isString() || !metadata.isMember("process_uuid") || !metadata["process_uuid"].isString())
+			!metadata["run_id"].isString() || !metadata.isMember(JSON_KEY_process_uuid) || !metadata[JSON_KEY_process_uuid].isString())
 			continue;
 		const auto workflowId = metadata["workflow_id"].asString();
 		const auto runId = metadata["run_id"].asString();
-		const auto creatorProcessUuid = metadata["process_uuid"].asString();
+		const auto creatorProcessUuid = metadata[JSON_KEY_process_uuid].asString();
 		if (!validIdentifier(workflowId) || !validIdentifier(runId) || creatorProcessUuid.empty() ||
 			creatorProcessUuid == processUuid)
 			continue;
@@ -1472,8 +1476,7 @@ void RestHandler::apiWorkflowRegistry(const std::shared_ptr<HttpRequest> &messag
 	// deliberately does not expose arbitrary applications or bypass their owner
 	// permissions through the synthetic Workflow controller principal.
 	const auto principalId = permissionCheck(message, PERMISSION_KEY_view_all_app);
-	if (principalId.compare(0, std::char_traits<char>::length("internal:workflow-controller:"),
-							"internal:workflow-controller:") != 0)
+	if (!Utility::startWith(principalId, WORKFLOW_CONTROLLER_PRINCIPAL_PREFIX))
 	{
 		throw AuthorizationException("workflow registry is available only to the managed Workflow controller");
 	}
@@ -1481,8 +1484,7 @@ void RestHandler::apiWorkflowRegistry(const std::shared_ptr<HttpRequest> &messag
 	Json::Value result = Json::Value(Json::arrayValue);
 	for (const auto &app : Configuration::instance()->getApps())
 	{
-		if (!app || app->getName().compare(0, std::char_traits<char>::length(WORKFLOW_DEFINITION_PREFIX),
-										   WORKFLOW_DEFINITION_PREFIX) != 0)
+		if (!app || !Utility::startWith(app->getName(), WORKFLOW_DEFINITION_PREFIX))
 			continue;
 		auto definition = app->AsJson(true);
 		if (!definition.isMember(JSON_KEY_APP_metadata) || !definition[JSON_KEY_APP_metadata].isObject())
@@ -1614,11 +1616,9 @@ void RestHandler::apiAuthReplicationPolicy(const std::shared_ptr<HttpRequest> &m
 	// The token source is a deployment choice: the accept file (default) or a
 	// secrets service (Vault). One selector, one seam; absent configuration
 	// keeps the local file behavior with no external dependency.
-	const auto source = Utility::stdStringTrim(Utility::getenv("APPMESH_AUTH_REPLICATION_TOKEN_SOURCE"));
-	const auto vaultAddress = source == "vault"
-								  ? Utility::stdStringTrim(Utility::getenv("APPMESH_AUTH_REPLICATION_TOKEN_VAULT_ADDR"))
-								  : std::string();
-	const auto tokenFile = Utility::stdStringTrim(Utility::getenv("APPMESH_AUTH_REPLICATION_TOKEN_FILE"));
+	const auto source = Utility::getenvTrimmed(AuthReplication::ENV_TOKEN_SOURCE);
+	const auto vaultAddress = source == "vault" ? Utility::getenvTrimmed(AuthReplication::ENV_VAULT_ADDR) : std::string();
+	const auto tokenFile = Utility::getenvTrimmed(AuthReplication::ENV_TOKEN_FILE);
 	if (tokenFile.empty() && vaultAddress.empty())
 	{
 		// Feature off: answer as an unknown route so the endpoint's existence
@@ -1629,7 +1629,7 @@ void RestHandler::apiAuthReplicationPolicy(const std::shared_ptr<HttpRequest> &m
 	// The bearer is checked against the accepted set on every request (a short
 	// TTL for a Vault source), so revocation lands on the next pull.
 	const auto authorization = Utility::stdStringTrim(message->m_headers.get(HTTP_HEADER_JWT_Authorization));
-	constexpr char scheme[] = "Bearer ";
+	constexpr char scheme[] = HTTP_HEADER_JWT_BearerSpace;
 	std::string presented;
 	if (authorization.size() > sizeof(scheme) - 1 && authorization.compare(0, sizeof(scheme) - 1, scheme) == 0)
 		presented = Utility::stdStringTrim(authorization.substr(sizeof(scheme) - 1));
@@ -1639,7 +1639,7 @@ void RestHandler::apiAuthReplicationPolicy(const std::shared_ptr<HttpRequest> &m
 		// Vault is the single source of truth: issuing and revoking are KV
 		// operations through the operator tooling, and a Vault outage fails
 		// the pull closed (the follower retries next cycle).
-		const auto vaultTokenFile = Utility::stdStringTrim(Utility::getenv("APPMESH_AUTH_REPLICATION_TOKEN_VAULT_TOKEN_FILE"));
+		const auto vaultTokenFile = Utility::getenvTrimmed(AuthReplication::ENV_VAULT_TOKEN_FILE);
 		VaultClient::Config config{vaultAddress, vaultTokenFile};
 		// A Vault list is N+1 requests; the TTL cache stops a flood from holding
 		// this worker. Only a successful list refreshes; an empty set is a result.
@@ -2132,7 +2132,10 @@ void RestHandler::apiAgentContainerEvent(const std::shared_ptr<HttpRequest> &mes
 		throw std::invalid_argument("unknown container event type <" + type + ">");
 
 	// Every accepted push refreshes the liveness marker; die events route to the owning app.
+	// The marker has no Windows reader (DockerApiProcess is not built there).
+#if !defined(_WIN32)
 	DockerApiProcess::noteContainerEventsAlive();
+#endif
 	if (type == "die")
 	{
 		const auto appName = GET_JSON_STR_VALUE(event, "app");

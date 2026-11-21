@@ -239,6 +239,8 @@ public:
 
 private:
 	std::shared_ptr<HttpRequestWithTimeout> releaseRepliedRequestLocked(std::shared_ptr<HttpRequestWithTimeout> &request);
+	/// Throws when the worker's process key does not match the accepted one; call with m_mutex held.
+	void verifyProcessKeyLocked(const std::string &processKey) const;
 
 private:
 	std::mutex m_mutex;

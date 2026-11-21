@@ -4,14 +4,13 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
-	"os"
 	"time"
 
 	"github.com/docker/docker/api/types/events"
 	"github.com/docker/docker/api/types/filters"
 
 	"github.com/laoshanxi/app-mesh/src/agent/pkg/cloud"
-	"github.com/laoshanxi/app-mesh/src/agent/pkg/config"
+
 	appmesh "github.com/laoshanxi/app-mesh/src/sdk/go"
 )
 
@@ -46,12 +45,7 @@ func StartContainerEventsPush(ctx context.Context) {
 
 // dockerEndpointConfigured mirrors RegisterContainerRoutes' gates: the
 // Docker.Enable switch, then a configured endpoint.
-func dockerEndpointConfigured() bool {
-	if !config.ConfigData.Docker.Enable {
-		return false
-	}
-	return os.Getenv("DOCKER_HOST") != "" || appmesh.IsFileExist(DockerSocketFilePath)
-}
+func dockerEndpointConfigured() bool { return dockerGateError() == nil }
 
 func runEventsSubscription(ctx context.Context) {
 	cli, err := engineClient()

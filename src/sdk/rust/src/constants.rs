@@ -19,6 +19,8 @@ pub const HTTP_HEADER_CONTENT_TYPE: &str = "Content-Type";
 pub const HTTP_HEADER_KEY_X_SEND_FILE_SOCKET: &str = "X-Send-File-Socket";
 pub const HTTP_HEADER_KEY_X_RECV_FILE_SOCKET: &str = "X-Recv-File-Socket";
 pub const HTTP_HEADER_KEY_X_INPUT_CLOSE: &str = "X-Input-Close";
+pub const HTTP_HEADER_KEY_X_APPMESH_PROCESS_KEY: &str = "X-AppMesh-Process-Key";
+pub const HTTP_HEADER_KEY_X_SUBSCRIPTION_ID: &str = "X-Subscription-Id";
 
 // HMAC request signature headers (docs/source/Security.md,
 // "Request replay protection and signatures"); names match the daemon's

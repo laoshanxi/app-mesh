@@ -74,7 +74,7 @@ std::string InternalCapability::issue(Audience audience, const std::string &work
 	payload["workflow_id"] = workflowId;
 	payload["run_id"] = runId;
 	payload["owner_principal_id"] = ownerPrincipalId;
-	payload["process_uuid"] = processUuid;
+	payload[JSON_KEY_process_uuid] = processUuid;
 	Json::Value operationsArray(Json::arrayValue);
 	for (const auto &operation : operations)
 		operationsArray.append(operation);
@@ -115,7 +115,7 @@ InternalCapability::Claims InternalCapability::verify(const std::string &capabil
 					  payload["workflow_id"].asString(),
 					  payload["run_id"].asString(),
 					  payload["owner_principal_id"].asString(),
-					  payload["process_uuid"].asString(),
+					  payload[JSON_KEY_process_uuid].asString(),
 					  {},
 					  payload["iat"].asInt64(),
 					  payload["exp"].asInt64()};
