@@ -2,6 +2,7 @@ package engine
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"maps"
 	"os"
@@ -727,6 +728,22 @@ func evaluateNeeds(job *models.Job, wf *models.Workflow, statusMu *sync.RWMutex)
 // the sub run id, and the failure reason (empty when none was recorded).
 func runSubWorkflow(ctx context.Context, client *appmesh.AppMeshClient, wfName string, inputs map[string]string,
 	depth int, opts Options) (int, map[string]string, string, string) {
+	baseDir := opts.WorkflowBaseDir
+	if baseDir == "" {
+		baseDir, _ = os.Getwd()
+	}
+	yamlPath := filepath.Join(baseDir, wfName, "workflow.yaml")
+	wf, err := parser.LoadWorkflow(yamlPath)
+	if err != nil {
+		// Existence precedes ownership so a missing workflow reports not-found
+		// instead of a misleading cross-owner denial.
+		if os.IsNotExist(errors.Unwrap(err)) {
+			logger.Error(fmt.Sprintf("sub-workflow %q: workflow not found", wfName))
+			return 1, nil, "", fmt.Sprintf("sub-workflow %q: workflow not found", wfName)
+		}
+		logger.Error(fmt.Sprintf("sub-workflow %q: load failed: %v", wfName, err))
+		return 1, nil, "", fmt.Sprintf("sub-workflow %q: load failed: %v", wfName, err)
+	}
 	// A parent must not feed its inputs into another owner's workflow: the
 	// child's step commands run under the child owner's execution identity, so
 	// a cross-owner call would execute commands as that owner.
@@ -738,16 +755,6 @@ func runSubWorkflow(ctx context.Context, client *appmesh.AppMeshClient, wfName s
 			return 1, nil, "",
 				fmt.Sprintf("sub-workflow %q is not owned by the calling workflow's owner", wfName)
 		}
-	}
-	baseDir := opts.WorkflowBaseDir
-	if baseDir == "" {
-		baseDir, _ = os.Getwd()
-	}
-	yamlPath := filepath.Join(baseDir, wfName, "workflow.yaml")
-	wf, err := parser.LoadWorkflow(yamlPath)
-	if err != nil {
-		logger.Error(fmt.Sprintf("sub-workflow %q: load failed: %v", wfName, err))
-		return 1, nil, "", fmt.Sprintf("sub-workflow %q: load failed: %v", wfName, err)
 	}
 	if wf.On == nil || wf.On.WorkflowCall == nil {
 		logger.Error(fmt.Sprintf("sub-workflow %q: not callable (missing on.workflow_call)", wfName))

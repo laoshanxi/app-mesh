@@ -67,6 +67,50 @@ func TestWorkflowRmAuthorizeStillDeniesNonOwnerOfExistingWorkflow(t *testing.T) 
 	}
 }
 
+// The daemon run_task gate admits workflow-runner/workflow-admin callers to the
+// system workflow App, so this per-action authorization is the RBAC boundary.
+// Pin the full 12-action matrix: every workflow-targeting action is denied for
+// a non-owner without workflow-admin, allowed for the owner and for a
+// workflow-admin holder; workflow_list passes everyone (its handler filters by
+// owner) and registering a NEW workflow is allowed for a runner (ownership is
+// then set to the caller).
+func TestAuthorizeActionMatrix(t *testing.T) {
+	h := newTestHandler(t)
+	writeWorkflowYaml(t, h, "owned", "owner-a")
+
+	targeted := []string{
+		"workflow_add", "workflow_get", "workflow_rm", "workflow_inputs",
+		"run", "rerun", "runs", "run_detail", "log", "step_log",
+	}
+	for _, action := range targeted {
+		req := Request{Action: action, Workflow: "owned", RunID: "r1", Job: "j", Step: "s", Content: "name: owned\n"}
+		if msg := h.authorize("runner-b", false, req); msg == "" {
+			t.Errorf("%s: a non-owner without workflow-admin must be denied", action)
+		}
+		if msg := h.authorize("owner-a", false, req); msg != "" {
+			t.Errorf("%s: the owner must pass, got %q", action, msg)
+		}
+		if msg := h.authorize("someone", true, req); msg != "" {
+			t.Errorf("%s: a workflow-admin holder must pass, got %q", action, msg)
+		}
+	}
+
+	// workflow_list delegates filtering to its handler, and cancel on an unknown
+	// run defers to the handler's not-found answer.
+	if msg := h.authorize("runner-b", false, Request{Action: "workflow_list"}); msg != "" {
+		t.Errorf("workflow_list must stay ungated here, got %q", msg)
+	}
+	if msg := h.authorize("runner-b", false, Request{Action: "cancel", RunID: "no-such-run"}); msg != "" {
+		t.Errorf("cancel of an unknown run must defer to the handler, got %q", msg)
+	}
+
+	// Registering a workflow the caller does not own is fine while the name is
+	// free (the registrant becomes the owner).
+	if msg := h.authorize("runner-b", false, Request{Action: "workflow_add", Workflow: "fresh"}); msg != "" {
+		t.Errorf("a runner must be able to register a new workflow, got %q", msg)
+	}
+}
+
 // TestNewPrincipalHTTPClientSchemeFollowsTransport pins the principal-lookup
 // endpoint: the default is the local TLS REST listener, plain transport
 // switches the scheme to http (a plaintext daemon), and APPMESH_ENGINE_URL

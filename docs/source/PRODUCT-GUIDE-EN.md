@@ -100,10 +100,10 @@ A first-class capability, built on the Claude Agent SDK. **Three enterprise scen
 
 #### Scenario 1 — An LLM chat window for every employee (Interactive mode)
 
-**Live token streaming** rides the task RPC itself: one `run_task_stream` call delivers every token as a partial and the final envelope at the end — on the shared app or a session worker alike, with no side-channel subscription. When a session needs context isolation, it gets its own **worker app** with a stable working directory; the agent remembers context across turns, and closing the session removes the worker app and its data automatically.
+**Live streaming** rides the task RPC itself: one `run_task_stream` call delivers each assistant message as a partial (not a per-token delta) plus the final envelope at the end — on the shared app or a session worker alike, with no side-channel subscription. When a session needs context isolation, it gets its own **worker app** with a stable working directory; the agent remembers context across turns, and closing the session removes the worker app and its data automatically.
 
 ```python
-# one call per turn, tokens stream live, final envelope closes it
+# one call per turn, assistant messages stream in, final envelope closes it
 for token in client.run_task_stream("llm-agent", json.dumps(
         {"action": "session_send", "session_id": "S1",
          "input": "Hi! Remember the number 7.", "stream": True}), timeout=180):

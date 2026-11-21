@@ -371,3 +371,97 @@ jobs:
 		}
 	}
 }
+
+// A missing sub-workflow must report not-found, not the ownership denial: the
+// existence check precedes the owner comparison, and a workflow owned by
+// someone else still reports the cross-owner denial.
+func TestSubWorkflowNotFoundReportsMissingBeforeOwnership(t *testing.T) {
+	dir := t.TempDir()
+	otherDir := filepath.Join(dir, "child-of-other")
+	if err := os.MkdirAll(otherDir, 0700); err != nil {
+		t.Fatal(err)
+	}
+	existing := "name: child-of-other\non:\n  workflow_call: {}\njobs:\n  j:\n    steps:\n      - name: s\n        if: \"1 == 2\"\n        command: echo hi\n"
+	if err := os.WriteFile(filepath.Join(otherDir, "workflow.yaml"), []byte(existing), 0600); err != nil {
+		t.Fatal(err)
+	}
+	owner := func(workflowName string) string {
+		if workflowName == "child-of-other" {
+			return "other-owner"
+		}
+		return "" // unknown workflows have no recorded owner
+	}
+
+	_, _, _, reason := runSubWorkflow(context.Background(), nil, "never-registered", nil, 1,
+		Options{WorkflowBaseDir: dir, OwnerPrincipal: "me", WorkflowOwner: owner})
+	if !strings.Contains(reason, `sub-workflow "never-registered": workflow not found`) ||
+		strings.Contains(reason, "not owned") {
+		t.Fatalf("reason %q, want the not-found error without the ownership denial", reason)
+	}
+
+	_, _, _, reason = runSubWorkflow(context.Background(), nil, "child-of-other", nil, 1,
+		Options{WorkflowBaseDir: dir, OwnerPrincipal: "me", WorkflowOwner: owner})
+	if !strings.Contains(reason, `is not owned by the calling workflow's owner`) {
+		t.Fatalf("reason %q, want the cross-owner denial to keep holding", reason)
+	}
+}
+
+// The P3 regression shape end to end: a parent step referencing an outputs key
+// the child's workflow_call never declares fails the parent step in the engine
+// with the missing key named — no literal ${{ }} reaches the shell.
+func TestSubWorkflowUndeclaredOutputKeyFailsReferencingStep(t *testing.T) {
+	dir := t.TempDir()
+	subDir := filepath.Join(dir, "sub-child")
+	if err := os.MkdirAll(subDir, 0700); err != nil {
+		t.Fatal(err)
+	}
+	child := `
+name: sub-child
+on:
+  workflow_call:
+    outputs:
+      echo_val:
+        value: "us-east-1"
+jobs:
+  j:
+    steps:
+      - name: echo
+        if: "1 == 2"
+        command: echo done
+`
+	if err := os.WriteFile(filepath.Join(subDir, "workflow.yaml"), []byte(child), 0600); err != nil {
+		t.Fatal(err)
+	}
+
+	wf := &models.Workflow{
+		Name: "parent",
+		Jobs: map[string]*models.Job{
+			"call": {Name: "call", Steps: []models.Step{
+				{Name: "call-child", Type: models.StepWorkflow, WorkflowRef: "sub-child"},
+				{Name: "use", Type: models.StepCommand,
+					Command: `echo answer=${{ steps.call-child.outputs.answer }}`},
+			}},
+		},
+	}
+	var snap map[string]map[string]any
+	code, _ := RunWithContext(context.Background(), wf, nil, nil, "run9", 0, Options{
+		WorkflowBaseDir: dir,
+		OnJobDone: func(_, _ string, _ string, steps map[string]map[string]any) { snap = steps },
+	})
+	if code != 1 {
+		t.Fatalf("exit %d, want 1 (an undeclared outputs key must fail the referencing step)", code)
+	}
+	s := snap["use"]
+	if s == nil || s["status"] != models.StatusFailure {
+		t.Fatalf("step result = %v, want failure", s)
+	}
+	if stdout, _ := s["stdout"].(string); !strings.Contains(stdout, `unresolved expression`) ||
+		!strings.Contains(stdout, `step "call-child" produced no output "answer"`) ||
+		strings.Contains(stdout, "bad substitution") {
+		t.Fatalf("step stdout = %q, want the engine error naming the missing key", stdout)
+	}
+	// The producer step itself stays successful: only the referencing step fails.
+	if s := snap["call-child"]; s == nil || s["status"] != models.StatusSuccess {
+		t.Fatalf("producer step result = %v, want success", s)
+	}
+}

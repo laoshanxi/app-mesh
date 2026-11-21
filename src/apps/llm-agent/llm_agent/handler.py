@@ -75,6 +75,9 @@ class Handler:
         sid = req.get("session_id", "")
         if not sid:
             return _err("session_id required")
+        user_input = str(req.get("input") or "")
+        if not user_input.strip():
+            return _err("input is required")  # a blank prompt would still burn a full agent turn
         if self.worker_session_id and sid != self.worker_session_id:
             return _err("this worker serves a different session")
 
@@ -102,11 +105,11 @@ class Handler:
                 stream = partial
             elif self.worker_session_id:
                 stream = lambda c: (sys.stdout.write(c), sys.stdout.flush())
-        user_input = req.get("input") or ""
         try:
             res = self._engine(user_input, cwd=cwd, continue_conversation=resume,
                                max_iterations=self._effective_max_iterations(req), stream=stream)
         except Exception as e:
+            session.discard_empty_workdir(cwd)  # don't strand the dir a failed first turn just created
             return _err(str(e))
         session.mark_started(cwd)  # only after a successful turn, so a failed first turn won't poison resume
         return _ok({"answer": res.answer, "iterations": res.iterations, "turn_tokens": res.turn_tokens})

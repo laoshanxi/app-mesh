@@ -211,11 +211,16 @@ TEST_CASE("RequestSignature verifyWithSecret accepts a correct signature and rej
 
 TEST_CASE("AuthReplication token file accepts per-follower tokens", "[security][replication]")
 {
-	SECTION("an unlabeled line is not an accepted entry")
+	SECTION("an unlabeled single-token line is accepted as the shared token")
 	{
+		// The writer side (appmesh-auth.sh issue_replication_token) emits a bare
+		// token per follower file; the parser must not drop those lines.
 		const std::string file = "abc123\n";
-		REQUIRE(AuthReplication::parseTokenFile(file).empty());
-		REQUIRE(AuthReplication::matchToken(file, "abc123").empty());
+		const auto tokens = AuthReplication::parseTokenFile(file);
+		REQUIRE(tokens.size() == 1);
+		REQUIRE(tokens[0].token == "abc123");
+		REQUIRE(tokens[0].label == "shared");
+		REQUIRE(AuthReplication::matchToken(file, "abc123") == "shared");
 		REQUIRE(AuthReplication::matchToken(file, "").empty());
 	}
 

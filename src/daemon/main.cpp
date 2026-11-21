@@ -178,6 +178,9 @@ int AppMeshDaemon::run(int argc, char *argv[])
 		startStartupApplications();
 		prewarmAuthentication();
 		initializeRestService();
+		// Listeners verified: only a process that can serve pulls the owner
+		// policy, so a bind-failed generation never writes the replica cache.
+		AuthReplicator::instance().start();
 #if !defined(_WIN32)
 		// Reconcile App Mesh labeled containers against the restored registry:
 		// leftovers of removed applications are logged (and deleted with
@@ -292,9 +295,8 @@ void AppMeshDaemon::initializeSecurity()
 	const static char fname[] = "AppMeshDaemon::initializeSecurity() ";
 
 	Security::init();
-	// Owner side: publish the cluster replication token; a follower's resident
-	// worker pulls the owner policy. No-op without the replication env config.
-	AuthReplicator::instance().start();
+	// The replication worker starts only after the listeners verified bind (see
+	// run()): a process that cannot serve must not pull, apply or persist.
 
 	LOG_INF << fname << "Security initialized";
 }

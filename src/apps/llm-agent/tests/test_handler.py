@@ -1,8 +1,9 @@
 """Handler dispatch — turn routing to an injected fake engine (no SDK / network).
 
 Guards the App-Mesh-facing contract: continue_conversation continuity keyed by the
-session's cwd (first turn fresh, later turns continue), worker scoping, the shared-App
-streaming refusal, close dropping the workdir, and robustness to a malformed payload.
+session's cwd (first turn fresh, later turns continue), the blank-input guard,
+worker scoping, task-RPC streaming on shared App and workers, close dropping the
+workdir, and robustness to a malformed payload.
 """
 import json
 import os
@@ -46,6 +47,17 @@ class HandlerTest(unittest.TestCase):
         h, _, _ = _handler()
         self.assertEqual(h.dispatch(json.dumps({"action": "session_open"}))["status"], "error")
 
+    def test_blank_input_is_rejected(self):
+        # A missing or blank "input" must fail fast instead of silently burning a
+        # full agent turn on an empty prompt.
+        h, eng, _ = _handler()
+        for fields in ({"session_id": "s1"}, {"session_id": "s1", "input": ""},
+                       {"session_id": "s1", "input": "   "}):
+            r = _send(h, **fields)
+            self.assertEqual(r["status"], "error")
+            self.assertIn("input", r["message"])
+        self.assertFalse(eng.calls)  # never reached the engine
+
     def test_send_runs_engine_and_returns_answer(self):
         h, eng, _ = _handler()
         r = _send(h, session_id="s1", input="hi")
@@ -82,11 +94,16 @@ class HandlerTest(unittest.TestCase):
         self.assertEqual(eng.calls[0]["max_iterations"], 3)
         self.assertEqual(eng.calls[1]["max_iterations"], 5)
 
-    def test_streaming_refused_on_shared_app(self):
+    def test_shared_app_streams_partials(self):
+        # Streaming rides the task RPC on the shared App too: partials reach the
+        # streaming caller and the engine saw the stream sink.
         h, eng, _ = _handler()
-        r = _send(h, session_id="s1", input="hi", stream=True)
-        self.assertEqual(r["status"], "error")
-        self.assertFalse(eng.calls)  # never reached the engine
+        chunks = []
+        r = h.dispatch(json.dumps({"action": "session_send", "session_id": "s1",
+                                   "input": "hi", "stream": True}), partial=chunks.append)
+        self.assertEqual(r["status"], "ok")
+        self.assertEqual(chunks, ["hi"])
+        self.assertTrue(eng.calls[0]["streamed"])
 
     def test_worker_streams_and_scopes_to_its_session(self):
         h, eng, _ = _handler(worker_session_id="W")
@@ -120,6 +137,19 @@ class HandlerTest(unittest.TestCase):
         self.assertEqual(_send(h, session_id="s1", input="two")["status"], "ok")
         self.assertFalse(eng.calls[0]["continue"])
         self.assertFalse(eng.calls[1]["continue"])  # not poisoned by the dir existing
+
+    def test_failed_first_turn_leaves_no_empty_workdir(self):
+        # The empty session directory created before a failed first turn is removed;
+        # a directory with any content (a turn that did write files) survives.
+        h, _, ws = _handler(raise_first=True)
+        self.assertEqual(_send(h, session_id="s1", input="one")["status"], "error")
+        self.assertFalse(os.path.isdir(session.workdir(ws, "s1")))
+        keep, _, ws2 = _handler(raise_first=True)
+        os.makedirs(session.workdir(ws2, "s1"), exist_ok=True)
+        with open(os.path.join(session.workdir(ws2, "s1"), "artifact.txt"), "w") as f:
+            f.write("x")
+        self.assertEqual(_send(keep, session_id="s1", input="one")["status"], "error")
+        self.assertTrue(os.path.isdir(session.workdir(ws2, "s1")))  # non-empty dir untouched
 
 
 if __name__ == "__main__":

@@ -50,6 +50,7 @@ endpoints, requests use an OAuth access token in the
 | POST | `/appmesh/app/{name}/disable` | Disable a non-system application |
 | GET | `/appmesh/app/{name}/output` | Read application output |
 | GET | `/appmesh/app/{name}/output/stream` | Stream application output over server-sent events |
+| GET | `/appmesh/app/{name}/health` | Get application health |
 
 ### Application field notes
 
@@ -57,7 +58,6 @@ endpoints, requests use an OAuth access token in the
 - `stdout_backup_count` — output files kept per application across restarts (default `0`: each start replaces the previous run's output). Ignored (with a warning) for Docker applications: their output is fetched from the container, not rotated files.
 - `daily_limitation.daily_start` / `daily_end` — seconds since UTC midnight (integers).
 - An application whose `end_time` is in the past, or whose `interval` is not a positive duration, is rejected with `400`.
-| GET | `/appmesh/app/{name}/health` | Get application health |
 
 Applications use `owner_principal_id`; REST input cannot create
 `system: true` applications or choose an arbitrary process user.
@@ -126,7 +126,9 @@ Lifecycle semantics:
 | POST | `/appmesh/app/{name}/input` | Inject bytes into the stdin of a pipe-stdin application |
 
 The streaming routes answer `text/event-stream` frames (partials, final
-result, terminal status) on the plain HTTP listener. See [Streaming.md](Streaming.md)
+result, terminal status) on the engine's native listener (default wss/https
+6058 — the agent REST listener 6060 carries no streaming routes). See
+[Streaming.md](Streaming.md)
 for the event contract, the stdin pipe mode, and the SDK generator APIs.
 
 ### Client disconnect during `syncrun`
@@ -153,6 +155,11 @@ there. The run then continues until it finishes or reaches its timeout.
 | GET | `/appmesh/file/download` | Download a file |
 | POST | `/appmesh/file/upload` | Upload a file |
 | DELETE | `/appmesh/file/delete` | Delete a file (guarded by the dedicated file-delete permission) |
+| GET | `/appmesh/labels` | List host labels |
+| PUT | `/appmesh/label/{label}` | Set a host label |
+| DELETE | `/appmesh/label/{label}` | Delete a host label |
+| GET | `/appmesh/config` | Get runtime configuration |
+| POST | `/appmesh/config` | Update runtime configuration |
 
 ### File transfer notes
 
@@ -162,11 +169,6 @@ there. The run then continues until it finishes or reaches its timeout.
 - The daemon's own installation tree (the directory that holds `bin/`, `ssl/`, `config/`, `script/` and `work/`, for example `/opt/appmesh`) is refused on both directions regardless of `REST.FileAllowedBaseDir`; symbolic links into it are resolved before the check. The `work/tmp` scratch subtree inside it is the one exchangeable exception.
 - An unset `REST.FileAllowedBaseDir` (the packaged default) jails transfers to the daemon's work directory tree (`BaseConfig.WorkingDirectory`, `/opt/appmesh/work` by default). Combined with the installation-tree exclusion above, the exchangeable default is the `work/tmp` scratch area. Set the option to an absolute path to allow transfers in another tree; every absolute path outside the jail is refused for download, upload, and delete.
 - Pseudo filesystems (`/proc`, `/sys`, `/dev`) are refused on every transfer: their files stat as regular size-0 files and would otherwise download as empty `200` bodies.
-| GET | `/appmesh/labels` | List host labels |
-| PUT | `/appmesh/label/{label}` | Set a host label |
-| DELETE | `/appmesh/label/{label}` | Delete a host label |
-| GET | `/appmesh/config` | Get runtime configuration |
-| POST | `/appmesh/config` | Update runtime configuration |
 
 ## Resources and metrics
 

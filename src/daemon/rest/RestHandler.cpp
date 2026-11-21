@@ -216,6 +216,28 @@ namespace
 			collectUnknownConfigKeys(incoming[key], schema[key], prefix + key + ".", unknown);
 		}
 	}
+
+	// Packaged workflow roles (authorization.yaml) admitted by the run_task gate.
+	constexpr auto WORKFLOW_RUNNER_ROLE = "appmesh-workflow-runner";
+	constexpr auto PERMISSION_workflow_admin = "workflow-admin";
+
+	// Whether the caller holds a workflow role: the packaged runner role or the
+	// workflow-admin permission. Store lookups throw for an unprovisioned
+	// principal; such a caller simply falls back to the owner/EDIT gate.
+	bool hasWorkflowTaskRole(const std::string &principalId)
+	{
+		try
+		{
+			if (const auto principal = Security::instance()->principal(principalId);
+				principal && principal->roles().count(WORKFLOW_RUNNER_ROLE) != 0)
+				return true;
+			return Security::instance()->permissions(principalId).count(PERMISSION_workflow_admin) != 0;
+		}
+		catch (const std::exception &)
+		{
+			return false;
+		}
+	}
 }
 
 // 1. Authentication
@@ -893,7 +915,13 @@ void RestHandler::apiAppEnable(const std::shared_ptr<HttpRequest> &message)
 		message->reply(web::http::status_codes::Conflict);
 		return;
 	}
-	message->reply(web::http::status_codes::OK, Utility::text2json(std::string("Enable <") + appName + "> success."));
+	// Invoke the scheduler pass immediately like registration does, so the first
+	// start (and its failure's last_error) is settled before this response — the
+	// caller sees the same state an add would report, not a fixed success text.
+	app->execute(nullptr, false);
+	auto result = app->AsJson(true);
+	addOwnerDisplayName(result);
+	message->reply(web::http::status_codes::OK, result);
 }
 
 void RestHandler::apiAppDisable(const std::shared_ptr<HttpRequest> &message)
@@ -1944,7 +1972,7 @@ void RestHandler::apiRunSync(const std::shared_ptr<HttpRequest> &message)
 
 void RestHandler::apiSendTask(const std::shared_ptr<HttpRequest> &message)
 {
-	permissionCheck(message, PERMISSION_KEY_run_task);
+	const auto principalId = permissionCheck(message, PERMISSION_KEY_run_task);
 
 	// Short default so a stuck target can't hold the app's active slot for days; override via ?timeout=.
 	int timeout = getHttpQueryValue(*message, HTTP_QUERY_KEY_timeout, DEFAULT_RUN_TASK_TIMEOUT_SECONDS, 0,
@@ -1953,7 +1981,11 @@ void RestHandler::apiSendTask(const std::shared_ptr<HttpRequest> &message)
 	auto appName = regexSearch(path, REST_PATH_APP_TASK);
 
 	auto app = Configuration::instance()->getApp(appName);
-	checkAppAccessPermission(message, app, true);
+	// Workflow actions enforce per-action owner/admin RBAC inside the Engine
+	// capability, so the system workflow App admits the workflow roles at this
+	// gate; every other App keeps the owner/EDIT gate.
+	if (appName != WORKFLOW_APP_NAME || !hasWorkflowTaskRole(principalId))
+		checkAppAccessPermission(message, app, true);
 	auto asyncRequest = std::make_shared<HttpRequestWithTimeout>(message);
 	asyncRequest->initTimer(timeout);
 	app->sendTask(asyncRequest);

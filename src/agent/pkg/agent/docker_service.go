@@ -50,7 +50,26 @@ const (
 	// Ownership labels: cleanup deletes only containers it owns.
 	labelManaged = "appmesh.managed"
 	labelApp     = "appmesh.app"
+	// Which node owns the container: nodes sharing one Docker engine (sibling
+	// containers, a common docker.sock) must never judge or delete each other's.
+	labelNode = "appmesh.node"
 )
+
+// nodeIdentity is the OS hostname; the daemon derives the identical value on
+// the same host, so both sides agree on what "this node" owns.
+func nodeIdentity() string {
+	host, err := os.Hostname()
+	if err != nil || host == "" {
+		return "unknown-node"
+	}
+	return host
+}
+
+// ownedByUs reports whether the labels prove App Mesh ownership of this exact
+// application on this exact node.
+func ownedByUs(labels map[string]string, app string) bool {
+	return labels[labelManaged] == "true" && labels[labelApp] == app && labels[labelNode] == nodeIdentity()
+}
 
 // One shared engine client for the whole agent; the SDK negotiates the API version.
 var (
@@ -98,6 +117,12 @@ func RegisterContainerRoutes(router *mux.Router) error {
 	s := router.PathPrefix(ContainerPathPrefix).Subrouter()
 	s.Use(func(next http.Handler) http.Handler {
 		return requirePSK(listenIPs, func(w http.ResponseWriter, r *http.Request) {
+			// Docker.Enable hot-reloads (a SIGHUP / PUT /config rewrites the file the
+			// agent's config watcher picks up): a disabled switch must stop serving.
+			if err := dockerGateError(); err != nil {
+				http.Error(w, "container service disabled: "+err.Error(), http.StatusServiceUnavailable)
+				return
+			}
 			ctx, cancel := context.WithTimeout(r.Context(), requestTimeout)
 			defer cancel()
 			next.ServeHTTP(w, r.WithContext(ctx))
@@ -531,7 +556,12 @@ func handleContainerList(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusBadGateway)
 		return
 	}
-	filter := filters.NewArgs(filters.Arg("label", labelManaged+"=true"))
+	// Only this node's containers: a shared engine hosts sibling nodes too, and
+	// their leftovers are theirs to sweep, not ours.
+	filter := filters.NewArgs(
+		filters.Arg("label", labelManaged+"=true"),
+		filters.Arg("label", labelNode+"="+nodeIdentity()),
+	)
 	summaries, err := cli.ContainerList(r.Context(), container.ListOptions{All: true, Filters: filter})
 	if err != nil {
 		engineError(w, err)
@@ -643,6 +673,10 @@ func deleteOwnedContainer(ctx context.Context, cli *client.Client, name, app str
 	if labeledApp != app {
 		return "", errdefs.Conflict(fmt.Errorf("container name <%s> is owned by application <%s>", name, labeledApp))
 	}
+	if labels[labelNode] != nodeIdentity() {
+		return "", errdefs.Conflict(fmt.Errorf("container name <%s> is owned by node <%s>, not this node <%s>",
+			name, labels[labelNode], nodeIdentity()))
+	}
 
 	// Leftovers get the SIGTERM grace and log archive, not the force shortcut.
 	timeout := graceSeconds
@@ -657,6 +691,39 @@ func deleteOwnedContainer(ctx context.Context, cli *client.Client, name, app str
 		return "", err
 	}
 	return archived, nil
+}
+
+// adoptableOrphan reports the orphan to re-bind when the daemon asked for
+// adoption: owned by this node and application, still running, and still on the
+// image the definition asks for (any other leftover goes through replacement).
+func adoptableOrphan(ctx context.Context, cli *client.Client, name, app, image string) (inspectState, bool, error) {
+	insp, err := inspectContainer(ctx, cli, name)
+	if err != nil {
+		if errdefs.IsNotFound(err) {
+			return inspectState{}, false, nil
+		}
+		return inspectState{}, false, err
+	}
+	if insp.State == nil || !insp.State.Running || !ownedByUs(inspConfigLabels(insp), app) || !sameImage(insp.Config, image) {
+		return inspectState{}, false, nil
+	}
+	return projectInspect(insp), true, nil
+}
+
+func inspConfigLabels(insp container.InspectResponse) map[string]string {
+	if insp.Config == nil {
+		return map[string]string{}
+	}
+	return insp.Config.Labels
+}
+
+// sameImage keeps adoption away from a stale orphan whose image no longer
+// matches the definition; an empty image definition never blocks.
+func sameImage(config *container.Config, image string) bool {
+	if image == "" {
+		return true
+	}
+	return config != nil && config.Image == image
 }
 
 // fetchLogText returns the container's demultiplexed, timestamp-stripped log
@@ -697,6 +764,7 @@ func handleContainerRun(w http.ResponseWriter, r *http.Request) {
 		Name         string          `json:"name"`
 		App          string          `json:"app"`
 		LegacyName   string          `json:"legacyName"`
+		AdoptRunning bool            `json:"adoptRunning"`
 		GraceSeconds int             `json:"graceSeconds"`
 		CreateBody   json.RawMessage `json:"createBody"`
 	}
@@ -725,6 +793,7 @@ func handleContainerRun(w http.ResponseWriter, r *http.Request) {
 	}
 	cfg.Labels[labelManaged] = "true"
 	cfg.Labels[labelApp] = body.App
+	cfg.Labels[labelNode] = nodeIdentity()
 	hostConfig := cfg.HostConfig
 	if hostConfig == nil {
 		hostConfig = &container.HostConfig{}
@@ -732,9 +801,23 @@ func handleContainerRun(w http.ResponseWriter, r *http.Request) {
 
 	ctx := r.Context()
 	var replacedLogs strings.Builder
+	var adopted *inspectState
 	for _, name := range []string{body.Name, body.LegacyName} {
 		if name == "" {
 			continue
+		}
+		// A still-running orphan of this very application keeps its in-container
+		// state: re-bind it instead of the delete-and-recreate (node crash recovery).
+		if name == body.Name && body.AdoptRunning {
+			state, adoptable, err := adoptableOrphan(ctx, cli, name, body.App, cfg.Config.Image)
+			if err != nil {
+				engineError(w, err)
+				return
+			}
+			if adoptable {
+				adopted = &state
+				break
+			}
 		}
 		logs, err := deleteOwnedContainer(ctx, cli, name, body.App, body.GraceSeconds)
 		if err != nil {
@@ -742,6 +825,16 @@ func handleContainerRun(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		replacedLogs.WriteString(logs)
+	}
+	if adopted != nil {
+		writeJSON(w, http.StatusOK, map[string]any{
+			"id":       adopted.ID,
+			"pid":      adopted.Pid,
+			"running":  adopted.Running,
+			"exitCode": adopted.ExitCode,
+			"adopted":  true,
+		})
+		return
 	}
 
 	created, err := cli.ContainerCreate(ctx, &cfg.Config, hostConfig, nil, nil, body.Name)

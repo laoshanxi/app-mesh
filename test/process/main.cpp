@@ -3,6 +3,7 @@
 // cannot reach deterministically (signals and poller wakeups are not reliably
 // deliverable through the daemon).
 #define CATCH_CONFIG_MAIN // This tells Catch to provide a main() - only do this in one cpp file
+#include "../../src/daemon/process/DockerApiProcess.h"
 #include "../../src/daemon/process/ForkExec.h"
 #include "../../src/daemon/process/StdoutPump.h"
 #include "../../src/daemon/rest/drogon/FileTransferHandler.h"
@@ -378,6 +379,130 @@ TEST_CASE("FileUploadInfo overwrite commit", "[rest][security]")
 		};
 		statMode(after);
 		REQUIRE((after.st_mode & 07777) == 0644);
+	}
+
+	fs::remove_all(jail, ec);
+}
+#endif
+
+#if !defined(_WIN32)
+// Container ownership must carry the node: nodes sharing one Docker engine are
+// otherwise indistinguishable (mutual delete/adopt/sweep of same-named apps).
+TEST_CASE("Docker container naming carries the node identity", "[docker]")
+{
+	REQUIRE_FALSE(dockerNodeIdentity().empty());
+	REQUIRE(DockerApiProcess::namespacedContainerName("demo") ==
+			"appmesh-" + dockerNodeIdentity() + "-demo");
+}
+
+// Shell mode's generated script travels inside the command, never as a host
+// bind a sibling dockerd cannot resolve.
+TEST_CASE("inlineShellScriptCmd inlines the shell-mode script bind", "[docker]")
+{
+	namespace fs = std::filesystem;
+	const auto jail = fs::temp_directory_path() / "appmesh_inline_shell";
+	std::error_code ec;
+	fs::remove_all(jail, ec);
+	fs::create_directories(jail);
+	const auto scriptPath = (jail / "appmesh.demo.x1.sh").string();
+	const std::string scriptBody = "#!/bin/bash\nset -e\ncd /tmp\necho hi\n";
+	{
+		std::ofstream out(scriptPath, std::ios::binary);
+		out << scriptBody;
+	}
+
+	SECTION("bash <script> plus the same-path bind is inlined as bash -c")
+	{
+		Json::Value body;
+		body["Cmd"][0] = "bash";
+		body["Cmd"][1] = scriptPath;
+		body["HostConfig"]["Binds"][0] = scriptPath + ":" + scriptPath + ":ro";
+		body["HostConfig"]["Binds"][1] = "vol:/data";
+
+		inlineShellScriptCmd(body);
+
+		REQUIRE(body["Cmd"].size() == 3);
+		REQUIRE(body["Cmd"][0].asString() == "bash");
+		REQUIRE(body["Cmd"][1].asString() == "-c");
+		// multi-line content, no re-escaping; the generated header cd is made
+		// tolerant so a generic image without the daemon path still boots
+		REQUIRE(body["Cmd"][2].asString() ==
+				"#!/bin/bash\nset -e\ncd /tmp 2>/dev/null || echo 'App Mesh: working dir </tmp> not present in this "
+				"container, using the image default' >&2\necho hi\n");
+		REQUIRE(body["HostConfig"]["Binds"].size() == 1); // only the user bind remains
+		REQUIRE(body["HostConfig"]["Binds"][0].asString() == "vol:/data");
+	}
+
+	SECTION("a user cd line outside the generated header stays untouched")
+	{
+		const std::string userScript = "#!/bin/bash\nset -e\ncd /opt\ncd /tmp\necho hi\n";
+		{
+			std::ofstream out(scriptPath, std::ios::binary);
+			out << userScript;
+		}
+		Json::Value body;
+		body["Cmd"][0] = "bash";
+		body["Cmd"][1] = scriptPath;
+		body["HostConfig"]["Binds"][0] = scriptPath + ":" + scriptPath + ":ro";
+
+		inlineShellScriptCmd(body);
+
+		REQUIRE(body["Cmd"][2].asString() ==
+				"#!/bin/bash\nset -e\ncd /opt 2>/dev/null || echo 'App Mesh: working dir </opt> not present in this "
+				"container, using the image default' >&2\ncd /tmp\necho hi\n"); // the user's own cd survives
+	}
+
+	SECTION("a longer bash argv keeps its shape")
+	{
+		Json::Value body;
+		body["Cmd"][0] = "bash";
+		body["Cmd"][1] = scriptPath;
+		body["Cmd"][2] = "-x";
+		body["HostConfig"]["Binds"][0] = scriptPath + ":" + scriptPath + ":ro";
+
+		inlineShellScriptCmd(body);
+
+		REQUIRE(body["Cmd"].size() == 3);
+		REQUIRE(body["Cmd"][1].asString() == scriptPath);
+	}
+
+	SECTION("a bash script without its own bind stays untouched")
+	{
+		Json::Value body;
+		body["Cmd"][0] = "bash";
+		body["Cmd"][1] = scriptPath;
+		body["HostConfig"]["Binds"][0] = "vol:/data";
+
+		inlineShellScriptCmd(body);
+
+		REQUIRE(body["Cmd"].size() == 2);
+		REQUIRE(body["Cmd"][1].asString() == scriptPath);
+	}
+
+	SECTION("a bind whose script is missing locally stays untouched")
+	{
+		const auto missing = (jail / "nope.sh").string();
+		Json::Value body;
+		body["Cmd"][0] = "bash";
+		body["Cmd"][1] = missing;
+		body["HostConfig"]["Binds"][0] = missing + ":" + missing + ":ro";
+
+		inlineShellScriptCmd(body);
+
+		REQUIRE(body["Cmd"].size() == 2);
+		REQUIRE(body["HostConfig"]["Binds"].size() == 1);
+	}
+
+	SECTION("a create body without a command gains no members")
+	{
+		Json::Value body;
+		body["Image"] = "alpine:3.21"; // ENTRYPOINT-only image: no Cmd, no Binds
+
+		inlineShellScriptCmd(body);
+
+		REQUIRE(body.isMember("Image"));
+		REQUIRE_FALSE(body.isMember("Cmd"));      // no null members inserted
+		REQUIRE_FALSE(body.isMember("HostConfig"));
 	}
 
 	fs::remove_all(jail, ec);

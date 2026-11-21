@@ -36,6 +36,7 @@ type fakeEngine struct {
 type fakeContainer struct {
 	id      string
 	name    string
+	image   string
 	running bool
 	pid     int
 	labels  map[string]string
@@ -106,6 +107,7 @@ func (f *fakeEngine) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	case path == "/containers/create":
 		name := r.URL.Query().Get("name")
 		var body struct {
+			Image  string
 			Labels map[string]string
 		}
 		_ = json.NewDecoder(r.Body).Decode(&body)
@@ -117,6 +119,7 @@ func (f *fakeEngine) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		c := &fakeContainer{
 			id:      fmt.Sprintf("%s%d", prefix, f.nextID),
 			name:    name,
+			image:   body.Image,
 			running: true,
 			pid:     4242,
 			labels:  body.Labels,
@@ -187,12 +190,29 @@ func (f *fakeEngine) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		_ = json.NewEncoder(w).Encode(map[string]any{"ID": "exec1", "Running": false, "ExitCode": f.execExit})
 
 	case path == "/containers/json":
+		// Evaluate the label filters the real engine would apply; the SDK encodes
+		// them as {"label": {"key=value": true}} ("key" alone = key must exist).
+		var parsed map[string]map[string]bool
+		if raw := r.URL.Query().Get("filters"); raw != "" {
+			_ = json.Unmarshal([]byte(raw), &parsed)
+		}
 		list := []map[string]any{}
 		for key, c := range f.containers {
 			if key != c.id { // skip name aliases pointing at the same container
 				continue
 			}
-			if c.labels[labelManaged] == "true" {
+			matches := true
+			for expr := range parsed["label"] {
+				keyWant, valWant, hasValue := strings.Cut(expr, "=")
+				if hasValue {
+					if c.labels[keyWant] != valWant {
+						matches = false
+					}
+				} else if c.labels[keyWant] == "" {
+					matches = false
+				}
+			}
+			if matches {
 				list = append(list, map[string]any{
 					"Id":     c.id,
 					"Names":  []string{"/" + c.name},
@@ -216,6 +236,7 @@ func (f *fakeEngine) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			"Name":  "/" + c.name,
 			"State": map[string]any{"Running": c.running, "Pid": c.pid, "ExitCode": 3, "Health": map[string]any{"Status": "healthy"}},
 			"Config": map[string]any{
+				"Image":  c.image,
 				"Labels": c.labels,
 				"Tty":    c.labels != nil && c.labels["tty"] == "true",
 			},
@@ -404,8 +425,9 @@ func TestContainerRun(t *testing.T) {
 	engine := newFakeEngine()
 	call := newTestService(t, engine)
 
-	// A leftover labeled for this app is replaced and its logs are returned.
-	leftover := &fakeContainer{id: "old1", name: "appmesh-demo", running: false, labels: map[string]string{labelManaged: "true", labelApp: "demo"}}
+	// A leftover labeled for this app and this node is replaced and its logs are returned.
+	leftover := &fakeContainer{id: "old1", name: "appmesh-demo", running: false,
+		labels: map[string]string{labelManaged: "true", labelApp: "demo", labelNode: nodeIdentity()}}
 	engine.containers["old1"] = leftover
 	engine.containers["appmesh-demo"] = leftover
 	engine.logsByID["old1"] = []byte("leftover line\n")
@@ -419,7 +441,7 @@ func TestContainerRun(t *testing.T) {
 		t.Fatalf("replaced container logs missing: %s", body)
 	}
 	created := engine.containerByRef("appmesh-demo")
-	if created == nil || created.labels[labelApp] != "demo" || created.labels[labelManaged] != "true" {
+	if created == nil || created.labels[labelApp] != "demo" || created.labels[labelManaged] != "true" || created.labels[labelNode] != nodeIdentity() {
 		t.Fatalf("ownership labels not stamped: %+v", created)
 	}
 
@@ -433,6 +455,20 @@ func TestContainerRun(t *testing.T) {
 		t.Fatalf("foreign occupant: %d %s", resp.StatusCode, body)
 	}
 
+	// An occupant of another node on the shared engine is never deleted either.
+	sibling := &fakeContainer{id: "sb1", name: "appmesh-shared", running: true,
+		labels: map[string]string{labelManaged: "true", labelApp: "mine", labelNode: "appmesh_other_node"}}
+	engine.containers["sb1"] = sibling
+	engine.containers["appmesh-shared"] = sibling
+	resp, body = call(http.MethodPost, "/run",
+		`{"name":"appmesh-shared","app":"mine","legacyName":"mine","createBody":{"Image":"alpine"}}`)
+	if resp.StatusCode != http.StatusConflict || !strings.Contains(body, "owned by node <appmesh_other_node>") {
+		t.Fatalf("sibling node occupant: %d %s", resp.StatusCode, body)
+	}
+	if engine.containerByRef("appmesh-shared") == nil {
+		t.Fatal("another node's container must survive")
+	}
+
 	// An unlabeled occupant is never deleted.
 	unlabeled := &fakeContainer{id: "un1", name: "appmesh-plain", running: true}
 	engine.containers["un1"] = unlabeled
@@ -444,6 +480,120 @@ func TestContainerRun(t *testing.T) {
 	}
 	if engine.containerByRef("appmesh-plain") == nil {
 		t.Fatal("unlabeled occupant must survive")
+	}
+}
+
+// A still-running orphan of this very application is re-bound (adopted) instead
+// of being deleted and recreated.
+func TestRunAdoptsOwnedRunningOrphan(t *testing.T) {
+	engine := newFakeEngine()
+	call := newTestService(t, engine)
+
+	orphan := &fakeContainer{id: "orph1", name: "appmesh-demo", image: "alpine:3.19", running: true, pid: 777,
+		labels: map[string]string{labelManaged: "true", labelApp: "demo", labelNode: nodeIdentity()}}
+	engine.containers["orph1"] = orphan
+	engine.containers["appmesh-demo"] = orphan
+
+	resp, body := call(http.MethodPost, "/run",
+		`{"name":"appmesh-demo","app":"demo","legacyName":"demo","adoptRunning":true,"createBody":{"Image":"alpine:3.19"}}`)
+	if resp.StatusCode != http.StatusOK || !strings.Contains(body, `"adopted":true`) || !strings.Contains(body, `"pid":777`) {
+		t.Fatalf("adopt: %d %s", resp.StatusCode, body)
+	}
+	adopted := engine.containerByRef("appmesh-demo")
+	if adopted == nil || adopted.id != "orph1" {
+		t.Fatalf("adopted container did not survive: %+v", engine.containers)
+	}
+	for ref, c := range engine.containers {
+		if strings.HasPrefix(c.id, "cid") {
+			t.Fatalf("a new container was created during adoption: %s %+v", ref, c)
+		}
+	}
+
+	// A stopped orphan does not qualify: it is replaced.
+	orphan.running = false
+	resp, body = call(http.MethodPost, "/run",
+		`{"name":"appmesh-demo","app":"demo","legacyName":"demo","adoptRunning":true,"createBody":{"Image":"alpine:3.19"}}`)
+	if resp.StatusCode != http.StatusOK || strings.Contains(body, `"adopted":true`) {
+		t.Fatalf("stopped orphan must be replaced: %d %s", resp.StatusCode, body)
+	}
+	if engine.containerByRef("orph1") != nil {
+		t.Fatal("stopped orphan was not replaced")
+	}
+}
+
+// Adoption stays away from foreign owners and stale images.
+func TestRunAdoptGuards(t *testing.T) {
+	engine := newFakeEngine()
+	call := newTestService(t, engine)
+
+	// Another node's running container is never adopted.
+	sibling := &fakeContainer{id: "sb1", name: "appmesh-demo", image: "alpine:3.19", running: true,
+		labels: map[string]string{labelManaged: "true", labelApp: "demo", labelNode: "appmesh_other_node"}}
+	engine.containers["sb1"] = sibling
+	engine.containers["appmesh-demo"] = sibling
+	resp, body := call(http.MethodPost, "/run",
+		`{"name":"appmesh-demo","app":"demo","legacyName":"demo","adoptRunning":true,"createBody":{"Image":"alpine:3.19"}}`)
+	if resp.StatusCode != http.StatusConflict || !strings.Contains(body, "owned by node <appmesh_other_node>") {
+		t.Fatalf("sibling adoption attempt: %d %s", resp.StatusCode, body)
+	}
+	if engine.containerByRef("sb1") == nil {
+		t.Fatal("another node's container must survive")
+	}
+
+	// A same-node running orphan on a different image is stale: replaced.
+	engine = newFakeEngine()
+	call = newTestService(t, engine)
+	stale := &fakeContainer{id: "st1", name: "appmesh-demo", image: "alpine:3.17", running: true,
+		labels: map[string]string{labelManaged: "true", labelApp: "demo", labelNode: nodeIdentity()}}
+	engine.containers["st1"] = stale
+	engine.containers["appmesh-demo"] = stale
+	resp, body = call(http.MethodPost, "/run",
+		`{"name":"appmesh-demo","app":"demo","legacyName":"demo","adoptRunning":true,"createBody":{"Image":"alpine:3.19"}}`)
+	if resp.StatusCode != http.StatusOK || strings.Contains(body, `"adopted":true`) {
+		t.Fatalf("stale-image orphan must be replaced: %d %s", resp.StatusCode, body)
+	}
+	if engine.containerByRef("st1") != nil {
+		t.Fatal("stale orphan was not replaced")
+	}
+
+	// On-demand (one-shot) runs never ask for adoption: fresh container every time.
+	engine = newFakeEngine()
+	call = newTestService(t, engine)
+	task := &fakeContainer{id: "ts1", name: "appmesh-task_1", image: "alpine:3.19", running: true,
+		labels: map[string]string{labelManaged: "true", labelApp: "task_1", labelNode: nodeIdentity()}}
+	engine.containers["ts1"] = task
+	engine.containers["appmesh-task_1"] = task
+	resp, body = call(http.MethodPost, "/run",
+		`{"name":"appmesh-task_1","app":"task_1","legacyName":"","adoptRunning":false,"createBody":{"Image":"alpine:3.19"}}`)
+	if resp.StatusCode != http.StatusOK || strings.Contains(body, `"adopted":true`) {
+		t.Fatalf("one-shot run must not adopt: %d %s", resp.StatusCode, body)
+	}
+	if engine.containerByRef("ts1") != nil {
+		t.Fatal("one-shot leftover was not replaced")
+	}
+}
+
+// The sweep source list carries only this node's labeled containers.
+func TestContainerListNodeScoped(t *testing.T) {
+	engine := newFakeEngine()
+	mine := &fakeContainer{id: "ls1", name: "appmesh-listed", running: true,
+		labels: map[string]string{labelManaged: "true", labelApp: "listed", labelNode: nodeIdentity()}}
+	engine.containers["ls1"] = mine
+	engine.containers["appmesh-listed"] = mine
+	sibling := &fakeContainer{id: "sb1", name: "appmesh-foreign", running: true,
+		labels: map[string]string{labelManaged: "true", labelApp: "foreign", labelNode: "appmesh_other_node"}}
+	engine.containers["sb1"] = sibling
+	engine.containers["appmesh-foreign"] = sibling
+	stranger := &fakeContainer{id: "st1", name: "stranger", running: true}
+	engine.containers["st1"] = stranger
+	call := newTestService(t, engine)
+
+	resp, body := call(http.MethodGet, "/list", "")
+	if resp.StatusCode != http.StatusOK || !strings.Contains(body, "appmesh-listed") {
+		t.Fatalf("list: %d %s", resp.StatusCode, body)
+	}
+	if strings.Contains(body, "appmesh-foreign") || strings.Contains(body, "stranger") {
+		t.Fatalf("list leaked non-local containers: %s", body)
 	}
 }
 
@@ -546,7 +696,8 @@ func TestContainerExec(t *testing.T) {
 
 func TestContainerList(t *testing.T) {
 	engine := newFakeEngine()
-	c := &fakeContainer{id: "ls1", name: "appmesh-listed", running: true, labels: map[string]string{labelManaged: "true", labelApp: "listed"}}
+	c := &fakeContainer{id: "ls1", name: "appmesh-listed", running: true,
+		labels: map[string]string{labelManaged: "true", labelApp: "listed", labelNode: nodeIdentity()}}
 	engine.containers["ls1"] = c
 	engine.containers["appmesh-listed"] = c
 	stranger := &fakeContainer{id: "st1", name: "stranger", running: true}

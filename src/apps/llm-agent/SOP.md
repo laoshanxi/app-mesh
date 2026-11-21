@@ -124,8 +124,8 @@ proof that one `session_id` carries context across stages.
 
 ## 5. Interactive mode — streaming turns
 
-Talk turn after turn with live tokens. Streaming rides the task RPC itself
-(`run_task_stream`, SDK ≥ 3.0.20): each token is a partial on the same call — no
+Talk turn after turn with live output. Streaming rides the task RPC itself
+(`run_task_stream`, SDK ≥ 3.0.20): each assistant message is a partial on the same call — no
 subscription, no race sleeps, and it works on the shared App too. An admin may still
 provision one worker App per session when the session's context must stay isolated.
 
@@ -173,4 +173,3 @@ set `LLMAGENT_ALLOWED_TOOLS`, keep the Skill tool in the list.
 | `Not logged in` | No credential on the App. Repeat step 2. |
 | `403 ... app-run-task` | Your user lacks app-run-task permission. Ask the admin. |
 | `401 token expired` | The token expired. Repeat step 3. |
-| `streaming is only available on a session worker App` | `stream:true` only on a worker App (step 5). |

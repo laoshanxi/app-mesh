@@ -571,7 +571,9 @@ func TestSubstituteForCommand_MessageOutputsEnvelopeSubstitutes(t *testing.T) {
 	}
 }
 
-// Other unresolved references keep the lenient literal-kept behavior.
+// Other unresolved references keep the lenient literal-kept behavior: unknown
+// steps (a parallel producer may still populate them), unknown roots, and
+// over-deep outputs paths are not proven author mistakes.
 func TestSubstituteForCommand_OtherUnresolvedRefsStayLiteral(t *testing.T) {
 	ctx := plainMessageCtx("j", "qa")
 	ctx.SetStepResult("j", "sub", "", 0, "success", "", nil) // workflow sub-step, no outputs
@@ -579,12 +581,63 @@ func TestSubstituteForCommand_OtherUnresolvedRefsStayLiteral(t *testing.T) {
 		`echo ${{ steps.ghost.outputs.answer }}`,
 		`echo '${{ nosuchroot.x }}'`,
 		`echo ${{ steps.qa.outputs.answer.here }}`,
-		`echo ${{ steps.sub.outputs.missing }}`,
 	} {
 		got, _, err := SubstituteForCommand(cmd, ctx, "j")
 		if err != nil || got != cmd {
 			t.Errorf("%q: got %q err %v, want literal kept", cmd, got, err)
 		}
+	}
+}
+
+// A completed step that never produced the referenced outputs key fails the
+// substitution in the engine with the key and the produced keys named — the
+// literal ${{ }} must not reach the shell (bash "bad substitution").
+func TestSubstituteForCommand_StepOutputsKeyMissFails(t *testing.T) {
+	ctx := NewContext()
+	ctx.SetStepResult("j", "call-child", "", 0, "success", "",
+		map[string]string{"echo_val": "us-east-1"}) // workflow sub-step: declared echo_val only
+
+	_, _, err := SubstituteForCommand(`echo ${{ steps.call-child.outputs.answer }}`, ctx, "j")
+	if err == nil || !strings.Contains(err.Error(), `unresolved expression ${{ steps.call-child.outputs.answer }}`) ||
+		!strings.Contains(err.Error(), `step "call-child" produced no output "answer"`) ||
+		!strings.Contains(err.Error(), "it produced: echo_val") {
+		t.Fatalf("err = %v, want the no-such-output engine error naming key and produced keys", err)
+	}
+
+	// The cross-job shape fails the same way.
+	other := NewContext()
+	other.SetJobResult("child", map[string]map[string]any{
+		"call": {"stdout": "", "exit_code": 0, "status": "success", "response": "", "outputs": map[string]string{}},
+	}, "success")
+	_, _, err = SubstituteForCommand(`echo ${{ jobs.child.steps.call.outputs.answer }}`, other, "j")
+	if err == nil || !strings.Contains(err.Error(), `step "call" produced no output "answer"`) ||
+		!strings.Contains(err.Error(), "it produced no outputs") {
+		t.Fatalf("cross-job err = %v, want the empty-outputs engine error", err)
+	}
+
+	// toJSON(...) of the same reference too.
+	_, _, err = SubstituteForCommand(`echo ${{ toJSON(steps.call-child.outputs.answer) }}`, ctx, "j")
+	if err == nil || !strings.Contains(err.Error(), `step "call-child" produced no output "answer"`) {
+		t.Fatalf("toJSON err = %v, want the no-such-output engine error", err)
+	}
+
+	// A failed non-message step produced no outputs either.
+	failed := NewContext()
+	failed.SetStepResult("j", "boom", "", 7, "failure", "exit 7", nil)
+	if _, _, err := SubstituteForCommand(`echo ${{ steps.boom.outputs.answer }}`, failed, "j"); err == nil ||
+		!strings.Contains(err.Error(), `step "boom" did not succeed (status "failure")`) {
+		t.Fatalf("failed step err = %v, want the did-not-succeed miss", err)
+	}
+
+	// Value fields (workflow_call with-inputs here) share the miss contract.
+	if _, err := SubstituteValue(`got: ${{ steps.call-child.outputs.answer }}`, ctx, "j"); err == nil ||
+		!strings.Contains(err.Error(), `produced no output "answer"`) {
+		t.Fatalf("SubstituteValue err = %v, want the same engine error", err)
+	}
+
+	// A not-yet-run step stays lenient (a parallel producer may still populate it).
+	if got, _, err := SubstituteForCommand(`echo ${{ steps.ghost.outputs.answer }}`, ctx, "j"); err != nil || got != `echo ${{ steps.ghost.outputs.answer }}` {
+		t.Fatalf("pending step: got %q err %v, want literal kept", got, err)
 	}
 }
 
