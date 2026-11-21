@@ -49,7 +49,13 @@ public:
 		std::lock_guard<std::mutex> lock(m_mutex);
 		if (id.empty())
 			id = std::to_string(++m_nextId);
-		m_streams.emplace(id, sink);
+		// A duplicate id must never shadow a fresh sink (C++11 form of
+		// insert_or_assign).
+		const auto found = m_streams.lower_bound(id);
+		if (found != m_streams.end() && found->first == id)
+			found->second = sink;
+		else
+			m_streams.insert(found, std::make_pair(id, sink));
 		return id;
 	}
 

@@ -517,9 +517,11 @@ func handleContainerExec(w http.ResponseWriter, r *http.Request) {
 	}
 	ctx := r.Context()
 	created, err := cli.ContainerExecCreate(ctx, mux.Vars(r)["id"], container.ExecOptions{
-		Cmd:          body.Cmd,
-		AttachStdout: true,
-		AttachStderr: true,
+		Cmd: body.Cmd,
+		// The verdict comes from ExecInspect; attaching would only buffer
+		// engine-side output nobody reads.
+		AttachStdout: false,
+		AttachStderr: false,
 	})
 	if err != nil {
 		engineError(w, err)

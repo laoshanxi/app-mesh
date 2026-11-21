@@ -1260,7 +1260,13 @@ long Application::writeStdin(const std::vector<std::uint8_t> &data, bool closePi
 	auto processLock = m_process.synchronize();
 	const auto &process = *processLock;
 	if (!process || process->isFinalized())
+	{
+		// Closing an interaction whose process is already gone is an idempotent
+		// EOF, not an error: the client is ending a conversation that ended first.
+		if (closePipe && data.empty())
+			return 0;
 		throw std::invalid_argument("no running process to receive stdin");
+	}
 	if (!processUuid.empty() && process->getuuid() != processUuid)
 		throw std::invalid_argument("process uuid mismatch");
 	return process->writeStdin(data, closePipe);
