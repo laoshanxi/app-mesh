@@ -1241,6 +1241,11 @@ bool Application::deleteTask()
 	return m_task.deleteTask();
 }
 
+bool Application::deleteTask(const std::string &sseStreamId)
+{
+	return m_task.deleteTask(sseStreamId);
+}
+
 void Application::fetchTask(const std::string &processKey, std::shared_ptr<HttpRequest> asyncHttpRequest)
 {
 	std::shared_ptr<void> req = asyncHttpRequest; // TaskRequest takes shared_ptr<void>&
@@ -1260,7 +1265,13 @@ long Application::writeStdin(const std::vector<std::uint8_t> &data, bool closePi
 	auto processLock = m_process.synchronize();
 	const auto &process = *processLock;
 	if (!process || process->isFinalized())
+	{
+		// Closing an interaction whose process is already gone is an idempotent
+		// EOF, not an error: the client is ending a conversation that ended first.
+		if (closePipe && data.empty())
+			return 0;
 		throw std::invalid_argument("no running process to receive stdin");
+	}
 	if (!processUuid.empty() && process->getuuid() != processUuid)
 		throw std::invalid_argument("process uuid mismatch");
 	return process->writeStdin(data, closePipe);

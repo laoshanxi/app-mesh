@@ -1784,10 +1784,24 @@ void RestHandler::apiSendMessageStream(const std::shared_ptr<HttpRequest> &messa
 					   Utility::text2json("Task streaming requires a plain HTTP connection"));
 		return;
 	}
+	// A client that vanishes stops owning the answer: free the app's active
+	// task slot instead of letting the parked request (and its sink) sit until
+	// the target replies or the app stops. The stream id scopes the cancel to
+	// this request: a queued disconnect must not abort another client's
+	// in-flight task, and queued requests stay parked under the task timer.
+	sink->setOnClosed([appName, streamId = marker]()
+	{
+		if (auto live = Configuration::instance()->getApp(appName))
+			live->deleteTask(streamId);
+	});
 
 	// Short default so a stuck target can't hold the app's active slot for days; override via ?timeout=.
+	// A stream request always keeps a bounded park: timeout=0 would skip the
+	// timer entirely and let a vanished client pin the active slot forever.
 	int timeout = getHttpQueryValue(*message, HTTP_QUERY_KEY_timeout, DEFAULT_RUN_TASK_TIMEOUT_SECONDS, 0, MAX_RUN_APP_TIMEOUT_SECONDS);
-	auto asyncRequest = std::make_shared<HttpRequestTaskStream>(message, sink);
+	if (timeout <= 0)
+		timeout = DEFAULT_RUN_TASK_TIMEOUT_SECONDS;
+	auto asyncRequest = std::make_shared<HttpRequestTaskStream>(message, sink, marker);
 	asyncRequest->initTimer(timeout);
 	app->sendTask(asyncRequest);
 }
@@ -1955,6 +1969,10 @@ void RestHandler::apiAppOutputStream(const std::shared_ptr<HttpRequest> &message
 	const std::weak_ptr<FollowState> weakState = state;
 
 	// Emits the terminal "end" frame exactly once and tears the stream down.
+	// The frame is guarded by `ended`, but close and unsubscribe must run
+	// unconditionally: a client that vanished during the backfill already set
+	// `ended` from deliverStdout, and skipping the teardown here would leave
+	// the subscription and its state pinned forever.
 	const auto endFollow = [weakState](const std::string &reason, const nlohmann::json &extra)
 	{
 		const auto state = weakState.lock();
@@ -1963,17 +1981,19 @@ void RestHandler::apiAppOutputStream(const std::shared_ptr<HttpRequest> &message
 		std::string subId;
 		{
 			std::lock_guard<std::mutex> lock(state->mutex);
-			if (state->ended)
-				return;
-			state->ended = true;
 			subId = state->subId;
-			nlohmann::json end = extra;
-			end["reason"] = reason;
-			end["position"] = state->cursor;
-			state->sink->sendEvent("end", JSON::dump(end));
+			if (!state->ended)
+			{
+				state->ended = true;
+				nlohmann::json end = extra;
+				end["reason"] = reason;
+				end["position"] = state->cursor;
+				state->sink->sendEvent("end", JSON::dump(end));
+			}
 		}
 		// Outside the state lock: close() fires the sink's onClosed hook, which
 		// re-enters endFollow for a disconnect and would deadlock under the lock.
+		// Both calls are idempotent.
 		state->sink->close();
 		if (!subId.empty())
 			EventDispatcher::instance()->unsubscribe(subId);
@@ -2124,7 +2144,12 @@ void RestHandler::apiAppOutputStream(const std::shared_ptr<HttpRequest> &message
 			// raw bytes; the raw span is the position delta.
 			const auto rawAdvance = position - chunkStart;
 			if (!output.empty() && !deliverStdout(chunkStart, output, rawAdvance))
+			{
+				// The sink is gone mid-backfill: end the follow here, because
+				// the dispatch path will not strip an already-ended subscription.
+				endFollow("disconnected", {});
 				return;
+			}
 			{
 				std::lock_guard<std::mutex> lock(state->mutex);
 				if (state->ended)

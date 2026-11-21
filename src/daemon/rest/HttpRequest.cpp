@@ -555,8 +555,8 @@ void HttpRequestOutputView::unsubscribeRunCompletion()
 // HttpRequestTaskStream - task request parked on an SSE stream
 ////////////////////////////////////////////////////////////////////////////////
 HttpRequestTaskStream::HttpRequestTaskStream(const std::shared_ptr<HttpRequest> &message,
-											 const std::shared_ptr<SseSink> &sink)
-	: HttpRequestWithTimeout(message), m_sink(sink)
+											 const std::shared_ptr<SseSink> &sink, std::string sseStreamId)
+	: HttpRequestWithTimeout(message), m_sink(sink), m_sseStreamId(std::move(sseStreamId))
 {
 }
 
@@ -708,6 +708,19 @@ bool TaskRequest::deleteTask()
 	{
 		std::lock_guard<std::mutex> guard(m_mutex);
 		activeTask = std::move(m_activeTask);
+	}
+	return activeTask && activeTask->interrupt();
+}
+
+bool TaskRequest::deleteTask(const std::string &sseStreamId)
+{
+	// A vanished stream client may cancel only its own in-flight request; when
+	// it was merely queued, the active task belongs to someone else.
+	std::shared_ptr<HttpRequestWithTimeout> activeTask;
+	{
+		std::lock_guard<std::mutex> guard(m_mutex);
+		if (m_activeTask && m_activeTask->sseStreamId() == sseStreamId)
+			activeTask = std::move(m_activeTask);
 	}
 	return activeTask && activeTask->interrupt();
 }

@@ -770,7 +770,14 @@ long AppProcess::writeStdin(const std::vector<std::uint8_t> &data, bool closePip
 	std::lock_guard<std::mutex> guard(m_stdinWriteMutex);
 	const ACE_HANDLE fd = m_stdinWriteHandler.get();
 	if (fd == ACE_INVALID_HANDLE)
+	{
+		// Closing an interaction that never (or no longer) has a pipe is an
+		// idempotent EOF, not an error: the client is ending a conversation
+		// that ended first.
+		if (closePipe && data.empty())
+			return 0;
 		throw std::runtime_error("stdin pipe is not open");
+	}
 	// Non-blocking writes keep a slow consumer a partial write, not a blocked
 	// worker thread.
 	std::size_t written = 0;
