@@ -17,6 +17,7 @@ import (
 const (
 	DefaultHTTPURI            = "https://127.0.0.1:6060"
 	DefaultTCPURI             = "127.0.0.1:6059"
+	DefaultWSSURI             = "https://127.0.0.1:6058"
 	DefaultTokenExpireSeconds = 7 * (60 * 60 * 24) // default 7 day(s)
 )
 
@@ -34,6 +35,12 @@ const (
 	headerFileGroup      = "X-File-Group"
 	headerTargetHost     = "X-Target-Host"
 	headerInputClose     = "X-Input-Close"
+	headerAuthorization  = "Authorization"
+	headerBearerSpace    = "Bearer "
+	headerExitCode       = "X-Exit-Code"
+	headerOutputPosition = "X-Output-Position"
+	headerSubscriptionId = "X-Subscription-Id"
+	headerProcessKey     = "X-AppMesh-Process-Key"
 )
 
 // Platform-aware default SSL paths.

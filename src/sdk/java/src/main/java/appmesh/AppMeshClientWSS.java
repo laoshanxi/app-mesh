@@ -24,8 +24,6 @@ import java.util.UUID;
 public class AppMeshClientWSS extends AppMeshClient {
     private static final int WSS_BLOCK_SIZE = 64 * 1024;
     private static final String HTTP_USER_AGENT_WSS = "appmesh/java/wss";
-    private static final String HEADER_X_FILE_PATH = "X-File-Path";
-    private static final String HEADER_AUTHORIZATION = "Authorization";
     private static final int FILE_TRANSFER_TIMEOUT = 120000; // 120 seconds
 
     private final WSSTransport wssTransport;
@@ -187,11 +185,11 @@ public class AppMeshClientWSS extends AppMeshClient {
             Map<String, String> params, String tokenOverride) throws IOException {
         try {
             Map<String, String> commonHeaders = super.getCommonHeaders();
-            String authorization = commonHeaders.get(HEADER_AUTHORIZATION);
+            String authorization = commonHeaders.get(AUTHORIZATION_HEADER);
             if (tokenOverride != null) {
-                authorization = "Bearer " + tokenOverride;
+                authorization = BEARER_PREFIX + tokenOverride;
                 commonHeaders = new HashMap<>(commonHeaders);
-                commonHeaders.put(HEADER_AUTHORIZATION, authorization);
+                commonHeaders.put(AUTHORIZATION_HEADER, authorization);
             }
             wssTransport.setAuthorization(authorization);
             if (!wssTransport.connected()) {
@@ -296,14 +294,14 @@ public class AppMeshClientWSS extends AppMeshClient {
         if (commonHeaders != null) {
             out.putAll(commonHeaders);
         }
-        out.remove(HEADER_AUTHORIZATION);
+        out.remove(AUTHORIZATION_HEADER);
         if (extraHeaders != null) {
             out.putAll(extraHeaders);
         }
-        if (out.containsKey("X-Target-Host")
-                && !out.containsKey(HEADER_AUTHORIZATION)
+        if (out.containsKey(X_TARGET_HOST_HEADER)
+                && !out.containsKey(AUTHORIZATION_HEADER)
                 && authorization != null && !authorization.isEmpty()) {
-            out.put(HEADER_AUTHORIZATION, authorization);
+            out.put(AUTHORIZATION_HEADER, authorization);
         }
         return out;
     }
@@ -318,14 +316,14 @@ public class AppMeshClientWSS extends AppMeshClient {
     public boolean downloadFile(String remoteFile, String localFile, boolean applyFileAttributes) throws IOException {
         // Step 1: Request download via WSS to get Auth token
         Map<String, String> header = new HashMap<>();
-        header.put(HEADER_X_FILE_PATH, encodeURIComponent(remoteFile));
+        header.put(X_FILE_PATH_HEADER, encodeURIComponent(remoteFile));
         HttpURLConnection initResp = request("GET", "/appmesh/file/download", null, header, null);
         if (initResp.getResponseCode() != HttpURLConnection.HTTP_OK) {
             throw new IOException("Download init failed: " + initResp.getResponseCode());
         }
 
         Map<String, String> commonHeaders = super.getCommonHeaders();
-        String authToken = commonHeaders.get(HEADER_AUTHORIZATION);
+        String authToken = commonHeaders.get(AUTHORIZATION_HEADER);
         if (authToken == null || authToken.isEmpty()) {
             throw new IOException("File transfer requires a bearer token");
         }
@@ -334,12 +332,12 @@ public class AppMeshClientWSS extends AppMeshClient {
         URL url = new URL(getBaseURL() + "/appmesh/file/download/ws");
         HttpURLConnection conn = createSecureConnection(url);
         conn.setRequestMethod("GET");
-        conn.setRequestProperty(HEADER_X_FILE_PATH, encodeURIComponent(remoteFile));
-        conn.setRequestProperty(HEADER_AUTHORIZATION, authToken);
+        conn.setRequestProperty(X_FILE_PATH_HEADER, encodeURIComponent(remoteFile));
+        conn.setRequestProperty(AUTHORIZATION_HEADER, authToken);
         // The data side channel is a separate hop: it carries the forwarding header too.
-        String targetHost = commonHeaders.get("X-Target-Host");
+        String targetHost = commonHeaders.get(X_TARGET_HOST_HEADER);
         if (targetHost != null) {
-            conn.setRequestProperty("X-Target-Host", targetHost);
+            conn.setRequestProperty(X_TARGET_HOST_HEADER, targetHost);
         }
         conn.setConnectTimeout(FILE_TRANSFER_TIMEOUT);
         conn.setReadTimeout(FILE_TRANSFER_TIMEOUT);
@@ -392,14 +390,14 @@ public class AppMeshClientWSS extends AppMeshClient {
 
         // Step 1: Request upload via WSS to get Auth token
         Map<String, String> wssHeader = new HashMap<>();
-        wssHeader.put(HEADER_X_FILE_PATH, encodeURIComponent(remoteFile));
+        wssHeader.put(X_FILE_PATH_HEADER, encodeURIComponent(remoteFile));
         HttpURLConnection initResp = request("POST", "/appmesh/file/upload", null, wssHeader, null);
         if (initResp.getResponseCode() != HttpURLConnection.HTTP_OK) {
             throw new IOException("Upload init failed: " + initResp.getResponseCode());
         }
 
         Map<String, String> commonHeaders = super.getCommonHeaders();
-        String authToken = commonHeaders.get(HEADER_AUTHORIZATION);
+        String authToken = commonHeaders.get(AUTHORIZATION_HEADER);
         if (authToken == null || authToken.isEmpty()) {
             throw new IOException("File transfer requires a bearer token");
         }
@@ -409,13 +407,13 @@ public class AppMeshClientWSS extends AppMeshClient {
         HttpURLConnection conn = createSecureConnection(url);
         conn.setDoOutput(true);
         conn.setRequestMethod("POST");
-        conn.setRequestProperty(HEADER_AUTHORIZATION, authToken);
-        conn.setRequestProperty(HEADER_X_FILE_PATH, encodeURIComponent(remoteFile));
+        conn.setRequestProperty(AUTHORIZATION_HEADER, authToken);
+        conn.setRequestProperty(X_FILE_PATH_HEADER, encodeURIComponent(remoteFile));
         conn.setRequestProperty("Content-Type", "application/octet-stream");
         // The data side channel is a separate hop: it carries the forwarding header too.
-        String targetHost = commonHeaders.get("X-Target-Host");
+        String targetHost = commonHeaders.get(X_TARGET_HOST_HEADER);
         if (targetHost != null) {
-            conn.setRequestProperty("X-Target-Host", targetHost);
+            conn.setRequestProperty(X_TARGET_HOST_HEADER, targetHost);
         }
         conn.setRequestProperty("Content-Length", String.valueOf(file.length()));
         conn.setConnectTimeout(FILE_TRANSFER_TIMEOUT);
@@ -481,7 +479,7 @@ public class AppMeshClientWSS extends AppMeshClient {
         if (demuxer != null && demuxer.isRunning()) {
             return;
         }
-        wssTransport.setAuthorization(super.getCommonHeaders().get(HEADER_AUTHORIZATION));
+        wssTransport.setAuthorization(super.getCommonHeaders().get(AUTHORIZATION_HEADER));
         if (!wssTransport.connected()) {
             try {
                 wssTransport.connect();

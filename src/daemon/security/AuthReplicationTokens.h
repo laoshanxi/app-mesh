@@ -17,6 +17,18 @@
 /// edit: the endpoint re-reads the file on every request.
 namespace AuthReplication
 {
+// Deployment env names for the replication token source; the single spelling
+// of every key (daemon reads live in AuthReplicator, RestHandler,
+// AuthorizationStore and VaultClient).
+inline constexpr const char *ENV_FROM = "APPMESH_AUTH_REPLICATION_FROM";
+inline constexpr const char *ENV_TOKEN_FILE = "APPMESH_AUTH_REPLICATION_TOKEN_FILE";
+inline constexpr const char *ENV_CA = "APPMESH_AUTH_REPLICATION_CA";
+inline constexpr const char *ENV_INTERVAL = "APPMESH_AUTH_REPLICATION_INTERVAL";
+inline constexpr const char *ENV_TOKEN_SOURCE = "APPMESH_AUTH_REPLICATION_TOKEN_SOURCE";
+inline constexpr const char *ENV_VAULT_ADDR = "APPMESH_AUTH_REPLICATION_TOKEN_VAULT_ADDR";
+inline constexpr const char *ENV_VAULT_TOKEN_FILE = "APPMESH_AUTH_REPLICATION_TOKEN_VAULT_TOKEN_FILE";
+inline constexpr const char *ENV_LABEL = "APPMESH_AUTH_REPLICATION_LABEL";
+
 struct AcceptedToken
 {
 	std::string token;

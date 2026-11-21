@@ -369,26 +369,6 @@ boost::posix_time::time_duration DateTime::parseDayTimeUtcDuration(const std::st
 	return result;
 }
 
-std::string DateTime::formatDayTimeUtcDuration(const BoostDuration &duration)
-{
-	const auto posixTimezone = getLocalZoneUtcOffset();
-
-	std::ostringstream fakeDateStream;
-	fakeDateStream << "2000-01-01T" << std::setfill('0') << std::setw(2) << duration.hours() << ":" << std::setfill('0')
-				   << std::setw(2) << duration.minutes() << ":" << std::setfill('0') << std::setw(2) << duration.seconds();
-
-	const auto timePoint = parseISO8601DateTime(fakeDateStream.str(), posixTimezone);
-	const auto timeStr = formatISO8601Time(timePoint);
-
-	// Extract time portion after 'T'
-	const auto tPos = timeStr.find('T');
-	if (tPos != std::string::npos && tPos + 1 < timeStr.length())
-	{
-		return timeStr.substr(tPos + 1);
-	}
-	return timeStr;
-}
-
 std::string DateTime::reducePosixZone(const std::string &strTime)
 {
 	// Find the last '+' or '-' to locate timezone

@@ -1,8 +1,4 @@
 // src/daemon/rest/Data.cpp
-#include <charconv>
-#include <chrono>
-#include <tuple>
-
 #include <json/json.h>
 #include <msgpack.hpp>
 
@@ -32,31 +28,38 @@ std::string Response::serialize() const
 	return out;
 }
 
-bool Response::deserialize(const std::uint8_t *data, std::size_t dataSize)
+namespace
 {
-	const static char fname[] = "Response::deserialize() ";
+/// Shared msgpack frame decode: logs and returns false on any failure, leaving
+/// `out` untouched.
+template <typename T>
+bool msgpackUnpack(const char *data, std::size_t dataSize, T &out, const char *fname, const char *kind)
+{
 	try
 	{
 		msgpack::unpacked result;
-		msgpack::unpack(result, reinterpret_cast<const char *>(data), dataSize);
+		msgpack::unpack(result, data, dataSize);
 		msgpack::object obj = result.get();
-		obj.convert(*this);
+		obj.convert(out);
 		return true;
 	}
 	catch (const std::exception &e)
 	{
-		LOG_ERR << fname << "Failed to deserialize response message with size <" << dataSize << ">: " << e.what();
+		LOG_ERR << fname << "Failed to deserialize " << kind << " message with size <" << dataSize << ">: " << e.what();
 	}
 	return false;
+}
+} // namespace
+
+bool Response::deserialize(const std::uint8_t *data, std::size_t dataSize)
+{
+	return msgpackUnpack(reinterpret_cast<const char *>(data), dataSize, *this, "Response::deserialize() ",
+						 "response");
 }
 
 void Response::applyCorsHeaders(const std::string &origin)
 {
-	if (Configuration::instance()->getCorsDisabled())
-		return;
-	// CORS is opt-in: no wildcard. Without a matching Origin allowlist entry
-	// no CORS headers are sent at all (the UI is a same-origin proxy).
-	if (origin.empty() || Configuration::instance()->getCorsAllowOrigins().count(origin) == 0)
+	if (!Configuration::instance()->corsAllowsOrigin(origin))
 		return;
 
 	headers[web::http::header_names::access_control_allow_origin] = origin;
@@ -80,37 +83,5 @@ std::string Request::serialize() const
 
 bool Request::deserialize(const std::string &data)
 {
-	const static char fname[] = "Request::deserialize() ";
-	try
-	{
-		msgpack::unpacked result;
-		msgpack::unpack(result, data.data(), data.size());
-		msgpack::object obj = result.get();
-		obj.convert(*this);
-		return true;
-	}
-	catch (const std::exception &e)
-	{
-		LOG_ERR << fname << "Failed to deserialize request message with size <" << data.size() << ">: " << e.what();
-	}
-	return false;
-}
-
-bool Request::contain_body() const
-{
-	if (auto it = headers.find(web::http::header_names::content_length); it != headers.end())
-	{
-		long long len = 0;
-		const auto result = std::from_chars(it->second.data(), it->second.data() + it->second.size(), len);
-		if (result.ec == std::errc{} && result.ptr != it->second.data())
-			return len > 0;
-		return false;
-	}
-
-	if (auto it = headers.find(web::http::header_names::transfer_encoding); it != headers.end())
-	{
-		return it->second.find("chunked") != std::string::npos;
-	}
-
-	return false;
+	return msgpackUnpack(data.data(), data.size(), *this, "Request::deserialize() ", "request");
 }

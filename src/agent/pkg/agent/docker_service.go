@@ -72,14 +72,23 @@ func engineClient() (*client.Client, error) {
 	return dockerClient, nil
 }
 
-// RegisterContainerRoutes mounts the container lifecycle service; the routes
-// exist only when Docker is enabled and an endpoint is configured.
-func RegisterContainerRoutes(router *mux.Router) error {
+// dockerGateError reports why the container lifecycle service cannot run on
+// this node; nil when it may. The single DOCKER_HOST/socket endpoint check.
+func dockerGateError() error {
 	if !config.ConfigData.Docker.Enable {
 		return fmt.Errorf("disabled by configuration (Docker.Enable: false)")
 	}
 	if os.Getenv("DOCKER_HOST") == "" && !appmesh.IsFileExist(DockerSocketFilePath) {
 		return fmt.Errorf("docker endpoint not found: %s (set DOCKER_HOST to override)", DockerSocketFilePath)
+	}
+	return nil
+}
+
+// RegisterContainerRoutes mounts the container lifecycle service; the routes
+// exist only when Docker is enabled and an endpoint is configured.
+func RegisterContainerRoutes(router *mux.Router) error {
+	if err := dockerGateError(); err != nil {
+		return err
 	}
 	if _, err := engineClient(); err != nil {
 		return fmt.Errorf("docker client: %w", err)

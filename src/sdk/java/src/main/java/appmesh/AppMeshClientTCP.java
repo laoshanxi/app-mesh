@@ -218,7 +218,7 @@ public class AppMeshClientTCP extends AppMeshClient {
             req.headers = new java.util.HashMap<>();
             req.headers.putAll(super.getCommonHeaders());
             if (tokenOverride != null) {
-                req.headers.put("Authorization", "Bearer " + tokenOverride);
+                req.headers.put(AUTHORIZATION_HEADER, BEARER_PREFIX + tokenOverride);
             }
             if (headers != null) {
                 req.headers.putAll(headers);
@@ -324,12 +324,12 @@ public class AppMeshClientTCP extends AppMeshClient {
     public boolean downloadFile(String filePath, String localFile, boolean applyFileAttributes) throws IOException {
         ensureNoActiveDemuxer();
         Map<String, String> headers = new HashMap<>();
-        headers.put("X-File-Path", encodeURIComponent(filePath));
-        headers.put("X-Recv-File-Socket", "true");
+        headers.put(X_FILE_PATH_HEADER, encodeURIComponent(filePath));
+        headers.put(X_RECV_FILE_SOCKET_HEADER, "true");
 
         // Initiate the request
         HttpURLConnection conn = request("GET", "/appmesh/file/download", null, headers, null);
-        if (conn.getHeaderField("X-Recv-File-Socket") == null) {
+        if (conn.getHeaderField(X_RECV_FILE_SOCKET_HEADER) == null) {
             throw new IOException("Server did not respond with socket transfer option");
         }
 
@@ -382,9 +382,9 @@ public class AppMeshClientTCP extends AppMeshClient {
         }
 
         Map<String, String> headers = new HashMap<>();
-        headers.put("X-File-Path", encodeURIComponent(remoteFile));
+        headers.put(X_FILE_PATH_HEADER, encodeURIComponent(remoteFile));
         headers.put("Content-Type", "application/octet-stream");
-        headers.put("X-Send-File-Socket", "true");
+        headers.put(X_SEND_FILE_SOCKET_HEADER, "true");
 
         if (preservePermissions) {
             headers.putAll(Utils.getFileAttributes(file));
@@ -396,7 +396,7 @@ public class AppMeshClientTCP extends AppMeshClient {
         if (conn.getResponseCode() != HttpURLConnection.HTTP_OK) {
             throw new IOException("Upload init failed: " + conn.getResponseCode());
         }
-        if (conn.getHeaderField("X-Send-File-Socket") == null) {
+        if (conn.getHeaderField(X_SEND_FILE_SOCKET_HEADER) == null) {
             throw new IOException("Server did not respond with socket transfer option");
         }
 

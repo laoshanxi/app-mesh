@@ -40,6 +40,8 @@ class Application : public TimerHandler, public AppBehavior
 {
 public:
 	static constexpr int DEFAULT_STARTUP_PHASE = 100;
+	/// Schedule-interval fallback for a recovered definition whose interval no longer parses.
+	static constexpr int DEFAULT_START_INTERVAL_SECONDS = 7 * 24 * 3600;
 
 	Application();
 	virtual ~Application();

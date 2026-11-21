@@ -8,7 +8,7 @@ import { once } from 'events'
 import { v1 as uuidv1 } from 'uuid'
 import msgpack from 'msgpack-lite'
 import AppMeshClient, {
-  AppMeshError, AppRemovedError, TransportDisconnectedError, DEFAULT_CA_FILE,
+  AppMeshError, AppRemovedError, TransportDisconnectedError, DEFAULT_CA_FILE, CONSTANTS,
   _resolveUid, _resolveGid, _resolveUserName, _resolveGroupName,
 } from './appmesh.js'
 import { canonicalQuery } from './request_signature.js'
@@ -30,10 +30,15 @@ const ENCODING_UTF8 = 'utf-8'
 const HTTP_USER_AGENT_TCP = 'appmesh/nodejs/tcp'
 const HTTP_HEADER_KEY_X_SEND_FILE_SOCKET = 'X-Send-File-Socket'
 const HTTP_HEADER_KEY_X_RECV_FILE_SOCKET = 'X-Recv-File-Socket'
-const HTTP_HEADER_KEY_USER_AGENT = 'User-Agent'
-const HTTP_HEADER_KEY_X_FILE_PATH = 'X-File-Path'
-const HTTP_HEADER_KEY_AUTH = 'Authorization'
-const HTTP_HEADER_KEY_X_TARGET_HOST = 'X-Target-Host'
+// Wire-header names come from the shared CONSTANTS block.
+const HTTP_HEADER_KEY_USER_AGENT = CONSTANTS.HTTP_USER_AGENT_HEADER_NAME
+const HTTP_HEADER_KEY_X_FILE_PATH = CONSTANTS.HTTP_HEADER_KEY_X_FILE_PATH
+const HTTP_HEADER_KEY_AUTH = CONSTANTS.HTTP_HEADER_KEY_AUTH
+const HTTP_HEADER_KEY_X_TARGET_HOST = CONSTANTS.HTTP_HEADER_KEY_X_TARGET_HOST
+const HTTP_HEADER_KEY_X_SUBSCRIPTION_ID = CONSTANTS.HTTP_HEADER_KEY_X_SUBSCRIPTION_ID
+const HTTP_HEADER_KEY_X_FILE_MODE = CONSTANTS.HTTP_HEADER_KEY_X_FILE_MODE
+const HTTP_HEADER_KEY_X_FILE_USER = CONSTANTS.HTTP_HEADER_KEY_X_FILE_USER
+const HTTP_HEADER_KEY_X_FILE_GROUP = CONSTANTS.HTTP_HEADER_KEY_X_FILE_GROUP
 
 /**
  * TCP transport for secure TLS connections and framed App Mesh messages.
@@ -487,7 +492,7 @@ class MessageDemuxer {
     try {
       const bodyStr = typeof resp.body === 'string' ? resp.body : resp.body.toString('utf-8')
       const event = JSON.parse(bodyStr)
-      const subId = event.subscription_id || _headerValue(resp.headers, 'X-Subscription-Id')
+      const subId = event.subscription_id || _headerValue(resp.headers, HTTP_HEADER_KEY_X_SUBSCRIPTION_ID)
       const cb = this._eventCallbacks.get(subId)
       if (cb) {
         try { cb(event) } catch (e) { console.error('Event callback error:', e) }
@@ -860,20 +865,20 @@ class AppMeshClientTCP extends AppMeshClient {
     // Apply file attributes on Unix systems
     if (applyAttrs && process.platform !== 'win32') {
       // Mode is sent as a decimal string (matches the HTTP transport and Python SDK)
-      if (response.headers['X-File-Mode']) {
-        const mode = parseInt(response.headers['X-File-Mode'], 10)
+      if (response.headers[HTTP_HEADER_KEY_X_FILE_MODE]) {
+        const mode = parseInt(response.headers[HTTP_HEADER_KEY_X_FILE_MODE], 10)
         // A malformed or out-of-range remote value must not fail the finished download
         if (Number.isInteger(mode) && mode >= 0 && mode <= 0o777) {
           fs.chmodSync(localFile, mode)
         } else {
-          console.warn(`Warning: Invalid X-File-Mode value: ${response.headers['X-File-Mode']}`)
+          console.warn(`Warning: Invalid X-File-Mode value: ${response.headers[HTTP_HEADER_KEY_X_FILE_MODE]}`)
         }
       }
-      if (response.headers['X-File-User'] && response.headers['X-File-Group']) {
+      if (response.headers[HTTP_HEADER_KEY_X_FILE_USER] && response.headers[HTTP_HEADER_KEY_X_FILE_GROUP]) {
         // The daemon sends user/group *names* (os::fileStat); resolve them to
         // numeric uid/gid locally before chown, same as the HTTP transport.
-        const uid = await _resolveUid(response.headers['X-File-User'])
-        const gid = await _resolveGid(response.headers['X-File-Group'])
+        const uid = await _resolveUid(response.headers[HTTP_HEADER_KEY_X_FILE_USER])
+        const gid = await _resolveGid(response.headers[HTTP_HEADER_KEY_X_FILE_GROUP])
         if (uid !== null && gid !== null) {
           try {
             fs.chownSync(localFile, uid, gid)
@@ -912,14 +917,14 @@ class AppMeshClientTCP extends AppMeshClient {
     // Add file attributes
     if (applyAttrs) {
       const stats = fs.statSync(localFile)
-      headers['X-File-Mode'] = (stats.mode & 0o777).toString()
+      headers[HTTP_HEADER_KEY_X_FILE_MODE] = (stats.mode & 0o777).toString()
       // Send user/group names when resolvable; the daemon also accepts
       // all-digit values (Utility::applyFilePermission -> os::chown ->
       // getUidByName numeric fallback), so fall back to numeric ids.
       const username = await _resolveUserName(stats.uid)
       const groupName = await _resolveGroupName(stats.gid)
-      headers['X-File-User'] = username || String(stats.uid)
-      headers['X-File-Group'] = groupName || String(stats.gid)
+      headers[HTTP_HEADER_KEY_X_FILE_USER] = username || String(stats.uid)
+      headers[HTTP_HEADER_KEY_X_FILE_GROUP] = groupName || String(stats.gid)
     }
 
     const response = await this._request('post', '/appmesh/file/upload', null, {

@@ -134,7 +134,7 @@ func (h *HTTPRequester) Send(method string, apiPath string, queries url.Values, 
 // returned like any other status and surfaced by the client as an *APIError.
 func (h *HTTPRequester) SendContext(ctx context.Context, method string, apiPath string, queries url.Values,
 	headers map[string]string, body io.Reader) (int, []byte, http.Header, error) {
-	_, callerAuth := headers["Authorization"]
+	_, callerAuth := headers[headerAuthorization]
 	provider := h.getTokenProvider()
 	refreshable := provider != nil && provider.CanRefresh() && !callerAuth
 
@@ -238,7 +238,7 @@ func (h *HTTPRequester) resolveAccessToken() (string, error) {
 func (h *HTTPRequester) getStream(apiPath string, queries url.Values, headers map[string]string) (int, io.ReadCloser,
 	http.Header, error) {
 	token := ""
-	if _, callerAuth := headers["Authorization"]; !callerAuth {
+	if _, callerAuth := headers[headerAuthorization]; !callerAuth {
 		var err error
 		token, err = h.resolveAccessToken()
 		if err != nil {
@@ -261,7 +261,7 @@ func (h *HTTPRequester) sseRequest(ctx context.Context, method string, apiPath s
 		return 0, nil, nil, fmt.Errorf("http client is nil")
 	}
 	token := ""
-	if _, callerAuth := headers["Authorization"]; !callerAuth {
+	if _, callerAuth := headers[headerAuthorization]; !callerAuth {
 		var err error
 		token, err = h.resolveAccessToken()
 		if err != nil {
@@ -345,9 +345,9 @@ func (h *HTTPRequester) buildRequest(ctx context.Context, method string, apiPath
 	}
 
 	// Apply implicit auth only when the caller did not provide an explicit Authorization header.
-	if _, hasAuth := headers["Authorization"]; !hasAuth {
+	if _, hasAuth := headers[headerAuthorization]; !hasAuth {
 		if token != "" {
-			req.Header.Set("Authorization", "Bearer "+token)
+			req.Header.Set(headerAuthorization, headerBearerSpace+token)
 		}
 	}
 
@@ -463,7 +463,7 @@ func (t *TCPRequester) SendContext(ctx context.Context, method, apiPath string, 
 
 	// Buffer the body only when a 401 refresh-retry may replay it (TCP bodies are
 	// small; the file-upload path sends no body here).
-	_, callerAuth := headers["Authorization"]
+	_, callerAuth := headers[headerAuthorization]
 	provider := t.getTokenProvider()
 	refreshable := provider != nil && provider.CanRefresh() && !callerAuth
 	var bodyBytes []byte
@@ -479,21 +479,86 @@ func (t *TCPRequester) SendContext(ctx context.Context, method, apiPath string, 
 	if err != nil {
 		if resp != nil {
 			// Refresh failed after a 401: surface the original response with the error.
-			respHeaders := make(http.Header)
-			for key, value := range resp.Headers {
-				respHeaders.Add(key, value)
-			}
-			return resp.HTTPStatus, resp.Body, respHeaders, err
+			return resp.HTTPStatus, resp.Body, toHTTPHeader(resp.Headers), err
 		}
 		return 0, nil, nil, err
 	}
 
-	respHeaders := make(http.Header)
-	for key, value := range resp.Headers {
-		respHeaders.Add(key, value)
+	return resp.HTTPStatus, resp.Body, toHTTPHeader(resp.Headers), nil
+}
+
+// toHTTPHeader adapts the framed response's plain string map to net/http's
+// http.Header, as the Requester contract returns it.
+func toHTTPHeader(headers map[string]string) http.Header {
+	out := make(http.Header)
+	for key, value := range headers {
+		out.Add(key, value)
+	}
+	return out
+}
+
+// hydrateFramedRequest copies an HTTP-shaped request into the framed wire
+// Request: path, method, first-value headers and query, and the body (except
+// on the file-upload path, which streams through the socket side channel).
+// clientAddress is the transport's local address.
+func hydrateFramedRequest(data *Request, req *http.Request, clientAddress string) error {
+	data.RequestURI = req.URL.Path
+	data.HTTPMethod = req.Method
+	data.ClientAddress = clientAddress
+	for key, values := range req.Header {
+		if len(values) > 0 {
+			data.Headers[key] = values[0] // only first value
+		}
+	}
+	for key, values := range req.URL.Query() {
+		if len(values) > 0 {
+			data.Query[key] = values[0]
+		}
 	}
 
-	return resp.HTTPStatus, resp.Body, respHeaders, nil
+	if data.RequestURI != restPathUpload && req.Body != nil {
+		bodyBytes, err := io.ReadAll(req.Body)
+		if err != nil {
+			return err
+		}
+		if len(bodyBytes) > 0 {
+			data.Body = bodyBytes
+		}
+	}
+	return nil
+}
+
+// sendFramedRequest sends the serialized frame and waits for its response:
+// through the demuxer when one is running (registered BEFORE the send so the
+// response cannot arrive and be dropped before the channel is in place), or
+// through a direct blocking read in legacy synchronous mode.
+func sendFramedRequest(ctx context.Context, demux *MessageDemuxer, uuid string, buf []byte,
+	send func(context.Context, []byte) error, readResponse func() ([]byte, error)) (*Response, error) {
+	if demux != nil && demux.isRunning() {
+		ch := demux.registerRequest(uuid)
+		defer demux.unregisterRequest(uuid)
+
+		if err := send(ctx, buf); err != nil {
+			return nil, err
+		}
+
+		return waitDemuxResponse(ctx, ch, demux)
+	}
+
+	if err := send(ctx, buf); err != nil {
+		return nil, err
+	}
+
+	respData, err := readResponse()
+	if err != nil {
+		return nil, err
+	}
+
+	respMsg := &Response{}
+	if err := respMsg.Deserialize(respData); err != nil {
+		return nil, err
+	}
+	return respMsg, nil
 }
 
 // framedHeaderGet reads a framed header case-insensitively (the daemon forwards its original casing).
@@ -526,10 +591,10 @@ func (t *TCPRequester) sendWithRetry(ctx context.Context, method string, u url.U
 			return nil, err
 		}
 
-		_, hasAuth := headers["Authorization"]
+		_, hasAuth := headers[headerAuthorization]
 		token := t.getAccessToken()
 		if !hasAuth && token != "" {
-			req.Header.Set("Authorization", "Bearer "+token)
+			req.Header.Set(headerAuthorization, headerBearerSpace+token)
 		}
 
 		// A caller-supplied X-Target-Host header overrides the client-wide forward
@@ -587,30 +652,9 @@ func (t *TCPRequester) request(req *http.Request) (*Response, error) {
 		return nil, err
 	}
 	data := NewRequest()
-	data.RequestURI = req.URL.Path
-	data.HTTPMethod = req.Method
-	data.ClientAddress = t.ClientAddress()
-	for key, values := range req.Header {
-		if len(values) > 0 {
-			data.Headers[key] = values[0] // only first value
-		}
+	if err := hydrateFramedRequest(data, req, t.ClientAddress()); err != nil {
+		return nil, err
 	}
-	for key, values := range req.URL.Query() {
-		if len(values) > 0 {
-			data.Query[key] = values[0]
-		}
-	}
-
-	if data.RequestURI != restPathUpload && req.Body != nil {
-		bodyBytes, err := io.ReadAll(req.Body)
-		if err != nil {
-			return nil, err
-		}
-		if len(bodyBytes) > 0 {
-			data.Body = bodyBytes
-		}
-	}
-
 	data.Headers[userAgentHeaderName] = userAgentTCP
 
 	// Sign after the UUID and every header exist, and before the request is framed.
@@ -626,37 +670,9 @@ func (t *TCPRequester) request(req *http.Request) (*Response, error) {
 		return nil, err
 	}
 
-	// When demuxer is active, register BEFORE send so the response cannot arrive
-	// and be dropped before the channel is in place. A stopped demuxer (transport
-	// read error) never delivers, so fall back to the direct read below.
-	demux := t.getDemuxer()
-	if demux != nil && demux.isRunning() {
-		ch := demux.registerRequest(data.UUID)
-		defer demux.unregisterRequest(data.UUID)
-
-		if err := t.SendMessage(req.Context(), buf); err != nil {
-			return nil, err
-		}
-
-		return waitDemuxResponse(req.Context(), ch, demux)
-	}
-
-	if err := t.SendMessage(req.Context(), buf); err != nil {
-		return nil, err
-	}
-
 	// Receive the response directly (legacy synchronous mode), bounded by ctx.
-	respData, err := t.ReadMessageContext(req.Context())
-	if err != nil {
-		return nil, err
-	}
-
-	// Deserialize the response.
-	respMsg := &Response{}
-	if err := respMsg.Deserialize(respData); err != nil {
-		return nil, err
-	}
-	return respMsg, nil
+	return sendFramedRequest(req.Context(), t.getDemuxer(), data.UUID, buf, t.SendMessage,
+		func() ([]byte, error) { return t.ReadMessageContext(req.Context()) })
 }
 
 func (t *TCPRequester) enableDemuxer() {
@@ -771,7 +787,7 @@ func (w *WSSRequester) SendContext(ctx context.Context, method string, apiPath s
 		u.RawQuery = queries.Encode()
 	}
 
-	_, callerAuth := headers["Authorization"]
+	_, callerAuth := headers[headerAuthorization]
 	provider := w.getTokenProvider()
 	refreshable := provider != nil && provider.CanRefresh() && !callerAuth
 	var bodyBytes []byte
@@ -786,21 +802,12 @@ func (w *WSSRequester) SendContext(ctx context.Context, method string, apiPath s
 	resp, err := w.sendWithRetry(ctx, method, u, queries, headers, body, bodyBytes, refreshable, provider)
 	if err != nil {
 		if resp != nil {
-			respHeaders := make(http.Header)
-			for key, value := range resp.Headers {
-				respHeaders.Add(key, value)
-			}
-			return resp.HTTPStatus, resp.Body, respHeaders, err
+			return resp.HTTPStatus, resp.Body, toHTTPHeader(resp.Headers), err
 		}
 		return 0, nil, nil, err
 	}
 
-	respHeaders := make(http.Header)
-	for key, value := range resp.Headers {
-		respHeaders.Add(key, value)
-	}
-
-	return resp.HTTPStatus, resp.Body, respHeaders, nil
+	return resp.HTTPStatus, resp.Body, toHTTPHeader(resp.Headers), nil
 }
 
 // sendWithRetry issues the WSS request, replaying it exactly once with a
@@ -833,8 +840,8 @@ func (w *WSSRequester) sendWithRetry(ctx context.Context, method string, u url.U
 			req.Header.Set(headerTargetHost, forwardingHost)
 			// The target receives a new TCP request and validates the bearer again.
 			// The gateway checks that it resolves to the WSS session principal.
-			if _, hasAuth := headers["Authorization"]; !hasAuth && token != "" {
-				req.Header.Set("Authorization", "Bearer "+token)
+			if _, hasAuth := headers[headerAuthorization]; !hasAuth && token != "" {
+				req.Header.Set(headerAuthorization, headerBearerSpace+token)
 			}
 		}
 		req.Header.Set(userAgentHeaderName, userAgentWSS)
@@ -882,30 +889,9 @@ func (w *WSSRequester) request(req *http.Request) (*Response, error) {
 		return nil, err
 	}
 	data := NewRequest()
-	data.RequestURI = req.URL.Path
-	data.HTTPMethod = req.Method
-	data.ClientAddress = w.ClientAddress()
-	for key, values := range req.Header {
-		if len(values) > 0 {
-			data.Headers[key] = values[0]
-		}
+	if err := hydrateFramedRequest(data, req, w.ClientAddress()); err != nil {
+		return nil, err
 	}
-	for key, values := range req.URL.Query() {
-		if len(values) > 0 {
-			data.Query[key] = values[0]
-		}
-	}
-
-	if data.RequestURI != restPathUpload && req.Body != nil {
-		bodyBytes, err := io.ReadAll(req.Body)
-		if err != nil {
-			return nil, err
-		}
-		if len(bodyBytes) > 0 {
-			data.Body = bodyBytes
-		}
-	}
-
 	data.Headers[userAgentHeaderName] = userAgentWSS
 
 	// Sign after the UUID and every header exist, and before the frame is sent.
@@ -921,37 +907,7 @@ func (w *WSSRequester) request(req *http.Request) (*Response, error) {
 		return nil, err
 	}
 
-	ctx := req.Context()
-
-	// When demuxer is active, register BEFORE send so the response cannot arrive
-	// and be dropped before the channel is in place. A stopped demuxer (transport
-	// read error) never delivers, so fall back to the direct read below.
-	demux := w.getDemuxer()
-	if demux != nil && demux.isRunning() {
-		ch := demux.registerRequest(data.UUID)
-		defer demux.unregisterRequest(data.UUID)
-
-		if err := w.SendMessage(ctx, buf); err != nil {
-			return nil, err
-		}
-
-		return waitDemuxResponse(ctx, ch, demux)
-	}
-
-	if err := w.SendMessage(ctx, buf); err != nil {
-		return nil, err
-	}
-
-	respData, err := w.ReadMessage()
-	if err != nil {
-		return nil, err
-	}
-
-	respMsg := &Response{}
-	if err := respMsg.Deserialize(respData); err != nil {
-		return nil, err
-	}
-	return respMsg, nil
+	return sendFramedRequest(req.Context(), w.getDemuxer(), data.UUID, buf, w.SendMessage, w.ReadMessage)
 }
 
 func (w *WSSRequester) enableDemuxer() {

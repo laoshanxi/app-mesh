@@ -149,7 +149,6 @@ public:
 	// Docker.HostSecurityPolicy: off (default) | audit | enforce, hot-reloaded.
 	std::string getDockerHostSecurityPolicy();
 	bool getDockerEnabled();
-	int getPromListenPort() const;
 	std::string getRestListenAddress();
 	int getTcpApiPort();
 	int getWebSocketPort();
@@ -175,6 +174,8 @@ public:
 	const std::string getDefaultExecUser() const;
 	bool getDisableExecUser() const;
 	const std::string getWorkDir() const;
+	/// work/tmp under the working directory (uploads, snapshots, scratch).
+	const std::string getWorkTmpDir() const;
 	bool getSslVerifyClient() const;
 	bool getSslVerifyServer() const;
 	bool getSslEnabled() const;
@@ -187,6 +188,8 @@ public:
 	bool getCorsDisabled() const;
 	bool metricsRequireAuth() const;
 	std::set<std::string> getCorsAllowOrigins() const;
+	/// Shared CORS decision (opt-in, no wildcard): true when the origin may be echoed.
+	bool corsAllowsOrigin(const std::string &origin) const;
 	std::string getRequestReplayProtection() const;
 	std::string getRequestSignature() const;
 	int getRequestReplayWindowSeconds() const;

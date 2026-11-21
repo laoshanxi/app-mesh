@@ -12,6 +12,14 @@ pub const DEFAULT_WSS_PORT: u16 = 6058;
 /// it too. See docs/source/TLS.md.
 pub const ENV_REST_SSL_ENABLED: &str = "APPMESH_REST_SSL_SSLEnabled";
 
+/// Deployment env names; the single spelling of each key.
+pub const ENV_API_SECRET: &str = "APPMESH_API_SECRET";
+pub const ENV_API_KEY: &str = "APPMESH_API_KEY";
+pub const ENV_BEARER_TOKEN: &str = "APPMESH_BEARER_TOKEN";
+pub const ENV_HOME: &str = "APPMESH_HOME";
+pub const ENV_AUTH_ALLOW_HTTP: &str = "APPMESH_AUTH_ALLOW_HTTP";
+pub const ENV_AUTH_ACCESS_URL: &str = "APPMESH_AUTH_ACCESS_URL";
+
 /// Persisted config version 2: endpoint transport, verification, absolute CA path.
 pub const CONFIG_VERSION: u32 = 2;
 
@@ -653,7 +661,7 @@ pub fn load_daemon_config() -> (Option<(String, u16)>, DaemonTlsConfig) {
 }
 
 fn detect_appmesh_home() -> Option<PathBuf> {
-    if let Ok(home) = std::env::var("APPMESH_HOME") {
+    if let Ok(home) = std::env::var(ENV_HOME) {
         let p = PathBuf::from(home);
         if p.exists() {
             return Some(p);

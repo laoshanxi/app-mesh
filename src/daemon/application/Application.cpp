@@ -618,7 +618,7 @@ void Application::FromJson(const std::shared_ptr<Application> &app, const Json::
 			}
 			LOG_WAR << fname << "Invalid start interval <" << app->m_startIntervalValue << "> for application <"
 					<< app->m_name << ">, falling back to default";
-			app->m_startInterval = DEFAULT_TOKEN_EXPIRE_SECONDS;
+			app->m_startInterval = DEFAULT_START_INTERVAL_SECONDS;
 		}
 		app->m_timer =
 			std::make_shared<AppTimerPeriod>(app->m_startTime, app->m_endTime, app->m_dailyLimit, app->m_startInterval);
@@ -1604,7 +1604,7 @@ void Application::onStartAccepted(const std::string &runId, pid_t pid)
 	health(m_healthCheckCmd.empty());
 	Json::Value startPayload;
 	startPayload["pid"] = (Json::Int64)pid;
-	startPayload["process_uuid"] = runId;
+	startPayload[JSON_KEY_process_uuid] = runId;
 	EventDispatcher::instance()->dispatch(m_name, AppEventType::PROCESS_START, startPayload);
 }
 

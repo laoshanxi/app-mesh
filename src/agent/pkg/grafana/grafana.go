@@ -55,53 +55,16 @@ func (AppmeshGrafanaJSON) GrafanaQueryTable(ctx context.Context, target string,
 
 	for i := range apps {
 		meshApp := apps[i]
-		if meshApp.RegisterTime != nil {
-			regTimes = append(regTimes, time.Unix(*meshApp.RegisterTime, 0))
-		} else {
-			regTimes = append(regTimes, time.Time{})
-		}
+		regTimes = append(regTimes, optTime(meshApp.RegisterTime))
 		appNames = append(appNames, meshApp.Name)
-		if meshApp.OwnerPrincipalID != nil {
-			appOwner = append(appOwner, *meshApp.OwnerPrincipalID)
-		} else {
-			appOwner = append(appOwner, "")
-		}
-		if meshApp.Enabled {
-			appEnabled = append(appEnabled, 1)
-		} else {
-			appEnabled = append(appEnabled, 0)
-		}
-		if meshApp.Health != nil {
-			appHealth = append(appHealth, float64(*meshApp.Health))
-		} else {
-			appHealth = append(appHealth, 0)
-		}
-		if meshApp.Pid != nil {
-			appPid = append(appPid, float64(*meshApp.Pid))
-		} else {
-			appPid = append(appPid, 0)
-		}
-		if meshApp.Memory != nil {
-			appMemory = append(appMemory, float64(*meshApp.Memory))
-		} else {
-			appMemory = append(appMemory, 0)
-		}
-		if meshApp.CPU != nil {
-			appCpu = append(appCpu, float64(*meshApp.CPU))
-		} else {
-			appCpu = append(appCpu, 0)
-		}
-		if meshApp.ReturnCode != nil {
-			appReturn = append(appReturn, float64(*meshApp.ReturnCode))
-		} else {
-			appReturn = append(appReturn, 0)
-		}
-		if meshApp.Command != nil {
-			appCmd = append(appCmd, *meshApp.Command)
-		} else {
-			appCmd = append(appCmd, "")
-		}
-
+		appOwner = append(appOwner, optString(meshApp.OwnerPrincipalID))
+		appEnabled = append(appEnabled, optNumberFlag(meshApp.Enabled))
+		appHealth = append(appHealth, optNumber(meshApp.Health))
+		appPid = append(appPid, optNumber(meshApp.Pid))
+		appMemory = append(appMemory, optNumber(meshApp.Memory))
+		appCpu = append(appCpu, optNumber(meshApp.CPU))
+		appReturn = append(appReturn, optNumber(meshApp.ReturnCode))
+		appCmd = append(appCmd, optString(meshApp.Command))
 	}
 	return []TableColumn{
 		{Text: "register_time", Data: regTimes},
@@ -115,6 +78,38 @@ func (AppmeshGrafanaJSON) GrafanaQueryTable(ctx context.Context, target string,
 		{Text: "return", Data: appReturn},
 		{Text: "command", Data: appCmd},
 	}, err
+}
+
+// optTime dereferences an optional epoch-seconds field, defaulting to the zero time.
+func optTime(v *int64) time.Time {
+	if v != nil {
+		return time.Unix(*v, 0)
+	}
+	return time.Time{}
+}
+
+// optString dereferences an optional string field, defaulting to "".
+func optString(v *string) string {
+	if v != nil {
+		return *v
+	}
+	return ""
+}
+
+// optNumber dereferences an optional numeric field, defaulting to 0.
+func optNumber[T int | int64 | float64](v *T) float64 {
+	if v != nil {
+		return float64(*v)
+	}
+	return 0
+}
+
+// optNumberFlag maps a bool onto the numeric 0/1 column encoding.
+func optNumberFlag(v bool) float64 {
+	if v {
+		return 1
+	}
+	return 0
 }
 
 func (AppmeshGrafanaJSON) GrafanaAnnotations(ctx context.Context, query string,

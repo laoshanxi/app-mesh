@@ -160,6 +160,9 @@ class AppMeshClient:
     _HTTP_HEADER_KEY_X_FILE_MODE = "X-File-Mode"
     _HTTP_HEADER_KEY_X_FILE_USER = "X-File-User"
     _HTTP_HEADER_KEY_X_FILE_GROUP = "X-File-Group"
+    _HTTP_HEADER_KEY_X_OUTPUT_POSITION = "X-Output-Position"
+    _HTTP_HEADER_KEY_X_EXIT_CODE = "X-Exit-Code"
+    _HTTP_HEADER_KEY_X_INPUT_CLOSE = "X-Input-Close"
 
     @unique
     class _Method(Enum):
@@ -518,8 +521,8 @@ class AppMeshClient:
             raise_on_fail=False,
         )
 
-        output_position = int(resp.headers["X-Output-Position"]) if "X-Output-Position" in resp.headers else None
-        exit_code = int(resp.headers["X-Exit-Code"]) if "X-Exit-Code" in resp.headers else None
+        output_position = int(resp.headers[self._HTTP_HEADER_KEY_X_OUTPUT_POSITION]) if self._HTTP_HEADER_KEY_X_OUTPUT_POSITION in resp.headers else None
+        exit_code = int(resp.headers[self._HTTP_HEADER_KEY_X_EXIT_CODE]) if self._HTTP_HEADER_KEY_X_EXIT_CODE in resp.headers else None
 
         return AppOutput(status_code=resp.status_code, output=resp.text, output_position=output_position,
             exit_code=exit_code)
@@ -1056,7 +1059,7 @@ class AppMeshClient:
         """
         if isinstance(data, str):
             data = data.encode("utf-8")
-        header = {"X-Input-Close": "true"} if close else None
+        header = {self._HTTP_HEADER_KEY_X_INPUT_CLOSE: "true"} if close else None
         query = {"process_uuid": process_uuid} if process_uuid else None
         resp = self._request_http(
             AppMeshClient._Method.POST,
@@ -1209,8 +1212,8 @@ class AppMeshClient:
 
         exit_code = None
         if resp.status_code == HTTPStatus.OK:
-            if "X-Exit-Code" in resp.headers:
-                exit_code = int(resp.headers["X-Exit-Code"])
+            if self._HTTP_HEADER_KEY_X_EXIT_CODE in resp.headers:
+                exit_code = int(resp.headers[self._HTTP_HEADER_KEY_X_EXIT_CODE])
 
         return exit_code, resp.text
 

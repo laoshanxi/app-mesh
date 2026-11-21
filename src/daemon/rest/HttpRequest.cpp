@@ -771,14 +771,19 @@ void TaskRequest::sendTask(std::shared_ptr<HttpRequestWithTimeout> &taskRequest)
 	}
 }
 
+void TaskRequest::verifyProcessKeyLocked(const std::string &processKey) const
+{
+	if (processKey.empty() || !Utility::secureCompare(processKey, m_processKey))
+		throw std::runtime_error("Process key mismatch");
+}
+
 void TaskRequest::partialReply(const std::string &processKey, const std::string &payload, bool &delivered)
 {
 	const static char fname[] = "TaskRequest::partialReply() ";
 	std::shared_ptr<HttpRequestWithTimeout> active;
 	{
 		std::lock_guard guard(m_mutex);
-		if (processKey.empty() || !Utility::secureCompare(processKey, m_processKey))
-			throw std::runtime_error("Process key mismatch");
+		verifyProcessKeyLocked(processKey);
 		active = m_activeTask;
 	}
 	if (auto stream = std::dynamic_pointer_cast<HttpRequestTaskStream>(active))
@@ -820,8 +825,7 @@ void TaskRequest::fetchTask(const std::string &processKey, std::shared_ptr<void>
 	std::vector<std::shared_ptr<HttpRequestWithTimeout>> abandoned; // released outside the lock
 	{
 		std::lock_guard guard(m_mutex);
-		if (processKey.empty() || !Utility::secureCompare(processKey, m_processKey))
-			throw std::runtime_error("Process key mismatch");
+		verifyProcessKeyLocked(processKey);
 		previousFetch = std::move(m_fetchTask);
 		m_fetchTask = std::static_pointer_cast<HttpRequestWithTimeout>(serverRequest);
 		previousReply = std::move(m_replyTask);
@@ -867,8 +871,7 @@ void TaskRequest::replyTask(const std::string &processKey, std::shared_ptr<void>
 	std::shared_ptr<HttpRequestWithTimeout> repliedActive;
 	{
 		std::lock_guard guard(m_mutex);
-		if (processKey.empty() || !Utility::secureCompare(processKey, m_processKey))
-			throw std::runtime_error("Process key mismatch");
+		verifyProcessKeyLocked(processKey);
 		previousReply = std::move(m_replyTask);
 		m_replyTask = std::static_pointer_cast<HttpRequestWithTimeout>(serverRequest);
 		repliedActive = releaseRepliedRequestLocked(m_activeTask);

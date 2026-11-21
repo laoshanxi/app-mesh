@@ -6,7 +6,6 @@ import (
 	"os"
 	"path/filepath"
 	"sync"
-	"time"
 
 	"github.com/laoshanxi/app-mesh/src/apps/workflow/internal/logger"
 	"github.com/laoshanxi/app-mesh/src/apps/workflow/internal/models"
@@ -65,7 +64,7 @@ func (c *Checkpoint) SaveRunning(wfName, runID, source, actor string, inputs map
 		Source:    source,
 		Actor:     actor,
 		Status:    "running",
-		StartedAt: time.Now().UTC().Format(time.RFC3339),
+		StartedAt: workdir.NowTimestamp(),
 		Inputs:    inputs,
 		Jobs:      jobs,
 	}
@@ -81,7 +80,7 @@ func (c *Checkpoint) SaveRunningWithCompleted(wfName, runID, source, actor strin
 		if status, ok := completedJobs[name]; ok {
 			jobs[name] = JobState{
 				Status:     status,
-				FinishedAt: time.Now().UTC().Format(time.RFC3339),
+				FinishedAt: workdir.NowTimestamp(),
 				Steps:      savedSteps[name],
 			}
 		} else {
@@ -94,7 +93,7 @@ func (c *Checkpoint) SaveRunningWithCompleted(wfName, runID, source, actor strin
 		Source:    source,
 		Actor:     actor,
 		Status:    "running",
-		StartedAt: time.Now().UTC().Format(time.RFC3339),
+		StartedAt: workdir.NowTimestamp(),
 		Inputs:    inputs,
 		Jobs:      jobs,
 	}
@@ -113,7 +112,7 @@ func (c *Checkpoint) UpdateJob(wfName, runID, jobName, status, node string, step
 	rec.Jobs[jobName] = JobState{
 		Status:     status,
 		Node:       node,
-		FinishedAt: time.Now().UTC().Format(time.RFC3339),
+		FinishedAt: workdir.NowTimestamp(),
 		Steps:      steps,
 	}
 	c.writeUnsafe(wfName, runID, rec)
@@ -297,28 +296,9 @@ func (c *Checkpoint) writeUnsafe(wfName, runID string, rec *RunRecord) {
 		logger.Error("checkpoint marshal failed: " + err.Error())
 		return
 	}
-	tmp := path + ".tmp"
-	if err := writeFileSynced(tmp, data); err != nil {
+	if err := workdir.AtomicWriteFile(path, data, 0644); err != nil {
 		logger.Error("checkpoint write failed: " + err.Error())
-		return
 	}
-	if err := os.Rename(tmp, path); err != nil {
-		logger.Error("checkpoint rename failed: " + err.Error())
-	}
-}
-
-// writeFileSynced writes data and fsyncs the file before close.
-// This ensures the data is durable on disk before a subsequent rename.
-func writeFileSynced(path string, data []byte) error {
-	f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0644)
-	if err != nil {
-		return err
-	}
-	defer f.Close()
-	if _, err := f.Write(data); err != nil {
-		return err
-	}
-	return f.Sync()
 }
 
 func (c *Checkpoint) read(wfName, runID string) *RunRecord {

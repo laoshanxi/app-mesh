@@ -6,7 +6,7 @@ if (typeof window !== 'undefined' && typeof window.document !== 'undefined') {
   throw new Error('AppMeshWorker is only available in Node.js environment. Use AppMeshClient for browser applications.')
 }
 
-import AppMeshClient, { AppMeshError } from './appmesh.js'
+import AppMeshClient, { AppMeshError, CONSTANTS } from './appmesh.js'
 
 /**
  * Error thrown when the daemon reports HTTP 412: this process key was superseded
@@ -189,7 +189,7 @@ class AppMeshWorker {
       const attemptStart = Date.now()
       try {
         const response = await this._client.request('get', path, null, {
-          headers: { 'X-AppMesh-Process-Key': processKey }
+          headers: { [CONSTANTS.HTTP_HEADER_KEY_X_APPMESH_PROCESS_KEY]: processKey }
         })
 
         if (response.status === 200) {
@@ -255,7 +255,7 @@ class AppMeshWorker {
     let response
     try {
       response = await this._client.request('put', path, result, {
-        headers: { 'X-AppMesh-Process-Key': processKey }
+        headers: { [CONSTANTS.HTTP_HEADER_KEY_X_APPMESH_PROCESS_KEY]: processKey }
       })
     } catch (error) {
       // request() throws AppMeshError on non-200
@@ -285,7 +285,7 @@ class AppMeshWorker {
     let response
     try {
       response = await this._client.request('post', path, partial, {
-        headers: { 'X-AppMesh-Process-Key': processKey }
+        headers: { [CONSTANTS.HTTP_HEADER_KEY_X_APPMESH_PROCESS_KEY]: processKey }
       })
     } catch (error) {
       // request() throws AppMeshError on non-200

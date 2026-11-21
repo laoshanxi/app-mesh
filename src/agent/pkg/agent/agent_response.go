@@ -67,7 +67,7 @@ func (r *Response) downloadFileFromConn(conn *Connection, encodedPath string) er
 		return fmt.Errorf("decode base64 path: %w", err)
 	}
 
-	r.TempDownloadFilePath = path.Join(config.GetAppMeshHomeDir(), "work", "tmp", r.UUID)
+	r.TempDownloadFilePath = path.Join(config.GetAppMeshHomeDir(), config.WorkDirName, config.TmpDirName, r.UUID)
 	remoteFile := string(bytes)
 
 	logger.Infof("Downloading remote file <%s> to local file <%s>", remoteFile, r.TempDownloadFilePath)
@@ -88,7 +88,7 @@ func (r *Response) prepareFileUpload(encodedPath string) error {
 		return fmt.Errorf("decode base64 path: %w", err)
 	}
 
-	r.TempUploadFilePath = path.Join(config.GetAppMeshHomeDir(), "work", "tmp", r.UUID)
+	r.TempUploadFilePath = path.Join(config.GetAppMeshHomeDir(), config.WorkDirName, config.TmpDirName, r.UUID)
 	remoteFile := string(bytes)
 
 	logger.Debugf("Preparing to upload local file <%s> to remote file <%s>", r.TempUploadFilePath, remoteFile)

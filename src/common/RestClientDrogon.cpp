@@ -258,7 +258,7 @@ std::shared_ptr<HttpResponse> RestClient::request(const std::string &host, const
 		LOG_ERR << fname << state->response->text;
 		return state->response;
 	}
-	auto ssl = resolveSslConfig(sslConfig);
+	auto ssl = sslConfig != nullptr ? *sslConfig : ClientSSLConfig();
 	state->requestWire = buildRequestWire(mtd, target.target, target.hostHeader, header, body);
 
 	std::string resolveError;

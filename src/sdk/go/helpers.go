@@ -14,6 +14,38 @@ import (
 
 const tcpConnectTimeoutSeconds = 10
 
+// newClientTLSConfig builds the shared client TLS policy: a TLS 1.2+ floor,
+// the caSystemTrust/""/path CA resolution, and an optional mutual-TLS
+// certificate pair.
+func newClientTLSConfig(sslCAPath, sslClientCert, sslClientCertKey string) (*tls.Config, error) {
+	tlsConfig := &tls.Config{MinVersion: tls.VersionTLS12}
+
+	// Server verification: a configured but missing/unreadable CA is a hard error;
+	// an empty CA path (InsecureSkipVerify or legacy SSLTrustedCA = "") disables it.
+	switch sslCAPath {
+	case caSystemTrust:
+		// Verify against the system trust store (RootCAs left nil); see caSystemTrust.
+	case "":
+		tlsConfig.InsecureSkipVerify = true
+	default:
+		caCert, err := LoadCA(sslCAPath)
+		if err != nil {
+			return nil, fmt.Errorf("failed to load server CA: %w", err)
+		}
+		tlsConfig.RootCAs = caCert
+	}
+
+	// Client certificate for mutual TLS (optional)
+	if sslClientCert != "" && sslClientCertKey != "" {
+		clientCert, err := LoadCertificatePair(sslClientCert, sslClientCertKey)
+		if err != nil {
+			return nil, fmt.Errorf("failed to load client certificate: %w", err)
+		}
+		tlsConfig.Certificates = []tls.Certificate{clientCert}
+	}
+	return tlsConfig, nil
+}
+
 // caSystemTrust is an internal CA-path sentinel meaning "verify against the
 // system trust store" (tls.Config.RootCAs left nil). Produced when SSLTrustedCA
 // is nil and the default App Mesh CA is absent. Distinct from "" (skip-verify).

@@ -17,6 +17,9 @@ from .exceptions import AppMeshError, AppMeshProcessSupersededError, AppMeshWork
 
 logger = logging.getLogger(__name__)
 
+# Wire header the daemon stamps on worker tasks (see X-AppMesh-Process-Key).
+HTTP_HEADER_KEY_X_APPMESH_PROCESS_KEY = "X-AppMesh-Process-Key"
+
 
 class AppMeshWorker:
     """Worker SDK for an App Mesh application interacting with the local App Mesh REST service over HTTPS.
@@ -108,7 +111,7 @@ class AppMeshWorker:
         """
         pkey, app_name = self._get_runtime_env()
         path = f"/appmesh/app/{app_name}/task"
-        headers = {"X-AppMesh-Process-Key": pkey}
+        headers = {HTTP_HEADER_KEY_X_APPMESH_PROCESS_KEY: pkey}
         failed_attempts = 0
 
         while True:
@@ -166,7 +169,7 @@ class AppMeshWorker:
         """
         pkey, app_name = self._get_runtime_env()
         path = f"/appmesh/app/{app_name}/task"
-        headers = {"X-Appmesh-Process-Key": pkey}
+        headers = {HTTP_HEADER_KEY_X_APPMESH_PROCESS_KEY: pkey}
 
         resp = self._client._request_http(
             AppMeshClient._Method.PUT,
@@ -194,7 +197,7 @@ class AppMeshWorker:
         """
         pkey, app_name = self._get_runtime_env()
         path = f"/appmesh/app/{app_name}/task/partial"
-        headers = {"X-Appmesh-Process-Key": pkey}
+        headers = {HTTP_HEADER_KEY_X_APPMESH_PROCESS_KEY: pkey}
 
         resp = self._client._request_http(
             AppMeshClient._Method.POST,

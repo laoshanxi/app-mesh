@@ -68,6 +68,9 @@ public:
 	/// return the verified OIDC principal. This is the shared boundary used by
 	/// REST and WebSocket transports.
 	static Principal authenticateBearerAuthorization(const std::string &authorization);
+	/// Validated bearer token of an Authorization header value; throws the shared
+	/// scheme/shape errors so every entry point rejects identically.
+	static std::string validatedBearerToken(const std::string &authorization);
 	/// Re-check the current local policy for an already authenticated principal.
 	static void requirePermission(const std::string &principalId, const std::string &permission);
 

@@ -67,32 +67,9 @@ func (r *TCPConnection) ConnectPlain(tcpAddr net.Addr) error {
 // Connect establishes a secure TLS TCP connection to an App Mesh server.
 func (r *TCPConnection) Connect(tcpAddr net.Addr, sslClientCert string, sslClientCertKey string,
 	sslCAPath string) error {
-	// TLS configuration with secure defaults
-	conf := &tls.Config{
-		MinVersion: tls.VersionTLS12,
-	}
-
-	// Configure server verification
-	switch sslCAPath {
-	case caSystemTrust:
-		// Verify against the system trust store (RootCAs left nil); see caSystemTrust.
-	case "":
-		conf.InsecureSkipVerify = true
-	default:
-		serverCA, err := LoadCA(sslCAPath)
-		if err != nil {
-			return fmt.Errorf("failed to load server CA: %w", err)
-		}
-		conf.RootCAs = serverCA
-	}
-
-	// Configure client certificate
-	if sslClientCert != "" && sslClientCertKey != "" {
-		clientCert, err := LoadCertificatePair(sslClientCert, sslClientCertKey)
-		if err != nil {
-			return fmt.Errorf("failed to load client certificate: %w", err)
-		}
-		conf.Certificates = []tls.Certificate{clientCert}
+	conf, err := newClientTLSConfig(sslCAPath, sslClientCert, sslClientCertKey)
+	if err != nil {
+		return err
 	}
 
 	// Establish connection

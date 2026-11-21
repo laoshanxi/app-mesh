@@ -3,7 +3,6 @@
 
 #include <map>
 #include <memory>
-#include <mutex>
 #include <string>
 
 #include "HttpHeaderMap.h"
@@ -22,7 +21,6 @@ struct HttpResponse
 struct ClientSSLConfig
 {
 	ClientSSLConfig();
-	void resolveAbsolutePaths(std::string workingHome);
 	// Convert relative paths to absolute paths if necessary
 	static std::string resolveAbsolutePath(const std::string &workingHome, std::string filePath);
 	bool m_verify_client;             // present a client certificate (mTLS)
@@ -53,7 +51,7 @@ public:
 	 * @param header Map of request headers
 	 * @param query Map of query parameters
 	 * @param timeoutSeconds Request timeout override; zero uses the client default
-	 * @param sslConfig Per-request TLS configuration; nullptr uses the process-wide default
+	 * @param sslConfig Per-request TLS configuration; nullptr applies no TLS options
 	 * @return std::shared_ptr<HttpResponse> containing status code, response body and headers
 	 */
 	static std::shared_ptr<HttpResponse> request(const std::string &host, const web::http::method &mtd,
@@ -62,20 +60,7 @@ public:
 												 std::map<std::string, std::string> query, long timeoutSeconds = 0,
 												 const ClientSSLConfig *sslConfig = nullptr);
 
-	/**
-	 * @brief Sets the default TLS configuration for requests without an explicit one
-	 * @param sslConfig TLS configuration object containing certificates and verification options
-	 */
-	static void defaultSslConfiguration(const ClientSSLConfig &sslConfig);
-
 private:
-	// A URL path joins with '/', never the native separator: fs::path would
-	// render http://host:port\path on Windows.
-	static std::string joinUrl(const std::string &host, const std::string &path);
-
-	// The explicit per-request config wins; otherwise the process-wide default is used.
-	static ClientSSLConfig resolveSslConfig(const ClientSSLConfig *sslConfig);
-
 	/// Shared URL handling of both backends: validation, default port, request
 	/// target (path plus encoded query) and Host header value.
 	struct RequestTarget
@@ -88,8 +73,4 @@ private:
 	};
 	static bool parseRequestTarget(const std::string &host, const std::string &path,
 								   const std::map<std::string, std::string> &query, RequestTarget &out, std::string &error);
-
-private:
-	static ClientSSLConfig m_sslConfig;
-	static std::mutex m_sslMutex;
 };

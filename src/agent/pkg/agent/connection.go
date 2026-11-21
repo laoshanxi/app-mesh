@@ -25,6 +25,17 @@ var (
 	lastTCPDialWarnNs atomic.Int64
 )
 
+// warnTCPDialFallback logs a failed local-daemon TCP dial ahead of the WSS
+// fallback: warn once per minute, keep the repeated failures at debug level.
+func warnTCPDialFallback(dialErr error) {
+	if last := lastTCPDialWarnNs.Load(); last == 0 || time.Since(time.Unix(0, last)) > time.Minute {
+		lastTCPDialWarnNs.Store(time.Now().UnixNano())
+		logger.Warnf("TCP connect to local daemon <%s> failed (%v), trying WSS <%s>", localTCPAddr, dialErr, localWSSAddr)
+	} else {
+		logger.Debugf("TCP connect to local daemon <%s> failed (%v), using WSS <%s>", localTCPAddr, dialErr, localWSSAddr)
+	}
+}
+
 type Connection struct {
 	key string // pool key, also identifies the transport ("tcp://..." or "wss://...")
 	messageConnection
@@ -47,10 +58,12 @@ type messageConnection interface {
 	ClientAddress() string
 }
 
-// getOrCreateConnection returns an existing connection or creates a new one.
-func getOrCreateConnection(tcpAddress net.Addr, verifyServer, allowError bool) (*Connection, error) {
-	key := "tcp://" + tcpAddress.String()
-
+// getOrCreatePooled returns the pooled connection stored under key, dialing
+// and installing it under the pool lock on first use (double-checked).
+// startServices runs after the connection is pooled (still under the lock) and
+// starts its monitor goroutine and any keepalive.
+func getOrCreatePooled(key string, dial func() (*Connection, error), startServices func(*Connection)) (*Connection,
+	error) {
 	// Check if connection already exists (without holding lock during creation)
 	if conn, ok := remoteConnections.Load(key); ok {
 		return conn.(*Connection), nil
@@ -64,19 +77,39 @@ func getOrCreateConnection(tcpAddress net.Addr, verifyServer, allowError bool) (
 		return conn.(*Connection), nil
 	}
 
-	sConn, err := dialTCPConnection(tcpAddress, verifyServer)
+	conn, err := dial()
 	if err != nil {
 		return nil, err
 	}
 
-	remoteConnections.Store(key, sConn)
+	remoteConnections.Store(key, conn)
+	startServices(conn)
+	return conn, nil
+}
 
-	go func() {
-		logger.Infof("Monitoring response from: %s", tcpAddress)
-		MonitorConnectionResponse(sConn, allowError)
-	}()
+// getOrCreateConnection returns an existing connection or creates a new one.
+func getOrCreateConnection(tcpAddress net.Addr, verifyServer, allowError bool) (*Connection, error) {
+	key := "tcp://" + tcpAddress.String()
+	return getOrCreatePooled(key,
+		func() (*Connection, error) { return dialTCPConnection(tcpAddress, verifyServer) },
+		func(conn *Connection) {
+			go func() {
+				logger.Infof("Monitoring response from: %s", tcpAddress)
+				MonitorConnectionResponse(conn, allowError)
+			}()
+		})
+}
 
-	return sConn, nil
+// resolveTLSMaterial picks the client certificate and CA files for a daemon
+// dial. Disabled server verification drops the CA so the transport skips it.
+func resolveTLSMaterial(verifyServer bool) (clientCert, clientCertKey, caPath string) {
+	clientCert = config.ConfigData.REST.SSL.SSLClientCertificateFile
+	clientCertKey = config.ConfigData.REST.SSL.SSLClientCertificateKeyFile
+	caPath = config.ConfigData.REST.SSL.SSLCAPath
+	if !verifyServer {
+		caPath = ""
+	}
+	return clientCert, clientCertKey, caPath
 }
 
 // dialTCPConnection creates and connects a new TCP Connection (not pooled).
@@ -92,12 +125,7 @@ func dialTCPConnection(tcpAddress net.Addr, verifyServer bool) (*Connection, err
 
 	// The TLS-at-gateway shape: dial the daemon's plaintext frame port.
 	plain := !config.ConfigData.REST.SSL.Enabled()
-	clientCert := config.ConfigData.REST.SSL.SSLClientCertificateFile
-	clientCertKey := config.ConfigData.REST.SSL.SSLClientCertificateKeyFile
-	caPath := config.ConfigData.REST.SSL.SSLCAPath
-	if !verifyServer {
-		caPath = ""
-	}
+	clientCert, clientCertKey, caPath := resolveTLSMaterial(verifyServer)
 
 	var err error
 	if plain {
@@ -184,34 +212,18 @@ func quiesceConnection(key string) {
 // used when the daemon is not reachable on the TCP API port.
 func getOrCreateWSSConnection(wssHostPort string, verifyServer bool) (*Connection, error) {
 	key := wssPoolKey(wssHostPort)
+	return getOrCreatePooled(key,
+		func() (*Connection, error) { return dialWSSConnection(wssHostPort, verifyServer) },
+		func(conn *Connection) {
+			go func() {
+				logger.Infof("Monitoring response from: %s", wssHostPort)
+				MonitorConnectionResponse(conn, false)
+			}()
 
-	if conn, ok := remoteConnections.Load(key); ok {
-		return conn.(*Connection), nil
-	}
-
-	remoteConnectionsMutex.Lock()
-	defer remoteConnectionsMutex.Unlock()
-
-	if conn, ok := remoteConnections.Load(key); ok {
-		return conn.(*Connection), nil
-	}
-
-	sConn, err := dialWSSConnection(wssHostPort, verifyServer)
-	if err != nil {
-		return nil, err
-	}
-
-	remoteConnections.Store(key, sConn)
-
-	go func() {
-		logger.Infof("Monitoring response from: %s", wssHostPort)
-		MonitorConnectionResponse(sConn, false)
-	}()
-
-	wss := sConn.messageConnection.(*appmesh.WSSConnection)
-	go keepWSSAlive(sConn, &url.URL{Scheme: wssScheme(), Host: wssHostPort, Path: "/"}, key, wssPingInterval, wss.Ping)
-
-	return sConn, nil
+			wss := conn.messageConnection.(*appmesh.WSSConnection)
+			go keepWSSAlive(conn, &url.URL{Scheme: wssScheme(), Host: wssHostPort, Path: "/"}, key, wssPingInterval,
+				wss.Ping)
+		})
 }
 
 // dialWSSConnection creates and connects a new WSS Connection (not pooled).
@@ -225,12 +237,7 @@ func dialWSSConnection(wssHostPort string, verifyServer bool) (*Connection, erro
 		closed:            make(chan struct{}),
 	}
 
-	clientCert := config.ConfigData.REST.SSL.SSLClientCertificateFile
-	clientCertKey := config.ConfigData.REST.SSL.SSLClientCertificateKeyFile
-	caPath := config.ConfigData.REST.SSL.SSLCAPath
-	if !verifyServer {
-		caPath = ""
-	}
+	clientCert, clientCertKey, caPath := resolveTLSMaterial(verifyServer)
 
 	// ws:// when plain; a plain dial never touches certificate material.
 	plain := !config.ConfigData.REST.SSL.Enabled()
@@ -281,12 +288,7 @@ func openLocalFileTransferConnection() (*Connection, error) {
 		return conn, nil
 	}
 	// Mirror the pooled path's fallback and its throttled warning.
-	if last := lastTCPDialWarnNs.Load(); last == 0 || time.Since(time.Unix(0, last)) > time.Minute {
-		lastTCPDialWarnNs.Store(time.Now().UnixNano())
-		logger.Warnf("TCP connect to local daemon <%s> failed (%v), trying WSS <%s>", localTCPAddr, err, localWSSAddr)
-	} else {
-		logger.Debugf("TCP connect to local daemon <%s> failed (%v), using WSS <%s>", localTCPAddr, err, localWSSAddr)
-	}
+	warnTCPDialFallback(err)
 	conn, err = dialWSSConnection(localWSSAddr, config.ConfigData.REST.SSL.VerifyServer)
 	if err != nil {
 		return nil, err

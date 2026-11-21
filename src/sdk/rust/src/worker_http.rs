@@ -13,6 +13,7 @@ use std::time::Instant;
 use tokio::sync::watch;
 
 use crate::client_http::AppMeshClient;
+use crate::constants::HTTP_HEADER_KEY_X_APPMESH_PROCESS_KEY;
 use crate::error::AppMeshError;
 use crate::response_ext::ResponseExt;
 
@@ -80,7 +81,7 @@ impl AppMeshWorker {
         let path = format!("/appmesh/app/{}/task", app_name);
 
         let mut headers = HashMap::new();
-        headers.insert("X-AppMesh-Process-Key".to_string(), pkey);
+        headers.insert(HTTP_HEADER_KEY_X_APPMESH_PROCESS_KEY.to_string(), pkey);
 
         let mut stop_rx = self.stop_tx.subscribe();
         let mut attempts: u32 = 0;
@@ -136,7 +137,7 @@ impl AppMeshWorker {
         let path = format!("/appmesh/app/{}/task", app_name);
 
         let mut headers = HashMap::new();
-        headers.insert("X-AppMesh-Process-Key".to_string(), pkey);
+        headers.insert(HTTP_HEADER_KEY_X_APPMESH_PROCESS_KEY.to_string(), pkey);
 
         let resp = self.client.raw_request(Method::PUT, &path, Some(result), Some(headers), None, false).await?;
 
@@ -163,7 +164,7 @@ impl AppMeshWorker {
         let path = format!("/appmesh/app/{}/task/partial", app_name);
 
         let mut headers = HashMap::new();
-        headers.insert("X-AppMesh-Process-Key".to_string(), pkey);
+        headers.insert(HTTP_HEADER_KEY_X_APPMESH_PROCESS_KEY.to_string(), pkey);
 
         let resp =
             self.client.raw_request(Method::POST, &path, Some(partial.as_bytes()), Some(headers), None, false).await?;

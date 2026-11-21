@@ -7,6 +7,7 @@
 #include "../Configuration.h"
 #include "../application/Application.h"
 #include "AuthReplicator.h"
+#include "AuthReplicationTokens.h"
 #include "SecretProtector.h"
 #include "Security.h"
 
@@ -19,8 +20,6 @@
 namespace
 {
 	const std::string SYSTEM_PRINCIPAL_ID = "system:appmesh";
-	const char *AUTH_MODE_ENV = "APPMESH_AUTH_MODE";
-	const char *AUTH_ROLE_ENV = "APPMESH_AUTH_ROLE";
 	const char *BUILTIN_AUTH_MODE = "builtin";
 	const char *EXTERNAL_AUTH_MODE = "external";
 	const char *AUTH_STACK_CONFIG_FILE = "auth-stack.yaml";
@@ -221,14 +220,13 @@ void AuthorizationStore::init()
 	const static char fname[] = "AuthorizationStore::init() ";
 	// Replica mode decides where the policy loads from and persists to; it must
 	// be established before the first load.
-	const auto replicationSource = Utility::stdStringTrim(Utility::getenv("APPMESH_AUTH_REPLICATION_FROM"));
+	const auto replicationSource = Utility::getenvTrimmed(AuthReplication::ENV_FROM);
 	if (!replicationSource.empty())
 	{
 		m_replicaMode = true;
 		// The cache is a follower-local accelerator, never a hand-edited policy
 		// file; work/auth/replication/ cannot host it (mounted read-only).
-		m_replicaCacheFile =
-			(fs::path(Utility::getHomeDir()) / APPMESH_WORK_DIR / APPMESH_WORK_CONFIG_DIR / "replica-policy.yaml").string();
+		m_replicaCacheFile = Utility::getWorkConfigFilePath("replica-policy.yaml");
 	}
 
 	Json::Value root;
@@ -1135,14 +1133,13 @@ void AuthorizationStore::initializeFirstAdminEnrollment()
 	std::lock_guard guard(m_mutex);
 	const auto authMode = Utility::getenv(AUTH_MODE_ENV, BUILTIN_AUTH_MODE);
 	if (authMode != BUILTIN_AUTH_MODE && authMode != EXTERNAL_AUTH_MODE)
-		throw std::invalid_argument("APPMESH_AUTH_MODE must be builtin or external");
+		throw std::invalid_argument(std::string(AUTH_MODE_ENV) + " must be builtin or external");
 	m_builtinAuthentication = authMode == BUILTIN_AUTH_MODE;
 
 	// Versions before automatic subject-pinned enrollment generated a second
 	// owner-only proof. It is no longer accepted, so remove any stale copy during
 	// the upgrade instead of leaving obsolete credential material behind.
-	const auto legacyProofPath =
-		(fs::path(Utility::getHomeDir()) / APPMESH_WORK_DIR / "auth" / "secrets" / "first-admin-enrollment-token").string();
+	const auto legacyProofPath = SecretProtector::secretsFilePath("first-admin-enrollment-token");
 	if (Utility::isFileExist(legacyProofPath))
 		Utility::removeFile(legacyProofPath);
 
