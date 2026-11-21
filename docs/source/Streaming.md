@@ -2,9 +2,10 @@
 
 Large-model services produce output continuously and often accept input
 continuously. App Mesh serves those workloads with three streaming
-primitives on the plain HTTPS REST listener, so any HTTP client — `curl`,
-a browser `fetch`, an OpenAI-style consumer — receives tokens as they are
-produced:
+primitives on the engine's native HTTPS listener (the WSS/CLI port,
+default 6058; behind the web UI's reverse proxy, 443), so any HTTP
+client — `curl`, a browser `fetch`, an OpenAI-style consumer — receives
+tokens as they are produced:
 
 | Primitive | Route | Purpose |
 |---|---|---|
@@ -12,8 +13,9 @@ produced:
 | Streaming task RPC | `POST /appmesh/app/{name}/task/stream` | Worker partials + final result over one call |
 | stdin injection | `POST /appmesh/app/{name}/input` | Drive a running process turn by turn |
 
-All three answer on the same listener as the REST API (default port 6058)
-and use the standard bearer authentication and the application permission
+All three answer only on the engine's native listener (default wss/https
+6058) — the agent REST listener (6060) carries no streaming routes — and
+use the standard bearer authentication and the application permission
 model. The server pushes frames as `text/event-stream` (SSE); a comment
 line (`: ping`) arrives every 15 seconds as a keep-alive and disconnect
 probe.
@@ -43,6 +45,9 @@ length) keeps a cursor consumer on raw offsets.
 | `final` | The streaming task delivered its final result |
 | `disconnected` | The keep-alive heartbeat detected the peer is gone |
 | `error` | The call failed; `status` and `message` carry the equivalent HTTP answer |
+
+The server never sends a `closed` reason; it is the Python SDK's marker for a
+peer connection that closed without delivering a terminal `end` event.
 
 ## Output stream
 
@@ -86,11 +91,15 @@ The call parks like a normal task RPC. A worker (see the Worker API below)
 may push any number of `partial` events while it works; its final reply
 arrives as `final` and the stream ends with `end{final}`. A one-shot
 `run_task` caller receives no partials; a streaming caller that never gets
-a worker reply ends with `end{timeout}` or `end{error}`.
+a worker reply ends with `end{timeout}` or `end{error}`. Partial
+granularity is the worker's choice — App Mesh's llm-agent, for instance,
+flushes one `partial` per assistant message, not per model token.
 
 Permission: `app-run-task` plus write access to the application. Framed
-transports (TCP 6059, WSS control channel) answer this route with 405:
-streams belong to plain HTTP.
+transports cannot carry a chunked event stream (SDKs redirect these calls
+to a direct HTTPS side channel), and the agent REST listener (6060) has no
+streaming routes at all: streaming lives on the engine's native listener
+(6058).
 
 ### Worker side
 
@@ -153,13 +162,16 @@ generator's return value is an `SseEnd` marker:
 ```python
 from appmesh import AppMeshClient
 
-client = AppMeshClient(bearer_token=TOKEN)
+# Streaming routes live on the engine's native listener (default wss/https
+# 6058) — the SDK's default base_url (the agent REST port 6060) has no
+# streaming routes, so point the client at the engine listener for these calls.
+client = AppMeshClient("https://127.0.0.1:6058", bearer_token=TOKEN)
 
 # 1) stream a one-shot run
 for chunk in client.stream_run("python3 infer.py --prompt '...'"):
     print(chunk, end="")
 
-# 2) streaming task RPC (LLM agent token stream)
+# 2) streaming task RPC (LLM agent stream: one partial per assistant message)
 end = None
 for token in client.run_task_stream("llm-agent",
         '{"action":"session_send","session_id":"s1","input":"hi","stream":true}',
@@ -182,8 +194,10 @@ wait/subscribe APIs for now.
 
 ## Limits and scope
 
-- Streams do not traverse node forwarding (`X-Target-Host`) or the agent
-  proxy (6060); connect to the target node's REST listener directly.
+- Streams do not traverse node forwarding (`X-Target-Host`), and the agent
+  REST listener (6060) carries no streaming routes; connect to the target
+  node's engine listener directly (wss/https, default 6058; via the web
+  UI, 443).
 - Browser `EventSource` cannot set an `Authorization` header; use `fetch`
   with a ReadableStream reader for bearer-authenticated streams.
 - An SSE replay covers the current run only; rotated stdout files keep

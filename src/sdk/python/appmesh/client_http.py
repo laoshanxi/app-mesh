@@ -30,7 +30,7 @@ from .app import App
 from .app_output import AppOutput
 from .app_run import AppRun, OutputHandler
 from .exceptions import AppMeshAuthError, AppMeshConnectionError, AppMeshRequestError
-from .streaming import SseEnd, end_from_payload, iter_sse_events, raise_on_error_end
+from .streaming import SseEnd, end_from_payload, iter_sse_events, raise_on_error_end, route_hint
 from .token_provider import StaticAccessTokenProvider, TokenProvider
 
 logger = logging.getLogger(__name__)
@@ -908,13 +908,23 @@ class AppMeshClient:
         """Open an SSE stream as a streamed response; SSE cannot ride a framed
         (TCP/WSS) transport, so framed subclasses redirect this to a direct HTTPS side channel.
         """
-        return self._request_http(method, path=path, query=query, body=body)
+        try:
+            return self._request_http(method, path=path, query=query, body=body)
+        except AppMeshRequestError as e:
+            # 404/405 on a streaming route almost always means base_url points at
+            # the agent REST listener, which carries no streaming routes — say so.
+            if e.status_code in (HTTPStatus.NOT_FOUND, HTTPStatus.METHOD_NOT_ALLOWED):
+                raise AppMeshRequestError(f"{e}{route_hint(e.status_code)}", e.status_code) from e
+            raise
 
     def run_task_stream(self, app_name: str, data: str, timeout: int = 300) -> Iterator[str]:
         """Streaming task RPC: send an invocation and yield incremental results as they arrive.
 
         Streaming counterpart of run_task(): the worker may push any number of partials
         (``worker.send_task_partial``) before its final reply, each yielded in order.
+        The streaming routes live on the engine's native listener (default wss/https
+        6058; via the web UI, 443) — a client left at the default ``base_url`` (the
+        agent REST listener, port 6060) has no streaming routes and gets 404/405.
 
         Args:
             app_name: Name of the target application (as registered in App Mesh).
@@ -963,7 +973,10 @@ class AppMeshClient:
 
         Replays from ``stdout_position``, then (with ``follow=True``) yields live output
         until exit/removal/timeout; the server de-duplicates the replay/live boundary,
-        so no polling or position bookkeeping is needed here.
+        so no polling or position bookkeeping is needed here. Streaming routes are
+        served on the engine's native listener (default wss/https 6058; via the web
+        UI, 443) — not the agent REST listener on the default ``base_url`` port 6060
+        (see ``run_task_stream``).
 
         Args:
             app_name: Name of the target application.
@@ -1014,7 +1027,8 @@ class AppMeshClient:
 
         Equivalent to run_app_async() + follow_output() + delete_app(); serves continuous-output
         processes (model inference, log producers) that the fully-buffered run_app_sync()
-        cannot show until completion.
+        cannot show until completion. Like ``follow_output``, this needs the engine's
+        native listener (default wss/https 6058), not the agent REST listener 6060.
 
         Args:
             app: An ``App`` instance or a shell command string (same contract as run_app_async).

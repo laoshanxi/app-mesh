@@ -7,6 +7,12 @@
 set -eu
 umask 077
 STATE=/vault-init-state/init.json
+# Completion marker for this sidecar's exclusive state volume: appmesh_master's
+# healthcheck gate (depends_on: service_healthy) waits for it, so the first
+# bootstrap cannot race an unfinished setup. Drop any stale marker from a
+# previous run first, so the gate reflects THIS run's progress.
+DONE=/vault-init-state/init.done
+rm -f "$DONE"
 # The official image drops to its vault user (resolve the name: the uid
 # differs across image families); this sidecar runs as root, so it prepares
 # the writable mounts the server needs. Idempotent no-ops when ownership
@@ -78,7 +84,7 @@ fi
 # Underscore hostnames are rejected either way (Vault drops underscore SANs;
 # enforce_hostnames is back at its default true), so nodes use the hyphenated
 # alias and the bootstrap maps underscore names onto it.
-PKI_DOMAINS="${APPMESH_PKI_ALLOWED_DOMAINS:-localhost,appmesh-master,appmesh-slave1,appmesh-slave2,appmesh-llm}"
+PKI_DOMAINS="${APPMESH_PKI_ALLOWED_DOMAINS:-localhost,appmesh-master,appmesh-slave1,appmesh-slave2,appmesh-llm,appmesh-client}"
 echo "PKI role appmesh-node issues for domains: ${PKI_DOMAINS}"
 vault write pki/roles/appmesh-node \
     allowed_domains="${PKI_DOMAINS}" allow_bare_domains=true allow_subdomains=false \
@@ -127,6 +133,9 @@ if [ ! -f /vault-owner/owner.vault-token ]; then
 fi
 # The appmesh owner (uid 482) must read the token this root sidecar wrote.
 chown 482:482 /vault-owner/owner.vault-token 2>/dev/null || true
+
+# Setup (PKI role, policies, owner token) is complete: open the master's gate.
+touch "$DONE"
 
 # Watchdog: keep the server unsealed across restarts.
 while true; do

@@ -19,6 +19,7 @@ from .app_run import OutputHandler
 from .client_http import AppMeshClient
 from .exceptions import AppMeshAppRemovedError, AppMeshAuthError, AppMeshConnectionError, AppMeshRequestError
 from . import request_signature
+from .streaming import route_hint
 from .subscribe import (
     EVENT_TYPE_DISCONNECTED,
     AppEvent,
@@ -273,7 +274,10 @@ class TransportClientMixin:
         try:
             resp.raise_for_status()
         except requests.exceptions.HTTPError as e:
-            raise AppMeshRequestError(f"SSE request failed: {e}", resp.status_code) from e
+            # 404/405 on a streaming route: the base_url likely points at the agent
+            # REST listener, which carries no streaming routes — say so.
+            raise AppMeshRequestError(f"SSE request failed: {e}{route_hint(resp.status_code)}",
+                                      resp.status_code) from e
         return resp
 
     def add_app(self, app: App, subscribe_events: Optional[list] = None, callback: Optional[EventCallback] = None) -> App:
@@ -427,7 +431,7 @@ class TransportClientMixin:
                     exit_code = int(event.data.get("exit_code"))
                 except (TypeError, ValueError):
                     failure = AppMeshConnectionError(f"EXIT event for '{run.app_name}' carried an unparseable exit_code: "
-                        "{event.data.get('exit_code')!r}")
+                        f"{event.data.get('exit_code')!r}")
                 done.set()
             elif event.event_type == "REMOVED":
                 if exit_code is None and failure is None:

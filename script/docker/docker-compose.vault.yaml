@@ -93,6 +93,16 @@ services:
       - appmesh_vault_owner:/vault-owner
       - appmesh_vault_data:/vault/data
       - appmesh_vault_audit:/vault/audit
+    healthcheck:
+      # Ready = this run's setup finished (the script touches the marker after
+      # the PKI role and owner token exist). Gates appmesh_master below, so a
+      # fresh start no longer races the bootstrap into a misleading "dependency
+      # failed to start" that would only self-heal via restart: always.
+      test: ["CMD-SHELL", "test -f /vault-init-state/init.done"]
+      interval: 5s
+      timeout: 3s
+      retries: 60
+      start_period: 15s
     depends_on:
       - appmesh_vault
     logging:
@@ -134,7 +144,9 @@ services:
       - appmesh_vault_owner:/opt/appmesh/work/auth/vault-owner:ro
     depends_on:
       appmesh_vault_init:
-        condition: service_started
+        # Start only after the sidecar's setup pass completed (marker healthcheck
+        # above): the first bootstrap needs the PKI role and owner token in place.
+        condition: service_healthy
 
   appmesh_slave1:
     # The same hyphenated alias the master carries (Vault PKI drops the

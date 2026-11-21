@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"regexp"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -280,6 +281,10 @@ func substituteChecked(template string, ctx *Context, jobName string) (string, s
 				if miss == "" {
 					miss = msg
 				}
+			} else if msg := stepOutputMiss(match, expr, ctx, jobName); msg != "" {
+				if miss == "" {
+					miss = msg
+				}
 			} else {
 				logger.Warn("expression: unresolved " + match + " embedded literally")
 			}
@@ -334,6 +339,11 @@ func SubstituteForCommand(template string, ctx *Context, jobName string) (string
 				}
 			} else if msg := messageOutputMiss(match, exprText, ctx, jobName); msg != "" {
 				// Always an author mistake: fail the step, not the shell.
+				if buildErr == nil {
+					buildErr = errors.New(msg)
+				}
+			} else if msg := stepOutputMiss(match, exprText, ctx, jobName); msg != "" {
+				// Same for a non-produced outputs key of a completed step.
 				if buildErr == nil {
 					buildErr = errors.New(msg)
 				}
@@ -466,6 +476,10 @@ func SubstituteMessagePayload(template string, ctx *Context, jobName string) (st
 							if miss == "" {
 								miss = msg
 							}
+						} else if msg := stepOutputMiss(match, exprText, ctx, jobName); msg != "" {
+							if miss == "" {
+								miss = msg
+							}
 						} else {
 							logger.Warn("expression: unresolved " + match + " embedded literally")
 						}
@@ -558,6 +572,70 @@ func messageOutputMiss(match, expr string, ctx *Context, jobName string) string 
 	}
 	return fmt.Sprintf("unresolved expression %s: message step %q produced no answer "+
 		"(plain-text responders expose stdout)", match, stepID)
+}
+
+// stepOutputMiss reports an outputs.<key> reference at a completed non-message
+// step that never produced that key — an author mistake that must fail the
+// step in the engine instead of handing the shell a literal ${{ }} that comes
+// back as "bad substitution"; empty otherwise.
+func stepOutputMiss(match, expr string, ctx *Context, jobName string) string {
+	path := expr
+	if m := toJSONPattern.FindStringSubmatch(expr); m != nil {
+		path = strings.TrimSpace(m[1])
+	}
+	parts := strings.Split(path, ".")
+	var stepKey, stepID, key string
+	crossJob := false
+	switch {
+	case parts[0] == "steps" && len(parts) == 4 && parts[2] == "outputs":
+		stepKey, stepID, key = jobName+"."+parts[1], parts[1], parts[3]
+	case parts[0] == "jobs" && len(parts) == 6 && parts[2] == "steps" && parts[4] == "outputs":
+		stepKey, stepID, key = parts[1]+"."+parts[3], parts[3], parts[5]
+		crossJob = true
+	default:
+		return ""
+	}
+	ctx.mu.RLock()
+	defer ctx.mu.RUnlock()
+	if ctx.messageSteps[stepKey] {
+		return "" // message steps answer through messageOutputMiss
+	}
+	var step map[string]any
+	if s, ok := ctx.Steps[stepKey]; ok {
+		step = s
+	} else if crossJob {
+		// Cross-job step results also live in the job snapshot.
+		if j, ok := ctx.Jobs[parts[1]]; ok {
+			steps, _ := j["steps"].(map[string]map[string]any)
+			step, _ = steps[parts[3]]
+		}
+	}
+	if step == nil {
+		// Not run yet (or a parallel producer still running): only the generic
+		// unresolved warning applies — failing here would race parallel jobs.
+		return ""
+	}
+	// A step that did not succeed never produced outputs; references must fail
+	// or gate on it, not read a literal.
+	if status, _ := step["status"].(string); status != models.StatusSuccess {
+		return fmt.Sprintf("unresolved expression %s: step %q did not succeed "+
+			"(status %q); it produced no outputs", match, stepID, status)
+	}
+	outs, _ := step["outputs"].(map[string]string)
+	if _, ok := outs[key]; ok {
+		return "" // produced after all; keep the substitution
+	}
+	if len(outs) == 0 {
+		return fmt.Sprintf("unresolved expression %s: step %q produced no output %q "+
+			"(it produced no outputs)", match, stepID, key)
+	}
+	produced := make([]string, 0, len(outs))
+	for name := range outs {
+		produced = append(produced, name)
+	}
+	sort.Strings(produced)
+	return fmt.Sprintf("unresolved expression %s: step %q produced no output %q "+
+		"(it produced: %s)", match, stepID, key, strings.Join(produced, ", "))
 }
 
 // resolveExpr renders one expression; ok is false when its path is unresolved.

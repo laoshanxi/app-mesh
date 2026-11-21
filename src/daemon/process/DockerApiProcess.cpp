@@ -10,11 +10,13 @@
 #include <cstdlib>
 #include <cstring>
 #include <fstream>
+#include <iterator>
 #include <limits>
 #include <mutex>
 #include <sstream>
 #include <thread>
 #include <tuple>
+#include <unistd.h>
 #include <utility>
 #include <vector>
 
@@ -183,10 +185,89 @@ std::vector<std::string> dockerHostSecurityFindings(const Json::Value &createBod
 	return findings;
 }
 
-// Namespaced so an App Mesh container can never collide with an operator container.
+// The OS hostname: the daemon and the embedded agent run on the same host, so
+// both derive the identical ownership identity, and nodes sharing one Docker
+// engine (sibling containers, a common docker.sock) stay distinguishable.
+std::string dockerNodeIdentity()
+{
+	char host[256] = {};
+	if (::gethostname(host, sizeof(host) - 1) != 0 || host[0] == '\0')
+		return "unknown-node";
+	return host;
+}
+
+// Namespaced by node and app so an App Mesh container can never collide with an
+// operator container, nor with the same-named application of another node.
 std::string DockerApiProcess::namespacedContainerName(const std::string &appName)
 {
-	return std::string("appmesh-").append(appName);
+	return "appmesh-" + dockerNodeIdentity() + "-" + appName;
+}
+
+void inlineShellScriptCmd(Json::Value &createBody)
+{
+	// Presence checks first: operator[] would insert null members and pollute
+	// the create body of an ENTRYPOINT-only image.
+	if (!HAS_JSON_FIELD(createBody, "Cmd") || !HAS_JSON_FIELD(createBody, "HostConfig"))
+		return;
+	const auto &cmd = createBody["Cmd"];
+	// The exact shape Application::getCmdLine() produces for shell mode: `bash <script>`.
+	if (!cmd.isArray() || cmd.size() != 2 || !cmd[0].isString() || cmd[0].asString() != "bash" || !cmd[1].isString())
+		return;
+	const auto script = cmd[1].asString();
+
+	// Only inline when this very script is the compile step's same-path read-only bind.
+	auto &hostConfig = createBody["HostConfig"];
+	if (!hostConfig.isObject() || !hostConfig["Binds"].isArray())
+		return;
+	const auto bindSpec = script + ":" + script + ":ro";
+	bool bound = false;
+	for (const auto &bind : hostConfig["Binds"])
+		if (bind.isString() && bind.asString() == bindSpec)
+			bound = true;
+	if (!bound)
+		return;
+
+	std::ifstream in(script, std::ios::binary);
+	if (!in.is_open())
+		return; // unreadable here would be unreadable in the container; keep the old shape
+	std::string content((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+
+	// The generated header's cd (its 4th line) targets a daemon-host path; a
+	// generic image lacks it and set -e would kill the script before the user
+	// command. appmesh-based images still cd successfully, keeping the
+	// working-dir behavior unchanged; user lines are never touched.
+	{
+		const auto cdPrefix = std::string("cd ");
+		auto lineStart = content.find("set -e");
+		if (lineStart != std::string::npos)
+		{
+			lineStart = content.find('\n', lineStart);
+			if (lineStart != std::string::npos)
+			{
+				++lineStart;
+				const auto lineEnd = content.find('\n', lineStart);
+				if (lineEnd != std::string::npos && content.compare(lineStart, cdPrefix.length(), cdPrefix) == 0)
+				{
+					const auto dir = content.substr(lineStart + cdPrefix.length(), lineEnd - lineStart - cdPrefix.length());
+					content.replace(lineStart, lineEnd - lineStart,
+						cdPrefix + dir + " 2>/dev/null || echo 'App Mesh: working dir <" + dir +
+							"> not present in this container, using the image default' >&2");
+				}
+			}
+		}
+	}
+
+	Json::Value inlined(Json::arrayValue);
+	inlined.append("bash");
+	inlined.append("-c");
+	inlined.append(std::move(content));
+	createBody["Cmd"] = std::move(inlined);
+
+	Json::Value kept(Json::arrayValue);
+	for (const auto &bind : hostConfig["Binds"])
+		if (!bind.isString() || bind.asString() != bindSpec)
+			kept.append(bind);
+	hostConfig["Binds"] = std::move(kept);
 }
 
 // Event-push liveness: the scheduler demotes the poll only while markers stay fresh.
@@ -468,6 +549,10 @@ void DockerApiProcess::sweepOrphanContainers()
 			const auto appName = labels.isObject() ? GET_JSON_STR_VALUE(labels, DOCKER_LABEL_APP) : std::string();
 			if (appName.empty())
 				continue;
+			// Another node's container on the shared engine is not ours to judge;
+			// the node that owns it runs its own sweep.
+			if (!labels.isObject() || GET_JSON_STR_VALUE(labels, DOCKER_LABEL_NODE) != dockerNodeIdentity())
+				continue;
 			const auto app = Configuration::instance()->getApp(appName, false);
 			if (app && app->isContainerized())
 				continue;
@@ -553,7 +638,8 @@ void DockerApiProcess::adoptRecoveredContainer()
 		return;
 	const auto &labels = inspect["labels"];
 	if (GET_JSON_STR_VALUE(labels, DOCKER_LABEL_MANAGED) != "true" ||
-		GET_JSON_STR_VALUE(labels, DOCKER_LABEL_APP) != legacyContainerName())
+		GET_JSON_STR_VALUE(labels, DOCKER_LABEL_APP) != legacyContainerName() ||
+		GET_JSON_STR_VALUE(labels, DOCKER_LABEL_NODE) != dockerNodeIdentity())
 		return;
 	if (!HAS_JSON_FIELD(inspect, "running") || !inspect["running"].isBool())
 		return;
@@ -598,13 +684,18 @@ void DockerApiProcess::terminateImpl()
 	// Persist the container's final logs before the delete removes them.
 	archiveContainerLogs(containerId);
 
-	// Kill — idempotent once stop did its job.
-	resp = this->requestContainer(web::http::methods::POST, Utility::stringFormat("/%s/kill", containerId.c_str()), {},
-								  nullptr);
-
-	if (resp->statusCode >= web::http::status_codes::BadRequest && resp->statusCode != web::http::status_codes::NotFound)
+	// Kill — unless the container already exited (every stop of a completed run
+	// would otherwise log docker's "cannot kill ... is not running" noise).
+	const auto state = this->inspectState(containerId);
+	if (!state || (*state)["running"].asBool())
 	{
-		LOG_WAR << fname << "Kill container <" << containerId << "> failed <" << resp->text << ">";
+		resp = this->requestContainer(web::http::methods::POST, Utility::stringFormat("/%s/kill", containerId.c_str()),
+									  {}, nullptr);
+
+		if (resp->statusCode >= web::http::status_codes::BadRequest && resp->statusCode != web::http::status_codes::NotFound)
+		{
+			LOG_WAR << fname << "Kill container <" << containerId << "> failed <" << resp->text << ">";
+		}
 	}
 
 	// Delete
@@ -761,6 +852,10 @@ pid_t DockerApiProcess::startImpl(std::string cmd, std::string execUser, std::st
 	hostConfig["RestartPolicy"] = restartPolicy;
 	createBody["HostConfig"] = hostConfig;
 
+	// Shell mode's generated script never travels as a host bind (invisible to a
+	// docker.sock / sibling dockerd): it is inlined into the command instead.
+	inlineShellScriptCmd(createBody);
+
 	// Docker.HostSecurityPolicy: audited or rejected before the container exists.
 	{
 		const auto policy = Configuration::instance()->getDockerHostSecurityPolicy();
@@ -786,10 +881,14 @@ pid_t DockerApiProcess::startImpl(std::string cmd, std::string execUser, std::st
 	}
 
 	// One signed call: owned leftovers removed, container created, started, inspected.
+	// A managed application re-binds to a still-running orphan of its own instead
+	// of replacing it, so a node crash keeps the container and its in-container state.
+	const auto ownerApplication = owner().lock();
 	Json::Value runRequest;
 	runRequest["name"] = m_containerName;
 	runRequest["app"] = legacyContainerName();
 	runRequest["legacyName"] = legacyContainerName();
+	runRequest["adoptRunning"] = ownerApplication && !ownerApplication->isOneShot();
 	runRequest["graceSeconds"] = stopGraceSeconds();
 	runRequest["createBody"] = createBody;
 	resp = this->requestContainer(web::http::methods::POST, "/run", {}, &runRequest);
@@ -813,6 +912,9 @@ pid_t DockerApiProcess::startImpl(std::string cmd, std::string execUser, std::st
 
 	const auto containerId = GET_JSON_STR_VALUE(runResponse, "id");
 	setContainerId(containerId.empty() ? m_containerName : containerId);
+	if (GET_JSON_BOOL_VALUE(runResponse, "adopted"))
+		LOG_INF << fname << "adopted running orphan container <" << m_containerName << "> for application <"
+				<< legacyContainerName() << ">";
 
 	if (!GET_JSON_BOOL_VALUE(runResponse, "running"))
 	{

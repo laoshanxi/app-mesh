@@ -3,8 +3,8 @@
 Run a **Claude Code agent on App Mesh**. A thin wrapper around the official
 [Claude Agent SDK](https://code.claude.com/docs/en/agent-sdk/python): it routes session
 turns over the App Mesh task RPC, gives each session a stable working directory, and
-streams tokens as task-RPC partials (`run_task_stream`). The agent loop, tools, and
-conversation history are the SDK's; access control is the daemon's.
+streams assistant messages as task-RPC partials (`run_task_stream`). The agent loop,
+tools, and conversation history are the SDK's; access control is the daemon's.
 
 > **Built on Claude Code — runs Claude by default, but not Claude-only.** Out of the box it
 > runs Claude (Anthropic API, or Amazon Bedrock / Google Vertex). It can also drive other
@@ -41,12 +41,13 @@ package registers nothing itself):
 | App | one shared App — `llm-agent` | one worker App per session — `<app>-sess-<id>` |
 | Started by | llm image: started at boot; other installs: `appm enable -a llm-agent` after registration | admin, per session |
 | Sessions | many | exactly one, pre-assigned |
-| Streaming | yes — `run_task_stream` delivers token partials on the same call | yes — same channel; a worker also echoes to its STDOUT for legacy subscribers |
+| Streaming | yes — `run_task_stream` delivers partials on the same call | yes — same channel; a worker also echoes to its STDOUT for legacy subscribers |
 | Lifecycle | long-lived (`exit: restart`) | exits on close/idle/max-life → daemon removes it (`exit: remove`) |
 | Config | [`config/llm-agent.yaml`](config/llm-agent.yaml) | [`config/llm-agent-worker.yaml`](config/llm-agent-worker.yaml) |
 
 Both Apps stream the same way: the caller opens the streaming task channel
-(`run_task_stream`, SDK ≥ 3.0.20) and receives each token as a partial result; the
+(`run_task_stream`, SDK ≥ 3.0.20) and receives each assistant message as one
+partial result (message-level chunks, not per-token deltas); the
 final envelope (`{"answer", "iterations", "turn_tokens"}`) closes the turn. Scenario B
 now isolates context (one private session per App) rather than enabling streaming.
 
@@ -109,8 +110,8 @@ Restrict with `LLMAGENT_ALLOWED_TOOLS` (comma list) / `LLMAGENT_PERMISSION_MODE`
 
 ```jsonc
 // session_send — an unknown session_id is created on first use; reuse the same id to
-//                continue the conversation. With "stream": true the tokens travel as
-//                task-RPC partials (run_task_stream), on the shared App and workers alike.
+//                continue the conversation. With "stream": true each assistant message
+//                travels as a task-RPC partial (run_task_stream), on the shared App and workers alike.
 { "action": "session_send", "session_id": "...", "input": "hello",
   "stream": false, "max_iterations": 0 }
   → { "status":"ok", "data": { "answer", "iterations", "turn_tokens" } }
@@ -122,12 +123,12 @@ Restrict with `LLMAGENT_ALLOWED_TOOLS` (comma list) / `LLMAGENT_PERMISSION_MODE`
 Errors come back as `{ "status":"error", "message":"..." }`.
 
 With `stream: true`, call the streaming variant instead of the blocking one — each
-model token arrives as a partial on the same channel, and the envelope above is the
-final frame:
+assistant message arrives as a partial on the same channel (not a per-token
+delta), and the envelope above is the final frame:
 
 ```python
-for token in client.run_task_stream("llm-agent", json.dumps({..., "stream": True})):
-    print(token, end="", flush=True)
+for chunk in client.run_task_stream("llm-agent", json.dumps({..., "stream": True})):
+    print(chunk, end="", flush=True)
 # StopIteration.value.result carries the final envelope
 ```
 
@@ -205,7 +206,7 @@ as a failed step.
 ### Scenario B client flow
 
 One worker App per session; the client converses turn after turn with
-`run_task_stream`: each turn's tokens arrive as partials on the same call, and the
+`run_task_stream`: each turn's assistant messages arrive as partials on the same call, and the
 final envelope (answer, iterations, turn tokens) closes it. The worker's STDOUT echo
 keeps legacy STDOUT-subscribing clients working. See `b_interactive` / `WorkerStream`
 in [`examples/user_scenarios.py`](examples/user_scenarios.py) — and `a_stream`, which

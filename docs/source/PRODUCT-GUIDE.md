@@ -139,10 +139,10 @@ appm workflow detail -w release-pipeline <run_id>         # 每步状态/耗时/
 
 #### 场景一：给员工的大模型对话窗口（交互模式）
 
-**逐 token 流式输出**走任务 RPC 本身：一次 `run_task_stream` 调用里，每个 token 就是一个 partial，最终回执带完成元数据；共享应用与会话 worker 应用皆可，无需旁路订阅。需要上下文隔离时，每会话一个**专属 worker 应用**（稳定工作目录）；跨轮次记忆上下文；会话结束一键关闭，worker 应用和会话数据自动清除。
+**流式输出**走任务 RPC 本身：一次 `run_task_stream` 调用里，llm-agent 按每条 assistant 消息整块推送 partial（非逐 token 增量），最终回执带完成元数据；共享应用与会话 worker 应用皆可，无需旁路订阅。需要上下文隔离时，每会话一个**专属 worker 应用**（稳定工作目录）；跨轮次记忆上下文；会话结束一键关闭，worker 应用和会话数据自动清除。
 
 ```python
-# 一次调用，token 实时流出，最终回执收尾
+# 一次调用，assistant 消息逐块流出，最终回执收尾
 for token in client.run_task_stream("llm-agent", json.dumps(
         {"action": "session_send", "session_id": "S1",
          "input": "记住数字 7", "stream": True}), timeout=180):

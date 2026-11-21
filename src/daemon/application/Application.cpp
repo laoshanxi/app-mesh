@@ -353,6 +353,9 @@ void Application::FromJson(const std::shared_ptr<Application> &app, const Json::
 	const auto fileName = Utility::stringFormat("appmesh.%s.out", app->m_name.c_str());
 	app->m_stdoutFile = (outputDir / fileName).string();
 	app->m_stdoutCacheNum = GET_JSON_INT_VALUE(jsonObj, JSON_KEY_APP_stdout_backup_count);
+	// A containerized app's cold image pull is its own run (starts=2): two slots keep the pull progress readable at stdout[1].
+	if (!GET_JSON_STR_VALUE(jsonObj, JSON_KEY_APP_docker_image).empty() && app->m_stdoutCacheNum < 2)
+		app->m_stdoutCacheNum = 2;
 	app->m_stdoutFileQueue = std::make_shared<LogFileQueue>(app->m_stdoutFile, app->m_stdoutCacheNum);
 
 	if (app->m_commandLine.length() >= MAX_COMMAND_LINE_LENGTH)

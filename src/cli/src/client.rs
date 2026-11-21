@@ -128,6 +128,20 @@ pub async fn build_client_with_auth(cli: &Cli) -> Result<Arc<AppMeshClientWSS>> 
     let endpoint = get_current_endpoint(cli)?;
     let session = config::load_session(&endpoint)?
         .ok_or_else(|| anyhow::anyhow!("No sign-in session is configured for {}. Run 'appm logon'.", endpoint))?;
+    // Forwarded requests require a bearer token on every route, so the anonymous
+    // discovery GET below would always answer 401 — noise on every -F invocation.
+    // Skip it: use the stored token as-is, exactly what the degraded fallback did.
+    if cli.forward_to.is_some() {
+        if !stored_token_usable(&session) {
+            anyhow::bail!(
+                "The stored access token for {} is expired and forwarded requests accept only \
+                 bearer authentication. Run 'appm logon' again.",
+                endpoint
+            );
+        }
+        client.client().set_token(&session.tokens.access_token);
+        return Ok(client);
+    }
     // Discovery must use the HTTPS side channel, never the WSS transport: the
     // daemon authenticates the WebSocket only at upgrade time, and a transport
     // connected here without a token would stay anonymous for every later call.

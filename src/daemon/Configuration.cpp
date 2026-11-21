@@ -1025,6 +1025,8 @@ void Configuration::hotUpdate(Json::Value &jsonValue)
 		if (HAS_JSON_FIELD(jsonValue, JSON_KEY_Docker))
 		{
 			auto docker = jsonValue[JSON_KEY_Docker];
+			if (HAS_JSON_FIELD(docker, JSON_KEY_Docker_Enable))
+				SET_COMPARE(this->m_docker->m_enable, newConfig->m_docker->m_enable);
 			if (HAS_JSON_FIELD(docker, JSON_KEY_Docker_HostSecurityPolicy))
 				SET_COMPARE(this->m_docker->m_hostSecurityPolicy, newConfig->m_docker->m_hostSecurityPolicy);
 		}

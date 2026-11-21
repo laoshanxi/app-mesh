@@ -9,10 +9,13 @@
 /// after whitespace:
 ///
 ///     77a1...d0 slave1     per-follower token, revocable alone
+///     9f3c...e1            unlabeled shared or per-follower token
 ///     # comment lines are ignored
 ///
-/// A line without a label is not an accepted entry. Revoking one follower is
-/// a file edit: the endpoint re-reads the file on every request.
+/// A single-token line without a label is accepted (the shared file and the
+/// per-follower single-token files have no label column) and audited as
+/// "shared". Revoking one follower is a file edit: the endpoint re-reads the
+/// file on every request.
 namespace AuthReplication
 {
 // Deployment env names for the replication token source; the single spelling
@@ -33,7 +36,7 @@ struct AcceptedToken
 	std::string label;
 };
 
-/// Parses the token file content; lines without a label are skipped.
+/// Parses the token file content; unlabeled tokens get the audit label "shared".
 std::vector<AcceptedToken> parseTokenFile(const std::string &fileContent);
 
 /// Constant-time match of the presented bearer against an explicit accepted

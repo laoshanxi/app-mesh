@@ -18,6 +18,20 @@ constexpr int DOCKER_COMMAND_ERROR = -200;
 // Ownership labels stamped at create by the agent; cleanup only deletes owned containers.
 constexpr const char *const DOCKER_LABEL_MANAGED = "appmesh.managed";
 constexpr const char *const DOCKER_LABEL_APP = "appmesh.app";
+// Which node owns the container: nodes sharing one Docker engine (sibling
+// containers, a common docker.sock) must never judge or delete each other's.
+constexpr const char *const DOCKER_LABEL_NODE = "appmesh.node";
+
+// The node identity stamped into ownership labels (the OS hostname; both the
+// daemon and the embedded agent derive the same value on the same host).
+std::string dockerNodeIdentity();
+
+// Shell mode runs a generated script by bind-mounting it from the daemon's own
+// filesystem, which fails whenever dockerd does not share that filesystem
+// (docker.sock and sibling-container deployments). A create body whose command
+// is `bash <script>` plus that same-path bind gets the script content inlined
+// as `bash -c` and the bind dropped; other create bodies pass through untouched.
+void inlineShellScriptCmd(Json::Value &createBody);
 
 // High-risk host-facing settings the Docker.HostSecurityPolicy gate looks for
 // in a container definition.
@@ -44,8 +58,9 @@ public:
 	static void noteContainerEventsAlive();
 	static bool containerEventsFresh();
 
-	// "appmesh-<app>": namespaced so an App Mesh container can never collide
-	// with (or be mistaken for) an operator-created container of the same name.
+	// "appmesh-<node>-<app>": namespaced by node and app so an App Mesh container
+	// can never collide with an operator container, nor with the same-named
+	// application of another node sharing the Docker engine.
 	static std::string namespacedContainerName(const std::string &appName);
 
 	// Returns the docker container PID from the inspect projection.

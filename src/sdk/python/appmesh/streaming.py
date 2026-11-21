@@ -19,7 +19,7 @@ from typing import Iterator, Optional, Tuple
 
 import requests
 
-from .exceptions import AppMeshError, AppMeshRequestError, AppMeshTimeoutError
+from .exceptions import AppMeshConnectionError, AppMeshError, AppMeshRequestError, AppMeshTimeoutError
 
 
 @dataclass
@@ -43,33 +43,41 @@ class SseEnd:
 def iter_sse_events(resp: requests.Response) -> Iterator[Tuple[str, dict]]:
     """Yields ``(event, payload)`` from a streamed ``text/event-stream`` response.
 
-    Invalid JSON in a frame raises AppMeshRequestError.
+    Invalid JSON in a frame raises AppMeshRequestError. A connection dropped or a
+    read timeout before the terminal event raises AppMeshConnectionError (or
+    AppMeshTimeoutError), not a raw ``requests`` exception, so the streaming
+    generators surface one exception hierarchy.
     """
     resp.encoding = "utf-8"
     event_name = "message"
     data_lines = []
-    for line in resp.iter_lines(decode_unicode=True):
-        if line is None:
-            continue
-        if line == "":
-            if event_name != "message" or data_lines:
-                data = "\n".join(data_lines)
-                if data:
-                    try:
-                        payload = json.loads(data)
-                    except ValueError as exc:
-                        raise AppMeshRequestError(f"malformed SSE frame ({event_name}): {exc}") from exc
-                else:
-                    payload = {}
-                yield event_name, payload
-            event_name, data_lines = "message", []
-            continue
-        if line.startswith(":"):
-            continue  # heartbeat comment
-        if line.startswith("event:"):
-            event_name = line[len("event:"):].strip()
-        elif line.startswith("data:"):
-            data_lines.append(line[len("data:"):].lstrip())
+    try:
+        for line in resp.iter_lines(decode_unicode=True):
+            if line is None:
+                continue
+            if line == "":
+                if event_name != "message" or data_lines:
+                    data = "\n".join(data_lines)
+                    if data:
+                        try:
+                            payload = json.loads(data)
+                        except ValueError as exc:
+                            raise AppMeshRequestError(f"malformed SSE frame ({event_name}): {exc}") from exc
+                    else:
+                        payload = {}
+                    yield event_name, payload
+                event_name, data_lines = "message", []
+                continue
+            if line.startswith(":"):
+                continue  # heartbeat comment
+            if line.startswith("event:"):
+                event_name = line[len("event:"):].strip()
+            elif line.startswith("data:"):
+                data_lines.append(line[len("data:"):].lstrip())
+    except requests.exceptions.Timeout as exc:
+        raise AppMeshTimeoutError(f"stream interrupted by a read timeout before the terminal event: {exc}") from exc
+    except requests.exceptions.RequestException as exc:
+        raise AppMeshConnectionError(f"stream interrupted before the terminal event: {exc}") from exc
 
 
 def end_from_payload(payload: dict, **extra) -> SseEnd:
@@ -94,3 +102,13 @@ def raise_on_error_end(end: SseEnd) -> None:
         raise AppMeshTimeoutError(end.message or "stream timed out")
     if end.reason not in ("exit", "removed", "eof", "final", "disconnected", "closed"):
         raise AppMeshError(f"stream ended with unknown reason: {end.reason}")
+
+
+def route_hint(status: int) -> str:
+    """Pointer appended to SSE 404/405 errors: the daemon serves streaming routes
+    on its native listener (default wss/https 6058; via the web UI, 443), and the
+    agent REST listener (the client's default port 6060) has none."""
+    if status in (404, 405):
+        return (" Streaming is served by the engine's native listener (default wss/https port"
+                " 6058; via the web UI, 443), not the agent REST listener (default port 6060).")
+    return ""

@@ -6,6 +6,16 @@
 
 #include "../../common/Utility.h"
 
+namespace
+{
+	// Audit label for a bare token line. The owner-published shared file and the
+	// per-follower single-token files carry no label column, so a line without a
+	// label is a token, not a reject. The label must stay non-empty: matchToken
+	// returns the label and an empty return is the "no match" sentinel the
+	// replication endpoint keys its 401 on.
+	constexpr const char *UNLABELED_TOKEN_LABEL = "shared";
+}
+
 namespace AuthReplication
 {
 	std::vector<AcceptedToken> parseTokenFile(const std::string &fileContent)
@@ -20,11 +30,12 @@ namespace AuthReplication
 				continue;
 			const auto separator = trimmed.find_first_of(" \t");
 			if (separator == std::string::npos)
-				continue; // a line without a label is not an accepted entry
-			auto label = Utility::stdStringTrim(trimmed.substr(separator));
-			if (label.empty())
+			{
+				tokens.push_back({trimmed, UNLABELED_TOKEN_LABEL});
 				continue;
-			tokens.push_back({trimmed.substr(0, separator), label});
+			}
+			auto label = Utility::stdStringTrim(trimmed.substr(separator));
+			tokens.push_back({trimmed.substr(0, separator), label.empty() ? UNLABELED_TOKEN_LABEL : label});
 		}
 		return tokens;
 	}
