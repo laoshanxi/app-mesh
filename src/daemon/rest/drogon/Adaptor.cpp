@@ -1228,6 +1228,10 @@ void DrogonAdaptor::handleOutputStream(const drogon::HttpRequestPtr &req, drogon
 	const std::weak_ptr<FollowState> weakState = state;
 
 	// Emits the terminal "end" frame exactly once and tears the stream down.
+	// The frame is guarded by `ended`, but close and unsubscribe must run
+	// unconditionally: a client that vanished during the backfill already set
+	// `ended` from deliverStdout, and skipping the teardown here would leave
+	// the subscription and its state pinned forever.
 	const auto endFollow = [weakState](const std::string &reason, const Json::Value &extra)
 	{
 		const auto state = weakState.lock();
@@ -1236,17 +1240,19 @@ void DrogonAdaptor::handleOutputStream(const drogon::HttpRequestPtr &req, drogon
 		std::string subId;
 		{
 			std::lock_guard lock(state->mutex);
-			if (state->ended)
-				return;
-			state->ended = true;
 			subId = state->subId;
-			Json::Value end = extra;
-			end["reason"] = reason;
-			end["position"] = (Json::Int64)state->cursor;
-			state->sink->sendEvent("end", JSON::dump(end));
+			if (!state->ended)
+			{
+				state->ended = true;
+				Json::Value end = extra;
+				end["reason"] = reason;
+				end["position"] = (Json::Int64)state->cursor;
+				state->sink->sendEvent("end", JSON::dump(end));
+			}
 		}
 		// Outside the state lock: close() fires the sink's onClosed hook, which
 		// re-enters endFollow for a disconnect and would deadlock under the lock.
+		// Both calls are idempotent.
 		state->sink->close();
 		if (!subId.empty())
 			EventDispatcher::instance()->unsubscribe(subId);
@@ -1406,7 +1412,12 @@ void DrogonAdaptor::handleOutputStream(const drogon::HttpRequestPtr &req, drogon
 			// raw bytes; the raw span is the position delta.
 			const auto rawAdvance = position - chunkStart;
 			if (!output.empty() && !deliverStdout(chunkStart, output, rawAdvance))
+			{
+				// The sink is gone mid-backfill: end the follow here, because
+				// the dispatch path will not strip an already-ended subscription.
+				endFollow("disconnected", {});
 				return;
+			}
 			{
 				std::lock_guard lock(state->mutex);
 				if (state->ended)
@@ -1453,6 +1464,15 @@ void DrogonAdaptor::handleTaskStream(const drogon::HttpRequestPtr &req, drogon::
 	auto sink = startSseResponse(req, callback);
 	if (!sink)
 		return;
+	// A client that vanishes stops owning the answer: free the app's active
+	// task slot instead of letting the parked request (and its sink) sit until
+	// the target replies or the app stops. deleteTask interrupts only the
+	// in-flight task; queued requests stay parked under the task timer.
+	sink->setOnClosed([appName]()
+	{
+		if (auto app = Configuration::instance()->getApp(appName))
+			app->deleteTask();
+	});
 
 	// The single final reply of the parked request maps onto terminal SSE
 	// events: 200 becomes "final" + "end", anything else (auth races, task

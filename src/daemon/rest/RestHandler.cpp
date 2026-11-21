@@ -2062,8 +2062,12 @@ void RestHandler::apiSendTaskStream(const std::shared_ptr<HttpRequest> &message)
 	}
 
 	// Short default so a stuck target can't hold the app's active slot for days; override via ?timeout=.
+	// A stream request always keeps a bounded park: timeout=0 would skip the
+	// timer entirely and let a vanished client pin the active slot forever.
 	int timeout = getHttpQueryValue(*message, HTTP_QUERY_KEY_timeout, DEFAULT_RUN_TASK_TIMEOUT_SECONDS, 0,
 									MAX_RUN_APP_TIMEOUT_SECONDS);
+	if (timeout <= 0)
+		timeout = DEFAULT_RUN_TASK_TIMEOUT_SECONDS;
 	auto asyncRequest = std::make_shared<HttpRequestTaskStream>(message, std::move(sink));
 	asyncRequest->initTimer(timeout);
 	app->sendTask(asyncRequest);
