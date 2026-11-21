@@ -33,6 +33,9 @@ public:
 		std::string timestamp;
 		std::string nonce;
 		std::string signature;
+		/// X-Appmesh-Agent-Precheck == "1": the separate agent's forwarding
+		/// precheck marker (see the signature-required exemption in evaluate).
+		bool agentPrecheck = false;
 	};
 
 	struct Decision

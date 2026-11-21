@@ -34,19 +34,19 @@ Authorization:
     # identity before its first sign-in; a sign-in refreshes them from the token.
 
   roles:
-    # Package lifecycle automation may enumerate and stop non-system Apps. It
-    # deliberately has no Principal, role, configuration, or first-admin
-    # administration capabilities. app-manage-all only bypasses per-App owner
-    # share bits; app-control remains required for enable/disable operations.
-    # host-resource-view is read-only; it lets the automation client scrape
-    # /metrics (for example the packaged Prometheus stack).
+    # Package lifecycle automation with no Principal/role/config/first-admin
+    # capabilities. app-manage-all only bypasses per-App owner share bits;
+    # app-control remains required for enable/disable. config-view additionally
+    # lets it scrape /metrics (REST.MetricsRequireAuth gates the endpoint).
     appmesh-maintenance:
       - app-control
       - app-manage-all
       - app-view-all
+      - config-view
       - host-resource-view
     # Register and run own workflows; runs execute as their owner and step
     # processes are temporary Apps removed after each step (hence app-delete).
+    # X-Target-Host label routing and remote cleanup ride the caller's bearer, so host-forward is required.
     appmesh-workflow-runner:
       - app-reg
       - app-run-async
@@ -55,6 +55,7 @@ Authorization:
       - app-view
       - app-output-view
       - app-delete
+      - host-forward
       - label-view
     appmesh-admin:
       - app-control

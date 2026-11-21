@@ -22,7 +22,6 @@ struct CurlResponse
 struct ClientSSLConfig
 {
 	ClientSSLConfig();
-	void ResolveAbsolutePaths(std::string workingHome);
 	// Convert relative paths to absolute paths if necessary
 	static std::string ResolveAbsolutePath(const std::string &workingHome, std::string filePath);
 	unsigned long m_ssl_version;

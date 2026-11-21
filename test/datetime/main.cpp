@@ -1,6 +1,7 @@
 // test/datetime/main.cpp
 #define CATCH_CONFIG_MAIN // This tells Catch to provide a main() - only do this in one cpp file
 #include "../../src/common/DateTime.h"
+#include "../../src/common/DurationParse.h"
 #include "../../src/common/Utility.h"
 #include <ace/Init_ACE.h>
 #include <ace/OS.h>
@@ -9,6 +10,7 @@
 #include <fstream>
 #include <iostream>
 #include <set>
+#include <stdexcept>
 #include <string>
 #include <thread>
 #include <time.h>
@@ -82,11 +84,36 @@ TEST_CASE("DateTime Class Test", "[DateTime]")
     // time in different zone
     REQUIRE(DateTime::parseISO8601DateTime("2020-10-07T21:19:00+07", "") == DateTime::parseISO8601DateTime("2020-10-07T22:19:00+08", ""));
 
+    // A trailing 'Z' is an explicit UTC designator: parse as UTC no matter the host timezone;
+    // the local offset must never be appended to an already zoned string.
+    REQUIRE(DateTime::parseISO8601DateTime("2026-11-15T09:46:40.123456789Z") ==
+            DateTime::parseISO8601DateTime("2026-11-15T09:46:40.123456789+00:00"));
+    REQUIRE(DateTime::parseISO8601DateTime("2026-11-15T09:46:40Z") ==
+            DateTime::parseISO8601DateTime("2026-11-15T17:46:40+08:00"));
+
+    // formatRFC3339Time keeps sub-second precision: the docker log cursor nudges one millisecond past
+    // the last delivered line and relies on the fraction surviving the round trip.
+    const auto stamped = DateTime::parseISO8601DateTime("2026-11-15T09:46:40.250Z");
+    const auto nudged = stamped + std::chrono::milliseconds(1);
+    REQUIRE(DateTime::formatRFC3339Time(nudged) == "2026-11-15T09:46:40.251000Z");
+    REQUIRE(DateTime::formatRFC3339Time(stamped) == "2026-11-15T09:46:40.250000Z");
+
     // Convert 1543 milliseconds to 1 second and 543,000 microseconds
     long milliseconds = 1543;
     ACE_Time_Value time_in_msec(milliseconds / 1000, (milliseconds % 1000) * 1000);
     REQUIRE(time_in_msec.sec() == 1);
     REQUIRE(time_in_msec.usec() == 543000);
+}
+
+TEST_CASE("DurationParse numeric ranges", "[Duration]")
+{
+    init();
+    // Negative numeric input returns negative seconds; callers own the sign check.
+    REQUIRE(DurationParse::parse("-1") == -1);
+    REQUIRE(DurationParse::parse("-90") == -90);
+    REQUIRE_NOTHROW(DurationParse::parse("-2147483648"));
+    REQUIRE_THROWS_AS(DurationParse::parse("2147483648"), std::invalid_argument); // beyond int
+    REQUIRE_THROWS_AS(DurationParse::parse("-2147483649"), std::invalid_argument);
 }
 
 TEST_CASE("Boost Date Time Test", "[Boost]")

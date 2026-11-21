@@ -15,6 +15,8 @@ target_link_libraries(${PROJECT_NAME}
   PRIVATE
     Threads::Threads
     Boost::regex
+    Boost::system
+    Boost::filesystem
     common
 )
 

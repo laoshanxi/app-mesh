@@ -1,6 +1,7 @@
 // src/common/lwsservice/WebSocketService.cpp
 #include <algorithm>
 #include <cstring>
+#include <deque>
 #include <fstream>
 #include <memory>
 #include <sstream>
@@ -11,12 +12,18 @@
 #include "../../daemon/rest/Data.h"
 #include "../../daemon/rest/EventDispatcher.h"
 #include "../../daemon/rest/HttpRequest.h"
+#include "../../daemon/rest/SseSink.h"
 #include "../../daemon/rest/Worker.h"
 #include "../../daemon/security/Security.h"
 #include "../Utility.h"
+#include "SseStream.h"
 #include "WebSocketService.h"
 
 constexpr int LWS_RX_BUFFER_SIZE = 8192;
+
+// Cap on SSE frames buffered before the peer drains them: a client that never
+// reads must not pin worker memory. Overflow kills the connection.
+constexpr size_t MAX_SSE_PENDING_BYTES = 1024 * 1024;
 
 // Per-HTTP-connection state; lives in opaque_user_data (standard RAII).
 struct HttpSessionData
@@ -30,6 +37,13 @@ struct HttpSessionData
     bool http_pending = false;
     bool headers_sent = false;
     std::vector<uint8_t> response_body;
+    // SSE stream mode (a /task/stream or /output/stream request): frames queue
+    // here and drain as chunked HTTP writes, one per WRITEABLE callback.
+    bool sse_request = false;
+    bool sse_close_requested = false;
+    size_t sse_pending_bytes = 0;
+    std::shared_ptr<SseSink> sse_sink;
+    std::deque<std::string> sse_pending;
 
     HttpSessionData() = default;
     ~HttpSessionData() { cleanup(); }
@@ -49,6 +63,12 @@ struct HttpSessionData
         headers_sent = false;
         response_body.clear();
         http_response_data.clear();
+        sse_request = false;
+        sse_close_requested = false;
+        sse_pending_bytes = 0;
+        sse_pending.clear();
+        // sse_sink: the close callbacks close it for the owner; release here too.
+        sse_sink.reset();
     }
 };
 
@@ -65,6 +85,29 @@ static bool is_loopback_peer(struct lws *wsi)
     const std::string peer(address);
     return peer == "::1" || peer == "0:0:0:0:0:0:0:1" ||
            peer.rfind("127.", 0) == 0 || peer.rfind("::ffff:127.", 0) == 0;
+}
+
+// The two SSE stream routes the REST layer serves natively over plain HTTP.
+static bool is_sse_stream_path(const std::string &path)
+{
+    return (path.size() >= 12 && path.compare(path.size() - 12, 12, "/task/stream") == 0) ||
+           (path.size() >= 14 && path.compare(path.size() - 14, 14, "/output/stream") == 0);
+}
+
+// Starts the SSE stream for an accepted stream request: creates the sink bound
+// to this wsi, registers it under the marker header the worker-side handler
+// resolves across the msgpack boundary, and parks it in the PSS. Must run
+// before the request is serialized (the marker rides the request headers) and
+// after req_id is assigned (the ABA pair frames carry).
+static void attach_sse_stream(struct lws *wsi, HttpSessionData *pss)
+{
+    auto sink = std::make_shared<SseStream>(wsi, pss->req_id, pss->req_id, Utility::shortID(),
+                                            SSE_HEARTBEAT_MILLISECONDS);
+    SseStreamRegistry::instance()->emplace(sink, sink->id());
+    pss->http_request->headers[HTTP_HEADER_KEY_X_AppMesh_Sse_Stream] = sink->id();
+    pss->sse_request = true;
+    pss->sse_sink = sink;
+    sink->startTimers();
 }
 
 // -------------------------------
@@ -494,6 +537,124 @@ void WebSocketService::stop()
 }
 
 // -------------------------------
+// SSE stream write — IO thread only (HTTP_WRITEABLE callback).
+// -------------------------------
+int WebSocketService::writeSseHttp(struct lws *wsi, HttpSessionData *pss)
+{
+    const static char fname[] = "WebSocketService::writeSseHttp() ";
+
+    // Phase 1: SSE response headers. No content-length; the transfer is
+    // delimited by HTTP/1.1 chunked framing, which we emit per frame below.
+    if (!pss->headers_sent)
+    {
+        unsigned char headers[LWS_PRE + 2048];
+        unsigned char *p = headers + LWS_PRE;
+        unsigned char *end = headers + sizeof(headers) - 1;
+
+        if (lws_add_http_header_status(wsi, HTTP_STATUS_OK, &p, end))
+            return 1;
+
+        static const char contentType[] = "text/event-stream";
+        if (lws_add_http_header_by_token(wsi, WSI_TOKEN_HTTP_CONTENT_TYPE, (const unsigned char *)contentType,
+                                         (int)sizeof(contentType) - 1, &p, end))
+            return 1;
+        static const char transferEncoding[] = "chunked";
+        if (lws_add_http_header_by_name(wsi, (const unsigned char *)"transfer-encoding:",
+                                        (const unsigned char *)transferEncoding,
+                                        (int)sizeof(transferEncoding) - 1, &p, end))
+            return 1;
+        static const char cacheControl[] = "no-cache";
+        if (lws_add_http_header_by_name(wsi, (const unsigned char *)"cache-control:",
+                                        (const unsigned char *)cacheControl, (int)sizeof(cacheControl) - 1, &p, end))
+            return 1;
+        static const char accelBuffering[] = "no";
+        if (lws_add_http_header_by_name(wsi, (const unsigned char *)"x-accel-buffering:",
+                                        (const unsigned char *)accelBuffering,
+                                        (int)sizeof(accelBuffering) - 1, &p, end))
+            return 1;
+
+        // The Origin-allowlist CORS echo is the shared helper's policy.
+        {
+            Response cors;
+            std::string origin;
+            if (pss->http_request)
+                origin = pss->http_request->headers.get(web::http::header_names::origin);
+            cors.applyCorsHeaders(origin);
+            for (const auto &h : cors.headers)
+            {
+                if (lws_add_http_header_by_name(wsi, (const unsigned char *)h.first.c_str(),
+                                                (const unsigned char *)h.second.c_str(), (int)h.second.length(), &p, end))
+                    return 1;
+            }
+        }
+
+        if (lws_finalize_http_header(wsi, &p, end))
+            return 1;
+
+        const int header_len = lws_ptr_diff(p, headers + LWS_PRE);
+        const int n = lws_write(wsi, headers + LWS_PRE, header_len, LWS_WRITE_HTTP_HEADERS);
+        if (n < 0 || n < header_len)
+            return 1;
+
+        pss->headers_sent = true;
+        // One write per WRITEABLE callback: request the next one for the frames.
+        lws_callback_on_writable(wsi);
+        return 0;
+    }
+
+    // Phase 2: one buffered frame per callback, wrapped in its own chunk.
+    if (!pss->sse_pending.empty())
+    {
+        std::string frame;
+        frame.swap(pss->sse_pending.front());
+        pss->sse_pending.pop_front();
+        pss->sse_pending_bytes -= frame.size();
+
+        char chunkHeader[24];
+        const int chunkHeaderLen =
+            lws_snprintf(chunkHeader, sizeof(chunkHeader), "%zX\x0d\x0a", frame.size());
+        std::vector<unsigned char> buf(LWS_PRE + chunkHeaderLen + frame.size() + 2);
+        std::memcpy(buf.data() + LWS_PRE, chunkHeader, chunkHeaderLen);
+        if (!frame.empty())
+            std::memcpy(buf.data() + LWS_PRE + chunkHeaderLen, frame.data(), frame.size());
+        buf[LWS_PRE + chunkHeaderLen + frame.size()] = '\x0d';
+        buf[LWS_PRE + chunkHeaderLen + frame.size() + 1] = '\x0a';
+        const int payloadLen = chunkHeaderLen + static_cast<int>(frame.size()) + 2;
+
+        const int n = lws_write(wsi, buf.data() + LWS_PRE, payloadLen, LWS_WRITE_HTTP);
+        if (n < 0)
+        {
+            LOG_WAR << fname << "SSE frame write failed, closing stream";
+            return 1;
+        }
+        if (!pss->sse_pending.empty() || pss->sse_close_requested)
+            lws_callback_on_writable(wsi);
+        return 0;
+    }
+
+    // Phase 3: the sink asked to close and every frame is out — terminal chunk.
+    if (pss->sse_close_requested)
+    {
+        unsigned char terminal[LWS_PRE + 5] = {0};
+        std::memcpy(terminal + LWS_PRE, "0\x0d\x0a\x0d\x0a", 5);
+        lws_write(wsi, terminal + LWS_PRE, 5, LWS_WRITE_HTTP_FINAL);
+        pss->sse_close_requested = false;
+        pss->sse_request = false;
+        pss->headers_sent = false;
+        // The transaction is over: a late normal reply for this request must
+        // not write into the next keep-alive exchange.
+        pss->http_pending = false;
+        pss->sse_sink.reset(); // closed; the endpoint owner may still hold a reference
+        if (lws_http_transaction_completed(wsi))
+            return -1;
+        return 0;
+    }
+
+    // Idle open stream: heartbeats keep frames flowing.
+    return 0;
+}
+
+// -------------------------------
 // HTTP callback — IO thread only. PSS lives in opaque_user_data; `user` is unused.
 // -------------------------------
 int WebSocketService::handleHttpCallback(struct lws *wsi, enum lws_callback_reasons reason, void *user, void *in, size_t len)
@@ -518,6 +679,11 @@ int WebSocketService::handleHttpCallback(struct lws *wsi, enum lws_callback_reas
         auto ssnInfo = getSessionInfo(wsi);
         if (!ssnInfo)
             return lws_return_http_status(wsi, HTTP_STATUS_BAD_REQUEST, nullptr);
+
+        // SSE streams are plain-HTTP-only and never traverse node forwarding:
+        // the target node answers, so this node must not proxy the stream.
+        if (is_sse_stream_path(ssnInfo->path) && !ssnInfo->ext_target_host.empty())
+            return lws_return_http_status(wsi, HTTP_STATUS_BAD_REQUEST, "Streaming is not supported through node forwarding");
 
         // 1. File download
         if (ssnInfo->method == "GET" && ssnInfo->path == "/appmesh/file/download/ws" && !ssnInfo->ext_x_file_path.empty())
@@ -649,19 +815,26 @@ int WebSocketService::handleHttpCallback(struct lws *wsi, enum lws_callback_reas
             pss->http_request = buildHttpRequest(wsi);
             if (pss->http_request->contain_body())
             {
-                // Body will arrive via HTTP_BODY callbacks
+                // Body will arrive via HTTP_BODY callbacks; a stream request
+                // attaches its sink when the body completes.
+                pss->sse_request = is_sse_stream_path(pss->http_request->request_uri);
                 pss->http_pending = true;
                 return 0;
             }
 
-            auto serialized = pss->http_request->serialize();
             WSRequest ws_req;
             ws_req.m_type = WSRequest::Type::HttpMessage;
             ws_req.m_session_ref = wsi;
-            ws_req.m_payload.assign(serialized.begin(), serialized.end());
             ws_req.m_req_id = m_next_request_id.fetch_add(1);
             ws_req.m_session_id = ws_req.m_req_id;
             pss->req_id = ws_req.m_req_id;
+            // The marker header must ride the serialized request, so attach
+            // before serializing.
+            if (is_sse_stream_path(pss->http_request->request_uri))
+                attach_sse_stream(wsi, pss);
+
+            auto serialized = pss->http_request->serialize();
+            ws_req.m_payload.assign(serialized.begin(), serialized.end());
 
             enqueueIncomingRequest(std::move(ws_req));
             pss->http_pending = true;
@@ -714,14 +887,18 @@ int WebSocketService::handleHttpCallback(struct lws *wsi, enum lws_callback_reas
         // Ensure request is still valid after potential error in HTTP_BODY
         if (pss && pss->http_pending && pss->http_request)
         {
-            auto serialized = pss->http_request->serialize();
             WSRequest ws_req;
             ws_req.m_type = WSRequest::Type::HttpMessage;
             ws_req.m_session_ref = wsi;
-            ws_req.m_payload.assign(serialized.begin(), serialized.end());
             ws_req.m_req_id = m_next_request_id.fetch_add(1);
             ws_req.m_session_id = ws_req.m_req_id;
             pss->req_id = ws_req.m_req_id;
+            // Attach before serializing so the marker header rides the request.
+            if (pss->sse_request)
+                attach_sse_stream(wsi, pss);
+
+            auto serialized = pss->http_request->serialize();
+            ws_req.m_payload.assign(serialized.begin(), serialized.end());
 
             enqueueIncomingRequest(std::move(ws_req));
         }
@@ -735,7 +912,12 @@ int WebSocketService::handleHttpCallback(struct lws *wsi, enum lws_callback_reas
 
     case LWS_CALLBACK_HTTP_WRITEABLE:
     {
-        if (!pss || !pss->http_pending)
+        if (!pss)
+            return 0;
+        if (pss->sse_request)
+            return writeSseHttp(wsi, pss);
+
+        if (!pss->http_pending)
             return 0;
 
         // Two-phase HTTP write — only one lws_write per WRITEABLE callback
@@ -854,6 +1036,19 @@ int WebSocketService::handleHttpCallback(struct lws *wsi, enum lws_callback_reas
         // Nulling opaque_user_data makes the second callback a no-op.
         if (pss)
         {
+            if (pss->sse_sink)
+            {
+                // The peer is gone: close() fires the owner's onClosed hook, so
+                // an output follow unsubscribes and a parked stream task stops
+                // treating the caller as present.
+                try
+                {
+                    pss->sse_sink->close();
+                }
+                catch (...)
+                {
+                }
+            }
             lws_set_opaque_user_data(wsi, nullptr);
             delete pss;
         }
@@ -1061,6 +1256,19 @@ void WebSocketService::enqueueIncomingRequest(WSRequest &&req)
     }
 }
 
+// IO-thread only delivery below; enqueueSseFrame is the cross-thread frame entry.
+void WebSocketService::enqueueSseFrame(void *wsi, uint64_t reqId, uint64_t sessionId, const std::string &frame, bool terminal)
+{
+    auto resp = std::make_unique<WSResponse>();
+    resp->m_session_ref = wsi;
+    resp->m_req_id = reqId;
+    resp->m_session_id = sessionId;
+    resp->m_payload = frame; // empty payload marks the terminal close
+    resp->m_is_http = true;
+    resp->m_is_sse = true;
+    enqueueOutgoingResponse(std::move(resp));
+}
+
 // IO-thread only. HTTP liveness = opaque_user_data != null; WS via m_sessions.
 void WebSocketService::deliverResponse(std::unique_ptr<WSResponse> resp)
 {
@@ -1090,6 +1298,61 @@ void WebSocketService::deliverResponse(std::unique_ptr<WSResponse> resp)
         {
             LOG_WAR << fname << "HTTP request ID mismatch (ABA detected), dropping response";
             return;
+        }
+
+        if (resp->m_is_sse)
+        {
+            if (!pss->sse_sink)
+            {
+                LOG_WAR << fname << "SSE stream already torn down, dropping frame";
+                return;
+            }
+            if (resp->m_payload.empty())
+            {
+                // Terminal close: flushed after the queued frames on WRITEABLE.
+                pss->sse_close_requested = true;
+            }
+            else if (pss->sse_pending_bytes + resp->m_payload.size() > MAX_SSE_PENDING_BYTES)
+            {
+                // A client that never drains must not pin worker memory: kill
+                // the connection; the close callback closes the sink for its owner.
+                LOG_WAR << fname << "SSE pending buffer overflow (" << MAX_SSE_PENDING_BYTES
+                        << " bytes), closing stream";
+                lws_set_timeout(wsi, PENDING_TIMEOUT_CLOSE_ACK, LWS_TO_KILL_ASYNC);
+                return;
+            }
+            else
+            {
+                pss->sse_pending_bytes += resp->m_payload.size();
+                pss->sse_pending.push_back(std::move(resp->m_payload));
+            }
+            lws_callback_on_writable(wsi);
+            return;
+        }
+
+        if (pss->sse_sink)
+        {
+            // A normal reply races a started SSE stream. Before any byte went
+            // out the error keeps its normal status line (the stream never
+            // started); afterwards it would corrupt the chunked stream and is
+            // dropped — the sink owner sends its own terminal end frame.
+            if (pss->headers_sent)
+            {
+                LOG_WAR << fname << "HTTP response arrived after the SSE stream started, dropping response";
+                return;
+            }
+            try
+            {
+                pss->sse_sink->close();
+            }
+            catch (...)
+            {
+            }
+            pss->sse_sink.reset();
+            pss->sse_request = false;
+            pss->sse_close_requested = false;
+            pss->sse_pending_bytes = 0;
+            pss->sse_pending.clear();
         }
 
         pss->http_response_data = std::move(resp->m_payload);

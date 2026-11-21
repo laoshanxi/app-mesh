@@ -91,7 +91,7 @@ std::string InternalCapability::issue(Audience audience, const std::string &work
 	payload["workflow_id"] = workflowId;
 	payload["run_id"] = runId;
 	payload["owner_principal_id"] = ownerPrincipalId;
-	payload["process_uuid"] = processUuid;
+	payload[JSON_KEY_process_uuid] = processUuid;
 	payload["operations"] = operations;
 	payload["iat"] = issuedAt;
 	payload["exp"] = issuedAt + ttlSeconds;
@@ -132,7 +132,7 @@ InternalCapability::Claims InternalCapability::verify(
 			payload.at("workflow_id").get<std::string>(),
 			payload.at("run_id").get<std::string>(),
 			payload.at("owner_principal_id").get<std::string>(),
-			payload.at("process_uuid").get<std::string>(),
+			payload.at(JSON_KEY_process_uuid).get<std::string>(),
 			{},
 			payload.at("iat").get<std::int64_t>(),
 			payload.at("exp").get<std::int64_t>()};

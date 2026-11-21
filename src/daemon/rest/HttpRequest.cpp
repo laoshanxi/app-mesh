@@ -10,6 +10,7 @@
 #include "../security/HMACVerifier.h"
 #include "Data.h"
 #include "RestHandler.h"
+#include "SseSink.h"
 #include "SocketServer.h"
 #include "Worker.h"
 #include "../../common/lwsservice/WebSocketService.h"
@@ -351,7 +352,10 @@ bool HttpRequestWithTimeout::initTimer(int timeoutSeconds)
 		return false;
 	}
 
-	this->registerTimer(m_timerResponseId, 1000L * timeoutSeconds, 0, fname, std::bind(&HttpRequestWithTimeout::onTimerResponse, this));
+	// Lambda dispatch so a subclass override of onTimerResponse (the task
+	// stream's end{timeout} mapping) is what fires, not the base member.
+	const auto onTimer = [this]() { return onTimerResponse(); };
+	this->registerTimer(m_timerResponseId, 1000L * timeoutSeconds, 0, fname, onTimer);
 	LOG_DBG << fname << "registered timer " << m_timerResponseId << " for request " << this->m_uuid << " with timeout " << timeoutSeconds << " seconds";
 	return true;
 }
@@ -548,6 +552,68 @@ void HttpRequestOutputView::unsubscribeRunCompletion()
 }
 
 ////////////////////////////////////////////////////////////////////////////////
+// HttpRequestTaskStream - task request parked on an SSE stream
+////////////////////////////////////////////////////////////////////////////////
+HttpRequestTaskStream::HttpRequestTaskStream(const std::shared_ptr<HttpRequest> &message,
+											 const std::shared_ptr<SseSink> &sink)
+	: HttpRequestWithTimeout(message), m_sink(sink)
+{
+}
+
+bool HttpRequestTaskStream::sendPartial(const std::string &payload)
+{
+	if (!m_sink || !m_sink->isOpen())
+		return false;
+	nlohmann::json data;
+	data["data"] = payload;
+	return m_sink->sendEvent("partial", JSON::dump(data));
+}
+
+bool HttpRequestTaskStream::onTimerResponse()
+{
+	// The stream owns the connection: map the timeout onto the terminal
+	// end{timeout} frame instead of a plain 408 response.
+	const static char fname[] = "HttpRequestTaskStream::onTimerResponse() ";
+	LOG_DBG << fname << "Task stream request <" << this->m_uuid << "> timed out";
+	reply(m_relative_uri, m_uuid, {}, {}, web::http::status_codes::RequestTimeout, "");
+	return false;
+}
+
+bool HttpRequestTaskStream::reply(const std::string &requestUri, const std::string &uuid,
+								  const std::vector<std::uint8_t> &body, const std::map<std::string, std::string> &headers,
+								  const web::http::status_code &status, const std::string &bodyType) const
+{
+	const static char fname[] = "HttpRequestTaskStream::reply() ";
+	LOG_DBG << fname << "Replying to stream request <" << uuid << ">";
+
+	const_cast<HttpRequestTaskStream *>(this)->cancelTimer(m_timerResponseId);
+	if (!m_httpRequestReplyFlag.exchange(true))
+	{
+		const std::string payload(body.begin(), body.end());
+		if (status == web::http::status_codes::OK)
+		{
+			nlohmann::json result;
+			result["result"] = payload;
+			m_sink->sendEvent("final", JSON::dump(result));
+			nlohmann::json end;
+			end["reason"] = "final";
+			m_sink->sendEvent("end", JSON::dump(end));
+		}
+		else
+		{
+			nlohmann::json end;
+			end["reason"] = status == web::http::status_codes::RequestTimeout ? "timeout" : "error";
+			end["status"] = status;
+			end["message"] = payload;
+			m_sink->sendEvent("end", JSON::dump(end));
+		}
+		m_sink->close();
+		return true;
+	}
+	return false;
+}
+
+////////////////////////////////////////////////////////////////////////////////
 // TaskRequest - manages task request/response flow between clients and server.
 // Multiple clients can queue tasks concurrently; the server process fetches
 // and replies to them one at a time in FIFO order.
@@ -646,6 +712,35 @@ bool TaskRequest::deleteTask()
 	return activeTask && activeTask->interrupt();
 }
 
+void TaskRequest::verifyProcessKeyLocked(const std::string &processKey) const
+{
+	if (processKey.empty() || !Utility::secureCompare(processKey, m_processKey))
+		throw std::runtime_error("Process key mismatch");
+}
+
+void TaskRequest::partialReply(const std::string &processKey, const std::string &payload, bool &delivered)
+{
+	const static char fname[] = "TaskRequest::partialReply() ";
+	std::shared_ptr<HttpRequestWithTimeout> active;
+	{
+		std::lock_guard<std::mutex> guard(m_mutex);
+		verifyProcessKeyLocked(processKey);
+		active = m_activeTask;
+	}
+	const auto stream = std::dynamic_pointer_cast<HttpRequestTaskStream>(active);
+	if (stream)
+	{
+		delivered = stream->sendPartial(payload);
+		if (!delivered)
+			LOG_DBG << fname << "stream caller gone; partial dropped";
+	}
+	else
+	{
+		delivered = false;
+		LOG_DBG << fname << "caller is not streaming; partial ignored";
+	}
+}
+
 void TaskRequest::fetchTask(const std::string &processKey, std::shared_ptr<void> &serverRequest)
 {
 	const static char fname[] = "TaskRequest::fetchTask() ";
@@ -656,8 +751,7 @@ void TaskRequest::fetchTask(const std::string &processKey, std::shared_ptr<void>
 	std::shared_ptr<HttpRequestWithTimeout> repliedActive;
 	{
 		std::lock_guard<std::mutex> guard(m_mutex);
-		if (processKey.empty() || !Utility::secureCompare(processKey, m_processKey))
-			throw std::runtime_error("Process key mismatch");
+		verifyProcessKeyLocked(processKey);
 		previousFetch = std::move(m_fetchTask);
 		m_fetchTask = std::static_pointer_cast<HttpRequestWithTimeout>(serverRequest);
 		previousReply = std::move(m_replyTask);
@@ -694,8 +788,7 @@ void TaskRequest::replyTask(const std::string &processKey, std::shared_ptr<void>
 	std::shared_ptr<HttpRequestWithTimeout> repliedActive;
 	{
 		std::lock_guard<std::mutex> guard(m_mutex);
-		if (processKey.empty() || !Utility::secureCompare(processKey, m_processKey))
-			throw std::runtime_error("Process key mismatch");
+		verifyProcessKeyLocked(processKey);
 		previousReply = std::move(m_replyTask);
 		m_replyTask = std::static_pointer_cast<HttpRequestWithTimeout>(serverRequest);
 		repliedActive = releaseRepliedRequestLocked(m_activeTask);

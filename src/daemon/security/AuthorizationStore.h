@@ -11,6 +11,11 @@
 
 #include "Principal.h"
 
+/// Auth-stack deployment env names; the single spelling (also read by the
+/// daemon startup banner and the launchers).
+const char *const AUTH_MODE_ENV = "APPMESH_AUTH_MODE";
+const char *const AUTH_ROLE_ENV = "APPMESH_AUTH_ROLE";
+
 class AuthorizationPrincipal
 {
 public:
@@ -82,6 +87,7 @@ public:
 	static const std::string &systemPrincipalId();
 
 private:
+	friend struct AuthorizationStoreTestAccess;
 	/// A request-signing API key issued to one principal.
 	struct ApiKey
 	{

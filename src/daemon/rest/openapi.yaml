@@ -352,6 +352,46 @@ paths:
         "401": { $ref: "#/components/responses/Unauthorized" }
         "403": { $ref: "#/components/responses/Forbidden" }
 
+  /appmesh/app/{name}/output/stream:
+    parameters:
+      - $ref: "#/components/parameters/AppName"
+    get:
+      tags: [Applications]
+      summary: Stream application output over server-sent events
+      description: |
+        Replays stdout from the byte cursor, then (follow=true) keeps pushing
+        live output until the run exits, the application is removed, or the
+        overall timeout elapses. The server reconciles replay and live frames
+        by the byte cursor. Requires the app-output-view permission and read
+        access to the target application.
+      parameters:
+        - name: stdout_position
+          in: query
+          required: false
+          schema: { type: integer, minimum: 0 }
+        - name: process_uuid
+          in: query
+          required: false
+          schema: { type: string }
+        - name: follow
+          in: query
+          required: false
+          schema: { type: boolean, default: true }
+        - name: timeout
+          in: query
+          required: false
+          schema: { type: integer, minimum: 0, maximum: 86400 }
+      responses:
+        "200":
+          description: SSE stream of stdout/end events.
+          content:
+            text/event-stream:
+              schema: { type: string }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "405": { description: Output streaming requires a plain HTTP connection. }
+
   /appmesh/app/{name}/health:
     parameters:
       - $ref: "#/components/parameters/AppName"
@@ -468,6 +508,100 @@ paths:
         "412": { description: Process key superseded by a newer process instance. }
         "404": { $ref: "#/components/responses/NotFound" }
 
+  /appmesh/app/{name}/task/stream:
+    parameters:
+      - $ref: "#/components/parameters/AppName"
+    post:
+      tags: [Tasks]
+      summary: Send a task request and stream partial results (SSE)
+      description: |
+        Streaming variant of the task RPC. The body and the timeout follow the
+        plain task operation; the answer is a text/event-stream with partial
+        events pushed by the worker, one final event with the result, and a
+        terminal end event. Requires the app-run-task permission and write
+        access to the target application; only a plain HTTP connection can
+        receive the stream.
+      parameters:
+        - name: timeout
+          in: query
+          required: false
+          schema: { type: integer, minimum: 0 }
+      requestBody:
+        required: false
+        content:
+          application/octet-stream:
+            schema: { type: string, format: binary }
+      responses:
+        "200":
+          description: SSE stream of partial/final/end events.
+          content:
+            text/event-stream:
+              schema: { type: string }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "405": { description: Task streaming requires a plain HTTP connection. }
+
+  /appmesh/app/{name}/task/partial:
+    parameters:
+      - $ref: "#/components/parameters/AppName"
+    post:
+      tags: [Tasks]
+      summary: Push an incremental task result from a managed application process
+      description: |
+        Worker RPC. Use the same transport and header requirements as the task
+        reply operation. The partial is delivered to the streaming caller of
+        the in-flight task; a one-shot caller ignores it.
+      security: []
+      parameters:
+        - name: X-AppMesh-Process-Key
+          in: header
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: false
+        content:
+          application/octet-stream:
+            schema: { type: string, format: binary }
+      responses:
+        "200": { description: "Accepted; the body reports {delivered: boolean}." }
+        "400": { description: Worker request permanently rejected. A retry cannot recover it. }
+        "412": { description: Process key superseded by a newer process instance. }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /appmesh/app/{name}/input:
+    parameters:
+      - $ref: "#/components/parameters/AppName"
+    post:
+      tags: [Applications]
+      summary: Inject bytes into the stdin of a running application
+      description: |
+        The application must be registered with "stdin": "pipe". The body is
+        written to the process stdin; X-Input-Close true closes the pipe so
+        the process reads EOF. Requires the app-control permission and write
+        access to the target application.
+      parameters:
+        - name: X-Input-Close
+          in: header
+          required: false
+          schema: { type: boolean }
+        - name: process_uuid
+          in: query
+          required: false
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/octet-stream:
+            schema: { type: string, format: binary }
+      responses:
+        "200": { description: "Written; the body reports {bytes_written: integer}." }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { description: The application has no piped stdin or no running process. }
+        "412": { description: The stdin pipe buffer is full; the message reports the bytes written. }
+
   /appmesh/app/{name}/subscribe:
     parameters:
       - $ref: "#/components/parameters/AppName"
@@ -528,6 +662,10 @@ paths:
     post:
       tags: [Configuration]
       summary: Update runtime configuration
+      description: >-
+        REST.SSL.SSLEnabled is startup-only: posting it back unchanged is an
+        accepted no-op, changing it is rejected with 400 (set it in
+        config.yaml and restart).
       responses:
         "200": { description: Updated runtime configuration. }
         "400": { $ref: "#/components/responses/BadRequest" }
@@ -559,10 +697,38 @@ paths:
           required: true
           schema: { type: string }
           description: Remote file path as percent-encoded UTF-8 (space as %20, not +).
+        - name: X-File-Overwrite
+          in: header
+          required: false
+          schema: { type: string, enum: ["true"] }
+          description: Set to "true" to replace an existing file; any other value is ignored.
       responses:
         "200": { description: File stream negotiation response. }
+        "400": { description: The destination is a directory or a symlink leaf. }
         "401": { $ref: "#/components/responses/Unauthorized" }
         "403": { $ref: "#/components/responses/Forbidden" }
+        "409": { description: File already exists. }
+
+  /appmesh/file/delete:
+    delete:
+      tags: [Files]
+      summary: Delete a file
+      description: >-
+        Unlinks a regular file inside the file jail. Directories and symlink
+        leaves are refused.
+      parameters:
+        - name: X-File-Path
+          in: header
+          required: true
+          schema: { type: string }
+          description: Remote file path as percent-encoded UTF-8 (space as %20, not +).
+      responses:
+        "200": { description: File deleted. }
+        "400": { description: The X-File-Path header is missing. }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { description: File not found or the path is a directory. }
+        "500": { description: Failed to remove the file. }
 
   /appmesh/labels:
     get:

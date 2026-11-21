@@ -57,12 +57,15 @@ protected:
 	void apiOauthCallback(const std::shared_ptr<HttpRequest> &message);
 	void apiProtectedResourceMetadata(const std::shared_ptr<HttpRequest> &message);
 	void apiWorkflowCapability(const std::shared_ptr<HttpRequest> &message);
+	// Signed agent push: container die events and liveness markers.
+	void apiAgentContainerEvent(const std::shared_ptr<HttpRequest> &message);
 	void apiWorkflowCleanupOrphans(const std::shared_ptr<HttpRequest> &message);
 	void apiWorkflowRegistry(const std::shared_ptr<HttpRequest> &message);
 	void apiEnrollFirstAdmin(const std::shared_ptr<HttpRequest> &message);
 
 	void apiAppView(const std::shared_ptr<HttpRequest> &message);
 	void apiAppOutputView(const std::shared_ptr<HttpRequest> &message);
+	void apiAppOutputStream(const std::shared_ptr<HttpRequest> &message); // SSE stdout replay + live follow
 	void apiAppsView(const std::shared_ptr<HttpRequest> &message);
 
 	std::shared_ptr<Application> parseAndRegRunApp(const std::shared_ptr<HttpRequest> &message);
@@ -70,6 +73,9 @@ protected:
 	void apiRunSync(const std::shared_ptr<HttpRequest> &message);
 
 	void apiSendMessage(const std::shared_ptr<HttpRequest> &message);		  // client send message and wait for response with async REST call
+	void apiSendMessageStream(const std::shared_ptr<HttpRequest> &message);   // SSE variant: partials + final over one stream
+	void apiSendMessagePartial(const std::shared_ptr<HttpRequest> &message);  // worker pushes an incremental task result
+	void apiAppInput(const std::shared_ptr<HttpRequest> &message);			  // inject bytes into a pipe-stdin process
 	void apiRemoveMessage(const std::shared_ptr<HttpRequest> &message);		  // client remove message
 	void apiGetMessage(const std::shared_ptr<HttpRequest> &message);		  // server get message with block and iterator REST call
 	void apiSendMessageResponse(const std::shared_ptr<HttpRequest> &message); // server send response (then server response to client apiSendMessage)

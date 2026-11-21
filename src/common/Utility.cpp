@@ -61,14 +61,6 @@ const char *GET_STATUS_STR(unsigned int status)
 	return STATUS_STR[status];
 };
 
-Utility::Utility()
-{
-}
-
-Utility::~Utility()
-{
-}
-
 bool Utility::isNumber(const std::string &str)
 {
 	std::string s = str;
@@ -168,22 +160,20 @@ const std::string &Utility::getHomeDir()
 	return homeDir;
 }
 
+const std::string Utility::getWorkConfigFilePath(const std::string &configFile)
+{
+	return (fs::path(Utility::getHomeDir()) / APPMESH_WORK_DIR / APPMESH_WORK_CONFIG_DIR / configFile).string();
+}
+
 const std::string Utility::getConfigFilePath(const std::string &configFile, bool write)
 {
-	const std::string workingConfigFile = (fs::path(Utility::getHomeDir()) / APPMESH_WORK_DIR / APPMESH_WORK_CONFIG_DIR / configFile).string();
+	const std::string workingConfigFile = getWorkConfigFilePath(configFile);
 	if (write || Utility::isFileExist(workingConfigFile))
 	{
 		createDirectory((fs::path(Utility::getHomeDir()) / APPMESH_WORK_DIR / APPMESH_WORK_CONFIG_DIR).string());
 		return workingConfigFile;
 	}
 	return (fs::path(Utility::getHomeDir()) / APPMESH_WORK_CONFIG_DIR / configFile).string();
-}
-
-// program_name from errno.h
-const std::string Utility::getBinaryName()
-{
-	extern char *program_invocation_short_name;
-	return program_invocation_short_name;
 }
 
 bool Utility::isDirExist(const std::string &path)
@@ -198,6 +188,54 @@ bool Utility::isFileExist(const std::string &path)
 	return fs::exists(path, ec) && !fs::is_directory(path, ec);
 }
 
+namespace
+{
+	// Case folds on macOS/Windows so a differently-cased alias of the install tree or /proc cannot slip past; byte-exact elsewhere.
+	bool pathPrefixMatch(const std::string &path, const std::string &prefixWithSlash, const std::string &prefixExact)
+	{
+		const auto equalWithin = [&path](size_t length, const std::string &prefix)
+		{
+#if defined(__APPLE__) || defined(_WIN32)
+			for (size_t i = 0; i < length; i++)
+			{
+				if (std::tolower(static_cast<unsigned char>(path[i])) != std::tolower(static_cast<unsigned char>(prefix[i])))
+					return false;
+			}
+			return true;
+#else
+			return path.compare(0, length, prefix) == 0;
+#endif
+		};
+		if (path.size() == prefixExact.size())
+			return equalWithin(path.size(), prefixExact);
+		// The trailing separator keeps "/opt" from matching "/opt2/...".
+		return path.size() > prefixWithSlash.size() && equalWithin(prefixWithSlash.size(), prefixWithSlash);
+	}
+
+	// Reflect an open directory fd to its real path (F_GETPATH / /proc/self/fd); empty when the platform cannot.
+	std::string reflectDirFdPath(int dirFd)
+	{
+#if defined(__APPLE__)
+		char realPath[4096] // F_GETPATH wants a MAXPATHLEN-sized buffer; larger is fine
+		{
+		};
+		if (::fcntl(dirFd, F_GETPATH, realPath) == 0)
+			return realPath;
+#else
+		char fdLink[32];
+		char target[PATH_MAX];
+		::snprintf(fdLink, sizeof(fdLink), "/proc/self/fd/%d", dirFd);
+		const auto len = ::readlink(fdLink, target, sizeof(target) - 1);
+		if (len > 0)
+		{
+			target[len] = '\0';
+			return target;
+		}
+#endif
+		return {};
+	}
+} // namespace
+
 bool Utility::validateFilePath(const std::string &filePath, const std::string &allowedBaseDir)
 {
 	// Reject null bytes
@@ -209,13 +247,12 @@ bool Utility::validateFilePath(const std::string &filePath, const std::string &a
 		if (component == "..")
 			return false;
 	}
-	// Reject pseudo filesystems (procfs/sysfs/devfs): their files stat as
-	// regular size-0 files, so a download would answer 200 with an empty body.
+	// Reject pseudo filesystems (procfs/sysfs/devfs): their files stat as regular size-0 files, so a
+	// download would answer 200 empty; pathPrefixMatch folds case, covering differently-cased aliases.
 	const auto isPseudoFsPath = [](const std::string &path) {
 		for (const char *pseudo : {"/proc", "/sys", "/dev"})
 		{
-			const auto len = std::char_traits<char>::length(pseudo);
-			if (path.compare(0, len, pseudo) == 0 && (path.size() == len || path[len] == '/'))
+			if (pathPrefixMatch(path, std::string(pseudo) + "/", pseudo))
 				return true;
 		}
 		return false;
@@ -226,10 +263,11 @@ bool Utility::validateFilePath(const std::string &filePath, const std::string &a
 	if (!allowedBaseDir.empty() && !isPathTraversalSafe(allowedBaseDir, filePath))
 		return false;
 	// The daemon's own tree (binaries, TLS keys, bootstrap credentials, registry) is never
-	// transferable on either direction, whatever the jail allows. work/tmp is the shared
-	// scratch area (agent staging) and stays exchangeable.
-	const auto scratchDir = (fs::path(getHomeDir()) / APPMESH_WORK_DIR / APPMESH_WORK_TMP_DIR).string();
-	Utility::createDirectory(scratchDir); // the exemption must hold before the daemon first creates it
+	// transferable, whatever the jail allows; the scratch area follows the effective jail
+	// (created at startup, so validation stays side-effect free).
+	const auto scratchDir = allowedBaseDir.empty()
+								? (fs::path(getHomeDir()) / APPMESH_WORK_DIR / APPMESH_WORK_TMP_DIR).string()
+								: (fs::path(allowedBaseDir) / APPMESH_WORK_TMP_DIR).string();
 	if (isPathTraversalSafe(getHomeDir(), filePath) && !isPathTraversalSafe(scratchDir, filePath))
 		return false;
 	// The pseudo-fs check above is lexical; follow symlinks so a link planted
@@ -313,6 +351,14 @@ int Utility::openFileWithinJail(const std::string &filePath, bool forWrite, cons
 			::close(fd);
 			return -1;
 		}
+		// A hardlink passes every path gate but still reads the excluded inode; serve single-link files only.
+		if (st.st_nlink != 1)
+		{
+			if (rejectedOut)
+				*rejectedOut = true;
+			::close(fd);
+			return -1;
+		}
 	}
 
 	// Resolve what the descriptor ACTUALLY landed on and re-run the full jail
@@ -360,6 +406,128 @@ int Utility::openFileWithinJail(const std::string &filePath, bool forWrite, cons
 	}
 	return fd;
 #endif
+}
+
+Utility::JailUnlinkStatus Utility::unlinkFileWithinJail(const std::string &filePath, const std::string &allowedBaseDir,
+														std::string &resolvedOut)
+{
+	const static char fname[] = "Utility::unlinkFileWithinJail() ";
+	resolvedOut.clear();
+	if (!validateFilePath(filePath, allowedBaseDir))
+		return JailUnlinkStatus::Rejected;
+
+	const fs::path target(filePath);
+	const auto leaf = target.filename().string();
+	if (!target.is_absolute() || leaf.empty() || leaf == "." || leaf == "..")
+		return JailUnlinkStatus::Failed;
+
+	// Walk every parent component relative to the pinned dirfd (the walk may traverse legitimate symlinks), but the
+	// final pinned directory is reflected and re-validated below, so a middle swap outside the jail is rejected first.
+	int dirFd = ::open("/", O_RDONLY | O_DIRECTORY | O_CLOEXEC);
+	for (const auto &component : target.parent_path())
+	{
+		if (component == "/" || component.empty())
+			continue;
+		const auto next = ::openat(dirFd, component.c_str(), O_RDONLY | O_DIRECTORY | O_CLOEXEC);
+		::close(dirFd);
+		if (next < 0)
+		{
+			LOG_ERR << fname << "Failed to pin parent directory of <" << filePath << ">: " << last_error_msg();
+			return JailUnlinkStatus::Failed;
+		}
+		dirFd = next;
+	}
+
+	// The pinned directory decides: re-run the jail rules on its reflected path, then require a regular non-symlink leaf.
+	const auto resolvedDir = reflectDirFdPath(dirFd);
+	if (resolvedDir.empty())
+	{
+		::close(dirFd);
+		return JailUnlinkStatus::Failed;
+	}
+	const auto resolvedLeafPath = (fs::path(resolvedDir) / leaf).string();
+	if (!validateFilePath(resolvedLeafPath, allowedBaseDir))
+	{
+		LOG_ERR << fname << "Resolved location <" << resolvedLeafPath << "> of <" << filePath
+				<< "> is outside the allowed jail; rejecting the delete";
+		::close(dirFd);
+		return JailUnlinkStatus::Rejected;
+	}
+	struct stat st
+	{
+	};
+	if (::fstatat(dirFd, leaf.c_str(), &st, AT_SYMLINK_NOFOLLOW) != 0)
+	{
+		::close(dirFd);
+		return JailUnlinkStatus::NotFound;
+	}
+	if (!S_ISREG(st.st_mode))
+	{
+		// Directories and symlinks are not deletable payloads (the routes always refuse them; the pin only removes the race).
+		::close(dirFd);
+		return JailUnlinkStatus::NotFound;
+	}
+	if (::unlinkat(dirFd, leaf.c_str(), 0) != 0)
+	{
+		LOG_ERR << fname << "Failed to unlink <" << resolvedLeafPath << ">: " << last_error_msg();
+		::close(dirFd);
+		return JailUnlinkStatus::Failed;
+	}
+	::close(dirFd);
+	resolvedOut = resolvedLeafPath;
+	return JailUnlinkStatus::Removed;
+}
+
+bool Utility::createDirectoriesWithinJail(const std::string &dirPath, const std::string &allowedBaseDir)
+{
+	const static char fname[] = "Utility::createDirectoriesWithinJail() ";
+	// The not-yet-existing tail is covered by the ancestor-walk inside the check.
+	if (!validateFilePath(dirPath, allowedBaseDir))
+		return false;
+
+	const fs::path target(dirPath);
+	if (!target.is_absolute())
+		return false;
+	int dirFd = ::open("/", O_RDONLY | O_DIRECTORY | O_CLOEXEC);
+	for (const auto &component : target)
+	{
+		if (component == "/" || component.empty())
+			continue;
+		auto next = ::openat(dirFd, component.c_str(), O_RDONLY | O_DIRECTORY | O_CLOEXEC);
+		if (next < 0 && errno == ENOENT)
+		{
+			// Create the missing component only inside a directory that just passed the jail check on its pinned fd,
+			// so a middle directory swapped outside the jail is rejected before any mkdir.
+			const auto pinned = reflectDirFdPath(dirFd);
+			if (pinned.empty() || !validateFilePath(pinned, allowedBaseDir))
+			{
+				LOG_ERR << fname << "Resolved parent <" << pinned << "> of <" << dirPath
+						<< "> is outside the allowed jail; refusing to create directories";
+				::close(dirFd);
+				return false;
+			}
+			if (::mkdirat(dirFd, component.c_str(), 0755) != 0)
+			{
+				LOG_ERR << fname << "Failed to create <" << component << "> inside the jail: " << last_error_msg();
+				::close(dirFd);
+				return false;
+			}
+			next = ::openat(dirFd, component.c_str(), O_RDONLY | O_DIRECTORY | O_CLOEXEC);
+		}
+		::close(dirFd);
+		if (next < 0)
+		{
+			LOG_ERR << fname << "Failed to pin <" << component << "> of <" << dirPath << ">: " << last_error_msg();
+			return false;
+		}
+		dirFd = next;
+	}
+	const auto resolvedDir = reflectDirFdPath(dirFd);
+	::close(dirFd);
+	if (resolvedDir.empty())
+		return false;
+	// The created tree must sit where the jail said it would.
+	return validateFilePath(resolvedDir, allowedBaseDir);
 }
 
 bool Utility::createDirectory(const std::string &path, fs::perms perms)
@@ -758,12 +926,6 @@ std::string Utility::localEncodingToUtf8(const std::string &ansi)
 	return ansi;
 }
 
-std::string Utility::utf8ToLocalEncoding(const std::string &input)
-{
-	// POSIX: assume UTF-8 environment
-	return input;
-}
-
 // TODO: use ICU for detectAndConvertToUTF8
 /*
 #include <unicode/ucsdet.h>
@@ -1153,7 +1315,7 @@ void Utility::applyFilePermission(const std::string &file, HttpHeaderMap headers
 {
 	const static char fname[] = "Utility::applyFilePermission() ";
 
-	if (!Utility::isFileExist(file))
+	if (fd < 0 && !Utility::isFileExist(file))
 	{
 		return;
 	}
@@ -1174,7 +1336,11 @@ void Utility::applyFilePermission(const std::string &file, HttpHeaderMap headers
 		{
 			try
 			{
-				os::chown(file, userIt->second, groupIt->second);
+				// Use the verified fd when there is one: a path swapped after the jail check cannot redirect the change.
+				if (fd >= 0)
+					os::fchown(fd, userIt->second, groupIt->second);
+				else
+					os::chown(file, userIt->second, groupIt->second);
 			}
 			catch (...)
 			{
@@ -1214,6 +1380,11 @@ std::string Utility::getenv(const std::string &envName, const std::string &defau
 		return defaultValue;
 
 	return val;
+}
+
+std::string Utility::getenvTrimmed(const std::string &envName, const std::string &defaultValue)
+{
+	return stdStringTrim(getenv(envName, defaultValue));
 }
 
 std::map<std::string, std::string> Utility::getenvs()
@@ -1468,17 +1639,6 @@ nlohmann::json Utility::yamlToJson(const YAML::Node &node)
 	return result;
 }
 
-const std::string Utility::readStdin2End()
-{
-	std::stringstream ss;
-	std::string line;
-	while (!std::cin.eof() && std::getline(std::cin, line))
-	{
-		ss << line << std::endl;
-	}
-	return ss.str();
-}
-
 std::string Utility::escapeCommandLine(const std::string &input)
 {
 	std::string output;
@@ -1675,8 +1835,9 @@ bool Utility::isPathTraversalSafe(const std::string &baseDir, const std::string 
 	}
 	std::string resolvedStr = resolvedPath.string();
 
-	// Allow exact match to base dir itself or any path inside it.
-	if (resolvedStr != canonicalBase.string() && resolvedStr.find(baseStr) != 0)
+	// Allow exact match to base dir itself or any path inside it; the compare folds case on macOS/Windows
+	// (pathPrefixMatch) so a differently-cased alias cannot dodge the exclusion checks built on this.
+	if (!pathPrefixMatch(resolvedStr, baseStr, canonicalBase.string()))
 	{
 		return false;
 	}

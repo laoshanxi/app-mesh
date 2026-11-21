@@ -1,6 +1,7 @@
 // src/daemon/Configuration.cpp
 #include <chrono>
 #include <exception>
+#include <functional>
 #include <set>
 #include <thread>
 #include <unistd.h> //environ
@@ -99,7 +100,8 @@ void Configuration::instance(std::shared_ptr<Configuration> config)
 	m_instance = std::move(config);
 }
 
-std::shared_ptr<Configuration> Configuration::FromJson(nlohmann::json &jsonValue, bool applyEnv)
+std::shared_ptr<Configuration> Configuration::FromJson(nlohmann::json &jsonValue, bool applyEnv,
+													   const Configuration *previous)
 {
 	try
 	{
@@ -129,7 +131,7 @@ std::shared_ptr<Configuration> Configuration::FromJson(nlohmann::json &jsonValue
 	// REST
 	if (HAS_JSON_FIELD(jsonValue, JSON_KEY_REST))
 	{
-		config->m_rest = JsonRest::FromJson(jsonValue.at(JSON_KEY_REST));
+		config->m_rest = JsonRest::FromJson(jsonValue.at(JSON_KEY_REST), previous ? previous->m_rest.get() : nullptr);
 	}
 
 	// Docker
@@ -252,6 +254,9 @@ int Configuration::getScheduleInterval()
 std::shared_ptr<JsonDocker> JsonDocker::FromJson(const nlohmann::json &jsonValue)
 {
 	auto docker = std::make_shared<JsonDocker>();
+	// Only an explicit false disables; a typo cannot strand container applications.
+	if (HAS_JSON_FIELD(jsonValue, JSON_KEY_Docker_Enable) && jsonValue.at(JSON_KEY_Docker_Enable).is_boolean())
+		docker->m_enable = jsonValue.at(JSON_KEY_Docker_Enable).get<bool>();
 	auto mode = GET_JSON_STR_VALUE(jsonValue, JSON_KEY_Docker_HostSecurityPolicy);
 	std::transform(mode.begin(), mode.end(), mode.begin(), [](unsigned char c) { return std::tolower(c); });
 	if (mode == "off" || mode == "audit" || mode == "enforce")
@@ -265,6 +270,7 @@ std::shared_ptr<JsonDocker> JsonDocker::FromJson(const nlohmann::json &jsonValue
 nlohmann::json JsonDocker::AsJson() const
 {
 	auto result = nlohmann::json::object();
+	result[JSON_KEY_Docker_Enable] = m_enable;
 	result[JSON_KEY_Docker_HostSecurityPolicy] = m_hostSecurityPolicy;
 	return result;
 }
@@ -275,16 +281,16 @@ std::string Configuration::getDockerHostSecurityPolicy()
 	return m_docker ? m_docker->m_hostSecurityPolicy : std::string("off");
 }
 
+bool Configuration::getDockerEnabled()
+{
+	std::lock_guard<std::recursive_mutex> guard(m_hotupdateMutex);
+	return m_docker ? m_docker->m_enable : true;
+}
+
 int Configuration::getRestListenPort()
 {
 	std::lock_guard<std::recursive_mutex> guard(m_hotupdateMutex);
 	return m_rest->m_restListenPort;
-}
-
-int Configuration::getPromListenPort() const
-{
-	std::lock_guard<std::recursive_mutex> guard(m_hotupdateMutex);
-	return m_rest->m_promListenPort;
 }
 
 std::string Configuration::getRestListenAddress()
@@ -354,47 +360,37 @@ void Configuration::loadApps(const boost::filesystem::path &appDir)
 
 	if (fs::exists(appDir) && fs::is_directory(appDir))
 	{
+		// Parse one definition file and register it as recovered; failures collect
+		// until every file was attempted so recovery refuses with the full list.
+		const auto loadDefinition = [&](const std::string &path, const std::function<nlohmann::json()> &parseDefinition)
+		{
+			LOG_INF << fname << "Loading application file <" << path << ">";
+			try
+			{
+				auto jsonObj = parseDefinition();
+				jsonObj[JSON_KEY_APP_from_recover] = true;
+				auto app = this->parseApp(jsonObj);
+				this->registerRecoveredApp(app);
+			}
+			catch (const std::exception &e)
+			{
+				LOG_ERR << fname << "Failed to load application file <" << path << ">, error: " << e.what();
+				failedDefinitions.push_back(path);
+			}
+		};
 		// parse YAML format
 		for (const auto &jsonFile : fs::directory_iterator(appDir))
 		{
-			auto path = jsonFile.path().string();
+			const auto path = jsonFile.path().string();
 			if (Utility::isFileExist(path) && (Utility::endWith(path, ".yml") || Utility::endWith(path, ".yaml")))
-			{
-				LOG_INF << fname << "Loading application file <" << path << ">";
-				try
-				{
-					auto jsonObj = Utility::yamlToJson(YAML::LoadFile(path));
-					jsonObj[JSON_KEY_APP_from_recover] = true;
-					auto app = this->parseApp(jsonObj);
-					this->registerRecoveredApp(app);
-				}
-				catch (const std::exception &e)
-				{
-					LOG_ERR << fname << "Failed to load application file <" << path << ">, error: " << e.what();
-					failedDefinitions.push_back(path);
-				}
-			}
+				loadDefinition(path, [&path] { return Utility::yamlToJson(YAML::LoadFile(path)); });
 		}
 		// parse JSON format
 		for (const auto &jsonFile : fs::directory_iterator(appDir))
 		{
-			auto path = jsonFile.path().string();
+			const auto path = jsonFile.path().string();
 			if (Utility::isFileExist(path) && Utility::endWith(path, ".json"))
-			{
-				LOG_INF << fname << "Loading application file <" << path << ">";
-				try
-				{
-					auto jsonObj = nlohmann::json::parse(std::ifstream(path));
-					jsonObj[JSON_KEY_APP_from_recover] = true;
-					auto app = this->parseApp(jsonObj);
-					this->registerRecoveredApp(app);
-				}
-				catch (const std::exception &e)
-				{
-					LOG_ERR << fname << "Failed to load application file <" << path << ">, error: " << e.what();
-					failedDefinitions.push_back(path);
-				}
-			}
+				loadDefinition(path, [&path] { return nlohmann::json::parse(std::ifstream(path)); });
 		}
 		if (!failedDefinitions.empty())
 		{
@@ -520,6 +516,11 @@ const std::string Configuration::getWorkDir() const
 		return (fs::path(Utility::getHomeDir()) / APPMESH_WORK_DIR).string();
 }
 
+const std::string Configuration::getWorkTmpDir() const
+{
+	return (fs::path(getWorkDir()) / APPMESH_WORK_TMP_DIR).string();
+}
+
 bool Configuration::getSslVerifyClient() const
 {
 	std::lock_guard<std::recursive_mutex> guard(m_hotupdateMutex);
@@ -578,6 +579,13 @@ std::set<std::string> Configuration::getCorsAllowOrigins() const
 {
 	std::lock_guard<std::recursive_mutex> guard(m_hotupdateMutex);
 	return m_rest->m_corsAllowOrigins;
+}
+
+bool Configuration::corsAllowsOrigin(const std::string &origin) const
+{
+	// CORS is opt-in: no wildcard. The request Origin is echoed only when it is
+	// in REST.CorsAllowOrigins; otherwise no CORS headers are sent at all.
+	return !getCorsDisabled() && !origin.empty() && getCorsAllowOrigins().count(origin) != 0;
 }
 
 std::string Configuration::getRequestReplayProtection() const
@@ -951,7 +959,7 @@ void Configuration::hotUpdate(nlohmann::json &jsonValue)
 		// Reapply environment overrides after merging the patch.
 		auto effectiveJson = this->AsJson();
 		effectiveJson.merge_patch(jsonValue);
-		auto newConfig = Configuration::FromJson(effectiveJson, true);
+		auto newConfig = Configuration::FromJson(effectiveJson, true, this);
 		// Base config
 		if (HAS_JSON_FIELD(jsonValue, JSON_KEY_BaseConfig))
 		{
@@ -990,6 +998,8 @@ void Configuration::hotUpdate(nlohmann::json &jsonValue)
 		if (HAS_JSON_FIELD(jsonValue, JSON_KEY_Docker))
 		{
 			auto docker = jsonValue.at(JSON_KEY_Docker);
+			if (HAS_JSON_FIELD(docker, JSON_KEY_Docker_Enable))
+				SET_COMPARE(this->m_docker->m_enable, newConfig->m_docker->m_enable);
 			if (HAS_JSON_FIELD(docker, JSON_KEY_Docker_HostSecurityPolicy))
 				SET_COMPARE(this->m_docker->m_hostSecurityPolicy, newConfig->m_docker->m_hostSecurityPolicy);
 		}
@@ -1095,31 +1105,65 @@ bool Configuration::overrideConfigWithEnv(nlohmann::json &jsonConfig)
 			auto envKey = env.substr(0, pos);
 			auto envVal = env.substr(pos + 1);
 			auto keys = Utility::splitString(envKey, "_");
+			// A created leaf has no declared type to coerce against; take the
+			// shape of the environment value itself (int, bool, else string).
+			const auto envLeafValue = [&envVal]() {
+				if (!envVal.empty() && envVal.find_first_not_of("0123456789") == std::string::npos)
+				{
+					try
+					{
+						return nlohmann::json(std::stoi(envVal));
+					}
+					catch (const std::exception &)
+					{
+						// out-of-range integers stay strings
+					}
+				}
+				if (envVal == "true" || envVal == "false")
+					return nlohmann::json(envVal == "true");
+				return nlohmann::json(envVal);
+			};
+			const auto dottedPath = [&keys](size_t upto) {
+				std::string path;
+				for (size_t i = 1; i <= upto; i++)
+					path += (path.empty() ? "" : ".") + keys[i];
+				return path;
+			};
 			nlohmann::json *json = &jsonConfig;
 			for (size_t i = 1; i < keys.size(); i++)
 			{
 				auto jsonKey = keys[i];
-				if (json->contains(jsonKey))
+				if (jsonKey.empty())
+					break;
+				// find the last level
+				if (i == (keys.size() - 1))
 				{
-					// find the last level
-					if (i == (keys.size() - 1))
+					// Create a missing scalar leaf from the environment; never synthesize objects.
+					if (!json->contains(jsonKey))
 					{
-						// override json value
-						if (applyEnvConfig(json->at(jsonKey), envVal))
-						{
-							applyConfig = true;
-							LOG_INF << fname << "Configuration <" << envKey << "> overridden with environment value <" << Utility::maskSecret(envVal) << ">";
-						}
-						else
-						{
-							LOG_WAR << fname << "Failed to apply environment value for configuration <" << envKey << ">";
-						}
+						(*json)[jsonKey] = envLeafValue();
+						LOG_WAR << fname << "Configuration key <" << dottedPath(i) << "> created from environment <"
+								<< envKey << ">";
+					}
+					// override json value
+					if (applyEnvConfig(json->at(jsonKey), envVal))
+					{
+						applyConfig = true;
+						LOG_INF << fname << "Configuration <" << envKey << "> overridden with environment value <" << Utility::maskSecret(envVal) << ">";
 					}
 					else
 					{
-						// switch to next level
-						json = &(json->at(jsonKey));
+						LOG_WAR << fname << "Failed to apply environment value for configuration <" << envKey << ">";
 					}
+				}
+				else if (json->contains(jsonKey))
+				{
+					// switch to next level
+					json = &(json->at(jsonKey));
+				}
+				else
+				{
+					break;
 				}
 			}
 		}
@@ -1250,36 +1294,38 @@ int Configuration::removeRunInstances(const std::string &baseName)
 {
 	const static char fname[] = "Configuration::removeRunInstances() ";
 	// Identified by the engine-injected run_base marker, never by parsing the
-	// `<base>_N` name (the suffix rule is ambiguous once base names contain '_').
-	// removeApp() stops the instance process and drops the registration atomically.
-	// A run instance registering while we delete would otherwise survive on the
-	// first snapshot, so rescan until none is left (bounded).
+	// `<base>_N` name (ambiguous once base names contain '_'). Each removal is
+	// race-safe against a same-name re-registration via the expected pointer,
+	// so rescan until none is left (bounded: a client looping registrations
+	// must not spin forever; -1 tells the caller the bound was hit).
 	static constexpr int MAX_RESWEEPS = 8;
 	int removed = 0;
+	bool gaveUp = false;
 	for (int sweep = 0;; ++sweep)
 	{
-		std::vector<std::string> instanceNames;
+		std::vector<std::shared_ptr<Application>> instances;
 		for (const auto &app : getApps())
 		{
 			if (app && app->isOneShot() && app->runBaseApp() == baseName)
-				instanceNames.push_back(app->getName());
+				instances.push_back(app);
 		}
-		if (instanceNames.empty())
+		if (instances.empty())
 			break;
-		for (const auto &name : instanceNames)
+		for (const auto &app : instances)
 		{
-			if (removeApp(name))
+			if (removeApp(app->getName(), app.get()))
 				++removed;
 		}
 		if (sweep >= MAX_RESWEEPS)
 		{
 			LOG_WAR << fname << "Run instances of <" << baseName << "> keep re-registering; giving up after "
 					<< MAX_RESWEEPS << " resweeps";
+			gaveUp = true;
 			break;
 		}
 	}
 	LOG_INF << fname << "Removed <" << removed << "> run instance(s) of base application <" << baseName << ">";
-	return removed;
+	return gaveUp ? -1 : removed;
 }
 
 const nlohmann::json Configuration::getAgentAppJson() const
@@ -1305,11 +1351,18 @@ const nlohmann::json Configuration::getAgentAppJson() const
 	return restApp;
 }
 
-std::shared_ptr<Configuration::JsonRest> Configuration::JsonRest::FromJson(const nlohmann::json &jsonValue)
+std::shared_ptr<Configuration::JsonRest> Configuration::JsonRest::FromJson(const nlohmann::json &jsonValue,
+																		   const JsonRest *previous)
 {
 	const static char fname[] = "Configuration::JsonRest::FromJson() ";
 
 	auto rest = std::make_shared<JsonRest>();
+	// An invalid value on reload keeps the previous mode instead of the boot default.
+	if (previous)
+	{
+		rest->m_requestReplayProtection = previous->m_requestReplayProtection;
+		rest->m_requestSignature = previous->m_requestSignature;
+	}
 	rest->m_restListenPort = GET_JSON_INT_VALUE(jsonValue, JSON_KEY_RestListenPort);
 	rest->m_restListenAddress = GET_JSON_STR_VALUE(jsonValue, JSON_KEY_RestListenAddress);
 	rest->m_tcpApiPort = GET_JSON_INT_VALUE(jsonValue, JSON_KEY_TcpApiPort);
@@ -1326,25 +1379,30 @@ std::shared_ptr<Configuration::JsonRest> Configuration::JsonRest::FromJson(const
 				rest->m_corsAllowOrigins.insert(origin.get<std::string>());
 		}
 	}
-	// Request hardening modes: unknown values fall back to "off" so a typo
-	// cannot silently enable enforcement.
+	// Request hardening modes: unknown values keep the seeded (previous) mode so
+	// a typo cannot silently enable enforcement or reset a running setting.
 	const std::string fnameCopy(fname);
-	const auto normalizeMode = [&jsonValue, &fnameCopy](const char *key, std::string &target) {
-		target = GET_JSON_STR_VALUE(jsonValue, key);
-		std::transform(target.begin(), target.end(), target.begin(), [](unsigned char c) { return std::tolower(c); });
-		if (target != "off" && target != "audit" && target != "enforce")
-		{
-			if (!target.empty())
-				LOG_WAR << fnameCopy << "ignored invalid " << key << " <" << target << ">, expected off | audit | enforce";
-			target = "off";
-		}
+	const auto normalizeMode = [&jsonValue, &fnameCopy](const char *key, std::string &field) {
+		auto mode = GET_JSON_STR_VALUE(jsonValue, key);
+		std::transform(mode.begin(), mode.end(), mode.begin(), [](unsigned char c) { return std::tolower(c); });
+		if (mode == "off" || mode == "audit" || mode == "enforce")
+			field = mode;
+		else if (!mode.empty())
+			LOG_WAR << fnameCopy << "ignored invalid <" << key << "> value <" << mode
+					<< ">, expected off | audit | enforce";
 	};
 	normalizeMode(JSON_KEY_RequestReplayProtection, rest->m_requestReplayProtection);
 	normalizeMode(JSON_KEY_RequestSignature, rest->m_requestSignature);
 	rest->m_requestReplayWindowSeconds = GET_JSON_INT_VALUE(jsonValue, JSON_KEY_RequestReplayWindowSeconds);
-	if (rest->m_requestReplayWindowSeconds < 10 || rest->m_requestReplayWindowSeconds > 3600)
-	{
+	if (!HAS_JSON_FIELD(jsonValue, JSON_KEY_RequestReplayWindowSeconds))
 		rest->m_requestReplayWindowSeconds = DEFAULT_REQUEST_REPLAY_WINDOW_SECONDS;
+	else if (rest->m_requestReplayWindowSeconds < 10 || rest->m_requestReplayWindowSeconds > 3600)
+	{
+		// Clamp instead of dropping the operator's tuning to the default.
+		const auto clamped = rest->m_requestReplayWindowSeconds < 10 ? 10 : 3600;
+		LOG_WAR << fname << JSON_KEY_RequestReplayWindowSeconds << " value <" << rest->m_requestReplayWindowSeconds
+				<< "> is outside [10, 3600]; clamped to <" << clamped << ">";
+		rest->m_requestReplayWindowSeconds = clamped;
 	}
 	if (HAS_JSON_FIELD(jsonValue, JSON_KEY_CsrfAllowedOrigins) && jsonValue.at(JSON_KEY_CsrfAllowedOrigins).is_array())
 	{

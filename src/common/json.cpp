@@ -39,11 +39,3 @@ std::string JSON::dump(const nlohmann::json &j, int indent, bool sanitizeUTF8)
         throw;
     }
 }
-
-// Dump JSON converted to the current ANSI code page on Windows (CP_ACP).
-// For POSIX platforms this returns the UTF-8 string unchanged.
-std::string JSON::dumpToLocalEncoding(const nlohmann::json &j, int indent)
-{
-    const std::string utf8Str = JSON::dump(j, indent);
-    return Utility::utf8ToLocalEncoding(utf8Str);
-}

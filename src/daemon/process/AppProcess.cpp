@@ -560,6 +560,13 @@ long AppProcess::cleanupResources()
 		m_stdinHandler.reset();
 		stdinFileName = m_stdinFileName;
 	}
+	// The write end closes under the stdin-write mutex so a racing writeStdin
+	// sees a valid fd or INVALID_HANDLE, never a reused one. Closing is also the
+	// EOF a piped child still waits for.
+	{
+		std::lock_guard<std::mutex> guard(m_stdinWriteMutex);
+		m_stdinWriteHandler.reset();
+	}
 	Utility::removeFile(stdinFileName);
 	return dispatchedBytes;
 }
@@ -735,10 +742,11 @@ bool AppProcess::onTimerCheckStdout()
 
 ProcessStartResult AppProcess::start(std::string cmd, std::string user, std::string workDir,
 									 std::map<std::string, std::string> envMap, std::shared_ptr<ResourceLimitation> limit,
-									 const std::string &stdoutFile, const nlohmann::json &stdinFileContent, int maxStdoutSize)
+									 const std::string &stdoutFile, const nlohmann::json &stdinFileContent, int maxStdoutSize,
+									 bool stdinPipe)
 {
 	const pid_t pid = startImpl(std::move(cmd), std::move(user), std::move(workDir), std::move(envMap),
-								std::move(limit), stdoutFile, stdinFileContent, maxStdoutSize);
+								std::move(limit), stdoutFile, stdinFileContent, maxStdoutSize, stdinPipe);
 	resolveStart(pid > 1, pid);
 	const bool accepted = isStartAccepted();
 	if (!accepted)
@@ -754,9 +762,44 @@ ProcessStartResult AppProcess::start(std::string cmd, std::string user, std::str
 	return result;
 }
 
+long AppProcess::writeStdin(const std::vector<std::uint8_t> &data, bool closePipe)
+{
+	const static char fname[] = "AppProcess::writeStdin() ";
+	// The fd is read and closed under the stdin-write mutex (cleanupResources
+	// uses the same lock): a racing injector never sees a reused descriptor.
+	std::lock_guard<std::mutex> guard(m_stdinWriteMutex);
+	const ACE_HANDLE fd = m_stdinWriteHandler.get();
+	if (fd == ACE_INVALID_HANDLE)
+		throw std::runtime_error("stdin pipe is not open");
+	// Non-blocking writes keep a slow consumer a partial write, not a blocked
+	// worker thread.
+	std::size_t written = 0;
+	while (written < data.size())
+	{
+		const auto n = ACE_OS::write(fd, data.data() + written, static_cast<size_t>(data.size() - written));
+		if (n > 0)
+		{
+			written += static_cast<std::size_t>(n);
+			continue;
+		}
+		if (n < 0 && errno == EINTR)
+			continue;
+		if (n < 0 && (errno == EAGAIN || errno == EWOULDBLOCK))
+			throw std::runtime_error(Utility::stringFormat("stdin pipe buffer is full after %zu bytes", written));
+		throw std::runtime_error(Utility::stringFormat("stdin write failed: %s", last_error_msg()));
+	}
+	if (closePipe)
+	{
+		LOG_DBG << fname << "closing stdin pipe (EOF)";
+		m_stdinWriteHandler.reset();
+	}
+	return static_cast<long>(written);
+}
+
 pid_t AppProcess::startImpl(std::string cmd, std::string user, std::string workDir,
 							std::map<std::string, std::string> envMap, std::shared_ptr<ResourceLimitation> limit,
-							const std::string &stdoutFile, const nlohmann::json &stdinFileContent, int maxStdoutSize)
+							const std::string &stdoutFile, const nlohmann::json &stdinFileContent, int maxStdoutSize,
+							bool stdinPipe)
 {
 	const static char fname[] = "AppProcess::startImpl() ";
 
@@ -809,7 +852,7 @@ pid_t AppProcess::startImpl(std::string cmd, std::string user, std::string workD
 	option.handle_inheritance(0);
 
 	if (workDir.empty())
-		workDir = (fs::path(Configuration::instance()->getWorkDir()) / APPMESH_WORK_TMP_DIR).string();
+		workDir = Configuration::instance()->getWorkTmpDir();
 
 	if (Utility::isDirExist(workDir))
 		option.working_directory(workDir.c_str());
@@ -870,6 +913,37 @@ pid_t AppProcess::startImpl(std::string cmd, std::string user, std::string workD
 		if (!m_stdinHandler.valid())
 			setStartError(Utility::stringFormat("Failed to reopen stdin file for reading <%s>", last_error_msg()));
 		LOG_DBG << fname << "std_in <" << m_stdinFileName << "> handler=" << m_stdinHandler.get();
+	}
+	else if (stdinPipe)
+	{
+		// Interactive stdin: the child reads one end, the daemon keeps the
+		// other for the input API. Non-blocking so writeStdin never parks a
+		// worker thread on a process that stopped reading.
+		ACE_HANDLE stdinPipeFds[2] = {ACE_INVALID_HANDLE, ACE_INVALID_HANDLE};
+		// No portable pipe2: plain pipe plus fcntl flags (createStdoutPipe does
+		// the same). The write end is the one the API blocks on.
+		ACE_Pipe stdinPipeDevice;
+		if (stdinPipeDevice.open(stdinPipeFds) != 0)
+		{
+			setStartError(Utility::stringFormat("Failed to create stdin pipe <%s>", last_error_msg()));
+		}
+		else
+		{
+			const int writeFlags = ::fcntl(stdinPipeFds[1], F_GETFL, 0);
+			if (writeFlags < 0 || ::fcntl(stdinPipeFds[1], F_SETFL, writeFlags | O_NONBLOCK) < 0 ||
+				::fcntl(stdinPipeFds[1], F_SETFD, FD_CLOEXEC) < 0)
+			{
+				setStartError(Utility::stringFormat("Failed to configure stdin pipe <%s>", last_error_msg()));
+				ACE_OS::close(stdinPipeFds[0]);
+				ACE_OS::close(stdinPipeFds[1]);
+			}
+			else
+			{
+				m_stdinHandler.reset(stdinPipeFds[0]);
+				m_stdinWriteHandler.reset(stdinPipeFds[1]);
+				LOG_DBG << fname << "std_in pipe read=" << stdinPipeFds[0] << " write=" << stdinPipeFds[1];
+			}
+		}
 	}
 	else
 	{

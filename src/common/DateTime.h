@@ -108,11 +108,6 @@ public:
 	/// @return Parsed duration
 	static BoostDuration parseDayTimeUtcDuration(const std::string &strTime);
 
-	/// @brief Format a duration to day-time string
-	/// @param duration The duration to format
-	/// @return String in format [%H:%M:%S+TZ]
-	static std::string formatDayTimeUtcDuration(const BoostDuration &duration);
-
 	/// @brief Reduce posix zone precision (e.g., "+08:00:00" -> "+08")
 	/// @param timeStr ISO8601 format date-time string
 	/// @return Reduced string with trailing ":00" removed from timezone

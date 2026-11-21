@@ -56,6 +56,17 @@ void FileTransferHandler::prepareTransfer(std::unique_ptr<Response> &resp, int c
 			return;
 		}
 
+		// Same leaf rule as the REST face: a symlink leaf answers a misleading 409 or silently swaps the link.
+		boost::system::error_code linkEc;
+		if (fs::is_symlink(fs::path(fileName), linkEc))
+		{
+			auto msg = Utility::text2json("Symlinks not allowed").dump();
+			resp->http_status = web::http::status_codes::BadRequest;
+			resp->body = std::vector<std::uint8_t>(msg.begin(), msg.end());
+			LOG_ERR << fname << "Upload target is a symlink | ClientID=" << clientId << " | FilePath=" << fileName;
+			return;
+		}
+
 		// Temp file lives in the destination's own directory (append a unique suffix to the
 		// full path) so the final rename stays on the same filesystem and is atomic.
 		const auto tempName = fileName + "." + Utility::shortID() + ".part";
@@ -146,6 +157,10 @@ void FileTransferHandler::sendNextDownloadChunk(SocketStream &stream, int client
 	}
 	else
 	{
+		// A clean end of file is not a failure; only an errored short
+		// read ends the transfer without its data.
+		if (!m_pendingDownload->good() && !m_pendingDownload->eof())
+			LOG_ERR << fname << "read error ended the download stream early | ClientID=" << clientId;
 		LOG_INF << fname << "File download transfer completed | ClientID=" << clientId;
 		m_pendingDownload.reset();
 		stream.send("", 0); // Signal end of transfer

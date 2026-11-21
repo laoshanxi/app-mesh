@@ -133,7 +133,7 @@ public:
 	bool initTimer(int timeoutSeconds);
 
 	// Timer callback invoked when timeout expires
-	bool onTimerResponse();
+	virtual bool onTimerResponse();
 	bool replied() const;
 
 	// Interrupts this request with ExpectationFailed status
@@ -147,10 +147,35 @@ protected:
 					   const std::map<std::string, std::string> &headers, const web::http::status_code &status,
 					   const std::string &bodyType) const override;
 
-private:
 	mutable std::atomic_long m_timerResponseId;
 	mutable std::atomic<bool> m_httpRequestReplyFlag;
 	mutable std::atomic_int m_id;
+};
+
+// Task request parked on an SSE stream: the final reply maps onto terminal SSE
+// events through the sink (200 becomes "final" + "end", anything else an "end"
+// error frame); this subclass also adds the partial-delivery channel the worker
+// drives via TaskRequest::partialReply.
+class HttpRequestTaskStream : public HttpRequestWithTimeout
+{
+public:
+	HttpRequestTaskStream(const std::shared_ptr<HttpRequest> &message, const std::shared_ptr<class SseSink> &sink);
+	~HttpRequestTaskStream() override = default;
+
+	// Emits one "partial" event. Returns false when the stream is gone.
+	bool sendPartial(const std::string &payload);
+
+	// Maps the timeout onto the terminal end{timeout} frame via the virtual reply.
+	bool onTimerResponse() override;
+
+protected:
+	// Overridden reply: routes the single final response into the sink.
+	virtual bool reply(const std::string &requestUri, const std::string &uuid, const std::vector<std::uint8_t> &body,
+					   const std::map<std::string, std::string> &headers, const web::http::status_code &status,
+					   const std::string &bodyType) const override;
+
+private:
+	std::shared_ptr<class SseSink> m_sink;
 };
 
 // HttpRequest for viewing application output
@@ -198,11 +223,16 @@ public:
 	bool deleteTask();
 	void fetchTask(const std::string &processKey, std::shared_ptr<void> &serverRequest);
 	void replyTask(const std::string &processKey, std::shared_ptr<void> &serverRequest);
+	// Worker incremental result (X-Appmesh-Process-Key auth): delivers to the
+	// in-flight caller when it parked an SSE stream, otherwise ignored.
+	void partialReply(const std::string &processKey, const std::string &payload, bool &delivered);
 	std::tuple<int, std::string> taskStatus();
 
 private:
 	std::shared_ptr<HttpRequestWithTimeout> releaseRepliedRequestLocked(
 		std::shared_ptr<HttpRequestWithTimeout> &request);
+	/// Throws when the worker's process key does not match the accepted one; call with m_mutex held.
+	void verifyProcessKeyLocked(const std::string &processKey) const;
 
 private:
 	std::mutex m_mutex;
