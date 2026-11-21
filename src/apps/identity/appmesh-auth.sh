@@ -981,17 +981,29 @@ oidc_subject_for_user_id() {
 # POST one form to the administration UI (the dexuser System App, loopback
 # only). The UI answers every administrative write with a redirect: ?notice=
 # on success and ?error= on failure, so the Location header carries the result.
+# The administration routes require proof: the automation bearer goes with the
+# request ("the bearer for the engine's scripts"), and a 401/403 is an error,
+# never a success.
 admin_ui_post() {
     local path=$1
     shift
-    local listen headers location detail
+    local listen headers location detail status token
     listen=${APPMESH_AUTH_ADMIN_LISTEN:-127.0.0.1:6064}
+    token=$(request_automation_token 2>/dev/null || true)
     if ! headers=$(curl --silent --show-error --max-time 10 --request POST \
-        --output /dev/null --dump-header - \
+        --output /dev/null --dump-header - --write-out '%{http_code}' \
+        ${token:+--header "Authorization: Bearer ${token}"} \
         "http://${listen}${path}" "$@"); then
         echo "The administration UI is not reachable at http://${listen}; the dexuser System App must be running (see APPMESH_AUTH_ADMIN_UI)" >&2
         return 1
     fi
+    status=${headers##*$'\n'}
+    case "${status}" in
+        401|403)
+            echo "The administration UI rejected the request (${status})" >&2
+            return 1
+            ;;
+    esac
     location=$(printf '%s\n' "${headers}" | sed -n 's/^[Ll]ocation:[[:space:]]*//p' | tr -d '\r' | tail -n 1)
     case "${location}" in
         *error=*)
@@ -1147,10 +1159,13 @@ delete_user() {
 
     # The Principal binding keys on the OIDC subject, which embeds the user_id.
     # Recover it from the UI password list before the entry disappears; the
-    # column layout mirrors the fork's admin.html passwords table.
-    local listen list_page user_id=""
+    # column layout mirrors the fork's admin.html passwords table. The page is
+    # an administration route: the automation bearer goes with the request.
+    local listen list_page user_id="" token
     listen=${APPMESH_AUTH_ADMIN_LISTEN:-127.0.0.1:6064}
+    token=$(request_automation_token 2>/dev/null || true)
     if ! list_page=$(curl --fail --silent --show-error --max-time 10 \
+        ${token:+--header "Authorization: Bearer ${token}"} \
         "http://${listen}/admin?section=passwords"); then
         echo "The administration UI is not reachable at http://${listen}; the dexuser System App must be running (see APPMESH_AUTH_ADMIN_UI)" >&2
         return 1
