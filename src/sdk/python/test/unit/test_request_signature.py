@@ -255,7 +255,7 @@ class TestHeadersAttached(unittest.TestCase):
                 AppMeshClient._Method.PUT, path="/appmesh/app/example",
                 query={"k": "two words"}, body={"command": "echo hi"},
             )
-        headers = put.call_args.kwargs["headers"]
+        headers = put.call_args[1]["headers"]
         self.assertIn("X-Request-Key", headers)
         self.assertEqual(headers["X-Request-Key"], "ak-3f9c2a81b0d4")
         self.assertEqual(headers["X-Timestamp"], str(int(headers["X-Timestamp"])))
@@ -264,12 +264,12 @@ class TestHeadersAttached(unittest.TestCase):
         # The signed request carries its query inside the prepared URL (signing
         # and sending share one prepared request), percent-encoded (no
         # '+'-for-space) so the daemon-visible decoded value equals the signed one.
-        wire_query = parse.urlsplit(put.call_args.kwargs["url"]).query
+        wire_query = parse.urlsplit(put.call_args[1]["url"]).query
         self.assertNotIn("+", wire_query)
         self.assertIn("k=two%20words", wire_query)
         decoded = {"k": parse.unquote(wire_query.split("=", 1)[1])}
         # Body is the JSON string actually sent.
-        body = put.call_args.kwargs["data"].encode()
+        body = put.call_args[1]["data"].encode()
         self.assertTrue(_verify(
             headers["X-Request-Key"], KAT_SECRET, headers["X-Timestamp"], nonce,
             headers["X-Signature"], "PUT", "/appmesh/app/example",
@@ -287,7 +287,7 @@ class TestHeadersAttached(unittest.TestCase):
                 AppMeshClient._Method.PUT, path="/appmesh/app/my app",
                 body={"command": "echo hi"},
             )
-        kwargs = put.call_args.kwargs
+        kwargs = put.call_args[1]
         # Derive the wire path independently, exactly as requests prepares it.
         prepared = requests.Request(method="PUT", url=kwargs["url"]).prepare()
         wire_path = parse.urlsplit(prepared.url).path
@@ -308,7 +308,7 @@ class TestHeadersAttached(unittest.TestCase):
                 AppMeshClient._Method.DELETE, path="/appmesh/app/example",
                 query={"k": "two words"},
             )
-        kwargs = delete.call_args.kwargs
+        kwargs = delete.call_args[1]
         # Signed requests embed the query in the prepared URL they send.
         wire_query = parse.urlsplit(kwargs["url"]).query
         self.assertIn("k=two%20words", wire_query)
@@ -325,7 +325,7 @@ class TestHeadersAttached(unittest.TestCase):
         resp = mock.Mock(status_code=200)
         with mock.patch.object(client.session, "get", return_value=resp) as get:
             client._request_http(AppMeshClient._Method.GET, path="/appmesh/applications")
-        headers = get.call_args.kwargs["headers"]
+        headers = get.call_args[1]["headers"]
         for header in ("X-Request-Key", "X-Timestamp", "X-Nonce", "X-Signature"):
             self.assertNotIn(header, headers)
 
@@ -336,7 +336,7 @@ class TestHeadersAttached(unittest.TestCase):
         with mock.patch.object(client.session, "get", return_value=resp) as get:
             client._request_http(AppMeshClient._Method.GET_STREAM, path="/appmesh/file/download",
                                  header={"X-File-Path": "/tmp/x"})
-        headers = get.call_args.kwargs["headers"]
+        headers = get.call_args[1]["headers"]
         self.assertTrue(_verify(
             headers["X-Request-Key"], KAT_SECRET, headers["X-Timestamp"], headers["X-Nonce"],
             headers["X-Signature"], "GET", "/appmesh/file/download", "", b"",
@@ -406,7 +406,7 @@ class TestWSSFileSideChannelSignature(unittest.TestCase):
             client.session, "get", return_value=self._octet_stream_response(b"file-bytes")
         ) as get:
             client.download_file("/tmp/remote.txt", str(Path(tmp) / "got.txt"))
-        headers = get.call_args.kwargs["headers"]
+        headers = get.call_args[1]["headers"]
         self.assertEqual(headers["X-Request-Key"], "ak-3f9c2a81b0d4")
         self.assertTrue(_verify(
             headers["X-Request-Key"], KAT_SECRET, headers["X-Timestamp"], headers["X-Nonce"],
@@ -421,7 +421,7 @@ class TestWSSFileSideChannelSignature(unittest.TestCase):
             src = Path(tmp) / "put.txt"
             src.write_bytes(b"payload")
             client.upload_file(str(src), "/tmp/remote-put.txt")
-        headers = post.call_args.kwargs["headers"]
+        headers = post.call_args[1]["headers"]
         self.assertTrue(_verify(
             headers["X-Request-Key"], KAT_SECRET, headers["X-Timestamp"], headers["X-Nonce"],
             headers["X-Signature"], "POST", "/appmesh/file/upload", "", b"",
