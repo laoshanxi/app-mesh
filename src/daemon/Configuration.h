@@ -22,6 +22,9 @@ class Application;
 /// </summary>
 struct JsonDocker
 {
+	// Docker container support master switch; absent key keeps true so an
+	// upgrade never silently strands existing container applications.
+	bool m_enable = true;
 	// off | audit | enforce; anything else keeps off so a typo cannot weaken it.
 	std::string m_hostSecurityPolicy = "off";
 	static std::shared_ptr<JsonDocker> FromJson(const nlohmann::json &jsonValue);
@@ -63,7 +66,10 @@ public:
 	struct JsonRest
 	{
 		JsonRest();
-		static std::shared_ptr<JsonRest> FromJson(const nlohmann::json &jsonObj);
+		/// `previous` seeds the invalid-value fallbacks on reload (SIGHUP):
+		/// an unusable hardening mode keeps the running setting instead of
+		/// silently resetting to the boot default.
+		static std::shared_ptr<JsonRest> FromJson(const nlohmann::json &jsonObj, const JsonRest *previous = nullptr);
 		nlohmann::json AsJson() const;
 
 		bool m_restEnabled;
@@ -100,7 +106,10 @@ public:
 	static std::string readConfiguration();
 	static void handleSignal();
 
-	static std::shared_ptr<Configuration> FromJson(nlohmann::json &jsonValue, bool applyEnv = false) noexcept(false);
+	/// `previous` (hot reload) seeds invalid-value fallbacks in the nested
+	/// FromJson parsers, so a bad reload keeps the running setting.
+	static std::shared_ptr<Configuration> FromJson(nlohmann::json &jsonValue, bool applyEnv = false,
+												   const Configuration *previous = nullptr) noexcept(false);
 	nlohmann::json AsJson();
 	void loadApps(const boost::filesystem::path &appDir);
 	void saveConfigToDisk();
@@ -137,7 +146,8 @@ public:
 	int getRestListenPort();
 	// Docker.HostSecurityPolicy: off (default) | audit | enforce, hot-reloaded.
 	std::string getDockerHostSecurityPolicy();
-	int getPromListenPort() const;
+	// Docker.Enable master switch (default true), hot-reloaded.
+	bool getDockerEnabled();
 	std::string getRestListenAddress();
 	int getTcpApiPort();
 	int getWebSocketPort();
@@ -148,7 +158,8 @@ public:
 	std::string generateRunAppName(const std::string &provideAppName);
 	/// Stops and removes the on-demand run instances spawned from `baseName`
 	/// (their `<base>_N` registrations). Used by base-app delete; the delete
-	/// permission check on the base governs the cascade.
+	/// permission check on the base governs the cascade. Returns the removal
+	/// count, or -1 when instances kept re-registering past the resweep bound.
 	int removeRunInstances(const std::string &baseName);
 	/// Flips the status to DISABLED and persists it under the mutation lock;
 	/// stopping the runs happens outside the lock (a slow Docker backend must
@@ -164,6 +175,8 @@ public:
 	const std::string getDefaultExecUser() const;
 	bool getDisableExecUser() const;
 	const std::string getWorkDir() const;
+	/// work/tmp under the working directory (uploads, snapshots, scratch).
+	const std::string getWorkTmpDir() const;
 	bool getSslVerifyClient() const;
 	bool getSslVerifyServer() const;
 	bool getSslEnabled() const;
@@ -174,6 +187,8 @@ public:
 	bool getCorsDisabled() const;
 	bool metricsRequireAuth() const;
 	std::set<std::string> getCorsAllowOrigins() const;
+	/// Shared CORS decision (opt-in, no wildcard): true when the origin may be echoed.
+	bool corsAllowsOrigin(const std::string &origin) const;
 	std::string getRequestReplayProtection() const;
 	std::string getRequestSignature() const;
 	int getRequestReplayWindowSeconds() const;

@@ -38,6 +38,8 @@ class Application : public TimerHandler, public AppBehavior
 {
 public:
 	static constexpr int DEFAULT_STARTUP_PHASE = 100;
+	/// Schedule-interval fallback for a recovered definition whose interval no longer parses.
+	static constexpr int DEFAULT_START_INTERVAL_SECONDS = 7 * 24 * 3600;
 
 	Application();
 	virtual ~Application();
@@ -46,6 +48,9 @@ public:
 	const std::string &getName() const;
 	pid_t getpid() const;
 	int health() const;
+	// SIGTERM grace before SIGKILL on a stop (stop_grace_period).
+	int stopGraceSeconds() const { return m_bufferTime; }
+	bool isContainerized() const { return !m_dockerImage.empty(); }
 	const std::string &healthCheckCmd() const;
 	const std::string &getOwnerPrincipalId() const;
 	int getOwnerPermission() const;
@@ -101,6 +106,17 @@ public:
 	void fetchTask(const std::string &processKey, std::shared_ptr<HttpRequest> asyncHttpRequest);
 	void replyTask(const std::string &processKey, std::shared_ptr<HttpRequest> asyncHttpRequest);
 	std::tuple<int, std::string> taskStatus();
+
+	// Interactive stdin (apps registered with "stdin": "pipe"): injects bytes
+	// into the running process; `closePipe` sends EOF. Returns bytes written.
+	long writeStdin(const std::vector<std::uint8_t> &data, bool closePipe, const std::string &processUuid = "");
+	bool isStdinPipe() const { return m_stdinPipe; }
+
+	// Streaming task RPC: forward a partial payload to the pending task reply channel.
+	void partialTask(const std::string &processKey, const std::string &payload, bool &delivered);
+	// Container lifecycle event from the local agent (die/sync): a die for the
+	// owning run accelerates the authoritative exit poll on the next tick.
+	void reportContainerEvent(const std::string &containerId);
 
 	// Current process identity and managed process proof
 	bool isCurrentProcessUuid(const std::string &processUuid);
@@ -206,6 +222,8 @@ private:
 	std::string m_workdir;
 	std::string m_stdoutFile;
 	nlohmann::json m_metadata;
+	// "stdin": "pipe" — the daemon keeps the pipe write end open for writeStdin.
+	bool m_stdinPipe{false};
 	bool m_shellApp;
 	bool m_sessionLogin;
 	int m_stdoutCacheNum;

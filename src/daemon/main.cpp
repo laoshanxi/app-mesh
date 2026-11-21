@@ -48,10 +48,12 @@
 #include "../common/os/pstree.h"
 #include "Configuration.h"
 #include "HealthCheckTask.h"
+#include "security/AuthorizationStore.h"
 #include "PersistManager.h"
 #include "ResourceCollection.h"
 #include "application/Application.h"
 #include "process/AppProcess.h"
+#include "process/DockerApiProcess.h"
 #include "process/LinuxCgroup.h"
 #include "rest/EventDispatcher.h"
 #include "rest/RestHandler.h"
@@ -169,7 +171,7 @@ void AppMeshDaemon::logStartupEnvironment()
 	const static char fname[] = "AppMeshDaemon::logStartupEnvironment() ";
 	LOG_INF << fname << "LANG=<" << (ACE_OS::getenv("LANG") ? ACE_OS::getenv("LANG") : "") << "> LC_ALL=<"
 			<< (ACE_OS::getenv("LC_ALL") ? ACE_OS::getenv("LC_ALL") : "") << "> APPMESH_AUTH_MODE=<"
-			<< (ACE_OS::getenv("APPMESH_AUTH_MODE") ? ACE_OS::getenv("APPMESH_AUTH_MODE") : "") << ">";
+			<< (ACE_OS::getenv(AUTH_MODE_ENV) ? ACE_OS::getenv(AUTH_MODE_ENV) : "") << ">";
 }
 
 int AppMeshDaemon::run(int argc, char *argv[])
@@ -195,6 +197,10 @@ int AppMeshDaemon::run(int argc, char *argv[])
 		startStartupApplications();
 		prewarmAuthentication();
 		initializeRestService();
+		// Reconcile App Mesh labeled containers against the restored registry:
+		// leftovers of removed applications are logged (and deleted with
+		// APPMESH_DOCKER_ORPHAN_SWEEP=delete).
+		DockerApiProcess::sweepOrphanContainers();
 		runMainLoop();
 	}
 	catch (const std::exception &e)
@@ -303,7 +309,7 @@ void AppMeshDaemon::initializeDirectories()
 	// Create working directories
 	Utility::createDirectory(config->getWorkDir());
 
-	const auto tmpDir = (fs::path(config->getWorkDir()) / APPMESH_WORK_TMP_DIR).string();
+	const auto tmpDir = config->getWorkTmpDir();
 	const auto outputDir = (fs::path(config->getWorkDir()) / "stdout").string();
 	const auto inputDir = (fs::path(config->getWorkDir()) / "stdin").string();
 	const auto shellDir = (fs::path(config->getWorkDir()) / "shell").string();
@@ -362,17 +368,6 @@ void AppMeshDaemon::recoverApplications()
 	config->loadApps(fs::path(Utility::getHomeDir()) / APPMESH_APPLICATION_DIR);
 	// Validate the dependency graph once after both directories are loaded.
 	config->validateRecoveredDependencies();
-	// Startup sweep: run instances are one-shot registrations marked by the
-	// engine; drop any that recovered without a live process instead of leaving
-	// it until a manual delete (getApps() returns a copy, safe to mutate).
-	for (const auto &app : config->getApps())
-	{
-		if (app && app->isOneShot() && app->getpid() <= 1)
-		{
-			config->removeApp(app->getName());
-			LOG_INF << fname << "Removed dead run instance registration <" << app->getName() << ">";
-		}
-	}
 
 	LOG_INF << fname << "Applications recovered";
 }
@@ -576,6 +571,10 @@ void AppMeshDaemon::startAgentApplication()
 			throw std::runtime_error("Failed to wait for PSK read from agent process");
 		}
 	}
+	// Docker applications dial back through the agent's container service; surface a
+	// broken channel at boot instead of the first container start's 407. Runs
+	// for a freshly created agent and for one restored from the registry alike.
+	DockerApiProcess::selfCheckDockerAgent();
 }
 
 void AppMeshDaemon::performHighAvailabilityRecovery()
@@ -636,7 +635,7 @@ void AppMeshDaemon::runMainLoop()
 
 	// Change to temp directory
 	auto config = Configuration::instance();
-	const auto tmpDir = (fs::path(config->getWorkDir()) / APPMESH_WORK_TMP_DIR).string();
+	const auto tmpDir = config->getWorkTmpDir();
 	fs::current_path(tmpDir);
 	LOG_INF << fname << "Entered working directory: " << fs::current_path().string();
 
@@ -711,7 +710,7 @@ void AppMeshDaemon::startStartupApplications()
 	// Managed app commands are authored relative to work/tmp (for example,
 	// ../../script/appmesh-auth.sh). Enter the same directory used by the main
 	// scheduler before launching any readiness phase.
-	const auto tmpDir = (fs::path(config->getWorkDir()) / APPMESH_WORK_TMP_DIR).string();
+	const auto tmpDir = config->getWorkTmpDir();
 	fs::current_path(tmpDir);
 	LOG_INF << fname << "Entered working directory: " << fs::current_path().string();
 

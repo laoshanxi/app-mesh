@@ -44,10 +44,12 @@ public:
 	ProcessStartResult start(std::string cmd, std::string user, std::string workDir,
 							 std::map<std::string, std::string> envMap, std::shared_ptr<ResourceLimitation> limit,
 							 const std::string &stdoutFile = "", const nlohmann::json &stdinFileContent = EMPTY_STR_JSON,
-							 int maxStdoutSize = APP_STD_OUT_MAX_FILE_SIZE);
+							 int maxStdoutSize = APP_STD_OUT_MAX_FILE_SIZE, bool stdinPipe = false);
 	void terminate();
 	void scheduleTermination(std::size_t timeoutSec, const std::string &from);
-	bool running() const;
+	// Virtual: backends with detached activities (API image pulls) stay alive
+	// without a live host PID.
+	virtual bool running() const;
 	// Wait for AppMesh finalization (stdout drained and Application exit state committed),
 	// not for OS reaping. Returns the run's native PID, 0 on timeout, or
 	// ACE_INVALID_PID when a finalized backend run never exposed a native PID.
@@ -63,15 +65,33 @@ public:
 
 	// Output and process metrics
 	virtual const std::string getOutputMsg(long *position = nullptr, int maxSize = APP_STD_OUT_VIEW_DEFAULT_SIZE, bool readLine = false);
+	/// Injects bytes into a pipe-backed stdin (see start(stdinPipe=true)).
+	/// Non-blocking: a full pipe reports the bytes already written. `closePipe`
+	/// closes the write end so the process reads EOF. Returns bytes written.
+	long writeStdin(const std::vector<std::uint8_t> &data, bool closePipe);
 	std::tuple<bool, uint64_t, float, uint64_t, std::string, pid_t> getProcessDetails(
 		void *ptree = nullptr, bool includeTreeString = true, bool metricsSample = false);
+
+	// Liveness backends without a visible host PID (the daemon itself runs in a
+	// container) cannot gate on PID liveness: they need the backend-authoritative
+	// exit poll on every scheduler tick.
+	virtual bool needsAlwaysExitPoll() const { return false; }
+	// True when the backend poll is due even while event markers look fresh.
+	// True by default: a backend without an event channel has no marker to trust.
+	virtual bool backendLivenessPollDue() const { return true; }
+	// Hint from a backend event (a container die) to fetch the backend state
+	// promptly; the fetch itself stays on the scheduler thread.
+	virtual void requestLivenessPoll() {}
+	// After a daemon restart, re-bind a recovered container run to its container (verifying the ownership
+	// labels): without the ID a stop degrades to a host SIGKILL, exit codes fake to 0, the probe loses its target.
+	virtual void adoptRecoveredContainer() {}
 
 protected:
 	// Backend contract
 	virtual pid_t startImpl(std::string cmd, std::string user, std::string workDir,
 							std::map<std::string, std::string> envMap, std::shared_ptr<ResourceLimitation> limit,
 							const std::string &stdoutFile, const nlohmann::json &stdinFileContent,
-							int maxStdoutSize);
+							int maxStdoutSize, bool stdinPipe);
 	virtual void terminateImpl();
 
 	// Backend state publication
@@ -80,7 +100,18 @@ protected:
 	// Container backends may prove that creation/start succeeded after the host PID
 	// has already disappeared. Preserve that accepted start, then report its exit.
 	void reportEarlyExit(int exitCode);
+	// Publish a run exit; backends without a child-wait callback (attached
+	// containers, detached API pulls) call this exactly once from their own thread.
+	// The exit-phase guard deduplicates every later report.
+	void onExit(int exitCode);
 	void setStartError(const std::string &error);
+	// The owning application when this run was created by one (empty for
+	// internal helper runs).
+	const std::weak_ptr<Application> owner() const { return m_owner; }
+	// Publish an accepted start; container backends without a PID use the same
+	// handshake as reportEarlyExit.
+	void resolveStart(bool accepted, pid_t pid);
+	bool isStartAccepted() const;
 
 private:
 	static constexpr int FORCED_TERMINATION_EXIT_CODE = 9;
@@ -95,9 +126,6 @@ private:
 	pid_t lastPid() const;
 
 	// Start/exit coordination
-	void resolveStart(bool accepted, pid_t pid);
-	bool isStartAccepted() const;
-	void onExit(int exitCode);
 	void onTimerExit() noexcept;
 
 	// Native process and resource helpers
@@ -126,6 +154,9 @@ private:
 
 	// Redirected I/O
 	AtomicHandleGuard m_stdinHandler;
+	// Daemon-side write end of an interactive stdin pipe (invalid otherwise).
+	AtomicHandleGuard m_stdinWriteHandler;
+	std::mutex m_stdinWriteMutex;
 	AtomicHandleGuard m_stdoutHandler;
 	std::string m_stdinFileName;
 	std::string m_stdoutFileName;

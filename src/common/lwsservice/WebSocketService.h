@@ -45,6 +45,8 @@
 #include <libwebsockets.h>
 
 class Request;
+// Per-connection HTTP session state (PSS); defined in WebSocketService.cpp.
+struct HttpSessionData;
 
 // Blocking concurrent queues for incoming requests and outgoing responses
 using REQUEST_QUEUE = moodycamel::BlockingConcurrentQueue<WSRequest>;
@@ -85,9 +87,18 @@ public:
     void enqueueOutgoingResponse(std::unique_ptr<WSResponse> &&resp);
     void enqueueIncomingRequest(WSRequest &&request);
 
+    // Hands one SSE frame (or the empty-payload terminal close) to the IO loop
+    // for the connection that owns the stream. Thread-safe; frames are written
+    // in enqueue order, one chunk per WRITEABLE callback.
+    void enqueueSseFrame(void *wsi, uint64_t reqId, uint64_t sessionId, const std::string &frame, bool terminal);
+
 private:
     // Internal helpers
     void deliverResponse(std::unique_ptr<WSResponse> resp);
+    // Drains the SSE stream state of one connection: headers once, then one
+    // chunked frame per callback, then the terminal chunk. Returns the lws
+    // callback result.
+    int writeSseHttp(struct lws *wsi, HttpSessionData *pss);
 
     // Threads
     void runIOEventLoop();

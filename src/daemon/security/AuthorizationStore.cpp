@@ -6,6 +6,7 @@
 #include "../../common/os/filesystem.h"
 #include "../Configuration.h"
 #include "../application/Application.h"
+#include "SecretProtector.h"
 #include "Security.h"
 
 #include <ace/OS.h>
@@ -19,8 +20,6 @@
 namespace
 {
 	const std::string SYSTEM_PRINCIPAL_ID = "system:appmesh";
-	const char *AUTH_MODE_ENV = "APPMESH_AUTH_MODE";
-	const char *AUTH_ROLE_ENV = "APPMESH_AUTH_ROLE";
 	const char *BUILTIN_AUTH_MODE = "builtin";
 	const char *EXTERNAL_AUTH_MODE = "external";
 	const char *AUTH_STACK_CONFIG_FILE = "auth-stack.yaml";
@@ -32,6 +31,24 @@ namespace
 
 	// Request-signing API keys per principal; the owner revokes before issuing more.
 	constexpr std::size_t MAX_API_KEYS_PER_PRINCIPAL = 10;
+
+	// SecretProtector ciphertext marker (same as Application.cpp).
+	const char *PROTECTED_SECRET_PREFIX = "sp1:";
+
+	/// Encryption context bound to the key id, so a ciphertext moved between entries does not decrypt.
+	std::string apiKeySecretContext(const std::string &keyId)
+	{
+		return std::string("api_key") + '\0' + keyId;
+	}
+
+	/// Decrypt a persisted secret; a value without the ciphertext marker (or that
+	/// fails decryption) throws.
+	std::string readStoredSecret(const std::string &keyId, const std::string &stored)
+	{
+		if (!Utility::startWith(stored, PROTECTED_SECRET_PREFIX))
+			throw std::invalid_argument("api key secret is not encrypted");
+		return SecretProtector::instance().unprotect(stored, apiKeySecretContext(keyId));
+	}
 
 	// Every permission identifier the policy accepts; role updates are checked
 	// against this set so typos cannot silently grant nothing.
@@ -267,7 +284,19 @@ void AuthorizationStore::load(const nlohmann::json &root)
 		{
 			const auto &definition = entry.value();
 			const auto principalId = GET_JSON_STR_VALUE(definition, "principal");
-			const auto secret = GET_JSON_STR_VALUE(definition, "secret");
+			// Decrypt for the in-memory snapshot.
+			std::string secret;
+			try
+			{
+				secret = readStoredSecret(entry.key(), GET_JSON_STR_VALUE(definition, "secret"));
+			}
+			catch (const std::exception &)
+			{
+				LOG_WAR << "AuthorizationStore::load() dropped request-signing API key <" << entry.key()
+						<< ">: the stored secret is not a readable encrypted secret; restore the "
+						   "SecretProtector master key or reissue the key";
+				continue;
+			}
 			// Dangling keys (principal removed by an external policy edit) are
 			// dropped with a warning instead of failing the whole policy load.
 			if (principalId.empty() || secret.empty() || m_principals.count(principalId) == 0)
@@ -684,6 +713,9 @@ void AuthorizationStore::deleteRole(const std::string &role)
 nlohmann::json AuthorizationStore::issueApiKey(const std::string &principalId)
 {
 	const static char fname[] = "AuthorizationStore::issueApiKey() ";
+	if (principalId == SYSTEM_PRINCIPAL_ID)
+		throw AuthorizationException("API keys are not issued for the App Mesh system principal; sign requests with a "
+									 "user or service principal's key");
 	std::lock_guard<std::recursive_mutex> guard(m_mutex);
 	auto found = m_principals.find(principalId);
 	if (found == m_principals.end() || !found->second->active())
@@ -776,6 +808,12 @@ bool AuthorizationStore::apiKeySecret(const std::string &keyId, std::string &pri
 	auto found = m_apiKeys.find(keyId);
 	if (found == m_apiKeys.end())
 		return false;
+	// The key's validity is bound to its owner's status: disabling the
+	// principal revokes its keys (verification fails closed) without the
+	// delete-level cascade, and a dangling owner can never sign either.
+	auto owner = m_principals.find(found->second.principalId);
+	if (owner == m_principals.end() || !owner->second->active())
+		return false;
 	principalId = found->second.principalId;
 	secret = found->second.secret;
 	return true;
@@ -844,7 +882,17 @@ void AuthorizationStore::mergeDiskPolicyLocked()
 					continue;
 				const auto &definition = entry.value();
 				const auto principalId = GET_JSON_STR_VALUE(definition, "principal");
-				const auto secret = GET_JSON_STR_VALUE(definition, "secret");
+				std::string secret;
+				try
+				{
+					secret = readStoredSecret(entry.key(), GET_JSON_STR_VALUE(definition, "secret"));
+				}
+				catch (const std::exception &)
+				{
+					LOG_WAR << fname << "stored secret of on-disk API key <" << entry.key()
+							<< "> is not a readable encrypted secret; not adopted";
+					continue;
+				}
 				if (principalId.empty() || secret.empty() || m_principals.count(principalId) == 0)
 					continue;
 				ApiKey key;
@@ -880,7 +928,8 @@ void AuthorizationStore::saveLocked() const
 		{
 			nlohmann::json item;
 			item["principal"] = entry.second.principalId;
-			item["secret"] = entry.second.secret;
+			// At rest: encrypted; a replication wire snapshot stays plaintext for follower-side HMAC.
+			item["secret"] = SecretProtector::instance().protect(entry.second.secret, apiKeySecretContext(entry.first));
 			item["created_at"] = entry.second.createdAt;
 			apiKeys[entry.first] = std::move(item);
 		}
@@ -906,14 +955,13 @@ void AuthorizationStore::initializeFirstAdminEnrollment()
 	std::lock_guard<std::recursive_mutex> guard(m_mutex);
 	const auto authMode = Utility::getenv(AUTH_MODE_ENV, BUILTIN_AUTH_MODE);
 	if (authMode != BUILTIN_AUTH_MODE && authMode != EXTERNAL_AUTH_MODE)
-		throw std::invalid_argument("APPMESH_AUTH_MODE must be builtin or external");
+		throw std::invalid_argument(std::string(AUTH_MODE_ENV) + " must be builtin or external");
 	m_builtinAuthentication = authMode == BUILTIN_AUTH_MODE;
 
 	// Versions before automatic subject-pinned enrollment generated a second
 	// owner-only proof. It is no longer accepted, so remove any stale copy during
 	// the upgrade instead of leaving obsolete credential material behind.
-	const auto legacyProofPath = (fs::path(Utility::getHomeDir()) / APPMESH_WORK_DIR /
-		"auth" / "secrets" / "first-admin-enrollment-token").string();
+	const auto legacyProofPath = SecretProtector::secretsFilePath("first-admin-enrollment-token");
 	if (Utility::isFileExist(legacyProofPath))
 		Utility::removeFile(legacyProofPath);
 

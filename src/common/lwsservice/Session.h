@@ -43,6 +43,9 @@ struct WSResponse
     std::string m_payload;
     uint64_t m_req_id = 0;
     bool m_is_http = false;
+    // SSE stream transport: m_payload is one pre-framed SSE event (or empty for
+    // the terminal close), not a complete serialized Response.
+    bool m_is_sse = false;
 };
 
 struct WSRequest

@@ -1,21 +1,27 @@
 // src/daemon/rest/RestHandler.cpp
 #include <algorithm>
+#include <atomic>
 #include <cctype>
 #include <chrono>
 #include <cstdio>
 #include <fstream>
+#include <mutex>
 #include <set>
+#include <tuple>
 
 #include <boost/algorithm/string_regex.hpp>
 
 #include "../../common/DurationParse.h"
+#include "../../common/json.h"
 #include "../../common/RestClient.h"
+#include "../../common/TimerHandler.h"
 #include "../../common/Utility.h"
 #include "../../common/os/linux.h"
 #include "../Configuration.h"
 #include "../Label.h"
 #include "../ResourceCollection.h"
 #include "../application/Application.h"
+#include "../process/DockerApiProcess.h"
 #include "../security/HMACVerifier.h"
 #include "../security/InternalCapability.h"
 #include "../security/SecretProtector.h"
@@ -26,6 +32,7 @@
 #include "HttpRequest.h"
 #include "PrometheusRest.h"
 #include "RestHandler.h"
+#include "SseSink.h"
 #include "SocketServer.h"
 
 // Content-type constants
@@ -115,6 +122,55 @@ namespace
 		for (auto &application : applications)
 			addOwnerDisplayName(application);
 	}
+
+	// Shared X-File-Path prologue of the file endpoints: replies (400/403) and
+	// returns false when the header is missing or the path fails the jail.
+	bool requiredFilePath(const std::shared_ptr<HttpRequest> &message, std::string &file)
+	{
+		if (0 == message->m_headers.count(HTTP_HEADER_KEY_file_path))
+		{
+			message->reply(web::http::status_codes::BadRequest, Utility::text2json("header 'X-File-Path' not found"));
+			return false;
+		}
+		file = Utility::decodeHeaderFilePath(message->m_headers.find(HTTP_HEADER_KEY_file_path)->second);
+		if (!Utility::validateFilePath(file, Configuration::instance()->getFileAllowedBaseDir()))
+		{
+			message->reply(web::http::status_codes::Forbidden, Utility::text2json("File path is not allowed"));
+			return false;
+		}
+		return true;
+	}
+
+	// Packaged workflow roles (authorization.yaml) admitted by the run_task gate.
+	constexpr auto WORKFLOW_RUNNER_ROLE = "appmesh-workflow-runner";
+	constexpr auto PERMISSION_workflow_admin = "workflow-admin";
+
+	// Whether the caller holds a workflow role: the packaged runner role or the
+	// workflow-admin permission. Store lookups throw for an unprovisioned
+	// principal; such a caller simply falls back to the owner/EDIT gate.
+	bool hasWorkflowTaskRole(const std::string &principalId)
+	{
+		try
+		{
+			const auto principal = Security::instance()->principal(principalId);
+			if (principal && principal->roles().count(WORKFLOW_RUNNER_ROLE) != 0)
+				return true;
+			return Security::instance()->permissions(principalId).count(PERMISSION_workflow_admin) != 0;
+		}
+		catch (const std::exception &)
+		{
+			return false;
+		}
+	}
+
+	// Synthetic connection key namespace for SSE stream subscriptions: no live
+	// transport sits behind them, teardown is explicit (unsubscribe on end).
+	std::atomic<uint64_t> g_nextSseConnectionKey{1};
+
+	uint64_t nextSseConnectionKey()
+	{
+		return g_nextSseConnectionKey.fetch_add(1);
+	}
 }
 
 // 1. Authentication
@@ -126,6 +182,7 @@ constexpr auto REST_PATH_PROTECTED_RESOURCE_METADATA = "/.well-known/oauth-prote
 constexpr auto REST_PATH_INTERNAL_WORKFLOW_CAPABILITY = "/appmesh/internal/workflow/capability";
 constexpr auto REST_PATH_INTERNAL_WORKFLOW_CLEANUP_ORPHANS = "/appmesh/internal/workflow/cleanup-orphans";
 constexpr auto REST_PATH_INTERNAL_WORKFLOW_REGISTRY = "/appmesh/internal/workflow/registry";
+constexpr auto REST_PATH_INTERNAL_AGENT_CONTAINER_EVENT = "/appmesh/internal/container-event";
 constexpr auto REST_PATH_ENROLL_FIRST_ADMIN = "/appmesh/auth/enroll-first-admin";
 
 // 2. View Application
@@ -147,6 +204,13 @@ constexpr auto REST_PATH_APP_DELETE = R"(/appmesh/app/([^/\*]+))";
 constexpr auto REST_PATH_APP_RUN_ASYNC = "/appmesh/app/run";
 constexpr auto REST_PATH_APP_RUN_SYNC = "/appmesh/app/syncrun";
 constexpr auto REST_PATH_APP_TASK = R"(/appmesh/app/([^/\*]+)/task)";
+// Streaming task RPC (SSE): partials ride the same parking as /task.
+constexpr auto REST_PATH_APP_TASK_STREAM = R"(/appmesh/app/([^/\*]+)/task/stream)";
+constexpr auto REST_PATH_APP_TASK_PARTIAL = R"(/appmesh/app/([^/\*]+)/task/partial)";
+// Interactive stdin injection for pipe-stdin apps.
+constexpr auto REST_PATH_APP_INPUT = R"(/appmesh/app/([^/\*]+)/input)";
+// SSE stdout replay from a cursor plus live follow until exit/removed/timeout.
+constexpr auto REST_PATH_APP_OUTPUT_STREAM = R"(/appmesh/app/([^/\*]+)/output/stream)";
 
 // 6. File Management
 constexpr auto REST_PATH_FILE_DOWNLOAD = "/appmesh/file/download";
@@ -197,6 +261,7 @@ RestHandler::RestHandler() : m_metrics(std::make_shared<PrometheusRest>())
 	bindRestMethod(web::http::methods::GET, REST_PATH_OAUTH_CALLBACK, std::bind(&RestHandler::apiOauthCallback, this, std::placeholders::_1));
 	bindRestMethod(web::http::methods::GET, REST_PATH_PROTECTED_RESOURCE_METADATA, std::bind(&RestHandler::apiProtectedResourceMetadata, this, std::placeholders::_1));
 	bindRestMethod(web::http::methods::POST, REST_PATH_INTERNAL_WORKFLOW_CAPABILITY, std::bind(&RestHandler::apiWorkflowCapability, this, std::placeholders::_1));
+	bindRestMethod(web::http::methods::POST, REST_PATH_INTERNAL_AGENT_CONTAINER_EVENT, std::bind(&RestHandler::apiAgentContainerEvent, this, std::placeholders::_1));
 	bindRestMethod(web::http::methods::POST, REST_PATH_INTERNAL_WORKFLOW_CLEANUP_ORPHANS, std::bind(&RestHandler::apiWorkflowCleanupOrphans, this, std::placeholders::_1));
 	bindRestMethod(web::http::methods::GET, REST_PATH_INTERNAL_WORKFLOW_REGISTRY, std::bind(&RestHandler::apiWorkflowRegistry, this, std::placeholders::_1));
 	bindRestMethod(web::http::methods::POST, REST_PATH_ENROLL_FIRST_ADMIN, std::bind(&RestHandler::apiEnrollFirstAdmin, this, std::placeholders::_1));
@@ -219,6 +284,12 @@ RestHandler::RestHandler() : m_metrics(std::make_shared<PrometheusRest>())
 	// 5. Operate Application
 	bindRestMethod(web::http::methods::POST, REST_PATH_APP_RUN_ASYNC, std::bind(&RestHandler::apiRunAsync, this, std::placeholders::_1));
 	bindRestMethod(web::http::methods::POST, REST_PATH_APP_RUN_SYNC, std::bind(&RestHandler::apiRunSync, this, std::placeholders::_1));
+	// The /task regex is a strict full match, but keep the longer paths bound
+	// first so the dispatch table reads most-specific-first.
+	bindRestMethod(web::http::methods::POST, REST_PATH_APP_TASK_STREAM, std::bind(&RestHandler::apiSendMessageStream, this, std::placeholders::_1));
+	bindRestMethod(web::http::methods::POST, REST_PATH_APP_TASK_PARTIAL, std::bind(&RestHandler::apiSendMessagePartial, this, std::placeholders::_1));
+	bindRestMethod(web::http::methods::POST, REST_PATH_APP_INPUT, std::bind(&RestHandler::apiAppInput, this, std::placeholders::_1));
+	bindRestMethod(web::http::methods::GET, REST_PATH_APP_OUTPUT_STREAM, std::bind(&RestHandler::apiAppOutputStream, this, std::placeholders::_1));
 	bindRestMethod(web::http::methods::POST, REST_PATH_APP_TASK, std::bind(&RestHandler::apiSendMessage, this, std::placeholders::_1));
 	bindRestMethod(web::http::methods::DEL, REST_PATH_APP_TASK, std::bind(&RestHandler::apiRemoveMessage, this, std::placeholders::_1));
 	bindRestMethod(web::http::methods::GET, REST_PATH_APP_TASK, std::bind(&RestHandler::apiGetMessage, this, std::placeholders::_1));
@@ -527,7 +598,9 @@ void RestHandler::apiSwagger(const std::shared_ptr<HttpRequest> &message)
 	if (host.empty())
 		host = message->m_headers.get("Host");
 
-	std::string swaggerUrl = "https://petstore.swagger.io/?url=https://" + host + "/openapi.yaml";
+	// The openapi URL must use the scheme this daemon actually serves.
+	const std::string scheme = Configuration::instance()->getSslEnabled() ? "https" : "http";
+	std::string swaggerUrl = "https://petstore.swagger.io/?url=" + scheme + "://" + host + "/openapi.yaml";
 	std::map<std::string, std::string> headers;
 	headers["Location"] = std::move(swaggerUrl);
 
@@ -541,7 +614,12 @@ void RestHandler::apiIndex(const std::shared_ptr<HttpRequest> &message)
 	LOG_DBG << fname << "Serving index.html";
 
 	std::string content = getIndexHtmlContent();
-	message->reply(web::http::status_codes::OK, content, CONTENT_TYPE_HTML);
+	std::map<std::string, std::string> headers;
+	// The page is a static installed file (no reflection, operators may customize
+	// it), so inline style/script is allowed here only; everything else stays denied.
+	headers[web::http::header_names::content_security_policy] =
+		"default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; frame-ancestors 'none'";
+	message->reply(web::http::status_codes::OK, content, headers, CONTENT_TYPE_HTML);
 }
 
 void RestHandler::checkAppAccessPermission(const std::shared_ptr<HttpRequest> &message, const std::shared_ptr<Application> &app, bool requestWrite)
@@ -700,7 +778,13 @@ void RestHandler::apiAppEnable(const std::shared_ptr<HttpRequest> &message)
 		message->reply(web::http::status_codes::Conflict);
 		return;
 	}
-	message->reply(web::http::status_codes::OK, Utility::text2json(std::string("Enable <") + appName + "> success."));
+	// Invoke the scheduler pass immediately like registration does, so the first
+	// start (and its failure's last_error) is settled before this response — the
+	// caller sees the same state an add would report, not a fixed success text.
+	app->execute(nullptr, false);
+	auto result = app->AsJson(true);
+	addOwnerDisplayName(result);
+	message->reply(web::http::status_codes::OK, result);
 }
 
 void RestHandler::apiAppDisable(const std::shared_ptr<HttpRequest> &message)
@@ -777,12 +861,19 @@ void RestHandler::apiAppDelete(const std::shared_ptr<HttpRequest> &message)
 			message->reply(web::http::status_codes::Conflict);
 			return;
 		}
-		// Cascade: deleting the base stops and removes its run instances; the
-		// delete permission on the base governs the cascade (the base owner
-		// controls its instances).
+		// Cascade deletes base run instances; the base's delete permission governs it.
+		// -1 means instances re-registered faster than the resweep could drain them.
 		LOG_INF << "RestHandler::apiAppDelete() Principal <" << tokenUser << "> cascading run instances of <" << appName
 				<< ">";
-		config->removeRunInstances(appName);
+		const auto removedInstances = config->removeRunInstances(appName);
+		if (removedInstances < 0)
+		{
+			message->reply(web::http::status_codes::Conflict,
+						   Utility::text2json(Utility::stringFormat("Application <%s> removed, but its run instances kept "
+																	"re-registering; retry the delete",
+																	appName.c_str())));
+			return;
+		}
 		message->reply(web::http::status_codes::OK, Utility::text2json(Utility::stringFormat("Application <%s> removed.", appName.c_str())));
 	}
 }
@@ -792,17 +883,9 @@ void RestHandler::apiFileDownload(const std::shared_ptr<HttpRequest> &message)
 	const static char fname[] = "RestHandler::apiFileDownload() ";
 
 	permissionCheck(message, PERMISSION_KEY_file_download);
-	if (0 == message->m_headers.count(HTTP_HEADER_KEY_file_path))
-	{
-		message->reply(web::http::status_codes::BadRequest, Utility::text2json("header 'X-File-Path' not found"));
+	std::string file;
+	if (!requiredFilePath(message, file))
 		return;
-	}
-	const auto file = Utility::decodeHeaderFilePath(message->m_headers.find(HTTP_HEADER_KEY_file_path)->second);
-	if (!Utility::validateFilePath(file, Configuration::instance()->getFileAllowedBaseDir()))
-	{
-		message->reply(web::http::status_codes::Forbidden, Utility::text2json("File path is not allowed"));
-		return;
-	}
 
 	if (!Utility::isFileExist(file))
 	{
@@ -883,19 +966,17 @@ void RestHandler::apiFileUpload(const std::shared_ptr<HttpRequest> &message)
 {
 	const static char fname[] = "RestHandler::apiFileUpload() ";
 	permissionCheck(message, PERMISSION_KEY_file_upload);
-	if (0 == message->m_headers.count(HTTP_HEADER_KEY_file_path))
-	{
-		message->reply(web::http::status_codes::BadRequest, Utility::text2json("header 'X-File-Path' not found"));
+	std::string file;
+	if (!requiredFilePath(message, file))
 		return;
-	}
-	const auto file = Utility::decodeHeaderFilePath(message->m_headers.find(HTTP_HEADER_KEY_file_path)->second);
-	if (!Utility::validateFilePath(file, Configuration::instance()->getFileAllowedBaseDir()))
-	{
-		message->reply(web::http::status_codes::Forbidden, Utility::text2json("File path is not allowed"));
-		return;
-	}
 
 	boost::system::error_code pathEc;
+	// Same leaf rule as the transfer faces: a symlink leaf answers a misleading 409 or silently swaps the link.
+	if (fs::is_symlink(file, pathEc))
+	{
+		message->reply(web::http::status_codes::BadRequest, Utility::text2json("Symlinks not allowed"));
+		return;
+	}
 	if (fs::is_directory(file, pathEc))
 	{
 		message->reply(web::http::status_codes::BadRequest, Utility::text2json("destination is a directory"));
@@ -942,8 +1023,15 @@ void RestHandler::apiFileUpload(const std::shared_ptr<HttpRequest> &message)
 			throw std::runtime_error("failed to create the upload file");
 		upload.m_file.write(reinterpret_cast<const char *>(message->m_body->data()),
 							static_cast<std::streamsize>(message->m_body->size()));
-		if (!upload.m_file.good() || upload.commit() == FileUploadInfo::CommitResult::Failed)
+		const auto commitResult = upload.commit();
+		if (!upload.m_file.good() || commitResult == FileUploadInfo::CommitResult::Failed)
 			throw std::runtime_error("failed to write the upload file");
+		if (commitResult == FileUploadInfo::CommitResult::AlreadyExists)
+		{
+			// A concurrent upload won the non-overwrite race after the precheck.
+			message->reply(web::http::status_codes::Conflict, Utility::text2json("file already exist"));
+			return;
+		}
 		Utility::applyFilePermission(file, message->m_headers, upload.fd());
 		LOG_INF << fname << "File uploaded successfully: " << file << " (" << message->m_body->size() << " bytes)";
 		nlohmann::json respJson;
@@ -966,35 +1054,30 @@ void RestHandler::apiFileDelete(const std::shared_ptr<HttpRequest> &message)
 {
 	const static char fname[] = "RestHandler::apiFileDelete() ";
 	permissionCheck(message, PERMISSION_KEY_file_delete);
-	if (0 == message->m_headers.count(HTTP_HEADER_KEY_file_path))
-	{
-		message->reply(web::http::status_codes::BadRequest, Utility::text2json("header 'X-File-Path' not found"));
+	std::string file;
+	if (!requiredFilePath(message, file))
 		return;
-	}
-	const auto file = Utility::decodeHeaderFilePath(message->m_headers.find(HTTP_HEADER_KEY_file_path)->second);
-	if (!Utility::validateFilePath(file, Configuration::instance()->getFileAllowedBaseDir()))
+
+	// Pin-then-verify delete: unlinkat targets the dirfd-pinned parent re-verified
+	// against the jail, so a symlink swap cannot steer the delete outside the jail.
+	std::string resolvedPath;
+	switch (Utility::unlinkFileWithinJail(file, Configuration::instance()->getFileAllowedBaseDir(), resolvedPath))
 	{
+	case Utility::JailUnlinkStatus::Removed:
+		break;
+	case Utility::JailUnlinkStatus::Rejected:
 		message->reply(web::http::status_codes::Forbidden, Utility::text2json("File path is not allowed"));
 		return;
-	}
-
-	boost::system::error_code ec;
-	if (fs::is_symlink(file, ec))
-	{
-		message->reply(web::http::status_codes::BadRequest, Utility::text2json("symlinks not allowed"));
-		return;
-	}
-	if (!fs::is_regular_file(file, ec))
-	{
+	case Utility::JailUnlinkStatus::NotFound:
+		// Missing leaf or a (never-deletable) directory; a symlink leaf lands in Rejected.
 		message->reply(web::http::status_codes::NotFound, Utility::text2json("file not found"));
 		return;
-	}
-	if (!fs::remove(file, ec))
-	{
+	case Utility::JailUnlinkStatus::Failed:
+	default:
 		message->reply(web::http::status_codes::InternalError, Utility::text2json("failed to remove the file"));
 		return;
 	}
-	LOG_INF << fname << "File deleted: " << file;
+	LOG_INF << fname << "File deleted: " << (resolvedPath.empty() ? file : resolvedPath);
 	message->reply(web::http::status_codes::OK, Utility::text2json("success"));
 }
 
@@ -1073,11 +1156,16 @@ void RestHandler::apiBasicConfigSet(const std::shared_ptr<HttpRequest> &message)
 	const auto tokenUser = permissionCheck(message, PERMISSION_KEY_config_set);
 
 	auto json = message->extractJson();
-	// A hot update never rebinds a listener: reject instead of a fake 200.
+	// A hot update never rebinds a listener; an unchanged value is the
+	// idempotent no-op of posting the GET document back.
 	if (json.is_object() && json.contains(JSON_KEY_REST) && json.at(JSON_KEY_REST).is_object() &&
 		json.at(JSON_KEY_REST).contains(JSON_KEY_SSL) && json.at(JSON_KEY_REST).at(JSON_KEY_SSL).is_object() &&
 		json.at(JSON_KEY_REST).at(JSON_KEY_SSL).contains(JSON_KEY_SSLEnabled))
-		throw std::invalid_argument("REST.SSL.SSLEnabled is startup-only: set it in config.yaml and restart the daemon");
+	{
+		const auto &requested = json.at(JSON_KEY_REST).at(JSON_KEY_SSL).at(JSON_KEY_SSLEnabled);
+		if (!(requested.is_boolean() && requested.get<bool>() == Configuration::instance()->getSslEnabled()))
+			throw std::invalid_argument("REST.SSL.SSLEnabled is startup-only: set it in config.yaml and restart the daemon");
+	}
 	Configuration::instance()->hotUpdateAndSave(json);
 
 	LOG_INF << fname << "User <" << tokenUser << "> updated configuration";
@@ -1200,7 +1288,7 @@ void RestHandler::apiWorkflowCapability(const std::shared_ptr<HttpRequest> &mess
 	response["capability"] = capability;
 	response["expires_at"] = expiresAt;
 	response["owner_principal_id"] = ownerPrincipalId;
-	response["process_uuid"] = processUuid;
+	response[JSON_KEY_process_uuid] = processUuid;
 	message->reply(web::http::status_codes::OK, response);
 }
 
@@ -1247,11 +1335,11 @@ void RestHandler::apiWorkflowCleanupOrphans(const std::shared_ptr<HttpRequest> &
 			metadata.at("type").get<std::string>() != "workflow-step" ||
 			!metadata.contains("workflow_id") || !metadata.at("workflow_id").is_string() ||
 			!metadata.contains("run_id") || !metadata.at("run_id").is_string() ||
-			!metadata.contains("process_uuid") || !metadata.at("process_uuid").is_string())
+			!metadata.contains(JSON_KEY_process_uuid) || !metadata.at(JSON_KEY_process_uuid).is_string())
 			continue;
 		const auto workflowId = metadata.at("workflow_id").get<std::string>();
 		const auto runId = metadata.at("run_id").get<std::string>();
-		const auto creatorProcessUuid = metadata.at("process_uuid").get<std::string>();
+		const auto creatorProcessUuid = metadata.at(JSON_KEY_process_uuid).get<std::string>();
 		if (!validIdentifier(workflowId) || !validIdentifier(runId) ||
 			creatorProcessUuid.empty() || creatorProcessUuid == processUuid)
 			continue;
@@ -1274,8 +1362,7 @@ void RestHandler::apiWorkflowRegistry(const std::shared_ptr<HttpRequest> &messag
 	// deliberately does not expose arbitrary applications or bypass their owner
 	// permissions through the synthetic Workflow controller principal.
 	const auto principalId = permissionCheck(message, PERMISSION_KEY_view_all_app);
-	if (principalId.compare(0, std::char_traits<char>::length(WORKFLOW_CONTROLLER_PRINCIPAL_PREFIX),
-			WORKFLOW_CONTROLLER_PRINCIPAL_PREFIX) != 0)
+	if (!Utility::startWith(principalId, WORKFLOW_CONTROLLER_PRINCIPAL_PREFIX))
 	{
 		throw AuthorizationException("workflow registry is available only to the managed Workflow controller");
 	}
@@ -1283,8 +1370,7 @@ void RestHandler::apiWorkflowRegistry(const std::shared_ptr<HttpRequest> &messag
 	nlohmann::json result = nlohmann::json::array();
 	for (const auto &app : Configuration::instance()->getApps())
 	{
-		if (!app || app->getName().compare(0, std::char_traits<char>::length(WORKFLOW_DEFINITION_PREFIX),
-				WORKFLOW_DEFINITION_PREFIX) != 0)
+		if (!app || !Utility::startWith(app->getName(), WORKFLOW_DEFINITION_PREFIX))
 			continue;
 		auto definition = app->AsJson(true);
 		if (!definition.contains(JSON_KEY_APP_metadata) ||
@@ -1407,7 +1493,8 @@ void RestHandler::apiApiKeyIssue(const std::shared_ptr<HttpRequest> &message)
 	const auto issued = Security::instance()->issueApiKey(target);
 	LOG_INF << fname << "API key <" << GET_JSON_STR_VALUE(issued, "key_id") << "> issued to <" << target << "> by <"
 			<< principalId << ">";
-	message->reply(web::http::status_codes::OK, issued);
+	// The secret is shown exactly once; no intermediary may retain it.
+	message->reply(web::http::status_codes::OK, issued, {{"Cache-Control", "no-store"}});
 }
 
 void RestHandler::apiApiKeyDelete(const std::shared_ptr<HttpRequest> &message)
@@ -1657,7 +1744,7 @@ void RestHandler::apiRunSync(const std::shared_ptr<HttpRequest> &message)
 
 void RestHandler::apiSendMessage(const std::shared_ptr<HttpRequest> &message)
 {
-	permissionCheck(message, PERMISSION_KEY_run_task);
+	const auto principalId = permissionCheck(message, PERMISSION_KEY_run_task);
 
 	// Short default so a stuck target can't hold the app's active slot for days; override via ?timeout=.
 	int timeout = getHttpQueryValue(*message, HTTP_QUERY_KEY_timeout, DEFAULT_RUN_TASK_TIMEOUT_SECONDS, 0, MAX_RUN_APP_TIMEOUT_SECONDS);
@@ -1665,10 +1752,87 @@ void RestHandler::apiSendMessage(const std::shared_ptr<HttpRequest> &message)
 	auto appName = regexSearch(path, REST_PATH_APP_TASK);
 
 	auto app = Configuration::instance()->getApp(appName);
-	checkAppAccessPermission(message, app, true);
+	// Workflow actions enforce per-action owner/admin RBAC inside the Engine
+	// capability, so the system workflow App admits the workflow roles at this
+	// gate; every other App keeps the owner/EDIT gate.
+	if (appName != WORKFLOW_APP_NAME || !hasWorkflowTaskRole(principalId))
+		checkAppAccessPermission(message, app, true);
 	auto asyncRequest = std::make_shared<HttpRequestWithTimeout>(message);
 	asyncRequest->initTimer(timeout);
 	app->sendTask(asyncRequest);
+}
+
+void RestHandler::apiSendMessageStream(const std::shared_ptr<HttpRequest> &message)
+{
+	permissionCheck(message, PERMISSION_KEY_run_task);
+
+	const auto path = (curlpp::unescape(message->m_relative_uri));
+	auto appName = regexSearch(path, REST_PATH_APP_TASK_STREAM);
+
+	auto app = Configuration::instance()->getApp(appName);
+	checkAppAccessPermission(message, app, true);
+
+	// Only the plain-HTTP lws entry attaches the sink marker; framed transports
+	// (TCP, WebSocket) cannot receive an SSE response.
+	const bool plainHttp = message->lwsRef() &&
+		message->m_headers.get(HTTP_HEADER_KEY_X_LWS_Protocol) == HTTP_HEADER_VALUE_X_LWS_Protocol_HTTP;
+	const auto marker = plainHttp ? message->m_headers.get(HTTP_HEADER_KEY_X_AppMesh_Sse_Stream) : std::string();
+	auto sink = marker.empty() ? std::shared_ptr<SseSink>() : SseStreamRegistry::instance()->take(marker);
+	if (!sink)
+	{
+		message->reply(web::http::status_codes::MethodNotAllowed,
+					   Utility::text2json("Task streaming requires a plain HTTP connection"));
+		return;
+	}
+
+	// Short default so a stuck target can't hold the app's active slot for days; override via ?timeout=.
+	int timeout = getHttpQueryValue(*message, HTTP_QUERY_KEY_timeout, DEFAULT_RUN_TASK_TIMEOUT_SECONDS, 0, MAX_RUN_APP_TIMEOUT_SECONDS);
+	auto asyncRequest = std::make_shared<HttpRequestTaskStream>(message, sink);
+	asyncRequest->initTimer(timeout);
+	app->sendTask(asyncRequest);
+}
+
+void RestHandler::apiSendMessagePartial(const std::shared_ptr<HttpRequest> &message)
+{
+	if (!message->isManagedPrivateTransport() || !message->transportPrincipalId().empty())
+		throw AuthorizationException("worker task RPC is available only to a managed local process");
+	if (message->m_query.count("process_key") != 0)
+		throw std::invalid_argument("process_key query authentication is not supported");
+	const std::string processKey = Utility::stdStringTrim(
+		message->m_headers.get(HTTP_HEADER_KEY_X_APPMESH_PROCESS_KEY));
+	if (processKey.empty())
+		throw AuthorizationException("managed process proof is required");
+	const auto path = (curlpp::unescape(message->m_relative_uri));
+	auto appName = regexSearch(path, REST_PATH_APP_TASK_PARTIAL);
+
+	auto app = Configuration::instance()->getApp(appName);
+	const std::string payload(message->m_body->begin(), message->m_body->end());
+	bool delivered = false;
+	app->partialTask(processKey, payload, delivered);
+	nlohmann::json result;
+	result["delivered"] = delivered;
+	message->reply(web::http::status_codes::OK, result);
+}
+
+void RestHandler::apiAppInput(const std::shared_ptr<HttpRequest> &message)
+{
+	permissionCheck(message, PERMISSION_KEY_app_control);
+
+	const auto path = (curlpp::unescape(message->m_relative_uri));
+	auto appName = regexSearch(path, REST_PATH_APP_INPUT);
+
+	auto app = Configuration::instance()->getApp(appName);
+	checkAppAccessPermission(message, app, true);
+	const bool closePipe = Utility::stdStringTrim(message->m_headers.get(HTTP_HEADER_KEY_X_Input_Close)) == "true";
+	const auto processUuid = message->m_query.count(HTTP_QUERY_KEY_process_uuid) != 0
+								 ? message->m_query.at(HTTP_QUERY_KEY_process_uuid)
+								 : std::string();
+	const auto written = app->writeStdin(*message->m_body, closePipe, processUuid);
+	nlohmann::json result;
+	result["bytes_written"] = written;
+	if (closePipe)
+		result["closed"] = true;
+	message->reply(web::http::status_codes::OK, result);
 }
 
 void RestHandler::apiRemoveMessage(const std::shared_ptr<HttpRequest> &message)
@@ -1734,6 +1898,262 @@ void RestHandler::apiAppOutputView(const std::shared_ptr<HttpRequest> &message)
 	delayRequest->init();
 }
 
+void RestHandler::apiAppOutputStream(const std::shared_ptr<HttpRequest> &message)
+{
+	const static char fname[] = "RestHandler::apiAppOutputStream() ";
+
+	const auto principalId = permissionCheck(message, PERMISSION_KEY_view_app_output);
+	(void)principalId;
+	const auto path = (curlpp::unescape(message->m_relative_uri));
+	auto appName = regexSearch(path, REST_PATH_APP_OUTPUT_STREAM);
+
+	const auto app = Configuration::instance()->getApp(appName);
+	checkAppAccessPermission(message, app, false);
+
+	// Only the plain-HTTP lws entry attaches the sink marker; framed transports
+	// (TCP, WebSocket) cannot receive an SSE response.
+	const bool plainHttp = message->lwsRef() &&
+		message->m_headers.get(HTTP_HEADER_KEY_X_LWS_Protocol) == HTTP_HEADER_VALUE_X_LWS_Protocol_HTTP;
+	const auto marker = plainHttp ? message->m_headers.get(HTTP_HEADER_KEY_X_AppMesh_Sse_Stream) : std::string();
+	auto sink = marker.empty() ? std::shared_ptr<SseSink>() : SseStreamRegistry::instance()->take(marker);
+	if (!sink)
+	{
+		message->reply(web::http::status_codes::MethodNotAllowed,
+					   Utility::text2json("Output streaming requires a plain HTTP connection"));
+		return;
+	}
+
+	const auto processUuid = getHttpQueryString(*message, HTTP_QUERY_KEY_process_uuid);
+	const bool follow = getHttpQueryString(*message, "follow") != "false";
+	long position = getHttpQueryPosition(*message, HTTP_QUERY_KEY_stdout_position, 0, 0, 0);
+
+	long timeoutSeconds = DEFAULT_SSE_STREAM_TIMEOUT_SECONDS;
+	if (message->m_query.count(HTTP_QUERY_KEY_timeout) != 0)
+	{
+		timeoutSeconds = getHttpQueryValue(*message, HTTP_QUERY_KEY_timeout, DEFAULT_SSE_STREAM_TIMEOUT_SECONDS, 0,
+										   MAX_SSE_STREAM_TIMEOUT_SECONDS);
+	}
+
+	// Shared by the delivery callback, the backfill below and the overall
+	// timeout. The position cursor de-duplicates pump events against the
+	// backfill read (the race the SDKs used to paper over with sleeps).
+	struct FollowState
+	{
+		std::mutex mutex;
+		std::shared_ptr<SseSink> sink;
+		std::shared_ptr<Application> app;
+		std::string subId;
+		long cursor{0};
+		bool ended{false};
+	};
+	const auto state = std::make_shared<FollowState>();
+	state->sink = sink;
+	state->app = app;
+	state->cursor = position;
+	// Held weakly: the subscription callback and the sink's close hook keep the
+	// state alive, so the timeout timer cannot pin the Application.
+	const std::weak_ptr<FollowState> weakState = state;
+
+	// Emits the terminal "end" frame exactly once and tears the stream down.
+	const auto endFollow = [weakState](const std::string &reason, const nlohmann::json &extra)
+	{
+		const auto state = weakState.lock();
+		if (!state)
+			return;
+		std::string subId;
+		{
+			std::lock_guard<std::mutex> lock(state->mutex);
+			if (state->ended)
+				return;
+			state->ended = true;
+			subId = state->subId;
+			nlohmann::json end = extra;
+			end["reason"] = reason;
+			end["position"] = state->cursor;
+			state->sink->sendEvent("end", JSON::dump(end));
+		}
+		// Outside the state lock: close() fires the sink's onClosed hook, which
+		// re-enters endFollow for a disconnect and would deadlock under the lock.
+		state->sink->close();
+		if (!subId.empty())
+			EventDispatcher::instance()->unsubscribe(subId);
+	};
+
+	// Position-cursor delivery shared by live events and backfill chunks.
+	const auto deliverStdout = [state](long start, const std::string &output, long rawAdvance) -> bool
+	{
+		std::lock_guard<std::mutex> lock(state->mutex);
+		if (state->ended)
+			return true;
+		if (rawAdvance <= 0)
+			rawAdvance = static_cast<long>(output.size());
+		if (start + rawAdvance <= state->cursor)
+			return true; // fully covered by an earlier delivery
+		auto text = output;
+		if (start < state->cursor && rawAdvance == static_cast<long>(output.size()))
+		{
+			// Exact prefix trim is only sound when the view is byte-identical
+			// to the raw span; a re-encoded chunk is delivered untrimmed rather
+			// than slicing the text at a raw-byte boundary.
+			const long skipped = state->cursor - start;
+			text.erase(0, static_cast<std::size_t>(skipped));
+			start = state->cursor;
+			rawAdvance -= skipped;
+		}
+		nlohmann::json data;
+		data["position"] = start;
+		data["output"] = std::move(text);
+		if (!state->sink->sendEvent("stdout", JSON::dump(data)))
+		{
+			state->ended = true;
+			return false;
+		}
+		state->cursor = std::max(state->cursor, start + rawAdvance);
+		return true;
+	};
+
+	// A silent peer is caught by the heartbeat; its close hook ends the follow
+	// instead of idling the subscription to the timeout.
+	sink->setOnClosed([endFollow]() { endFollow("disconnected", {}); });
+
+	// Subscribe first so the pump starts dispatching, then replay; overlapping
+	// deliveries are reconciled by the cursor above.
+	const auto subId = EventDispatcher::instance()->subscribe(
+		appName,
+		static_cast<uint32_t>(AppEventType::STDOUT_OUTPUT) | static_cast<uint32_t>(AppEventType::PROCESS_EXIT) |
+			static_cast<uint32_t>(AppEventType::APP_REMOVED),
+		"", // owner policy already checked; subscriptions store the principal for unsubscribe only
+		[state, deliverStdout, endFollow](const EventEnvelope &envelope) -> bool
+		{
+			if (envelope.eventType == "STDOUT")
+			{
+				try
+				{
+					const auto payload = nlohmann::json::parse(*envelope.basePayloadDump);
+					const auto &data = payload.at("data");
+					return deliverStdout(data.at("position").get<long>(), data.at("output").get<std::string>(), 0);
+				}
+				catch (const std::exception &)
+				{
+					return true; // a malformed frame must not kill the stream
+				}
+			}
+			if (envelope.eventType == "EXIT")
+			{
+				// Drain [cursor, EOF] so the final position is exact even if the
+				// exit-time flush raced this delivery.
+				try
+				{
+					auto app = state->app;
+					for (;;)
+					{
+						long pos = 0;
+						{
+							std::lock_guard<std::mutex> lock(state->mutex);
+							pos = state->cursor;
+							if (state->ended)
+								return false;
+						}
+						// Same raw-delta rule as the replay path: getOutput
+						// advances `pos` over the bytes it actually read.
+						const auto chunkStart = pos;
+						auto output = std::get<0>(app->getOutput(pos, 256 * 1024, "", 0, 0));
+						if (output.empty())
+							break;
+						if (!deliverStdout(chunkStart, output, pos - chunkStart))
+							return false;
+						if (pos - chunkStart < 256 * 1024)
+							break;
+					}
+				}
+				catch (const std::exception &)
+				{
+				}
+				int exitCode = 0;
+				try
+				{
+					const auto payload = nlohmann::json::parse(*envelope.basePayloadDump);
+					exitCode = payload.at("data").at("exit_code").get<int>();
+				}
+				catch (const std::exception &)
+				{
+				}
+				nlohmann::json extra;
+				extra["exit_code"] = exitCode;
+				endFollow("exit", extra);
+				return false;
+			}
+			if (envelope.eventType == "REMOVED")
+			{
+				endFollow("removed", {});
+				return false;
+			}
+			return true;
+		},
+		ConnectionKey::wss(nextSseConnectionKey()));
+	{
+		std::lock_guard<std::mutex> lock(state->mutex);
+		state->subId = subId;
+	}
+
+	// Overall lifetime bound; heartbeats inside the sink detect a gone peer.
+	if (timeoutSeconds > 0)
+	{
+		TIMER_MANAGER::instance()->registerTimer(static_cast<std::size_t>(timeoutSeconds) * 1000, 0, "sse-output-timeout",
+												 [endFollow]()
+												 {
+													 endFollow("timeout", {});
+													 return false;
+												 });
+	}
+
+	// Replay [position, EOF]; a finished run ends with its exit code, a live one
+	// keeps following (or stops at the tail when follow=false).
+	try
+	{
+		bool finished = false;
+		int exitCode = 0;
+		for (;;)
+		{
+			// getOutput advances position to the end of what it read, so the
+			// chunk start must be captured first.
+			const auto chunkStart = position;
+			std::string output;
+			std::tie(output, finished, exitCode) = app->getOutput(position, 256 * 1024, processUuid, 0, 0);
+			// getOutput returns the sanitized view but advances the cursor over
+			// raw bytes; the raw span is the position delta.
+			const auto rawAdvance = position - chunkStart;
+			if (!output.empty() && !deliverStdout(chunkStart, output, rawAdvance))
+				return;
+			{
+				std::lock_guard<std::mutex> lock(state->mutex);
+				if (state->ended)
+					return;
+			}
+			if (finished)
+			{
+				nlohmann::json extra;
+				extra["exit_code"] = exitCode;
+				endFollow("exit", extra);
+				return;
+			}
+			if (rawAdvance < 256 * 1024)
+			{
+				if (!follow)
+					endFollow("eof", {});
+				return;
+			}
+		}
+	}
+	catch (const std::exception &e)
+	{
+		LOG_WAR << fname << "backfill failed for app <" << appName << ">: " << e.what();
+		nlohmann::json extra;
+		extra["message"] = e.what();
+		endFollow("error", extra);
+	}
+}
+
 void RestHandler::apiAppsView(const std::shared_ptr<HttpRequest> &message)
 {
 	const auto tokenUser = permissionCheck(message, PERMISSION_KEY_view_all_app);
@@ -1752,6 +2172,45 @@ void RestHandler::apiCloudResourceView(const std::shared_ptr<HttpRequest> &messa
 {
 	message->verifyHMAC();
 	message->reply(web::http::status_codes::OK, ResourceCollection::instance()->AsJson());
+}
+
+void RestHandler::apiAgentContainerEvent(const std::shared_ptr<HttpRequest> &message)
+{
+	const static char fname[] = "RestHandler::apiAgentContainerEvent() ";
+	// Absent from OpenAPI: the agent's signed pushes are the only caller.
+	if (!message->isManagedPrivateTransport() || !message->transportPrincipalId().empty())
+		throw AuthorizationException("container events are available only over local loopback transports");
+
+	const auto agentProcess = Configuration::instance()->getApp(SEPARATE_AGENT_APP_NAME, false);
+	if (!agentProcess || !agentProcess->isSystemProtected())
+		throw AuthorizationException("managed agent system application is unavailable");
+	// A bad or superseded proof is an authentication failure (401), not a 403.
+	if (agentProcess->currentProcessUuidForProof(message->m_uuid, message->m_headers.get(HMAC_HTTP_HEADER)).empty())
+		throw std::domain_error("agent process proof is invalid or superseded");
+
+	const auto event = message->extractJson();
+	if (!event.is_object())
+		throw std::invalid_argument("container event must be an object");
+	const auto type = GET_JSON_STR_VALUE(event, "type");
+	if (type != "die" && type != "sync")
+		throw std::invalid_argument("unknown container event type <" + type + ">");
+
+	// Every accepted push refreshes the liveness marker; die events route to the owning app.
+	// The marker has no Windows reader (DockerApiProcess is not built there).
+#if !defined(_WIN32)
+	DockerApiProcess::noteContainerEventsAlive();
+#endif
+	if (type == "die")
+	{
+		const auto appName = GET_JSON_STR_VALUE(event, "app");
+		const auto containerId = GET_JSON_STR_VALUE(event, "containerId");
+		if (appName.empty() || containerId.empty())
+			throw std::invalid_argument("a container die event must carry app and containerId");
+		LOG_DBG << fname << "die event for container <" << containerId << "> of application <" << appName << ">";
+		if (const auto app = Configuration::instance()->getApp(appName, false))
+			app->reportContainerEvent(containerId);
+	}
+	message->reply(web::http::status_codes::OK);
 }
 
 void RestHandler::apiAppAdd(const std::shared_ptr<HttpRequest> &message)
@@ -1775,7 +2234,8 @@ void RestHandler::apiAppAdd(const std::shared_ptr<HttpRequest> &message)
 	const auto bodyName = GET_JSON_STR_VALUE(jsonApp, JSON_KEY_APP_name);
 	if (bodyName.empty())
 		throw std::invalid_argument("application name is required in the request body");
-	if (!urlName.empty() && urlName != bodyName)
+	// regexSearch throws instead of returning empty, so urlName is always populated here.
+	if (urlName != bodyName)
 		throw std::invalid_argument("application name in the URL and the request body must match");
 
 	auto appName = normalizeAppName(bodyName);

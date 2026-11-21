@@ -21,7 +21,6 @@
 #include "../ResourceLimitation.h"
 #include "../process/AppProcess.h"
 #include "../process/DockerApiProcess.h"
-#include "../process/DockerProcess.h"
 #include "../rest/EventDispatcher.h"
 #include "../rest/RestHandler.h"
 #include "../security/HMACVerifier.h"
@@ -339,6 +338,22 @@ void Application::FromJson(const std::shared_ptr<Application> &app, const nlohma
 		}
 	}
 
+	// Interactive stdin keeps the daemon-side pipe write end open for the input
+	// API. It replaces the launch-time metadata stdin and conflicts with
+	// container backends.
+	if (jsonObj.contains(JSON_KEY_APP_stdin))
+	{
+		const auto stdinMode = GET_JSON_STR_VALUE(jsonObj, JSON_KEY_APP_stdin);
+		if (stdinMode.empty() || stdinMode == "none")
+			app->m_stdinPipe = false;
+		else if (stdinMode == JSON_KEY_APP_stdin_pipe)
+			app->m_stdinPipe = true;
+		else
+			throw std::invalid_argument("stdin must be \"none\" or \"pipe\"");
+	}
+	if (app->m_stdinPipe && app->m_metadata != EMPTY_STR_JSON)
+		throw std::invalid_argument("stdin pipe cannot be combined with launch metadata (metadata feeds process stdin)");
+
 	app->m_commandLine = Utility::stdStringTrim(GET_JSON_STR_VALUE(jsonObj, JSON_KEY_APP_command));
 	app->m_description = Utility::stdStringTrim(GET_JSON_STR_VALUE(jsonObj, JSON_KEY_APP_description));
 
@@ -347,6 +362,9 @@ void Application::FromJson(const std::shared_ptr<Application> &app, const nlohma
 	const auto fileName = Utility::stringFormat("appmesh.%s.out", app->m_name.c_str());
 	app->m_stdoutFile = (outputDir / fileName).string();
 	app->m_stdoutCacheNum = GET_JSON_INT_VALUE(jsonObj, JSON_KEY_APP_stdout_backup_count);
+	// A containerized app's cold image pull is its own run (starts=2): two slots keep the pull progress readable at stdout[1].
+	if (!GET_JSON_STR_VALUE(jsonObj, JSON_KEY_APP_docker_image).empty() && app->m_stdoutCacheNum < 2)
+		app->m_stdoutCacheNum = 2;
 	app->m_stdoutFileQueue = std::make_shared<LogFileQueue>(app->m_stdoutFile, app->m_stdoutCacheNum);
 
 	if (app->m_commandLine.length() >= MAX_COMMAND_LINE_LENGTH)
@@ -448,6 +466,8 @@ void Application::FromJson(const std::shared_ptr<Application> &app, const nlohma
 	}
 
 	app->m_dockerImage = GET_JSON_STR_VALUE(jsonObj, JSON_KEY_APP_docker_image);
+	if (app->m_stdinPipe && !app->m_dockerImage.empty())
+		throw std::invalid_argument("stdin pipe is not supported for container applications");
 
 	if (HAS_JSON_FIELD(jsonObj, JSON_KEY_APP_pid))
 	{
@@ -457,12 +477,6 @@ void Application::FromJson(const std::shared_ptr<Application> &app, const nlohma
 	if (app->m_dockerImage.empty() && app->m_commandLine.empty())
 	{
 		throw std::invalid_argument("no command line provide");
-	}
-
-	if (!app->m_dockerImage.empty())
-	{
-		// Docker app does not support reserve more output backup files
-		app->m_stdoutCacheNum = 0;
 	}
 
 	// The epoch fields reject non-integer input with a message naming the field;
@@ -534,6 +548,15 @@ void Application::FromJson(const std::shared_ptr<Application> &app, const nlohma
 	DurationParse duration;
 	app->m_bufferTimeValue = GET_JSON_STR_INT_TEXT(jsonObj, JSON_KEY_APP_stop_grace_period);
 	app->m_bufferTime = duration.parse(app->m_bufferTimeValue);
+	if (app->m_bufferTime < 0)
+	{
+		// Legacy releases persisted negative grace periods: clamp on recovery, reject on registration.
+		if (!HAS_JSON_FIELD(jsonObj, JSON_KEY_APP_from_recover))
+			throw std::invalid_argument("stop_grace_period must not be negative: " + app->m_bufferTimeValue);
+		LOG_WAR << fname << "Negative stop_grace_period <" << app->m_bufferTimeValue << "> for application <"
+				<< app->m_name << ">, clamped to 0";
+		app->m_bufferTime = 0;
+	}
 
 	const bool hasInterval = HAS_JSON_FIELD(jsonObj, JSON_KEY_APP_interval);
 	const bool hasCronSchedule = HAS_JSON_FIELD(jsonObj, JSON_KEY_APP_cron_schedule);
@@ -567,7 +590,7 @@ void Application::FromJson(const std::shared_ptr<Application> &app, const nlohma
 				throw std::invalid_argument("interval must be a positive duration: " + app->m_startIntervalValue);
 			}
 			LOG_WAR << fname << "Invalid start interval <" << app->m_startIntervalValue << "> for application <" << app->m_name << ">, falling back to default";
-			app->m_startInterval = DEFAULT_TOKEN_EXPIRE_SECONDS;
+			app->m_startInterval = DEFAULT_START_INTERVAL_SECONDS;
 		}
 		app->m_timer = std::make_shared<AppTimerPeriod>(app->m_startTime, app->m_endTime, app->m_dailyLimit, app->m_startInterval);
 	}
@@ -671,6 +694,10 @@ bool Application::attach(int pid)
 		attached = (*processLock);
 	}
 	terminate(std::move(previous));
+
+	// A recovered container run must re-bind to its container: without the ID a stop degrades to a
+	// host SIGKILL, the exit code fakes to 0, the probe loses its target; adoption verifies labels.
+	attached->adoptRecoveredContainer();
 
 	// 2. Probe liveness
 	const pid_t attachedPid = attached->getpid();
@@ -848,7 +875,14 @@ void Application::maintainRuntime(const std::chrono::system_clock::time_point &n
 		// Recovered processes and attached Docker containers have no child-process callback.
 		// Docker image pulls do: their empty container ID keeps the exact callback authoritative.
 		const bool lacksReactorExitCallback = process->isRecovered() || !process->containerId().empty();
-		return lacksReactorExitCallback && !process->running();
+		// While the agent's event pushes are fresh, the every-tick poll stands
+		// down (die events carry the exit); the observed-death fetch below
+		// always runs, and the backstop keeps one inspect flowing per interval.
+		const bool containerEventsFresh = DockerApiProcess::containerEventsFresh();
+		return lacksReactorExitCallback &&
+			   (!process->running() ||
+				(process->needsAlwaysExitPoll() &&
+				 (!containerEventsFresh || process->backendLivenessPollDue())));
 	};
 
 	std::shared_ptr<AppProcess> process;
@@ -867,14 +901,15 @@ void Application::maintainRuntime(const std::chrono::system_clock::time_point &n
 
 	if (needsPolledExitReport(bufferProcess))
 	{
-		const int exitCode = bufferProcess->isRecovered() ? 0 : bufferProcess->returnValue();
+		// A recovered native run has no backend to query an exit code from — report 0; a re-bound container run does.
+		const int exitCode = (bufferProcess->isRecovered() && bufferProcess->containerId().empty()) ? 0 : bufferProcess->returnValue();
 		bufferProcess->onExit(exitCode);
 	}
 
 	if (needsPolledExitReport(process))
 	{
 		// Docker inspection may block briefly, so obtain the exit code outside m_process.
-		const int exitCode = process->isRecovered() ? 0 : process->returnValue();
+		const int exitCode = (process->isRecovered() && process->containerId().empty()) ? 0 : process->returnValue();
 		process->onExit(exitCode);
 	}
 
@@ -1076,7 +1111,7 @@ std::string Application::startRun(bool onDemand, int timeoutSeconds, const std::
 
 	LOG_INF << fname << "Starting application <" << m_name << "> with user <" << execUser << ">";
 	auto result = process->start(getCmdLine(), std::move(spawnUser), m_workdir, std::move(envMap), m_resourceLimit,
-								 m_stdoutFile, m_metadata, APP_STD_OUT_MAX_FILE_SIZE);
+								 m_stdoutFile, m_metadata, APP_STD_OUT_MAX_FILE_SIZE, m_stdinPipe);
 
 	if (processProof)
 		activateProcessProof(runId, processProof, result.accepted);
@@ -1154,7 +1189,7 @@ void Application::onStartAccepted(const std::string &runId, pid_t pid)
 	// a custom probe become healthy only after HealthCheckTask observes success.
 	health(m_healthCheckCmd.empty());
 	EventDispatcher::instance()->dispatch(m_name, AppEventType::PROCESS_START,
-										  {{"pid", pid}, {"process_uuid", runId}});
+										  {{"pid", pid}, {JSON_KEY_process_uuid, runId}});
 }
 
 void Application::recordStartFailure(const std::string &runId, const std::string &error, bool onDemand)
@@ -1216,6 +1251,37 @@ void Application::replyTask(const std::string &processKey, std::shared_ptr<HttpR
 {
 	std::shared_ptr<void> req = asyncHttpRequest; // TaskRequest takes shared_ptr<void>&
 	m_task.replyTask(processKey, req);
+}
+
+long Application::writeStdin(const std::vector<std::uint8_t> &data, bool closePipe, const std::string &processUuid)
+{
+	if (!m_stdinPipe)
+		throw std::invalid_argument("stdin is not piped for this application");
+	auto processLock = m_process.synchronize();
+	const auto &process = *processLock;
+	if (!process || process->isFinalized())
+		throw std::invalid_argument("no running process to receive stdin");
+	if (!processUuid.empty() && process->getuuid() != processUuid)
+		throw std::invalid_argument("process uuid mismatch");
+	return process->writeStdin(data, closePipe);
+}
+
+void Application::partialTask(const std::string &processKey, const std::string &payload, bool &delivered)
+{
+	m_task.partialReply(processKey, payload, delivered);
+}
+
+void Application::reportContainerEvent(const std::string &containerId)
+{
+	std::shared_ptr<AppProcess> process;
+	{
+		auto lock = m_process.synchronize();
+		process = *lock;
+	}
+	// A stale event (previous run, or the id is not set yet) has no owner to report for.
+	if (!process || process->containerId().empty() || process->containerId() != containerId)
+		return;
+	process->requestLivenessPoll();
 }
 
 std::tuple<int, std::string> Application::taskStatus()
@@ -1318,8 +1384,13 @@ const std::string Application::getExecUser() const
 
 	if (executeUser.empty())
 	{
-		static const auto osUser = os::getUsernameByUid();
-		executeUser = osUser;
+		// A container maps only an explicitly chosen user: a daemon-user fallback would override the
+		// image's own USER with a name most images do not define (and with root on a root-host install).
+		if (m_dockerImage.empty())
+		{
+			static const auto osUser = os::getUsernameByUid();
+			executeUser = osUser;
+		}
 	}
 	return executeUser;
 }
@@ -1555,6 +1626,10 @@ nlohmann::json Application::AsJson(bool returnRuntimeInfo, void *ptree)
 	if (m_metadata != EMPTY_STR_JSON)
 	{
 		result[JSON_KEY_APP_metadata] = m_metadata;
+	}
+	if (m_stdinPipe)
+	{
+		result[JSON_KEY_APP_stdin] = JSON_KEY_APP_stdin_pipe;
 	}
 	if (!m_commandLine.empty())
 	{
@@ -1842,14 +1917,8 @@ std::shared_ptr<AppProcess> Application::createProcess(const std::string &docker
 
 	if (!dockerImage.empty())
 	{
-		if (m_envMap.count(ENV_APPMESH_DOCKER_PARAMS) == 0)
-		{
-			process = std::make_shared<DockerApiProcess>(weakSelf, appName, dockerImage);
-		}
-		else
-		{
-			process = std::make_shared<DockerProcess>(weakSelf, appName, dockerImage);
-		}
+		// The agent's container service is the only Docker backend.
+		process = std::make_shared<DockerApiProcess>(weakSelf, appName, dockerImage);
 	}
 	else
 	{

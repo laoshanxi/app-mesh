@@ -26,13 +26,6 @@ static constexpr size_t MAX_PENDING_REQUESTS = 10000;
 
 namespace
 {
-	bool isPublicForwardRequest(const std::shared_ptr<HttpRequest> &request)
-	{
-		return request->m_method == web::http::methods::GET &&
-			(request->m_relative_uri == "/appmesh/auth/config" ||
-			 request->m_relative_uri == "/.well-known/oauth-protected-resource");
-	}
-
 	bool isSubscriptionRequest(const std::shared_ptr<HttpRequest> &request)
 	{
 		const auto &path = request->m_relative_uri;
@@ -66,9 +59,13 @@ namespace
 		input.persistentTransport = request->isPersistentClientTransport();
 		input.fallbackNonce = request->m_uuid;
 		input.keyId = request->m_headers.get(HTTP_HEADER_KEY_X_Request_Key);
+		// An oversized key id is hostile input, not a signing key.
+		if (input.keyId.size() > 256)
+			input.keyId.clear();
 		input.timestamp = request->m_headers.get(HTTP_HEADER_KEY_X_Timestamp);
 		input.nonce = request->m_headers.get(HTTP_HEADER_KEY_X_Nonce);
 		input.signature = request->m_headers.get(HTTP_HEADER_KEY_X_Signature);
+		input.agentPrecheck = request->m_headers.get(HTTP_HEADER_KEY_X_Appmesh_Agent_Precheck) == "1";
 
 		const auto decision = RequestHardening::instance().evaluate(input);
 		if (decision.audit)
@@ -85,6 +82,29 @@ namespace
 			return false;
 		}
 		return true;
+	}
+
+	// Bearer authentication for the frame and gateway paths: returns the
+	// principal id via `principalId` and true on success; false after the
+	// failure reply went out (503 for an unavailable authentication backend,
+	// 401 + challenge for a bad bearer).
+	bool authenticateBearerOrReply(const std::shared_ptr<HttpRequest> &request, std::string &principalId)
+	{
+		try
+		{
+			principalId = Security::authenticateBearerAuthorization(request->m_headers.get(HTTP_HEADER_JWT_Authorization)).id();
+			return true;
+		}
+		catch (const AuthenticationUnavailableException &e)
+		{
+			request->reply(web::http::status_codes::ServiceUnavailable, Utility::text2json(e.what()));
+		}
+		catch (const std::exception &e)
+		{
+			request->reply(web::http::status_codes::Unauthorized, Utility::text2json(e.what()),
+				{{"WWW-Authenticate", HTTP_HEADER_VALUE_BEARER_CHALLENGE ", error=\"invalid_token\""}});
+		}
+		return false;
 	}
 
 	// Extract the request uuid without decoding the full message, so an
@@ -328,26 +348,13 @@ bool Worker::process(const std::shared_ptr<HttpRequest> &request)
 	if (!request->transportPrincipalId().empty() &&
 		request->m_headers.contains(HTTP_HEADER_JWT_Authorization))
 	{
-		try
-		{
-			const auto framePrincipal = Security::authenticateBearerAuthorization(
-				request->m_headers.get(HTTP_HEADER_JWT_Authorization));
-			if (framePrincipal.id() != request->transportPrincipalId())
-			{
-				request->reply(web::http::status_codes::Forbidden,
-					Utility::text2json("WebSocket frame cannot change the session principal"));
-				return true;
-			}
-		}
-		catch (const AuthenticationUnavailableException &e)
-		{
-			request->reply(web::http::status_codes::ServiceUnavailable, Utility::text2json(e.what()));
+		std::string framePrincipalId;
+		if (!authenticateBearerOrReply(request, framePrincipalId))
 			return true;
-		}
-		catch (const std::exception &e)
+		if (framePrincipalId != request->transportPrincipalId())
 		{
-			request->reply(web::http::status_codes::Unauthorized, Utility::text2json(e.what()),
-				{{"WWW-Authenticate", "Bearer realm=\"appmesh\", error=\"invalid_token\""}});
+			request->reply(web::http::status_codes::Forbidden,
+				Utility::text2json("WebSocket frame cannot change the session principal"));
 			return true;
 		}
 	}
@@ -377,59 +384,39 @@ bool Worker::process(const std::shared_ptr<HttpRequest> &request)
 			return true;
 		}
 
-		const bool publicRequest = isPublicForwardRequest(request);
-		if (!publicRequest && !request->m_headers.contains(HTTP_HEADER_JWT_Authorization))
+		// Forwarding is a capability regardless of the target path: an unauthenticated
+		// caller must never get an outbound connection (port-scan oracle).
+		if (!request->m_headers.contains(HTTP_HEADER_JWT_Authorization))
 		{
 			request->reply(web::http::status_codes::Unauthorized,
 				Utility::text2json("Forwarded requests require bearer authentication"),
-				{{"WWW-Authenticate", "Bearer realm=\"appmesh\""}});
+				{{"WWW-Authenticate", HTTP_HEADER_VALUE_BEARER_CHALLENGE}});
 			return true;
 		}
 		// A WebSocket frame with a bearer was already checked against the pinned
 		// session principal above. HTTP and TCP have no pinned principal, so validate
 		// their bearer before the gateway opens an outbound connection. The target
 		// validates the unchanged bearer again and makes the authorization decision.
-		if (!publicRequest && request->transportPrincipalId().empty())
+		std::string gatewayPrincipalId = request->transportPrincipalId();
+		if (gatewayPrincipalId.empty())
 		{
-			try
-			{
-				Security::authenticateBearerAuthorization(
-					request->m_headers.get(HTTP_HEADER_JWT_Authorization));
-			}
-			catch (const AuthenticationUnavailableException &e)
-			{
-				request->reply(web::http::status_codes::ServiceUnavailable, Utility::text2json(e.what()));
+			if (!authenticateBearerOrReply(request, gatewayPrincipalId))
 				return true;
-			}
-			catch (const std::exception &e)
-			{
-				request->reply(web::http::status_codes::Unauthorized, Utility::text2json(e.what()),
-					{{"WWW-Authenticate", "Bearer realm=\"appmesh\", error=\"invalid_token\""}});
-				return true;
-			}
 		}
 		// The outbound connection itself is a capability: without this gate any
 		// authenticated principal could probe the network through open/closed/
 		// timeout answers (blind port-scan oracle).
-		if (!publicRequest)
+		try
 		{
-			std::string gatewayPrincipalId = request->transportPrincipalId();
-			try
-			{
-				if (gatewayPrincipalId.empty())
-					gatewayPrincipalId = Security::authenticateBearerAuthorization(
-						request->m_headers.get(HTTP_HEADER_JWT_Authorization))
-											 .id();
-				Security::requirePermission(gatewayPrincipalId, PERMISSION_KEY_host_forward);
-			}
-			catch (const std::exception &e)
-			{
-				// AuthorizationException, or the principal vanished after the
-				// bearer check above; either way fail closed.
-				LOG_WAR << fname << "Rejected forward, principal <" << gatewayPrincipalId << ">: " << e.what();
-				request->reply(web::http::status_codes::Forbidden, Utility::text2json(e.what()));
-				return true;
-			}
+			Security::requirePermission(gatewayPrincipalId, PERMISSION_KEY_host_forward);
+		}
+		catch (const std::exception &e)
+		{
+			// AuthorizationException, or the principal vanished after the
+			// bearer check above; either way fail closed.
+			LOG_WAR << fname << "Rejected forward, principal <" << gatewayPrincipalId << ">: " << e.what();
+			request->reply(web::http::status_codes::Forbidden, Utility::text2json(e.what()));
+			return true;
 		}
 
 		if (isSubscriptionRequest(request) && !request->isPersistentClientTransport())

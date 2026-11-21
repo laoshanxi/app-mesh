@@ -14,6 +14,82 @@
 #include "../Utility.h"
 #include "linux.h"
 
+namespace
+{
+	// Resolve user/group names against a baseline ownership. A hard failure
+	// (unknown user) returns false; an unresolvable group keeps the baseline.
+	bool resolveOwnership(uid_t &uid, gid_t &gid, const std::string &user, const std::string &group)
+	{
+		if (!user.empty())
+		{
+			if (!os::getUidByName(user, uid, gid))
+			{
+				LOG_ERR << "os::resolveOwnership() Failed to get user information for '" << user << "'";
+				return false;
+			}
+		}
+
+		if (!group.empty())
+		{
+			// Determine required buffer size (cached static value)
+			static const auto bufsize = []()
+			{
+				long size = sysconf(_SC_GETGR_R_SIZE_MAX);
+				return (size == -1) ? 16384 : size;
+			}();
+
+			// Allocate buffer
+			std::vector<char> buffer(bufsize);
+			struct group grp;
+			struct group *result = nullptr;
+
+			// Try getting group information
+			int err = ::getgrnam_r(group.c_str(), &grp, buffer.data(), buffer.size(), &result);
+			if (err != 0)
+			{
+				LOG_WAR << "os::resolveOwnership() Failed to get group information for '" << group << "': "
+						<< std::strerror(err);
+			}
+			else if (result == nullptr)
+			{
+				// Mirror getUidByName: a purely numeric group name is accepted as a literal GID, since containers
+				// often lack a passwd/group entry for the host UID/GID but chown(2) still takes the raw value.
+				if (!group.empty() && std::all_of(group.begin(), group.end(),
+												  [](char c) { return c >= '0' && c <= '9'; }))
+				{
+					try
+					{
+						const unsigned long numeric = std::stoul(group);
+						if (numeric > std::numeric_limits<gid_t>::max())
+						{
+							LOG_WAR << "os::resolveOwnership() Numeric GID out of range: " << group;
+						}
+						else
+						{
+							gid = static_cast<gid_t>(numeric);
+							LOG_DBG << "os::resolveOwnership() Group not in passwd db, accepting numeric GID: " << group;
+						}
+					}
+					catch (const std::exception &)
+					{
+						LOG_WAR << "os::resolveOwnership() Group '" << group << "' not found";
+					}
+				}
+				else
+				{
+					LOG_WAR << "os::resolveOwnership() Group '" << group << "' not found";
+				}
+			}
+			else
+			{
+				gid = grp.gr_gid;
+			}
+		}
+
+		return true;
+	}
+} // namespace
+
 namespace os
 {
 
@@ -122,76 +198,11 @@ namespace os
 			return false;
 		}
 
-		// Initialize with current values
 		uid_t uid = st.st_uid;
 		gid_t gid = st.st_gid;
-
-		// Update uid if user is specified
-		if (!user.empty())
+		if (!resolveOwnership(uid, gid, user, group))
 		{
-			if (!os::getUidByName(user, uid, gid))
-			{
-				LOG_ERR << fname << "Failed to get user information for '" << user << "'";
-				return false;
-			}
-		}
-
-		// Update gid if group is specified
-		if (!group.empty())
-		{
-			// Determine required buffer size (cached static value)
-			static const auto bufsize = []()
-			{
-				long size = sysconf(_SC_GETGR_R_SIZE_MAX);
-				return (size == -1) ? 16384 : size;
-			}();
-
-			// Allocate buffer
-			std::vector<char> buffer(bufsize);
-			struct group grp;
-			struct group *result = nullptr;
-
-			// Try getting group information
-			int err = ::getgrnam_r(group.c_str(), &grp, buffer.data(), buffer.size(), &result);
-			if (err != 0)
-			{
-				LOG_WAR << fname << "Failed to get group information for '" << group << "': " << std::strerror(err);
-			}
-			else if (result == nullptr)
-			{
-				// Mirror getUidByName: if the group name is purely numeric, accept it
-				// as a literal GID. Containers commonly lack a passwd/group entry for
-				// the host UID/GID, but chown(2) still accepts the raw numeric value.
-				if (!group.empty() && std::all_of(group.begin(), group.end(),
-												  [](char c) { return c >= '0' && c <= '9'; }))
-				{
-					try
-					{
-						const unsigned long numeric = std::stoul(group);
-						if (numeric > std::numeric_limits<gid_t>::max())
-						{
-							LOG_WAR << fname << "Numeric GID out of range: " << group;
-						}
-						else
-						{
-							gid = static_cast<gid_t>(numeric);
-							LOG_DBG << fname << "Group not in passwd db, accepting numeric GID: " << group;
-						}
-					}
-					catch (const std::exception &)
-					{
-						LOG_WAR << fname << "Group '" << group << "' not found";
-					}
-				}
-				else
-				{
-					LOG_WAR << fname << "Group '" << group << "' not found";
-				}
-			}
-			else
-			{
-				gid = grp.gr_gid;
-			}
+			return false;
 		}
 
 		LOG_DBG << fname << "Attempting to change ownership of " << path
@@ -203,6 +214,31 @@ namespace os
 
 		// Attempt to change ownership
 		return chown(path, uid, gid, recursive);
+	}
+
+	bool fchown(int fd, std::string user, std::string group)
+	{
+		constexpr char fname[] = "os::fchown() ";
+		struct stat st;
+		if (::fstat(fd, &st) != 0)
+		{
+			LOG_ERR << fname << "Failed to get file stats for fd <" << fd << ">: " << last_error_msg();
+			return false;
+		}
+
+		uid_t uid = st.st_uid;
+		gid_t gid = st.st_gid;
+		if (!resolveOwnership(uid, gid, user, group))
+		{
+			return false;
+		}
+		if (::fchown(fd, uid, gid) != 0)
+		{
+			LOG_ERR << fname << "Failed to change ownership of fd <" << fd << ">: " << last_error_msg();
+			return false;
+		}
+		LOG_DBG << fname << "Changed ownership of fd <" << fd << "> to uid=" << uid << " gid=" << gid;
+		return true;
 	}
 
 } // namespace os

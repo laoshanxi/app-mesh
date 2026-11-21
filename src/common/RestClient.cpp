@@ -185,13 +185,6 @@ ClientSSLConfig::ClientSSLConfig()
 
 }
 
-void ClientSSLConfig::ResolveAbsolutePaths(std::string workingHome)
-{
-	m_certificate = ResolveAbsolutePath(workingHome, m_certificate);
-	m_private_key = ResolveAbsolutePath(workingHome, m_private_key);
-	m_ca_location = ResolveAbsolutePath(workingHome, m_ca_location);
-}
-
 std::string ClientSSLConfig::ResolveAbsolutePath(const std::string &workingHome, std::string filePath)
 {
 	if (!workingHome.empty() && !filePath.empty() && !Utility::startWith(filePath, workingHome))

@@ -220,11 +220,14 @@ void StdoutPump::dispatchPayload(long start, std::string &&payload)
 		return;
 	try
 	{
-		// Same UTF-8 conversion as the disk-backed output views, so event
-		// subscribers and REST clients see identical text.
+		// Same UTF-8 conversion as the disk-backed output views. raw_size keeps
+		// the original byte count so cursor-based consumers (output/stream)
+		// advance over raw file offsets.
+		const auto rawSize = payload.size();
 		payload = Utility::fileBytesToUtf8(payload);
 		nlohmann::json data;
 		data["output"] = std::move(payload);
+		data["raw_size"] = rawSize;
 		data["position"] = start;
 		data["finished"] = false;
 		dispatcher->dispatch(m_appName, AppEventType::STDOUT_OUTPUT, data);

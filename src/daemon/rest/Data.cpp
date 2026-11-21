@@ -26,6 +26,26 @@ namespace
 		std::string &out;
 		void write(const char *data, std::size_t len) { out.append(data, len); }
 	};
+
+	/// Shared msgpack frame decode: logs and returns false on any failure, leaving
+	/// `out` untouched.
+	template <typename T>
+	bool msgpackUnpack(const char *data, std::size_t dataSize, T &out, const char *fname, const char *kind)
+	{
+		try
+		{
+			msgpack::unpacked result;
+			msgpack::unpack(result, data, dataSize);
+			msgpack::object obj = result.get();
+			obj.convert(out);
+			return true;
+		}
+		catch (const std::exception &e)
+		{
+			LOG_ERR << fname << "Failed to deserialize " << kind << " message with size <" << dataSize << ">: " << e.what();
+		}
+		return false;
+	}
 }
 
 std::string Response::serialize() const
@@ -38,20 +58,8 @@ std::string Response::serialize() const
 
 bool Response::deserialize(const std::uint8_t *data, std::size_t dataSize)
 {
-	const static char fname[] = "Response::deserialize() ";
-	try
-	{
-		msgpack::unpacked result;
-		msgpack::unpack(result, reinterpret_cast<const char *>(data), dataSize);
-		msgpack::object obj = result.get();
-		obj.convert(*this);
-		return true;
-	}
-	catch (const std::exception &e)
-	{
-		LOG_ERR << fname << "Failed to deserialize response message with size <" << dataSize << ">: " << e.what();
-	}
-	return false;
+	return msgpackUnpack(reinterpret_cast<const char *>(data), dataSize, *this, "Response::deserialize() ",
+						 "response");
 }
 
 void Response::applyCorsHeaders(const std::string &origin)
@@ -88,20 +96,8 @@ std::string Request::serialize() const
 
 bool Request::deserialize(const ByteBuffer &data)
 {
-	const static char fname[] = "Request::deserialize() ";
-	try
-	{
-		msgpack::unpacked result;
-		msgpack::unpack(result, reinterpret_cast<const char *>(data.data()), data.size());
-		msgpack::object obj = result.get();
-		obj.convert(*this);
-		return true;
-	}
-	catch (const std::exception &e)
-	{
-		LOG_ERR << fname << "Failed to deserialize request message with size <" << data.size() << ">: " << e.what();
-	}
-	return false;
+	return msgpackUnpack(reinterpret_cast<const char *>(data.data()), data.size(), *this, "Request::deserialize() ",
+						 "request");
 }
 
 bool Request::contain_body() const
