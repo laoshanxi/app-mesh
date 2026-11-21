@@ -41,7 +41,7 @@ class TestWSSFileDataChannelForwarding(unittest.TestCase):
             local = Path(tmp) / "got.txt"
             client.download_file("/tmp/remote.txt", str(local))
             self.assertEqual(local.read_bytes(), b"file-bytes")
-        self.assertEqual(get.call_args.kwargs["headers"]["X-Target-Host"], "appmesh_slave1")
+        self.assertEqual(get.call_args[1]["headers"]["X-Target-Host"], "appmesh_slave1")
 
     def test_upload_data_request_carries_forward_target(self):
         client = self._client("appmesh_slave1")
@@ -51,7 +51,7 @@ class TestWSSFileDataChannelForwarding(unittest.TestCase):
             src = Path(tmp) / "put.txt"
             src.write_bytes(b"payload")
             client.upload_file(str(src), "/tmp/remote-put.txt")
-        self.assertEqual(post.call_args.kwargs["headers"]["X-Target-Host"], "appmesh_slave1")
+        self.assertEqual(post.call_args[1]["headers"]["X-Target-Host"], "appmesh_slave1")
 
     def test_no_forward_target_sends_no_header(self):
         client = self._client(None)
@@ -59,7 +59,7 @@ class TestWSSFileDataChannelForwarding(unittest.TestCase):
             client.session, "get", return_value=_octet_stream_response(b"x")
         ) as get:
             client.download_file("/tmp/remote.txt", str(Path(tmp) / "got.txt"))
-        self.assertNotIn("X-Target-Host", get.call_args.kwargs["headers"])
+        self.assertNotIn("X-Target-Host", get.call_args[1]["headers"])
 
 
 if __name__ == "__main__":
