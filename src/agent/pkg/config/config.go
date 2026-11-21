@@ -107,10 +107,17 @@ func Reload() error {
 	return nil
 }
 
+// Installation-root layout names; mirrors the daemon's APPMESH_WORK_* macros.
+const (
+	WorkDirName   = "work"
+	TmpDirName    = "tmp"
+	ConfigDirName = "config"
+)
+
 // ConfigFileCandidates lists the config locations the loader searches and a watcher stats.
 func ConfigFileCandidates() []string {
 	home := GetAppMeshHomeDir()
-	return []string{filepath.Join(home, "work", "config", "config.yaml"), filepath.Join(home, "config", "config.yaml")}
+	return []string{filepath.Join(home, WorkDirName, ConfigDirName, "config.yaml"), filepath.Join(home, ConfigDirName, "config.yaml")}
 }
 
 // Convert all relative paths to absolute paths
@@ -272,10 +279,10 @@ func readOIDCConfig() error {
 	if root.OIDC.Issuer == "" || root.OIDC.AccessURL == "" {
 		return fmt.Errorf("OIDC issuer and access URL must be non-empty absolute URLs")
 	}
-	if err := validateAbsoluteHTTPURL(root.OIDC.Issuer); err != nil {
+	if err := ValidateAbsoluteHTTPURL(root.OIDC.Issuer); err != nil {
 		return fmt.Errorf("invalid OIDC issuer: %w", err)
 	}
-	if err := validateAbsoluteHTTPURL(root.OIDC.AccessURL); err != nil {
+	if err := ValidateAbsoluteHTTPURL(root.OIDC.AccessURL); err != nil {
 		return fmt.Errorf("invalid OIDC access URL: %w", err)
 	}
 	OIDCData = root.OIDC
@@ -291,7 +298,9 @@ func firstNonEmptyEnv(names ...string) string {
 	return ""
 }
 
-func validateAbsoluteHTTPURL(value string) error {
+// ValidateAbsoluteHTTPURL rejects anything that is not a bare absolute
+// http(s) URL (no credentials, query, or fragment).
+func ValidateAbsoluteHTTPURL(value string) error {
 	parsed, err := url.Parse(value)
 	if err != nil {
 		return err

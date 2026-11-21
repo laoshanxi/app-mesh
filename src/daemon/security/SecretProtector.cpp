@@ -91,7 +91,12 @@ std::string SecretProtector::masterKeyFile()
 	}
 	if (!Configuration::instance())
 		throw std::logic_error("SecretProtector requires initialized daemon configuration");
-	return (fs::path(Utility::getHomeDir()) / APPMESH_WORK_DIR / "auth" / "secrets" / MASTER_KEY_FILE_NAME).string();
+	return secretsFilePath(MASTER_KEY_FILE_NAME);
+}
+
+std::string SecretProtector::secretsFilePath(const std::string &fileName)
+{
+	return (fs::path(Utility::getHomeDir()) / APPMESH_WORK_DIR / "auth" / "secrets" / fileName).string();
 }
 
 std::string SecretProtector::readSecureKeyFile(const std::string &path)

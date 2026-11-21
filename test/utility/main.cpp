@@ -502,7 +502,8 @@ TEST_CASE("openFileWithinJail fd verification", "[Utility][security]"){
 			REQUIRE(Utility::startWith(resolved, jail + "/"));
 			REQUIRE(::write(fd, "PAYLOAD", 7) == 7);
 			::close(fd);
-			REQUIRE(fs::is_empty(escDir, ec)); // nothing ever lands (or stays) outside
+			// Nothing ever lands outside; the sprayer's remove_all may delete escDir itself.
+			REQUIRE((!fs::exists(escDir, ec) || fs::is_empty(escDir, ec)));
 		}
 		stop.store(true);
 		sprayer.join();

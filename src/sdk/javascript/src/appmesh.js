@@ -20,6 +20,14 @@ const CONSTANTS = Object.freeze({
   HTTP_HEADER_KEY_AUTH: "Authorization",
   HTTP_HEADER_KEY_X_TARGET_HOST: "X-Target-Host",
   HTTP_HEADER_KEY_X_FILE_PATH: "X-File-Path",
+  HTTP_HEADER_KEY_X_FILE_MODE: "X-File-Mode",
+  HTTP_HEADER_KEY_X_FILE_USER: "X-File-User",
+  HTTP_HEADER_KEY_X_FILE_GROUP: "X-File-Group",
+  HTTP_HEADER_KEY_X_OUTPUT_POSITION: "X-Output-Position",
+  HTTP_HEADER_KEY_X_EXIT_CODE: "X-Exit-Code",
+  HTTP_HEADER_KEY_X_INPUT_CLOSE: "X-Input-Close",
+  HTTP_HEADER_KEY_X_SUBSCRIPTION_ID: "X-Subscription-Id",
+  HTTP_HEADER_KEY_X_APPMESH_PROCESS_KEY: "X-AppMesh-Process-Key",
 });
 
 // Environment detection
@@ -948,8 +956,8 @@ class AppMeshClient {
 
     const response = await this._request("get", `/appmesh/app/${app_name}/output`, null, { params });
     // axios lowercases header names; the TCP transport keeps the daemon's exact case
-    const outPositionHeader = _getHeader(response.headers, "X-Output-Position");
-    const exitCodeHeader = _getHeader(response.headers, "X-Exit-Code");
+    const outPositionHeader = _getHeader(response.headers, CONSTANTS.HTTP_HEADER_KEY_X_OUTPUT_POSITION);
+    const exitCodeHeader = _getHeader(response.headers, CONSTANTS.HTTP_HEADER_KEY_X_EXIT_CODE);
     const outPosition = outPositionHeader ? parseInt(outPositionHeader, 10) : null;
     const exitCode = exitCodeHeader ? parseInt(exitCodeHeader, 10) : null;
     return new AppOutput(response.status, response.data, outPosition, exitCode);
@@ -978,7 +986,7 @@ class AppMeshClient {
     }
     if (response.status === 200) {
       // axios lowercases header names; the TCP transport keeps the daemon's exact case
-      const exitCodeHeader = _getHeader(response.headers, "X-Exit-Code");
+      const exitCodeHeader = _getHeader(response.headers, CONSTANTS.HTTP_HEADER_KEY_X_EXIT_CODE);
       if (exitCodeHeader) {
         exitCode = parseInt(exitCodeHeader, 10);
       }
@@ -1226,7 +1234,7 @@ class AppMeshClient {
    */
   async sendInput(appName, data, opts = {}) {
     const { close = false, processUuid = '' } = opts;
-    const headers = close ? { "X-Input-Close": "true" } : {};
+    const headers = close ? { [CONSTANTS.HTTP_HEADER_KEY_X_INPUT_CLOSE]: "true" } : {};
     const params = processUuid ? { process_uuid: processUuid } : {};
     const response = await this._request("post", `/appmesh/app/${appName}/input`, data, { headers, params });
     return parseInt(response.data?.bytes_written ?? 0, 10);
@@ -1859,7 +1867,7 @@ class AppRun {
 export {
   AppMeshClient, AppOutput, AppRun, AppMeshError, AppRemovedError, TransportDisconnectedError,
   AppMeshRequestError, AppMeshTimeoutError, SseEnd,
-  DEFAULT_CA_FILE, StaticAccessTokenProvider, RefreshTokenProvider, RequestSigner
+  DEFAULT_CA_FILE, StaticAccessTokenProvider, RefreshTokenProvider, RequestSigner, CONSTANTS
 };
 // Exported for the TCP client (Node.js only); not part of the browser-facing API
 export { _resolveUid, _resolveGid, _resolveUserName, _resolveGroupName };

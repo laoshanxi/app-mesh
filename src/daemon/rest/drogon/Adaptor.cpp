@@ -8,8 +8,9 @@
 #include <cstring>
 #include <filesystem>
 #include <fstream>
+#include <optional>
 #include <stdexcept>
-// S_ISREG for the download content-length probe (UCRT ships it in sys/stat.h).
+// <sys/stat.h> for the download content-length probe (S_ISREG on POSIX, _S_IFREG on UCRT).
 #include <sys/stat.h>
 
 #ifdef _WIN32
@@ -65,6 +66,37 @@ namespace
 		}
 	}
 
+	// S_ISREG is POSIX-only; UCRT spells the same probe with its prefixed forms.
+	bool isRegularFile(const struct stat &st)
+	{
+#if defined(_WIN32)
+		return (st.st_mode & _S_IFMT) == _S_IFREG;
+#else
+		return S_ISREG(st.st_mode);
+#endif
+	}
+
+	// Split a raw query string with the %XX-only decoder above; duplicate keys
+	// keep their first value. Every face parses the query this way so the
+	// canonical view cannot diverge between transports.
+	std::map<std::string, std::string> parseRawQuery(const std::string &rawQuery)
+	{
+		std::map<std::string, std::string> query;
+		for (size_t pos = 0; pos < rawQuery.size();)
+		{
+			const auto amp = rawQuery.find('&', pos);
+			const auto pair = rawQuery.substr(pos, amp == std::string::npos ? std::string::npos : amp - pos);
+			const auto eq = pair.find('=');
+			const auto &key = pair.substr(0, eq);
+			const auto &value = eq == std::string::npos ? std::string() : pair.substr(eq + 1);
+			query.emplace(decodeQueryComponent(key), decodeQueryComponent(value));
+			if (amp == std::string::npos)
+				break;
+			pos = amp + 1;
+		}
+		return query;
+	}
+
 	std::string authorize(const std::string &authorization, const std::string &permission = "")
 	{
 		if (authorization.empty() || authorization.size() > dgn::MAX_JWT_TOKEN_LENGTH)
@@ -75,14 +107,11 @@ namespace
 	}
 
 	// Request hardening (replay protection + signature) for the exact-route
-	// file endpoints, which bypass the shared worker pipeline. Streamed bodies
-	// are not bound into the signature (documented exemption): clients sign
-	// these endpoints with the empty-body hash. Returns false after replying.
-	bool enforceFileHardening(const drogon::HttpRequestPtr &req, const drogon::AdviceCallback &callback);
-
-	// Same policy for the native SSE routes; the task-stream body arrives
-	// streamed, so the empty-body hash exemption applies here too.
-	bool enforceSseHardening(const drogon::HttpRequestPtr &req, const drogon::AdviceCallback &callback);
+	// file and native SSE endpoints, which bypass the shared worker pipeline.
+	// Streamed bodies are not bound into the signature (documented exemption):
+	// clients sign these endpoints with the empty-body hash. Returns false
+	// after replying.
+	bool enforceRouteHardening(const drogon::HttpRequestPtr &req, const drogon::AdviceCallback &callback, bool fileRoute);
 
 	drogon::HttpResponsePtr plainResponse(drogon::HttpStatusCode code, const std::string &body)
 	{
@@ -92,13 +121,59 @@ namespace
 		return resp;
 	}
 
-	// CORS is opt-in: no wildcard. The request Origin is echoed only when it is
-	// in REST.CorsAllowOrigins; otherwise no CORS headers are sent at all.
+	// The 401 face of a failed bearer authentication (WWW-Authenticate included).
+	void replyUnauthorized(const drogon::AdviceCallback &callback)
+	{
+		auto resp = plainResponse(drogon::k401Unauthorized, "Authentication failed");
+		resp->addHeader(web::http::header_names::www_authenticate, HTTP_HEADER_VALUE_BEARER_CHALLENGE);
+		callback(resp);
+	}
+
+	// Bearer gate for the exact-route file endpoints: replies and returns false
+	// on failure, so the caller just bails out.
+	bool authorizeFileRoute(const drogon::HttpRequestPtr &req, const drogon::AdviceCallback &callback,
+							const std::string &permission)
+	{
+		try
+		{
+			authorize(req->getHeader(web::http::header_names::authorization), permission);
+		}
+		catch (const AuthorizationException &)
+		{
+			callback(plainResponse(drogon::k403Forbidden, "Permission denied"));
+			return false;
+		}
+		catch (...)
+		{
+			replyUnauthorized(callback);
+			return false;
+		}
+		return true;
+	}
+
+	// Shared X-File-Path prologue of the native file endpoints: replies
+	// (400/403) and returns empty when the header is missing or the path
+	// fails the jail; the same gate the worker face applies.
+	std::optional<std::string> requiredFilePath(const drogon::HttpRequestPtr &req, const drogon::AdviceCallback &callback)
+	{
+		const auto &filePathHeader = req->getHeader(HTTP_HEADER_KEY_file_path);
+		if (filePathHeader.empty())
+		{
+			callback(plainResponse(drogon::k400BadRequest, "Missing X-File-Path header"));
+			return std::nullopt;
+		}
+		auto filePath = Utility::decodeHeaderFilePath(filePathHeader);
+		if (!Utility::validateFilePath(filePath, Configuration::instance()->getFileAllowedBaseDir()))
+		{
+			callback(plainResponse(drogon::k403Forbidden, "File path is not allowed"));
+			return std::nullopt;
+		}
+		return filePath;
+	}
+
 	void addCors(const drogon::HttpResponsePtr &resp, const std::string &origin)
 	{
-		if (Configuration::instance()->getCorsDisabled())
-			return;
-		if (origin.empty() || Configuration::instance()->getCorsAllowOrigins().count(origin) == 0)
+		if (!Configuration::instance()->corsAllowsOrigin(origin))
 			return;
 		resp->addHeader(web::http::header_names::access_control_allow_origin, origin);
 		resp->addHeader(web::http::header_names::access_control_allow_methods, "GET, POST, PUT, DELETE, OPTIONS");
@@ -128,43 +203,38 @@ namespace
 		return m;
 	}
 
-	bool enforceFileHardening(const drogon::HttpRequestPtr &req, const drogon::AdviceCallback &callback)
+	/// Request hardening shared by the file routes and the SSE stream routes;
+	/// `fileRoute` additionally views the path through the canonical file-route
+	/// normalization and names the route kind in the audit log.
+	bool enforceRouteHardening(const drogon::HttpRequestPtr &req, const drogon::AdviceCallback &callback, bool fileRoute)
 	{
-		const static char fname[] = "enforceFileHardening() ";
+		const static char fname[] = "enforceRouteHardening() ";
 		RequestHardening::Input input;
 		input.method = upperMethod(req);
 		input.path = req->getOriginalPath();
 		// Parse the raw query with the same %XX-only decoder as the worker path
 		// (handleWorkerRequest): getParameters() would decode '+' as space and
 		// the two paths would disagree on the canonical query.
-		const auto &rawQuery = req->query();
-		for (size_t pos = 0; pos < rawQuery.size();)
-		{
-			const auto amp = rawQuery.find('&', pos);
-			const auto pair = rawQuery.substr(pos, amp == std::string::npos ? std::string::npos : amp - pos);
-			const auto eq = pair.find('=');
-			const auto key = pair.substr(0, eq);
-			const auto value = eq == std::string::npos ? std::string() : pair.substr(eq + 1);
-			input.query.emplace(decodeQueryComponent(key), decodeQueryComponent(value));
-			if (amp == std::string::npos)
-				break;
-			pos = amp + 1;
-		}
+		input.query = parseRawQuery(req->query());
 		input.bearer = req->getHeader(web::http::header_names::authorization);
 		input.keyId = req->getHeader(HTTP_HEADER_KEY_X_Request_Key);
 		input.timestamp = req->getHeader(HTTP_HEADER_KEY_X_Timestamp);
 		input.nonce = req->getHeader(HTTP_HEADER_KEY_X_Nonce);
 		input.signature = req->getHeader(HTTP_HEADER_KEY_X_Signature);
-		// Same canonical file-route view as the worker path (strips the "/ws"
-		// channel suffix; streamed bodies hash empty per the exemption).
-		input.path = RequestHardening::canonicalFileRoute(input.path, input.body, input.bodySize);
+		if (fileRoute)
+		{
+			// Same canonical file-route view as the worker path (strips the "/ws"
+			// channel suffix; streamed bodies hash empty per the exemption).
+			input.path = RequestHardening::canonicalFileRoute(input.path, input.body, input.bodySize);
+		}
 
 		const auto decision = RequestHardening::instance().evaluate(input);
 		if (decision.audit)
 			LOG_WAR << fname << "tolerated request hardening violation: " << decision.reason;
 		if (decision.action != RequestHardening::Decision::Action::Reject)
 			return true;
-		LOG_WAR << fname << "rejected file request path <" << input.path << ">: " << decision.reason;
+		LOG_WAR << fname << "rejected " << (fileRoute ? "file" : "stream") << " request path <" << input.path
+				<< ">: " << decision.reason;
 		callback(plainResponse(decision.status == 409 ? drogon::k409Conflict : drogon::k401Unauthorized, decision.reason));
 		return false;
 	}
@@ -178,41 +248,6 @@ namespace
 		std::string declaredLength; // content-length header, empty when chunked
 		bool answered = false;      // an error reply was sent; drop the remaining body
 	};
-
-	bool enforceSseHardening(const drogon::HttpRequestPtr &req, const drogon::AdviceCallback &callback)
-	{
-		const static char fname[] = "enforceSseHardening() ";
-		RequestHardening::Input input;
-		input.method = upperMethod(req);
-		input.path = req->getOriginalPath();
-		const auto &rawQuery = req->query();
-		for (size_t pos = 0; pos < rawQuery.size();)
-		{
-			const auto amp = rawQuery.find('&', pos);
-			const auto pair = rawQuery.substr(pos, amp == std::string::npos ? std::string::npos : amp - pos);
-			const auto eq = pair.find('=');
-			const auto key = pair.substr(0, eq);
-			const auto value = eq == std::string::npos ? std::string() : pair.substr(eq + 1);
-			input.query.emplace(decodeQueryComponent(key), decodeQueryComponent(value));
-			if (amp == std::string::npos)
-				break;
-			pos = amp + 1;
-		}
-		input.bearer = req->getHeader(web::http::header_names::authorization);
-		input.keyId = req->getHeader(HTTP_HEADER_KEY_X_Request_Key);
-		input.timestamp = req->getHeader(HTTP_HEADER_KEY_X_Timestamp);
-		input.nonce = req->getHeader(HTTP_HEADER_KEY_X_Nonce);
-		input.signature = req->getHeader(HTTP_HEADER_KEY_X_Signature);
-
-		const auto decision = RequestHardening::instance().evaluate(input);
-		if (decision.audit)
-			LOG_WAR << fname << "tolerated request hardening violation: " << decision.reason;
-		if (decision.action != RequestHardening::Decision::Action::Reject)
-			return true;
-		LOG_WAR << fname << "rejected stream request path <" << input.path << ">: " << decision.reason;
-		callback(plainResponse(decision.status == 409 ? drogon::k409Conflict : drogon::k401Unauthorized, decision.reason));
-		return false;
-	}
 
 	// App-name segment between the fixed prefix and a known suffix ("/output/stream"
 	// or "/task/stream"); the route regexes guarantee one segment without '/'.
@@ -280,9 +315,7 @@ namespace
 		}
 		catch (...)
 		{
-			auto resp = plainResponse(drogon::k401Unauthorized, "Authentication failed");
-			resp->addHeader(web::http::header_names::www_authenticate, "Bearer realm=\"appmesh\"");
-			callback(resp);
+			replyUnauthorized(callback);
 		}
 		return {};
 	}
@@ -495,7 +528,7 @@ void DrogonAdaptor::setupRoutes()
 	// drogon's run() pre-creates 256 upload cache directories under its upload path
 	// (default "uploads", relative to the working directory); pin it under work/tmp.
 	const auto uploadDir =
-		(fs::path(Configuration::instance()->getWorkDir()) / APPMESH_WORK_TMP_DIR / APPMESH_WORK_UPLOAD_DIR).string();
+		(fs::path(Configuration::instance()->getWorkTmpDir()) / APPMESH_WORK_UPLOAD_DIR).string();
 	app.setUploadPath(uploadDir);
 	// No framework banner (version leak) and JSON, not drogon's HTML, for errors
 	// the daemon never sees (invalid methods, unmatched framework routes).
@@ -785,19 +818,7 @@ void DrogonAdaptor::handleWorkerRequest(const drogon::HttpRequestPtr &req, drogo
 	for (const auto &[k, v] : req->getHeaders())
 		requestState->headers.emplace(k, v);
 	// Query: only the raw query string, no form-body merge and no '+' decoding.
-	const auto &rawQuery = req->query();
-	for (size_t pos = 0; pos < rawQuery.size();)
-	{
-		const auto amp = rawQuery.find('&', pos);
-		const auto pair = rawQuery.substr(pos, amp == std::string::npos ? std::string::npos : amp - pos);
-		const auto eq = pair.find('=');
-		const auto key = pair.substr(0, eq);
-		const auto value = eq == std::string::npos ? std::string() : pair.substr(eq + 1);
-		requestState->query.emplace(decodeQueryComponent(key), decodeQueryComponent(value));
-		if (amp == std::string::npos)
-			break;
-		pos = amp + 1;
-	}
+	requestState->query = parseRawQuery(req->query());
 
 	requestState->client_addr = req->peerAddr().toIp();
 	requestState->connection_id = connectionId(req->localAddr(), req->peerAddr());
@@ -852,38 +873,15 @@ void DrogonAdaptor::handleDownload(const drogon::HttpRequestPtr &req, drogon::Ad
 		return;
 	}
 
-	try
-	{
-		authorize(req->getHeader(web::http::header_names::authorization), PERMISSION_KEY_file_download);
-	}
-	catch (const AuthorizationException &)
-	{
-		callback(plainResponse(drogon::k403Forbidden, "Permission denied"));
+	if (!authorizeFileRoute(req, callback, PERMISSION_KEY_file_download))
 		return;
-	}
-	catch (...)
-	{
-		auto resp = plainResponse(drogon::k401Unauthorized, "Authentication failed");
-		resp->addHeader(web::http::header_names::www_authenticate, "Bearer realm=\"appmesh\"");
-		callback(resp);
-		return;
-	}
-	if (!enforceFileHardening(req, callback))
+	if (!enforceRouteHardening(req, callback, true))
 		return;
 
-	const auto &filePathHeader = req->getHeader(HTTP_HEADER_KEY_file_path);
-	if (filePathHeader.empty())
-	{
-		callback(plainResponse(drogon::k400BadRequest, "Missing X-File-Path header"));
+	const auto requiredPath = requiredFilePath(req, callback);
+	if (!requiredPath)
 		return;
-	}
-
-	std::string filePathStr = Utility::decodeHeaderFilePath(filePathHeader);
-	if (!Utility::validateFilePath(filePathStr, Configuration::instance()->getFileAllowedBaseDir()))
-	{
-		callback(plainResponse(drogon::k403Forbidden, "File path is not allowed"));
-		return;
-	}
+	const auto &filePathStr = *requiredPath;
 
 	std::filesystem::path filePath(filePathStr);
 	std::error_code ec;
@@ -936,7 +934,7 @@ void DrogonAdaptor::handleDownload(const drogon::HttpRequestPtr &req, drogon::Ad
 	{
 	};
 	std::string contentLength;
-	if (::fstat(fd, &downloadSt) == 0 && S_ISREG(downloadSt.st_mode))
+	if (::fstat(fd, &downloadSt) == 0 && isRegularFile(downloadSt))
 		contentLength = std::to_string(downloadSt.st_size);
 	auto resp = drogon::HttpResponse::newStreamResponse(
 			[stream, filePathStr](char *buf, std::size_t size) -> std::size_t
@@ -979,38 +977,15 @@ void DrogonAdaptor::handleUpload(const drogon::HttpRequestPtr &req, drogon::Requ
 		return;
 	}
 
-	try
-	{
-		authorize(req->getHeader(web::http::header_names::authorization), PERMISSION_KEY_file_upload);
-	}
-	catch (const AuthorizationException &)
-	{
-		callback(plainResponse(drogon::k403Forbidden, "Permission denied"));
+	if (!authorizeFileRoute(req, callback, PERMISSION_KEY_file_upload))
 		return;
-	}
-	catch (...)
-	{
-		auto resp = plainResponse(drogon::k401Unauthorized, "Authentication failed");
-		resp->addHeader(web::http::header_names::www_authenticate, "Bearer realm=\"appmesh\"");
-		callback(resp);
-		return;
-	}
-	if (!enforceFileHardening(req, callback))
+	if (!enforceRouteHardening(req, callback, true))
 		return;
 
-	const auto &filePathHeader = req->getHeader(HTTP_HEADER_KEY_file_path);
-	if (filePathHeader.empty())
-	{
-		callback(plainResponse(drogon::k400BadRequest, "Missing X-File-Path header"));
+	const auto requiredPath = requiredFilePath(req, callback);
+	if (!requiredPath)
 		return;
-	}
-
-	std::string fullPath = Utility::decodeHeaderFilePath(filePathHeader);
-	if (!Utility::validateFilePath(fullPath, Configuration::instance()->getFileAllowedBaseDir()))
-	{
-		callback(plainResponse(drogon::k403Forbidden, "File path is not allowed"));
-		return;
-	}
+	const auto &fullPath = *requiredPath;
 
 	std::filesystem::path filePath(fullPath);
 	{
@@ -1157,33 +1132,15 @@ void DrogonAdaptor::handleFileDelete(const drogon::HttpRequestPtr &req, drogon::
 		return;
 	}
 
-	try
-	{
-		authorize(req->getHeader(web::http::header_names::authorization), PERMISSION_KEY_file_delete);
-	}
-	catch (const AuthorizationException &)
-	{
-		callback(plainResponse(drogon::k403Forbidden, "Permission denied"));
+	if (!authorizeFileRoute(req, callback, PERMISSION_KEY_file_delete))
 		return;
-	}
-	catch (...)
-	{
-		auto resp = plainResponse(drogon::k401Unauthorized, "Authentication failed");
-		resp->addHeader(web::http::header_names::www_authenticate, "Bearer realm=\"appmesh\"");
-		callback(resp);
-		return;
-	}
-	if (!enforceFileHardening(req, callback))
+	if (!enforceRouteHardening(req, callback, true))
 		return;
 
-	const auto &filePathHeader = req->getHeader(HTTP_HEADER_KEY_file_path);
-	if (filePathHeader.empty())
-	{
-		callback(plainResponse(drogon::k400BadRequest, "Missing X-File-Path header"));
+	const auto requiredPath = requiredFilePath(req, callback);
+	if (!requiredPath)
 		return;
-	}
-
-	std::string fullPath = Utility::decodeHeaderFilePath(filePathHeader);
+	const auto &fullPath = *requiredPath;
 	// Pin-then-verify: unlinkat targets the dirfd-pinned parent re-verified against
 	// the jail, so a symlink swap cannot steer the delete outside the jail.
 	std::string resolvedPath;
@@ -1218,7 +1175,7 @@ void DrogonAdaptor::handleOutputStream(const drogon::HttpRequestPtr &req, drogon
 		callback(plainResponse(drogon::k400BadRequest, "Streaming is not supported through node forwarding"));
 		return;
 	}
-	if (!enforceSseHardening(req, callback))
+	if (!enforceRouteHardening(req, callback, false))
 		return;
 	const auto appName = appNameFromStreamPath(req->getOriginalPath(), "/output/stream");
 	if (appName.empty() || authorizeStreamApp(req, callback, appName, PERMISSION_KEY_view_app_output, false).empty())
@@ -1271,6 +1228,10 @@ void DrogonAdaptor::handleOutputStream(const drogon::HttpRequestPtr &req, drogon
 	const std::weak_ptr<FollowState> weakState = state;
 
 	// Emits the terminal "end" frame exactly once and tears the stream down.
+	// The frame is guarded by `ended`, but close and unsubscribe must run
+	// unconditionally: a client that vanished during the backfill already set
+	// `ended` from deliverStdout, and skipping the teardown here would leave
+	// the subscription and its state pinned forever.
 	const auto endFollow = [weakState](const std::string &reason, const Json::Value &extra)
 	{
 		const auto state = weakState.lock();
@@ -1279,17 +1240,19 @@ void DrogonAdaptor::handleOutputStream(const drogon::HttpRequestPtr &req, drogon
 		std::string subId;
 		{
 			std::lock_guard lock(state->mutex);
-			if (state->ended)
-				return;
-			state->ended = true;
 			subId = state->subId;
-			Json::Value end = extra;
-			end["reason"] = reason;
-			end["position"] = (Json::Int64)state->cursor;
-			state->sink->sendEvent("end", JSON::dump(end));
+			if (!state->ended)
+			{
+				state->ended = true;
+				Json::Value end = extra;
+				end["reason"] = reason;
+				end["position"] = (Json::Int64)state->cursor;
+				state->sink->sendEvent("end", JSON::dump(end));
+			}
 		}
 		// Outside the state lock: close() fires the sink's onClosed hook, which
 		// re-enters endFollow for a disconnect and would deadlock under the lock.
+		// Both calls are idempotent.
 		state->sink->close();
 		if (!subId.empty())
 			EventDispatcher::instance()->unsubscribe(subId);
@@ -1312,9 +1275,14 @@ void DrogonAdaptor::handleOutputStream(const drogon::HttpRequestPtr &req, drogon
 		{
 			// Exact prefix trim is only sound when the view is byte-identical
 			// to the raw span; a re-encoded chunk is delivered untrimmed rather
-			// than slicing the text at a raw-byte boundary.
-			text.erase(0, static_cast<std::size_t>(state->cursor - start));
+			// than slicing the text at a raw-byte boundary. The skipped prefix
+			// leaves the raw span too: advancing by the untrimmed span would
+			// cover output that was never sent, and later chunks in that span
+			// would be deduplicated away.
+			const long skipped = state->cursor - start;
+			text.erase(0, static_cast<std::size_t>(skipped));
 			start = state->cursor;
+			rawAdvance -= skipped;
 		}
 		Json::Value data;
 		data["position"] = (Json::Int64)start;
@@ -1444,7 +1412,12 @@ void DrogonAdaptor::handleOutputStream(const drogon::HttpRequestPtr &req, drogon
 			// raw bytes; the raw span is the position delta.
 			const auto rawAdvance = position - chunkStart;
 			if (!output.empty() && !deliverStdout(chunkStart, output, rawAdvance))
+			{
+				// The sink is gone mid-backfill: end the follow here, because
+				// the dispatch path will not strip an already-ended subscription.
+				endFollow("disconnected", {});
 				return;
+			}
 			{
 				std::lock_guard lock(state->mutex);
 				if (state->ended)
@@ -1491,6 +1464,16 @@ void DrogonAdaptor::handleTaskStream(const drogon::HttpRequestPtr &req, drogon::
 	auto sink = startSseResponse(req, callback);
 	if (!sink)
 		return;
+	// A client that vanishes stops owning the answer: free the app's active
+	// task slot instead of letting the parked request (and its sink) sit until
+	// the target replies or the app stops. The stream id scopes the cancel to
+	// this request: a queued disconnect must not abort another client's
+	// in-flight task, and queued requests stay parked under the task timer.
+	sink->setOnClosed([appName, streamId = sink->id()]()
+	{
+		if (auto app = Configuration::instance()->getApp(appName))
+			app->deleteTask(streamId);
+	});
 
 	// The single final reply of the parked request maps onto terminal SSE
 	// events: 200 becomes "final" + "end", anything else (auth races, task

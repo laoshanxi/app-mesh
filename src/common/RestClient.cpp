@@ -1,8 +1,6 @@
 // src/common/RestClient.cpp
 // Backend-agnostic parts of the HTTP client facade. The request() transport
 // lives in RestClientDrogon.cpp.
-#include <mutex>
-
 #include "RestClient.h"
 #include "UriParser.hpp"
 #include "Utility.h"
@@ -14,17 +12,7 @@ void HttpResponse::raiseForStatus()
 								 " response: " + text);
 }
 
-ClientSSLConfig RestClient::m_sslConfig;
-std::mutex RestClient::m_sslMutex;
-
 ClientSSLConfig::ClientSSLConfig() : m_verify_client(false), m_verify_server(false) {}
-
-void ClientSSLConfig::resolveAbsolutePaths(std::string workingHome)
-{
-	m_certificate = resolveAbsolutePath(workingHome, m_certificate);
-	m_private_key = resolveAbsolutePath(workingHome, m_private_key);
-	m_ca_location = resolveAbsolutePath(workingHome, m_ca_location);
-}
 
 std::string ClientSSLConfig::resolveAbsolutePath(const std::string &workingHome, std::string filePath)
 {
@@ -33,16 +21,6 @@ std::string ClientSSLConfig::resolveAbsolutePath(const std::string &workingHome,
 		return (fs::path(workingHome) / filePath).lexically_normal().string();
 	}
 	return filePath;
-}
-
-std::string RestClient::joinUrl(const std::string &host, const std::string &path)
-{
-	if (path.empty())
-		return host;
-	std::string url = host;
-	if (!url.empty() && url.back() != '/' && path.front() != '/')
-		url += '/';
-	return url + path;
 }
 
 bool RestClient::parseRequestTarget(const std::string &host, const std::string &path,
@@ -79,18 +57,4 @@ bool RestClient::parseRequestTarget(const std::string &host, const std::string &
 	if ((out.useSSL && out.port != 443) || (!out.useSSL && out.port != 80))
 		out.hostHeader += ":" + std::to_string(out.port);
 	return true;
-}
-
-ClientSSLConfig RestClient::resolveSslConfig(const ClientSSLConfig *sslConfig)
-{
-	if (sslConfig != nullptr)
-		return *sslConfig;
-	std::lock_guard lock(m_sslMutex);
-	return m_sslConfig;
-}
-
-void RestClient::defaultSslConfiguration(const ClientSSLConfig &sslConfig)
-{
-	std::lock_guard lock(m_sslMutex);
-	m_sslConfig = sslConfig;
 }

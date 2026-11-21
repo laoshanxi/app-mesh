@@ -104,14 +104,6 @@ std::string JSON::dump(const Json::Value &j, int indent)
 	return sanitizeUtf8(Json::writeString(builder, j));
 }
 
-// Dump JSON converted to the current ANSI code page on Windows (CP_ACP).
-// For POSIX platforms this returns the UTF-8 string unchanged.
-std::string JSON::dumpToLocalEncoding(const Json::Value &j, int indent)
-{
-	const std::string utf8Str = JSON::dump(j, indent);
-	return Utility::utf8ToLocalEncoding(utf8Str);
-}
-
 // Strict parse: rejects malformed JSON and invalid UTF-8
 Json::Value JSON::parse(const std::string &text)
 {

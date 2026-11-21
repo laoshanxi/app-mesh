@@ -8,7 +8,7 @@ pub async fn get(cli: &Cli, args: &GetArgs) -> Result<i32> {
     let client = build_client_with_auth(cli).await?;
 
     client
-        .download_file(&args.remote, &args.local, args.apply_permissions && !args.no_attr)
+        .download_file(&args.remote, &args.local, args.apply_permissions)
         .await
         .context("Download failed")?;
 
@@ -32,7 +32,7 @@ pub async fn put(cli: &Cli, args: &PutArgs) -> Result<i32> {
         .upload_file_with(
             &local_canonical.to_string_lossy(),
             &args.remote,
-            args.apply_permissions && !args.no_attr,
+            args.apply_permissions,
             args.overwrite,
         )
         .await

@@ -11,6 +11,11 @@
 
 #include "Principal.h"
 
+/// Auth-stack deployment env names; the single spelling (also read by the
+/// daemon startup banner and the launchers).
+inline constexpr const char *AUTH_MODE_ENV = "APPMESH_AUTH_MODE";
+inline constexpr const char *AUTH_ROLE_ENV = "APPMESH_AUTH_ROLE";
+
 class AuthorizationPrincipal
 {
 public:

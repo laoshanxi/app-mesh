@@ -3,6 +3,8 @@
 
 #include "../../../common/StreamLogger.h"
 
+#include <utility>
+
 namespace
 {
 	// Cap on frames buffered before the response stream attaches.
@@ -13,13 +15,22 @@ SseStream::SseStream(std::string id, long heartbeatMs) : m_id(std::move(id)), m_
 
 SseStream::~SseStream()
 {
+	// Teardown must never let an exception escape the implicitly noexcept
+	// destructor: canceling the heartbeat posts into the io loop (allocating),
+	// and a failing allocation here would terminate the whole daemon.
+	try
 	{
-		std::lock_guard lock(m_mutex);
-		closeLocked();
+		{
+			std::lock_guard lock(m_mutex);
+			closeLocked();
+		}
+		cancelTimer(m_heartbeatTimerId);
+		// Drop the registry entry first: a reused marker id must never resolve stale.
+		SseStreamRegistry::instance()->erase(m_id);
 	}
-	cancelTimer(m_heartbeatTimerId);
-	// Drop the registry entry first: a reused marker id must never resolve stale.
-	SseStreamRegistry::instance()->erase(m_id);
+	catch (...)
+	{
+	}
 }
 
 void SseStream::setOnClosed(std::function<void()> onClosed)
@@ -112,7 +123,8 @@ void SseStream::close()
 		std::lock_guard lock(m_mutex);
 		closeLocked(); // idempotent; a prior internal close keeps this a no-op
 		if (m_onClosed)
-			onClosed = std::move(m_onClosed); // one-shot, even across threads
+			// Explicit: a moved-from std::function can stay callable under the SBO.
+			onClosed = std::exchange(m_onClosed, nullptr);
 	}
 	// Fired without m_mutex held: the hook re-enters this sink and must not
 	// deadlock against a concurrent sendEvent.

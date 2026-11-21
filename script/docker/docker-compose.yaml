@@ -52,7 +52,7 @@ services:
       - APPMESH_AUTH_LISTEN=0.0.0.0:6062
       # Cluster authorization replication (owner side): the accept list at
       # APPMESH_AUTH_REPLICATION_TOKEN_FILE holds one bearer per follower
-      # ("<token> <label>"); an unlabeled line is the legacy shared token.
+      # ("<token> <label>").
       # The declared follower set is provisioned at bootstrap with per-follower
       # token files in the shared volume (projected-secret pattern): each
       # follower mounts exactly its own file (subpath mount below), so

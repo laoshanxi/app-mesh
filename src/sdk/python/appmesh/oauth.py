@@ -21,6 +21,11 @@ from .client_http import AppMeshClient
 from .exceptions import AppMeshAuthError, AppMeshRequestError
 from .token_provider import TokenProvider
 
+# Refresh margin: renew once 10% of the access TTL has burned, floored at
+# MIN_REFRESH_MARGIN_SECONDS — mirrors MIN_REFRESH_MARGIN_* in the sibling SDKs.
+MIN_REFRESH_MARGIN_SECONDS = 30.0
+_REFRESH_MARGIN_LIFETIME_RATIO = 0.1
+
 
 class OAuthError(AppMeshAuthError):
     """The authentication service rejected a request or returned an invalid response."""
@@ -367,7 +372,7 @@ class OAuthClient(TokenProvider):
                 raise OAuthError("The authentication service returned an invalid access-token lifetime") from exc
             if lifetime <= 0:
                 raise OAuthError("The authentication service returned an expired access token")
-            margin = max(30.0, lifetime * 0.1)
+            margin = max(MIN_REFRESH_MARGIN_SECONDS, lifetime * _REFRESH_MARGIN_LIFETIME_RATIO)
             refresh_at = time.monotonic() + lifetime - margin
 
         with self._lock:

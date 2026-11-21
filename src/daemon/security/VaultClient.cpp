@@ -32,11 +32,11 @@ namespace
 	{
 		ClientSSLConfig ssl;
 		ssl.m_verify_server = config.verifyServer;
-		const auto skip = Utility::stdStringTrim(Utility::getenv(ENV_VAULT_TLS_SKIP_VERIFY));
+		const auto skip = Utility::getenvTrimmed(ENV_VAULT_TLS_SKIP_VERIFY);
 		if (skip == "1" || skip == "true")
 			ssl.m_verify_server = false;
 		ssl.m_ca_location = !config.caPath.empty() ? config.caPath
-												   : Utility::stdStringTrim(Utility::getenv(ENV_VAULT_CACERT));
+												   : Utility::getenvTrimmed(ENV_VAULT_CACERT);
 		return ssl;
 	}
 
@@ -87,7 +87,7 @@ namespace
 	/// consistently on both sides: the engine reads what the tooling writes.
 	std::string kvPath()
 	{
-		const auto custom = Utility::stdStringTrim(Utility::getenv("APPMESH_REPLICATION_VAULT_KV_PATH"));
+		const auto custom = Utility::getenvTrimmed("APPMESH_REPLICATION_VAULT_KV_PATH");
 		return custom.empty() ? std::string(VaultClient::KV_PATH) : custom;
 	}
 } // namespace

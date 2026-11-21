@@ -75,7 +75,7 @@ namespace dgn
 		{
 			auto resp = drogon::HttpResponse::newHttpResponse();
 			resp->setStatusCode(drogon::k401Unauthorized);
-			resp->addHeader(web::http::header_names::www_authenticate, "Bearer realm=\"appmesh\"");
+			resp->addHeader(web::http::header_names::www_authenticate, HTTP_HEADER_VALUE_BEARER_CHALLENGE);
 			resp->setBody("Authentication required");
 			resp->setCloseConnection(true);
 			fcb(resp);

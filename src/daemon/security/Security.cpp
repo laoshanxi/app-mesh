@@ -27,17 +27,22 @@ std::shared_ptr<Security> Security::instance()
 	return m_instance;
 }
 
+std::string Security::validatedBearerToken(const std::string &authorization)
+{
+	const auto token = Utility::bearerCredential(authorization);
+	if (token.empty())
+		throw std::domain_error("Authorization header must use the Bearer scheme");
+	if (token.find_first_of(" \t\r\n") != std::string::npos)
+		throw std::domain_error("Bearer token is empty or malformed");
+	return token;
+}
+
 Principal Security::authenticateBearerAuthorization(const std::string &authorization)
 {
 	const auto value = Utility::stdStringTrim(authorization);
 	if (value.size() > 8 * 1024)
 		throw std::domain_error("Authorization header is too large");
-	const auto token = Utility::bearerCredential(value);
-	if (token.empty())
-		throw std::domain_error("Authorization header must use the Bearer scheme");
-	if (token.empty() || token.find_first_of(" \t\r\n") != std::string::npos)
-		throw std::domain_error("Bearer token is empty or malformed");
-	return instance()->authenticate(token);
+	return instance()->authenticate(validatedBearerToken(value));
 }
 
 void Security::requirePermission(const std::string &principalId, const std::string &permission)

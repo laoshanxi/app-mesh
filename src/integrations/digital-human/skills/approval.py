@@ -3,10 +3,9 @@
 Phase 1 的确认动作是 mock（CLI/chat 调 oa-approval approve 即视为"IM 点了同意"），
 Phase 1+ 接真实 IM 回调时替换 decide() 的入口即可，存储不变。
 
-为什么是 SQLite 而不是手锁 JSON 文件：两个技能 App 是独立进程共写一份数据，
+为什么是 SQLite：两个技能 App 是独立进程共写一份数据，
 SQLite 的单语句原子性 + busy_timeout 天然提供跨进程互斥，"校验 + 更新"
-合并为一条条件 UPDATE 即无竞态。此前 JSON+flock 方案的锁文件、临时文件与
-重命名约定全部不再需要。
+合并为一条条件 UPDATE 即无竞态。
 
 安全规则（2026-10 对抗审计修复）:
 - 审批人不得是申请人本人：decide() 拒绝自审批（mock 阶段 `by` 为自报身份，
@@ -19,18 +18,12 @@ SQLite 的单语句原子性 + busy_timeout 天然提供跨进程互斥，"校�
 
 import json
 import os
-import shutil
 import sqlite3
 import sys
 import threading
 import time
 import uuid
 from pathlib import Path
-
-try:
-	import fcntl
-except ImportError:  # 非 POSIX 平台退化为进程内锁（部署目标为 macOS/Linux）
-	fcntl = None
 
 _DEFAULT_FILE = Path(__file__).resolve().parent.parent / "runtime" / "approvals.db"
 _FILE = Path(os.getenv("APPROVAL_FILE", str(_DEFAULT_FILE)))
@@ -58,74 +51,19 @@ def _ensure_file():
 		os.chmod(_FILE, 0o600)
 
 
-def _migrate_legacy_json():
-	"""2026-10 之前的 JSON 台账一次性迁移为 SQLite（原文件保留为 *.legacy）。
-
-	仅当文件非空、非 SQLite 魔数、且能解析为 JSON 时才迁移——刚由
-	_ensure_file 创建的 0 字节新库不能被误判。跨进程用一次性 flock 互斥。
-	仅在调用方持有 _ensure_lock 时安全。
-	"""
-	try:
-		size = _FILE.stat().st_size
-	except FileNotFoundError:
-		return
-	if size == 0:
-		return
-	with _FILE.open("rb") as fh:
-		if fh.read(16).startswith(b"SQLite format 3"):
-			return
-	try:
-		records = json.loads(_FILE.read_text(encoding="utf-8"))
-	except (ValueError, OSError):
-		return
-	if not isinstance(records, dict):
-		return
-	mlock = _FILE.with_name(_FILE.name + ".mlock")
-	mfd = os.open(mlock, os.O_RDWR | os.O_CREAT, 0o600)
-	try:
-		if fcntl is not None:
-			fcntl.flock(mfd, fcntl.LOCK_EX)
-		with _FILE.open("rb") as fh:  # 拿到锁后复核：别的进程可能已迁完
-			if fh.read(16).startswith(b"SQLite format 3"):
-				return
-		# 先建好库、最后换入：换入前崩溃，JSON 原件仍在原位，下次重迁。
-		tmp = _FILE.with_name(_FILE.name + ".migrating")
-		tmp.unlink(missing_ok=True)
-		conn = sqlite3.connect(tmp, timeout=10)
-		os.chmod(tmp, 0o600)
-		try:
-			with conn:
-				conn.execute(_CREATE_SQL)
-				for r in records.values():
-					conn.execute(
-						f"INSERT OR IGNORE INTO approvals ({_COLS}) VALUES (?,?,?,?,?,?,?,?,?)",
-						(r.get("id"), r.get("title"), r.get("requester"), r.get("risk"), r.get("status"),
-						 r.get("created"), json.dumps(r.get("payload") or {}, ensure_ascii=False),
-						 r.get("decided_by"), int(bool(r.get("consumed")))),
-					)
-		finally:
-			conn.close()
-		shutil.copy2(_FILE, _FILE.with_name(_FILE.name + ".legacy"))
-		os.replace(tmp, _FILE)
-	finally:
-		os.close(mfd)
-		mlock.unlink(missing_ok=True)
-
-
 def _quarantine_corrupt(exc):
-	"""损坏的库文件挪到 *.corrupt-<ts> 留作取证，服务以空账本继续。"""
+	"""损坏的 SQLite 账本挪到 *.corrupt-<ts> 留作取证，服务以空账本继续。"""
 	target = _FILE.with_name(f"{_FILE.name}.corrupt-{int(time.time())}")
 	os.replace(_FILE, target)
 	for suffix in ("-journal", "-wal", "-shm"):  # 旁车属于旧库，残留会被 SQLite 当热日志回放进新空库
 		_FILE.with_name(_FILE.name + suffix).unlink(missing_ok=True)
-	print(f"[approval] 账本不是合法的 SQLite 文件（{exc}），已隔离到 {target} 并重建空账本", file=sys.stderr, flush=True)
+	print(f"[approval] 账本损坏（{exc}），已隔离到 {target} 并重建空账本", file=sys.stderr, flush=True)
 
 
 def _connect():
 	_FILE.parent.mkdir(parents=True, exist_ok=True)
 	with _ensure_lock:
 		_ensure_file()
-		_migrate_legacy_json()
 		conn = sqlite3.connect(_FILE, timeout=10)
 		try:
 			conn.execute("PRAGMA busy_timeout=10000")
@@ -136,7 +74,13 @@ def _connect():
 			msg = str(exc)
 			if isinstance(exc, sqlite3.OperationalError) or not ("not a database" in msg or "malformed" in msg):
 				raise
-			_quarantine_corrupt(exc)
+			with _FILE.open("rb") as fh:
+				looks_sqlite = fh.read(16).startswith(b"SQLite format 3")
+			if looks_sqlite:
+				_quarantine_corrupt(exc)
+			else:
+				# 不是 SQLite 的遗留外部数据：直接删除重建，不挪档。
+				_FILE.unlink()
 			_ensure_file()
 			conn = sqlite3.connect(_FILE, timeout=10)
 			conn.execute("PRAGMA busy_timeout=10000")

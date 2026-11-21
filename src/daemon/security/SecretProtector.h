@@ -21,6 +21,9 @@ public:
 	/// Strict base64 decode: the underlying decoder silently skips invalid characters.
 	static std::vector<unsigned char> decodeBase64(const std::string &value);
 
+	/// Absolute path of a named secret file under <home>/work/auth/secrets.
+	static std::string secretsFilePath(const std::string &fileName);
+
 private:
 	SecretProtector() = default;
 	void ensureKey();

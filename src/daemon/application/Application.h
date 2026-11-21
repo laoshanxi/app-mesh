@@ -40,6 +40,8 @@ class Application : public TimerHandler, public AppBehavior
 {
 public:
 	static constexpr int DEFAULT_STARTUP_PHASE = 100;
+	/// Schedule-interval fallback for a recovered definition whose interval no longer parses.
+	static constexpr int DEFAULT_START_INTERVAL_SECONDS = 7 * 24 * 3600;
 
 	Application();
 	virtual ~Application();
@@ -114,6 +116,8 @@ public:
 	// Worker task channel
 	void sendTask(std::shared_ptr<HttpRequest> asyncHttpRequest);
 	bool deleteTask();
+	/// Cancels the active task only when it belongs to that SSE stream.
+	bool deleteTask(const std::string &sseStreamId);
 	void fetchTask(const std::string &processKey, std::shared_ptr<HttpRequest> asyncHttpRequest);
 	void replyTask(const std::string &processKey, std::shared_ptr<HttpRequest> asyncHttpRequest);
 	// Worker incremental result: delivered when the in-flight caller streams.

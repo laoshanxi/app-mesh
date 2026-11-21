@@ -618,7 +618,7 @@ void Application::FromJson(const std::shared_ptr<Application> &app, const Json::
 			}
 			LOG_WAR << fname << "Invalid start interval <" << app->m_startIntervalValue << "> for application <"
 					<< app->m_name << ">, falling back to default";
-			app->m_startInterval = DEFAULT_TOKEN_EXPIRE_SECONDS;
+			app->m_startInterval = DEFAULT_START_INTERVAL_SECONDS;
 		}
 		app->m_timer =
 			std::make_shared<AppTimerPeriod>(app->m_startTime, app->m_endTime, app->m_dailyLimit, app->m_startInterval);
@@ -1283,14 +1283,16 @@ void Application::maintainRuntime(const std::chrono::system_clock::time_point &n
 		// While the agent's event pushes are fresh, the every-tick poll stands
 		// down (die events carry the exit); the observed-death fetch below
 		// always runs, and the backstop keeps one inspect flowing per interval.
+#if defined(_WIN32)
 		// DockerApiProcess is not built on Windows: there the poll always runs.
+		const bool containerEventsFresh = false;
+#else
+		const bool containerEventsFresh = DockerApiProcess::containerEventsFresh();
+#endif
 		return lacksReactorExitCallback &&
 			   (!process->running() ||
 				(process->needsAlwaysExitPoll() &&
-#if !defined(_WIN32)
-				 (!DockerApiProcess::containerEventsFresh() ||
-#endif
-				 process->backendLivenessPollDue())));
+				 (!containerEventsFresh || process->backendLivenessPollDue())));
 	};
 
 	std::shared_ptr<AppProcess> process;
@@ -1608,7 +1610,7 @@ void Application::onStartAccepted(const std::string &runId, pid_t pid)
 	health(m_healthCheckCmd.empty());
 	Json::Value startPayload;
 	startPayload["pid"] = (Json::Int64)pid;
-	startPayload["process_uuid"] = runId;
+	startPayload[JSON_KEY_process_uuid] = runId;
 	EventDispatcher::instance()->dispatch(m_name, AppEventType::PROCESS_START, startPayload);
 }
 
@@ -1660,6 +1662,8 @@ void Application::sendTask(std::shared_ptr<HttpRequest> asyncHttpRequest)
 
 bool Application::deleteTask() { return m_task.deleteTask(); }
 
+bool Application::deleteTask(const std::string &sseStreamId) { return m_task.deleteTask(sseStreamId); }
+
 void Application::fetchTask(const std::string &processKey, std::shared_ptr<HttpRequest> asyncHttpRequest)
 {
 	std::shared_ptr<void> req = asyncHttpRequest; // TaskRequest takes shared_ptr<void>&
@@ -1684,7 +1688,13 @@ long Application::writeStdin(const std::vector<std::uint8_t> &data, bool closePi
 	auto processLock = m_process.synchronize();
 	const auto &process = *processLock;
 	if (!process || process->isFinalized())
+	{
+		// Closing an interaction whose process is already gone is an idempotent
+		// EOF, not an error: the client is ending a conversation that ended first.
+		if (closePipe && data.empty())
+			return 0;
 		throw ConflictException("no running process to receive stdin");
+	}
 	if (!processUuid.empty() && process->getUuid() != processUuid)
 		throw ConflictException("process uuid mismatch");
 	return process->writeStdin(data, closePipe);
@@ -2019,7 +2029,7 @@ std::shared_ptr<AppProcess> Application::createProcess(const std::string &docker
 		// The agent's container service is the only Docker backend.
 		process = std::make_shared<DockerApiProcess>(weakSelf, appName, dockerImage);
 #else
-		throw std::invalid_argument("Docker application does not support on Windows");
+		throw std::invalid_argument("Docker applications are not supported on Windows");
 #endif
 	}
 	else

@@ -58,8 +58,6 @@ public:
 	std::string serialize() const;
 	bool deserialize(const std::string &data);
 
-	bool contain_body() const;
-
 public:
 	std::string uuid;
 	std::string request_uri;

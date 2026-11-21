@@ -76,7 +76,7 @@ func (r *WorkerHTTPContext) FetchTaskContext(ctx context.Context) (string, error
 	}
 
 	path := "/appmesh/app/" + appName + "/task"
-	headers := map[string]string{"X-AppMesh-Process-Key": key}
+	headers := map[string]string{headerProcessKey: key}
 
 	// Fixed 100ms floor per attempt: sleep only the remainder if the attempt
 	// finished early; otherwise retry immediately. No backoff (SDKContract.md).
@@ -122,8 +122,8 @@ func (r *WorkerHTTPContext) SendTaskPartial(partial string) (bool, error) {
 
 	path := "/appmesh/app/" + appName + "/task/partial"
 	headers := map[string]string{
-		"Content-Type":          "text/plain",
-		"X-Appmesh-Process-Key": processKey,
+		"Content-Type":   "text/plain",
+		headerProcessKey: processKey,
 	}
 
 	status, body, _, err := r.client.post(path, nil, headers, []byte(partial))
@@ -154,8 +154,8 @@ func (r *WorkerHTTPContext) SendTaskResult(result string) error {
 
 	path := "/appmesh/app/" + appName + "/task"
 	headers := map[string]string{
-		"Content-Type":          "text/plain",
-		"X-AppMesh-Process-Key": processKey,
+		"Content-Type":   "text/plain",
+		headerProcessKey: processKey,
 	}
 
 	status, body, err := r.client.put(path, nil, headers, []byte(result))

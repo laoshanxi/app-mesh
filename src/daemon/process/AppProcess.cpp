@@ -839,7 +839,14 @@ long AppProcess::writeStdin(const std::vector<std::uint8_t> &data, bool closePip
 	std::lock_guard guard(m_stdinWriteMutex);
 	const auto fd = m_stdinWriteHandler.get();
 	if (fd == INVALID_FD)
+	{
+		// Closing an interaction that never (or no longer) has a pipe is an
+		// idempotent EOF, not an error: the client is ending a conversation
+		// that ended first.
+		if (closePipe && data.empty())
+			return 0;
 		throw std::runtime_error("stdin pipe is not open");
+	}
 	// Non-blocking writes keep a slow consumer a partial write, not a blocked
 	// worker thread.
 	std::size_t written = 0;
@@ -921,7 +928,7 @@ pid_t AppProcess::startImpl(std::string cmd, std::string user, std::string workD
 	}
 #endif
 
-	const auto defaultWorkDir = (fs::path(Configuration::instance()->getWorkDir()) / APPMESH_WORK_TMP_DIR).string();
+	const auto defaultWorkDir = Configuration::instance()->getWorkTmpDir();
 	if (workDir.empty())
 		workDir = defaultWorkDir;
 	else if (!Utility::isDirExist(workDir))

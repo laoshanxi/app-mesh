@@ -7,6 +7,7 @@
 #include <map>
 #include <mutex>
 #include <string>
+#include <utility>
 
 class Response;
 
@@ -65,7 +66,8 @@ namespace WSS
 				m_aborted.store(true, std::memory_order_release);
 				m_completed = true;
 				m_callback = nullptr;
-				hook = std::move(m_abortHook);
+				// Explicit: a moved-from hook can stay callable under the SBO.
+				hook = std::exchange(m_abortHook, nullptr);
 			}
 			// Outside the lock: the hook tears down the transport session.
 			if (hook)

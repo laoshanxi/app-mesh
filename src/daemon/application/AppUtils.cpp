@@ -78,8 +78,7 @@ ShellAppFileGen::ShellAppFileGen(const std::string &name, const std::string &cmd
 
 #else
 	const static std::string shellDir = (fs::path(Configuration::instance()->getWorkDir()) / "shell").string();
-	const static std::string defaultWorkDir =
-		(fs::path(Configuration::instance()->getWorkDir()) / APPMESH_WORK_TMP_DIR).string();
+	const static std::string defaultWorkDir = Configuration::instance()->getWorkTmpDir();
 	// Per-instance suffix: see the Windows branch for why same-name script reuse is unsafe.
 	const auto fileName =
 		Utility::stringFormat("%s/appmesh.%s.%s.sh", shellDir.c_str(), name.c_str(), Utility::shortID().c_str());

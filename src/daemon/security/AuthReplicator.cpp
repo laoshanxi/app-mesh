@@ -20,12 +20,6 @@
 
 namespace
 {
-	const char *ENV_FROM = "APPMESH_AUTH_REPLICATION_FROM";
-	const char *ENV_TOKEN_FILE = "APPMESH_AUTH_REPLICATION_TOKEN_FILE";
-	const char *ENV_CA = "APPMESH_AUTH_REPLICATION_CA";
-	const char *ENV_INTERVAL = "APPMESH_AUTH_REPLICATION_INTERVAL";
-	const char *ENV_TOKEN_SOURCE = "APPMESH_AUTH_REPLICATION_TOKEN_SOURCE";
-	const char *ENV_VAULT_ADDR = "APPMESH_AUTH_REPLICATION_TOKEN_VAULT_ADDR";
 	constexpr int DEFAULT_INTERVAL_SECONDS = 30;
 	constexpr int MIN_INTERVAL_SECONDS = 5;
 	constexpr int MAX_INTERVAL_SECONDS = 3600;
@@ -53,8 +47,8 @@ namespace
 	std::string readVaultToken(const std::string &label)
 	{
 		VaultClient::Config config;
-		config.address = Utility::stdStringTrim(Utility::getenv(ENV_VAULT_ADDR));
-		config.tokenFile = Utility::stdStringTrim(Utility::getenv("APPMESH_AUTH_REPLICATION_TOKEN_VAULT_TOKEN_FILE"));
+		config.address = Utility::getenvTrimmed(AuthReplication::ENV_VAULT_ADDR);
+		config.tokenFile = Utility::getenvTrimmed(AuthReplication::ENV_VAULT_TOKEN_FILE);
 		return VaultClient::readReplicationToken(config, label);
 	}
 }
@@ -69,15 +63,16 @@ void AuthReplicator::start()
 {
 	if (m_worker.joinable())
 		return;
-	const auto vaultAddress = Utility::stdStringTrim(Utility::getenv(ENV_VAULT_ADDR));
-	const bool vaultSource = Utility::stdStringTrim(Utility::getenv(ENV_TOKEN_SOURCE)) == "vault" && !vaultAddress.empty();
-	m_tokenFile = Utility::stdStringTrim(Utility::getenv(ENV_TOKEN_FILE));
+	const auto vaultAddress = Utility::getenvTrimmed(AuthReplication::ENV_VAULT_ADDR);
+	const bool vaultSource =
+		Utility::getenvTrimmed(AuthReplication::ENV_TOKEN_SOURCE) == "vault" && !vaultAddress.empty();
+	m_tokenFile = Utility::getenvTrimmed(AuthReplication::ENV_TOKEN_FILE);
 	// The Vault source reads its credential from Vault, not from the accept
 	// file: requiring the file here would leave the documented vault-only
 	// configuration without any replication at all.
 	if (m_tokenFile.empty() && !vaultSource)
 		return;
-	m_source = Utility::stdStringTrim(Utility::getenv(ENV_FROM));
+	m_source = Utility::getenvTrimmed(AuthReplication::ENV_FROM);
 	if (m_source.empty())
 	{
 		// Owner side: only the token file is configured. Publish a random token
@@ -87,7 +82,7 @@ void AuthReplicator::start()
 			ensureOwnerTokenFile();
 		return;
 	}
-	const auto interval = Utility::getenv(ENV_INTERVAL);
+	const auto interval = Utility::getenv(AuthReplication::ENV_INTERVAL);
 	if (!interval.empty())
 	{
 		try
@@ -99,7 +94,7 @@ void AuthReplicator::start()
 			m_intervalSeconds = DEFAULT_INTERVAL_SECONDS;
 		}
 	}
-	m_caPath = Utility::stdStringTrim(Utility::getenv(ENV_CA));
+	m_caPath = Utility::getenvTrimmed(AuthReplication::ENV_CA);
 	if (vaultSource)
 		LOG_INF << "authorization replication enabled: from <" << m_source << "> every <" << m_intervalSeconds
 				<< ">s, Vault token source <" << vaultAddress << ">";
@@ -193,12 +188,12 @@ void AuthReplicator::pullOnce()
 	try
 	{
 		std::string token;
-		const auto source = Utility::stdStringTrim(Utility::getenv(ENV_TOKEN_SOURCE));
+		const auto source = Utility::getenvTrimmed(AuthReplication::ENV_TOKEN_SOURCE);
 		const auto vaultAddress =
-			source == "vault" ? Utility::stdStringTrim(Utility::getenv(ENV_VAULT_ADDR)) : std::string();
+			source == "vault" ? Utility::getenvTrimmed(AuthReplication::ENV_VAULT_ADDR) : std::string();
 		if (!vaultAddress.empty())
 		{
-			const auto label = Utility::stdStringTrim(Utility::getenv("APPMESH_AUTH_REPLICATION_LABEL"));
+			const auto label = Utility::getenvTrimmed(AuthReplication::ENV_LABEL);
 			if (label.empty() || !AuthReplication::isValidLabel(label))
 			{
 				LOG_WAR << fname
@@ -230,7 +225,7 @@ void AuthReplicator::pullOnce()
 			return;
 		}
 		std::map<std::string, std::string> headers;
-		headers[HTTP_HEADER_JWT_Authorization] = "Bearer " + token;
+		headers[HTTP_HEADER_JWT_Authorization] = HTTP_HEADER_JWT_BearerSpace + token;
 		const auto response = RestClient::request(m_source, web::http::methods::GET, REPLICATION_POLICY_PATH, "", headers,
 												  {}, PULL_TIMEOUT_SECONDS, sslConfig);
 		if (response->statusCode != web::http::status_codes::OK)

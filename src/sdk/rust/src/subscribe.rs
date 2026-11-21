@@ -14,7 +14,7 @@ use async_trait::async_trait;
 use log::{debug, error, warn};
 use tokio::sync::{mpsc, oneshot, watch, Mutex};
 
-use crate::constants::{EVENT_TYPE_DISCONNECTED, EVENT_URI};
+use crate::constants::{EVENT_TYPE_DISCONNECTED, EVENT_URI, HTTP_HEADER_KEY_X_SUBSCRIPTION_ID};
 use crate::error::AppMeshError;
 use crate::models::AppEvent;
 use crate::wire_messages::ResponseMessage;
@@ -295,7 +295,7 @@ impl MessageDemuxer {
 
         let mut sub_id = event.subscription_id.clone();
         if sub_id.is_empty() {
-            if let Some(id) = resp.headers.get("X-Subscription-Id") {
+            if let Some(id) = resp.headers.get(HTTP_HEADER_KEY_X_SUBSCRIPTION_ID) {
                 sub_id = id.clone();
             }
         }

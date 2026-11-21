@@ -30,7 +30,7 @@ var controlOperations = []string{"app-view-all", "app-subscribe"}
 
 func main() {
 	var server, clusterNodes string
-	flag.StringVar(&server, "server", "127.0.0.1:6059", "App Mesh TCP server address (host:port)")
+	flag.StringVar(&server, "server", appmesh.DefaultTCPURI, "App Mesh TCP server address (host:port)")
 	flag.StringVar(&clusterNodes, "cluster-nodes", "", "Comma-separated cluster node addresses")
 	flag.Parse()
 

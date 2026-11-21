@@ -41,7 +41,8 @@ public:
 		std::lock_guard lock(m_mutex);
 		if (id.empty())
 			id = std::to_string(++m_nextId);
-		m_streams.emplace(id, sink);
+		// insert_or_assign: a duplicate id must never shadow a fresh sink.
+		m_streams.insert_or_assign(id, sink);
 		return id;
 	}
 

@@ -154,6 +154,9 @@ public:
 	bool interrupt();
 	void id(int id);
 	int id();
+	/// Non-empty only for a parked SSE stream request: the sink marker that
+	/// lets a disconnect cancel its own task without touching anyone else's.
+	virtual std::string sseStreamId() const { return {}; }
 
 protected:
 	// Overridden reply to ensure single response by canceling timer and checking reply flag
@@ -201,14 +204,17 @@ private:
 class HttpRequestTaskStream : public HttpRequestWithTimeout
 {
 public:
-	HttpRequestTaskStream(const std::shared_ptr<HttpRequest> &message, std::shared_ptr<class SseSink> sink);
+	HttpRequestTaskStream(const std::shared_ptr<HttpRequest> &message, std::shared_ptr<class SseSink> sink,
+						  std::string sseStreamId);
 	~HttpRequestTaskStream() override = default;
 
 	// Emits one "partial" event. Returns false when the stream is gone.
 	bool sendPartial(const std::string &payload);
+	std::string sseStreamId() const override { return m_sseStreamId; }
 
 private:
 	std::shared_ptr<class SseSink> m_sink;
+	std::string m_sseStreamId;
 };
 
 // Manages task request/response communication between client and server
@@ -230,6 +236,9 @@ public:
 
 	void sendTask(std::shared_ptr<HttpRequestWithTimeout> &taskRequest);
 	bool deleteTask();
+	/// Cancels the active task only when it is the stream's own request: a
+	/// queued client's disconnect must not abort another client's in-flight one.
+	bool deleteTask(const std::string &sseStreamId);
 	void fetchTask(const std::string &processKey, std::shared_ptr<void> &serverRequest);
 	void replyTask(const std::string &processKey, std::shared_ptr<void> &serverRequest);
 	// Worker incremental result (X-Appmesh-Process-Key auth): delivers to the
@@ -239,6 +248,8 @@ public:
 
 private:
 	std::shared_ptr<HttpRequestWithTimeout> releaseRepliedRequestLocked(std::shared_ptr<HttpRequestWithTimeout> &request);
+	/// Throws when the worker's process key does not match the accepted one; call with m_mutex held.
+	void verifyProcessKeyLocked(const std::string &processKey) const;
 
 private:
 	std::mutex m_mutex;

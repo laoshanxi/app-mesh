@@ -5,25 +5,35 @@
 
 /// Per-follower replication tokens for the owner's policy snapshot endpoint.
 ///
-/// The token file holds one accepted bearer per line, with an optional audit
-/// label after whitespace:
+/// The token file holds one accepted bearer per line, with an audit label
+/// after whitespace:
 ///
-///     9f3c...e1            shared legacy token (no label)
 ///     77a1...d0 slave1     per-follower token, revocable alone
 ///     # comment lines are ignored
 ///
-/// A single unlabeled line is exactly the legacy shared-token deployment, so
-/// existing clusters keep working unchanged. Revoking one follower is a file
-/// edit: the endpoint re-reads the file on every request.
+/// A line without a label is not an accepted entry. Revoking one follower is
+/// a file edit: the endpoint re-reads the file on every request.
 namespace AuthReplication
 {
+// Deployment env names for the replication token source; the single spelling
+// of every key (daemon reads live in AuthReplicator, RestHandler,
+// AuthorizationStore and VaultClient).
+inline constexpr const char *ENV_FROM = "APPMESH_AUTH_REPLICATION_FROM";
+inline constexpr const char *ENV_TOKEN_FILE = "APPMESH_AUTH_REPLICATION_TOKEN_FILE";
+inline constexpr const char *ENV_CA = "APPMESH_AUTH_REPLICATION_CA";
+inline constexpr const char *ENV_INTERVAL = "APPMESH_AUTH_REPLICATION_INTERVAL";
+inline constexpr const char *ENV_TOKEN_SOURCE = "APPMESH_AUTH_REPLICATION_TOKEN_SOURCE";
+inline constexpr const char *ENV_VAULT_ADDR = "APPMESH_AUTH_REPLICATION_TOKEN_VAULT_ADDR";
+inline constexpr const char *ENV_VAULT_TOKEN_FILE = "APPMESH_AUTH_REPLICATION_TOKEN_VAULT_TOKEN_FILE";
+inline constexpr const char *ENV_LABEL = "APPMESH_AUTH_REPLICATION_LABEL";
+
 struct AcceptedToken
 {
 	std::string token;
 	std::string label;
 };
 
-/// Parses the token file content. Unlabeled tokens get the label "shared".
+/// Parses the token file content; lines without a label are skipped.
 std::vector<AcceptedToken> parseTokenFile(const std::string &fileContent);
 
 /// Constant-time match of the presented bearer against an explicit accepted

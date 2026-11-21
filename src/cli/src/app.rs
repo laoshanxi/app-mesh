@@ -526,12 +526,8 @@ pub struct GetArgs {
     pub local: String,
 
     /// Apply remote POSIX permissions and ownership to the downloaded file
-    #[arg(long = "apply-permissions", conflicts_with = "no_attr")]
+    #[arg(long = "apply-permissions")]
     pub apply_permissions: bool,
-
-    /// Deprecated compatibility flag; permissions are no longer applied by default
-    #[arg(short = 'a', long = "no-attr", hide = true, conflicts_with = "apply_permissions")]
-    pub no_attr: bool,
 }
 
 #[derive(Parser)]
@@ -549,12 +545,8 @@ pub struct PutArgs {
     pub overwrite: bool,
 
     /// Send local POSIX permissions and ownership with the uploaded file
-    #[arg(long = "apply-permissions", conflicts_with = "no_attr")]
+    #[arg(long = "apply-permissions")]
     pub apply_permissions: bool,
-
-    /// Deprecated compatibility flag; permissions are no longer sent by default
-    #[arg(short = 'a', long = "no-attr", hide = true, conflicts_with = "apply_permissions")]
-    pub no_attr: bool,
 }
 
 #[derive(Parser)]

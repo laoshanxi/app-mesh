@@ -295,12 +295,6 @@ int Configuration::getRestListenPort()
 	return m_rest->m_restListenPort;
 }
 
-int Configuration::getPromListenPort() const
-{
-	std::lock_guard guard(m_hotupdateMutex);
-	return m_rest->m_promListenPort;
-}
-
 std::string Configuration::getRestListenAddress()
 {
 	std::lock_guard guard(m_hotupdateMutex);
@@ -370,47 +364,37 @@ void Configuration::loadApps(const std::filesystem::path &appDir)
 
 	if (fs::exists(appDir) && fs::is_directory(appDir))
 	{
+		// Parse one definition file and register it as recovered; failures collect
+		// until every file was attempted so recovery refuses with the full list.
+		const auto loadDefinition = [&](const std::string &path, const auto &parseDefinition)
+		{
+			LOG_INF << fname << "Loading application file <" << path << ">";
+			try
+			{
+				auto jsonObj = parseDefinition();
+				jsonObj[JSON_KEY_APP_from_recover] = true;
+				auto app = this->parseApp(jsonObj);
+				this->registerRecoveredApp(app);
+			}
+			catch (const std::exception &e)
+			{
+				LOG_ERR << fname << "Failed to load application file <" << path << ">, error: " << e.what();
+				failedDefinitions.push_back(path);
+			}
+		};
 		// parse YAML format
 		for (const auto &jsonFile : fs::directory_iterator(appDir))
 		{
-			auto path = jsonFile.path().string();
+			const auto path = jsonFile.path().string();
 			if (Utility::isFileExist(path) && (Utility::endWith(path, ".yml") || Utility::endWith(path, ".yaml")))
-			{
-				LOG_INF << fname << "Loading application file <" << path << ">";
-				try
-				{
-					auto jsonObj = Utility::yamlToJson(YAML::LoadFile(path));
-					jsonObj[JSON_KEY_APP_from_recover] = true;
-					auto app = this->parseApp(jsonObj);
-					this->registerRecoveredApp(app);
-				}
-				catch (const std::exception &e)
-				{
-					LOG_ERR << fname << "Failed to load application file <" << path << ">, error: " << e.what();
-					failedDefinitions.push_back(path);
-				}
-			}
+				loadDefinition(path, [&path] { return Utility::yamlToJson(YAML::LoadFile(path)); });
 		}
 		// parse JSON format
 		for (const auto &jsonFile : fs::directory_iterator(appDir))
 		{
-			auto path = jsonFile.path().string();
+			const auto path = jsonFile.path().string();
 			if (Utility::isFileExist(path) && Utility::endWith(path, ".json"))
-			{
-				LOG_INF << fname << "Loading application file <" << path << ">";
-				try
-				{
-					auto jsonObj = JSON::parse(Utility::readFile(path));
-					jsonObj[JSON_KEY_APP_from_recover] = true;
-					auto app = this->parseApp(jsonObj);
-					this->registerRecoveredApp(app);
-				}
-				catch (const std::exception &e)
-				{
-					LOG_ERR << fname << "Failed to load application file <" << path << ">, error: " << e.what();
-					failedDefinitions.push_back(path);
-				}
-			}
+				loadDefinition(path, [&path] { return JSON::parse(Utility::readFile(path)); });
 		}
 		if (!failedDefinitions.empty())
 		{
@@ -537,6 +521,18 @@ const std::string Configuration::getWorkDir() const
 		return m_baseConfig->m_defaultWorkDir;
 	else
 		return (fs::path(Utility::getHomeDir()) / APPMESH_WORK_DIR).string();
+}
+
+const std::string Configuration::getWorkTmpDir() const
+{
+	return (fs::path(getWorkDir()) / APPMESH_WORK_TMP_DIR).string();
+}
+
+bool Configuration::corsAllowsOrigin(const std::string &origin) const
+{
+	// CORS is opt-in: no wildcard. The request Origin is echoed only when it is
+	// in REST.CorsAllowOrigins; otherwise no CORS headers are sent at all.
+	return !getCorsDisabled() && !origin.empty() && getCorsAllowOrigins().count(origin) != 0;
 }
 
 bool Configuration::getSslEnabled() const

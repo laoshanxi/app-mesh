@@ -12,10 +12,8 @@ OIDC_CONFIG="${APPMESH_ROOT}/work/config/oidc.yaml"
 DEX_CONFIG_TEMPLATE="${APPMESH_ROOT}/config/dex.yaml"
 DEX_RUNTIME_CONFIG="${AUTH_STATE_DIR}/dex/dex.yaml"
 DEX_INITIAL_CREDENTIALS="${AUTH_SECRET_DIR}/initial-admin-credentials"
-LEGACY_INITIAL_CREDENTIALS="${AUTH_SECRET_DIR}/dex-initial-admin-credentials"
 DEX_INITIAL_CREDENTIAL_MARKER="${AUTH_SECRET_DIR}/dex-initial-admin-initialized"
 DEX_GUEST_CREDENTIALS="${AUTH_SECRET_DIR}/initial-viewer-credentials"
-LEGACY_GUEST_CREDENTIALS="${AUTH_SECRET_DIR}/dex-initial-guest-credentials"
 DEX_GUEST_CREDENTIAL_MARKER="${AUTH_SECRET_DIR}/dex-initial-guest-initialized"
 DEX_AUTOMATION_CLIENT_FILE="${AUTH_SECRET_DIR}/automation-client"
 AUTHORIZATION_TEMPLATE="${APPMESH_ROOT}/config/authorization.yaml"
@@ -1458,22 +1456,8 @@ prepare_owner_directories() {
         "${AUTH_STATE_DIR}/dex"
 }
 
-migrate_legacy_credential() {
-    local legacy=$1
-    local current=$2
-    if [[ -f "${legacy}" && ! -e "${current}" ]]; then
-        [[ ! -L "${legacy}" ]] || {
-            echo "refusing symbolic-link legacy credential: ${legacy}" >&2
-            return 1
-        }
-        mv "${legacy}" "${current}"
-    fi
-}
-
 bootstrap_owner() {
     prepare_owner_directories
-    migrate_legacy_credential "${LEGACY_INITIAL_CREDENTIALS}" "${DEX_INITIAL_CREDENTIALS}"
-    migrate_legacy_credential "${LEGACY_GUEST_CREDENTIALS}" "${DEX_GUEST_CREDENTIALS}"
     ensure_admin_credentials
     ensure_guest_credentials
     ensure_automation_client

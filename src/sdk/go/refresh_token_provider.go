@@ -128,13 +128,21 @@ func (p *RefreshTokenProvider) AccessToken() (string, error) {
 // expiringLocked reports whether the token is inside the refresh margin.
 // Callers re-check this under the mutex so a refresh by a racing goroutine
 // is observed instead of repeated.
+// Refresh margin: renew once 1/refreshMarginLifetimeRatio of the access TTL
+// has burned, floored at minRefreshMargin — mirrors MIN_REFRESH_MARGIN_* in
+// the sibling SDKs.
+const (
+	refreshMarginLifetimeRatio = 10
+	minRefreshMargin           = 30 * time.Second
+)
+
 func (p *RefreshTokenProvider) expiringLocked() bool {
 	if p.expiresAt.IsZero() {
 		return false
 	}
-	margin := p.lifetime / 10
-	if margin < 30*time.Second {
-		margin = 30 * time.Second
+	margin := p.lifetime / refreshMarginLifetimeRatio
+	if margin < minRefreshMargin {
+		margin = minRefreshMargin
 	}
 	return !time.Now().Before(p.expiresAt.Add(-margin))
 }

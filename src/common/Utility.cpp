@@ -36,10 +36,8 @@
 #include <unistd.h>
 #endif
 #if defined(__APPLE__)
-#include <crt_externs.h> // For getprogname
 #include <mach-o/dyld.h> // For _NSGetExecutablePath
 #elif defined(_WIN32)
-#include <codecvt>
 #include <windows.h>
 #endif
 
@@ -67,10 +65,6 @@ const char *GET_STATUS_STR(unsigned int status)
 	assert(status < ARRAY_LEN(STATUS_STR));
 	return STATUS_STR[status];
 };
-
-Utility::Utility() {}
-
-Utility::~Utility() {}
 
 bool Utility::isNumber(const std::string &str)
 {
@@ -208,40 +202,20 @@ const std::string &Utility::getHomeDir()
 	return homeDir;
 }
 
+const std::string Utility::getWorkConfigFilePath(const std::string &configFile)
+{
+	return (fs::path(Utility::getHomeDir()) / APPMESH_WORK_DIR / APPMESH_WORK_CONFIG_DIR / configFile).string();
+}
+
 const std::string Utility::getConfigFilePath(const std::string &configFile, bool write)
 {
-	const std::string workingConfigFile =
-		(fs::path(Utility::getHomeDir()) / APPMESH_WORK_DIR / APPMESH_WORK_CONFIG_DIR / configFile).string();
+	const std::string workingConfigFile = getWorkConfigFilePath(configFile);
 	if (write || Utility::isFileExist(workingConfigFile))
 	{
 		createDirectory((fs::path(Utility::getHomeDir()) / APPMESH_WORK_DIR / APPMESH_WORK_CONFIG_DIR).string());
 		return workingConfigFile;
 	}
 	return (fs::path(Utility::getHomeDir()) / APPMESH_WORK_CONFIG_DIR / configFile).string();
-}
-
-// program_name from errno.h
-const std::string Utility::getBinaryName()
-{
-#if defined(__APPLE__)
-	return getprogname(); // macOS-specific function
-#elif defined(_WIN32)
-	// Windows implementation without filesystem
-	char buffer[MAX_PATH];
-	DWORD length = GetModuleFileNameA(nullptr, buffer, MAX_PATH);
-	if (length == 0)
-	{
-		return "";
-	}
-
-	std::string fullPath(buffer);
-	size_t pos = fullPath.find_last_of("\\/");
-	return pos != std::string::npos ? fullPath.substr(pos + 1) : fullPath;
-#else
-	// Linux implementation
-	extern char *program_invocation_short_name;
-	return program_invocation_short_name;
-#endif
 }
 
 bool Utility::isDirExist(const std::string &path)
@@ -457,7 +431,8 @@ int Utility::openFileWithinJail(const std::string &filePath, bool forWrite, cons
 				<< "> is outside the allowed jail; rejecting the transfer";
 		if (rejectedOut)
 			*rejectedOut = true;
-		if (forWrite && !exclusiveName.empty() && ::unlinkat(dirFd, exclusiveName.c_str(), 0) != 0)
+		// ENOENT: a racing writer already dropped the rejected temp.
+		if (forWrite && !exclusiveName.empty() && ::unlinkat(dirFd, exclusiveName.c_str(), 0) != 0 && errno != ENOENT)
 			LOG_ERR << fname << "Failed to unlink rejected temp file <" << exclusiveName << ">: " << last_error_msg();
 		::close(fd);
 		if (dirFd >= 0)
@@ -1145,61 +1120,6 @@ std::string Utility::localEncodingToUtf8(const std::string &ansi)
 #endif
 }
 
-std::string Utility::utf8ToLocalEncoding(const std::string &input)
-{
-#if defined(_WIN32)
-	if (input.empty())
-	{
-		return input;
-	}
-
-	try
-	{
-		// Get the current system locale
-		std::locale loc("");
-
-		// Create UTF-8 to wchar_t converter
-		std::wstring_convert<std::codecvt_utf8<wchar_t>> utf8_conv;
-
-		// Convert UTF-8 to wide string
-		std::wstring wide_str = utf8_conv.from_bytes(input);
-
-		// Use locale's codecvt facet to convert to local encoding
-		const std::codecvt<wchar_t, char, std::mbstate_t> &codecvt_facet =
-			std::use_facet<std::codecvt<wchar_t, char, std::mbstate_t>>(loc);
-
-		std::mbstate_t state = std::mbstate_t();
-		std::string result(wide_str.length() * codecvt_facet.max_length(), '\0');
-
-		const wchar_t *from_next;
-		char *to_next;
-
-		std::codecvt_base::result conv_result =
-			codecvt_facet.out(state, wide_str.data(), wide_str.data() + wide_str.length(), from_next, &result[0],
-							  &result[0] + result.length(), to_next);
-
-		if (conv_result == std::codecvt_base::ok || conv_result == std::codecvt_base::noconv)
-		{
-			result.resize(to_next - &result[0]);
-			return result;
-		}
-
-		// If conversion failed, return original string
-		return input;
-	}
-	catch (...)
-	{
-		// If any exception occurs (locale not available, etc.),
-		// return original string
-		return input;
-	}
-
-#else
-	// POSIX: assume UTF-8 environment
-	return input;
-#endif
-}
-
 // TODO: use ICU for detectAndConvertToUTF8
 /*
 #include <unicode/ucsdet.h>
@@ -1665,6 +1585,11 @@ std::string Utility::getenv(const std::string &envName, const std::string &defau
 	return val;
 }
 
+std::string Utility::getenvTrimmed(const std::string &envName, const std::string &defaultValue)
+{
+	return stdStringTrim(getenv(envName, defaultValue));
+}
+
 std::map<std::string, std::string> Utility::getenvs()
 {
 	std::map<std::string, std::string> env;
@@ -1936,17 +1861,6 @@ Json::Value Utility::yamlToJson(const YAML::Node &node)
 	}
 
 	return result;
-}
-
-const std::string Utility::readStdin2End()
-{
-	std::stringstream ss;
-	std::string line;
-	while (!std::cin.eof() && std::getline(std::cin, line))
-	{
-		ss << line << std::endl;
-	}
-	return ss.str();
 }
 
 std::string Utility::escapeCommandLine(const std::string &input)
