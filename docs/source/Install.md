@@ -192,6 +192,9 @@ External mode does not create built-in identities. Provision the first principal
 
 The package installs read-only defaults in `/opt/appmesh/config`. Put operator overrides in `/opt/appmesh/work/config`.
 
+See [TLS and certificates](TLS.md) for the `REST.SSL` listener settings, the
+certificate sources, and the client matrix.
+
 The main files are:
 
 - `config.yaml` for Engine and transport settings;

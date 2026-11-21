@@ -122,35 +122,37 @@ Real run (GLM, 465 s total). Each stage's answer is in the step `response`:
 The test stage referred back to "the brief's table" and "the encoding issue from before" —
 proof that one `session_id` carries context across stages.
 
-## 5. Interactive mode — a streaming worker per session
+## 5. Interactive mode — streaming turns
 
-An admin provisions one worker App per session; the client subscribes to its STDOUT once
-and then talks turn after turn, with live tokens.
+Talk turn after turn with live output. Streaming rides the task RPC itself
+(`run_task_stream`, SDK ≥ 3.0.20): each assistant message is a partial on the same call — no
+subscription, no race sleeps, and it works on the shared App too. An admin may still
+provision one worker App per session when the session's context must stay isolated.
 
 ```bash
-# admin: register a worker for session S1 (template: config/llm-agent-worker.yaml)
+# admin (only for an isolated session worker): template config/llm-agent-worker.yaml
 appm add -D @config/llm-agent-worker.yaml --force \
   -z ANTHROPIC_AUTH_TOKEN=<key> -e ANTHROPIC_BASE_URL=<provider url> -e 'LLMAGENT_MODEL=<model>'
 ```
 
 ```python
-import json, time
+import json
 from appmesh import AppMeshClientTCP
 
 client = AppMeshClientTCP(tcp_address=("127.0.0.1", 6059), ssl_verify=False)
 client.set_bearer_token("<token>")
-sub = client.subscribe("llm-agent-sess-S1", ["STDOUT"],
-                       callback=lambda e: print(e.data.get("output", ""), end=""))
-time.sleep(1)  # let the subscription go live
-json.loads(client.run_task("llm-agent-sess-S1", json.dumps(
-    {"action": "session_send", "session_id": "S1", "input": "Hi! Remember the number 7.", "stream": True}),
-    timeout=180))
+# llm-agent (shared App) or llm-agent-sess-S1 (isolated worker) — same channel
+for token in client.run_task_stream("llm-agent-sess-S1", json.dumps(
+        {"action": "session_send", "session_id": "S1", "input": "Hi! Remember the number 7.",
+         "stream": True}), timeout=180):
+    print(token, end="", flush=True)
+# StopIteration.value.result carries the final {"status","data"} envelope
 ```
 
 Real session (GLM): `Remember the number 7` → *"Got it — I'll remember the number **7**"* →
-`What number did I give you?` → *"You gave me the number **7**."* → close removes the worker
-App and its data. Full journey: `python3 examples/user_scenarios.py b_interactive
---worker-app llm-agent-sess-S1 --worker-session S1`.
+`What number did I give you?` → *"You gave me the number **7**."* → close removes a worker
+App and its data. Full journeys: `python3 examples/user_scenarios.py a_stream` (shared App)
+and `... b_interactive --worker-app llm-agent-sess-S1 --worker-session S1` (isolated).
 
 ## 6. Use a Skill (optional)
 
@@ -171,4 +173,3 @@ set `LLMAGENT_ALLOWED_TOOLS`, keep the Skill tool in the list.
 | `Not logged in` | No credential on the App. Repeat step 2. |
 | `403 ... app-run-task` | Your user lacks app-run-task permission. Ask the admin. |
 | `401 token expired` | The token expired. Repeat step 3. |
-| `streaming is only available on a session worker App` | `stream:true` only on a worker App (step 5). |

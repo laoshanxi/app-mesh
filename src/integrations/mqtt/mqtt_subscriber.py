@@ -12,19 +12,31 @@ CLIENT_ID = "iot-data-processor"
 
 
 def _ssl_verify():
-    """TLS setting for the App Mesh client: APPMESH_CA path, or APPMESH_SSL_VERIFY=false.
+    """TLS setting for the App Mesh client (env-driven).
 
-    Needed off daemon hosts, where the daemon's self-signed cert is not in the system CAs.
+    APPMESH_CA wins when set; otherwise APPMESH_SSL_VERIFY is "false/0/no" →
+    verification off, an existing file path → that CA bundle, anything else →
+    default verification. Needed off daemon hosts, where the daemon's
+    self-signed cert is not in the system CAs.
     """
     ca = os.environ.get("APPMESH_CA")
     if ca:
         return ca
-    if os.environ.get("APPMESH_SSL_VERIFY", "").lower() in ("false", "0", "no"):
+    verify = os.environ.get("APPMESH_SSL_VERIFY", "").strip()
+    if verify.lower() in ("false", "0", "no"):
         return False
+    if verify and os.path.isfile(verify):
+        return verify
     return None
 
 
-appmesh_client = AppMeshClient(bearer_token=os.environ["APPMESH_BEARER_TOKEN"], ssl_verify=_ssl_verify())
+# APPMESH_URL selects the Engine base URL (off-host deployments point at the
+# daemon's published address instead of the local default).
+appmesh_client = AppMeshClient(
+    base_url=os.environ.get("APPMESH_URL", "https://127.0.0.1:6060"),
+    bearer_token=os.environ["APPMESH_BEARER_TOKEN"],
+    ssl_verify=_ssl_verify(),
+)
 
 
 def process_device_data(data):

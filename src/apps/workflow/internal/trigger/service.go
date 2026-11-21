@@ -430,6 +430,17 @@ func (s *Service) triggerRun(wf *models.Workflow, source string, inputs map[stri
 	return runID, status
 }
 
+// concurrencyGroup substitutes the group template at trigger time, where only
+// inputs exist; other context references are an author error, not a literal.
+func concurrencyGroup(wf *models.Workflow, inputs map[string]string) (string, error) {
+	ectx := expression.NewContext()
+	if inputs != nil {
+		ectx.Inputs = inputs
+	}
+	ectx.Strict = true
+	return expression.SubstituteForJobChecked(wf.Concurrency.Group, ectx, "")
+}
+
 // triggerRunToken creates a run and returns its ID, status ("running"/"pending"),
 // and why an immediately started run could not start (capability issuance).
 // token is the caller's Dex access token (empty for automatic triggers). It is held in
@@ -443,11 +454,13 @@ func (s *Service) triggerRunToken(wf *models.Workflow, source string, inputs map
 	group := ""
 	cancelInProgress := false
 	if wf.Concurrency != nil {
-		ectx := expression.NewContext()
-		if inputs != nil {
-			ectx.Inputs = inputs
+		var err error
+		group, err = concurrencyGroup(wf, inputs)
+		if err != nil {
+			reason := fmt.Errorf("workflow %q run %s: concurrency group: %w", wf.Name, runID, err)
+			logger.Error("TRIGGER " + reason.Error())
+			return runID, "failure", reason
 		}
-		group = expression.Substitute(wf.Concurrency.Group, ectx)
 		cancelInProgress = wf.Concurrency.CancelInProgress
 	}
 
@@ -516,11 +529,19 @@ func (s *Service) resumeRun(wf *models.Workflow, runID, source, actor string, in
 	// in parallel — preserving the concurrency=1 guarantee.
 	group := ""
 	if wf.Concurrency != nil {
-		ectx := expression.NewContext()
-		if inputs != nil {
-			ectx.Inputs = inputs
+		var err error
+		group, err = concurrencyGroup(wf, inputs)
+		if err != nil {
+			// Terminal, like a failed capability: record why and close the run so
+			// RecoverStale does not retry it forever. Running without the group
+			// would silently violate the concurrency guarantee.
+			msg := fmt.Sprintf("concurrency group: %v", err)
+			logger.Error(fmt.Sprintf("TRIGGER resume workflow '%s' run=%s aborted: %s", wf.Name, runID, msg))
+			s.checkpoint.MarkCompleteError(wf.Name, runID, msg)
+			s.checkpoint.MarkComplete(wf.Name, runID, "failure")
+			s.wdir.UpdateRunInIndex(wf.Name, runID, "failure", 0)
+			return
 		}
-		group = expression.Substitute(wf.Concurrency.Group, ectx)
 	}
 	if group != "" {
 		ok, _ := s.runMgr.TryStart(group, runID, false)

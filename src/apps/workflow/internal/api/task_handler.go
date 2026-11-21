@@ -31,6 +31,7 @@ import (
 	"github.com/laoshanxi/app-mesh/src/apps/workflow/internal/dag"
 	"github.com/laoshanxi/app-mesh/src/apps/workflow/internal/logger"
 	"github.com/laoshanxi/app-mesh/src/apps/workflow/internal/parser"
+	"github.com/laoshanxi/app-mesh/src/apps/workflow/internal/tlsconf"
 	"github.com/laoshanxi/app-mesh/src/apps/workflow/internal/trigger"
 	"github.com/laoshanxi/app-mesh/src/apps/workflow/internal/workdir"
 	appmesh "github.com/laoshanxi/app-mesh/src/sdk/go"
@@ -95,7 +96,7 @@ func NewTaskHandler(svc *trigger.Service, wdir *workdir.Manager, client *appmesh
 	if err != nil {
 		return nil, fmt.Errorf("create task context: %w", err)
 	}
-	principalHTTP, engineURL, err := newPrincipalHTTPClient()
+	principalHTTP, engineURL, err := newPrincipalHTTPClient(opts)
 	if err != nil {
 		server.CloseConnection()
 		return nil, err
@@ -104,31 +105,40 @@ func NewTaskHandler(svc *trigger.Service, wdir *workdir.Manager, client *appmesh
 		engineURL: engineURL, engineOption: opts}, nil
 }
 
-func newPrincipalHTTPClient() (*http.Client, string, error) {
+// newPrincipalHTTPClient builds the Engine principal-lookup REST client.
+// APPMESH_ENGINE_URL overrides the endpoint; otherwise the local listener is
+// used with the scheme matching the resolved transport.
+func newPrincipalHTTPClient(opts appmesh.Option) (*http.Client, string, error) {
 	engineURL := strings.TrimRight(os.Getenv("APPMESH_ENGINE_URL"), "/")
 	if engineURL == "" {
-		engineURL = "https://127.0.0.1:6060"
+		scheme := "https"
+		if opts.PlainTransport {
+			scheme = "http"
+		}
+		engineURL = scheme + "://127.0.0.1:6060"
 	}
 	parsed, err := url.Parse(engineURL)
 	if err != nil || (parsed.Scheme != "http" && parsed.Scheme != "https") || parsed.Host == "" {
 		return nil, "", fmt.Errorf("APPMESH_ENGINE_URL must be an absolute HTTP(S) URL")
 	}
-	verify := !strings.EqualFold(os.Getenv("APPMESH_ENGINE_TLS_VERIFY"), "false") &&
-		os.Getenv("APPMESH_ENGINE_TLS_VERIFY") != "0"
+	verify := tlsconf.VerifyEnabled()
 	tlsConfig := &tls.Config{MinVersion: tls.VersionTLS12, InsecureSkipVerify: !verify}
-	if caPath := os.Getenv("APPMESH_CA"); caPath != "" {
-		pem, err := os.ReadFile(caPath)
-		if err != nil {
-			return nil, "", fmt.Errorf("read App Mesh CA: %w", err)
+	// CA pinning is TLS-only; a leftover APPMESH_CA must not fail a plaintext daemon.
+	if !opts.PlainTransport {
+		if caPath := os.Getenv(tlsconf.EnvCA); caPath != "" {
+			pem, err := os.ReadFile(caPath)
+			if err != nil {
+				return nil, "", fmt.Errorf("read App Mesh CA: %w", err)
+			}
+			roots, err := x509.SystemCertPool()
+			if err != nil || roots == nil {
+				roots = x509.NewCertPool()
+			}
+			if !roots.AppendCertsFromPEM(pem) {
+				return nil, "", fmt.Errorf("App Mesh CA file contains no certificates")
+			}
+			tlsConfig.RootCAs = roots
 		}
-		roots, err := x509.SystemCertPool()
-		if err != nil || roots == nil {
-			roots = x509.NewCertPool()
-		}
-		if !roots.AppendCertsFromPEM(pem) {
-			return nil, "", fmt.Errorf("App Mesh CA file contains no certificates")
-		}
-		tlsConfig.RootCAs = roots
 	}
 	return &http.Client{Transport: &http.Transport{TLSClientConfig: tlsConfig}, Timeout: 15 * time.Second}, engineURL, nil
 }

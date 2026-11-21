@@ -10,8 +10,8 @@
 // - sortedQuery: decoded k=v pairs joined with '&', sorted by key then value, empty
 //   string when there is no query (%XX-decoding only; '+' stays literal)
 // - body: lowercase hex SHA-256 of the raw body bytes; no body hashes the empty string
-// - streamed file endpoints (/appmesh/file/download|upload|delete) sign the
-//   empty-string body hash (documented exemption: the file content is not bound)
+// - streamed endpoints (/appmesh/file/download|upload|delete and the SSE output|task streams)
+//   sign the empty-string body hash (documented exemption: the streamed content is not bound)
 //
 // The secret is never logged and never exposed through a getter or toString().
 // Node.js only: signing uses node:crypto (no npm dependencies).
@@ -33,6 +33,10 @@ async function nodeCrypto () {
  * The exact daemon set (RequestHardening::canonicalFileRoute) — subpaths are not exempt. */
 const EMPTY_BODY_EXEMPT_PATHS = new Set(['/appmesh/file/download', '/appmesh/file/upload', '/appmesh/file/delete'])
 
+/** SSE stream routes (/appmesh/app/{name}/output|task/stream): the daemon's SSE hardening
+ * check ignores the request body, so these sign the empty-string hash (docs/source/Streaming.md). */
+const EMPTY_BODY_EXEMPT_STREAM_RE = /^\/appmesh\/app\/[^/]+\/(output|task)\/stream$/
+
 /** Header names (must match HTTP_HEADER_KEY_* in src/common/Utility.h). */
 export const REQUEST_SIGNATURE_HEADERS = Object.freeze({
   KEY_ID: 'X-Request-Key',
@@ -41,10 +45,11 @@ export const REQUEST_SIGNATURE_HEADERS = Object.freeze({
   SIGNATURE: 'X-Signature'
 })
 
-/** True for the streamed file endpoints that sign the empty-string body hash. */
+/** True for streamed endpoints (file transfer, SSE streams) that sign the empty-string body hash. */
 export function isEmptyBodyExemptPath (path) {
   if (typeof path !== 'string') return false
-  return EMPTY_BODY_EXEMPT_PATHS.has(canonicalSigningPath(path))
+  const signingPath = canonicalSigningPath(path)
+  return EMPTY_BODY_EXEMPT_PATHS.has(signingPath) || EMPTY_BODY_EXEMPT_STREAM_RE.test(signingPath)
 }
 
 /**
@@ -81,8 +86,10 @@ export class RequestSigner {
     if (typeof secret !== 'string' || secret === '') {
       throw new TypeError('secret must be a non-empty string')
     }
-    this._keyId = keyId
-    this._secret = secret
+    // Non-enumerable (never leaked by JSON.stringify / object spread of the
+    // signer); writable stays true so tests and subclasses may replace them.
+    Object.defineProperty(this, '_keyId', { value: keyId, writable: true })
+    Object.defineProperty(this, '_secret', { value: secret, writable: true })
   }
 
   /** The API key id this signer advertises. */
@@ -180,26 +187,34 @@ export function canonicalQuery (params) {
 
 /**
  * Canonical query built from the encoded query string exactly as it goes on the
- * wire (HTTP transport). Mirrors the daemon parser: split on '&', split each
- * pair at the first '=', decode each component with %XX-only decoding ('+'
- * stays literal, a malformed escape keeps the whole raw component, a duplicate
- * key keeps its first occurrence), then sort.
+ * wire (HTTP transport). Mirrors the daemon parser loop: split on '&', split
+ * each pair at the first '=', decode each component with %XX-only decoding
+ * ('+' stays literal, a malformed escape keeps the whole raw component), then
+ * dedup decoded-key-first-wins (daemon std::map::emplace) and sort. An empty
+ * segment (e.g. "a=1&&b=2") inserts ("", "") and the canonical output keeps
+ * its "="; a trailing '&' adds no segment (the daemon loop ends at its bounds).
  */
 export function canonicalQueryFromEncoded (encodedQuery) {
   if (!encodedQuery) return ''
-  const decoded = {}
-  for (const pair of encodedQuery.split('&')) {
-    if (pair === '') continue
+  // Null prototype: query keys like "toString" or "__proto__" are plain data
+  // here, never shadowed or dropped by Object prototype members.
+  const decoded = Object.create(null)
+  for (let pos = 0; pos < encodedQuery.length;) {
+    const amp = encodedQuery.indexOf('&', pos)
+    const pair = amp < 0 ? encodedQuery.slice(pos) : encodedQuery.slice(pos, amp)
     const eq = pair.indexOf('=')
     const key = eq < 0 ? pair : pair.slice(0, eq)
     const value = eq < 0 ? '' : pair.slice(eq + 1)
-    // std::map::emplace semantics on the daemon: the first value for a key wins.
-    if (!(key in decoded)) {
-      decoded[key] = value
+    // Decode first, then dedup: the daemon decodes each component and emplaces,
+    // so the first value for a DECODED key wins (e.g. "a=1&a%61=2" keeps "a=1").
+    const decodedKey = percentDecode(key)
+    if (!Object.prototype.hasOwnProperty.call(decoded, decodedKey)) {
+      decoded[decodedKey] = percentDecode(value)
     }
+    if (amp < 0) break
+    pos = amp + 1
   }
-  // The daemon decodes after collecting; decode now, then sort the decoded pairs.
-  const decodedPairs = Object.entries(decoded).map(([k, v]) => [percentDecode(k), percentDecode(v)])
+  const decodedPairs = Object.entries(decoded)
   // Order by UTF-8 bytes, matching the daemon (not UTF-16 code units: a
   // non-BMP character sorts before U+E000..U+FFFF in UTF-16, after it in UTF-8).
   decodedPairs.sort((a, b) => {

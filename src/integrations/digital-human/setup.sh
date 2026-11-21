@@ -76,11 +76,13 @@ chmod 600 "$BOT_PW_FILE"
 role_code=$(curl -s --cacert "$APPMESH_CA" -X POST -H "Authorization: Bearer $APPMESH_BEARER_TOKEN" -H "Content-Type: application/json" \
 	-d '["app-run-task","app-view","app-output-view"]' -o /dev/null -w '%{http_code}' "${APPMESH_URL}/appmesh/role/digital-human")
 case "$role_code" in 200|201|204) ;; *) echo "警告: 角色 digital-human 创建失败 (HTTP $role_code) — dh-bot 将无法通过密码流认证" >&2 ;; esac
-if ! add_out=$(printf '%s' "$DH_BOT_PASSWORD" | bash "$AUTH_SCRIPT" add-user "$DH_BOT_USER" digital-human 2>&1); then
+if add_out=$(printf '%s' "$DH_BOT_PASSWORD" | bash "$AUTH_SCRIPT" add-user "$DH_BOT_USER" digital-human 2>&1); then
+	echo "$add_out" | grep -m1 . || true
+elif grep -qi "already exists" <<<"$add_out"; then
+	echo "dh-bot 用户已存在，跳过创建（幂等重跑）"
+else
 	echo "警告: dh-bot 用户创建失败: $add_out" >&2
 	echo "      （多节点部署需在 authentication owner 节点执行；角色落盘若有延迟可稍候重试）" >&2
-else
-	echo "$add_out" | grep -m1 . || true
 fi
 # 探测 dh-bot 密码流是否可用（--data-urlencode 防特殊字符）
 if curl -s -u 'appmesh-cli:' -X POST "$TOKEN_URL/auth/token" \
@@ -102,9 +104,10 @@ else
 		echo "    printf '%s' '$DH_BOT_PASSWORD' | sudo $AUTH_SCRIPT add-user $BOT_USER_FOR_HINT digital-human"
 	else
 		BOT_PW_FILE=""
+		CRED_BROKEN=1
 		rm -f "$TEAM_RT/admin.password"
 		echo "    警告: dh-bot 密码流不可用且未设置 DH_ADMIN_PASSWORD — 运行时无凭据，"
-		echo "    IM 适配器与技能将无法认证（启动即失败）。请 sudo 启用 dh-bot，或 export DH_ADMIN_PASSWORD 后重跑。"
+		echo "    IM 适配器与技能将无法认证（启动即失败）。请 sudo 启用 dh-bot，或 export DH_ADMIN_PASSWORD 后重跑。" >&2
 	fi
 fi
 
@@ -221,6 +224,10 @@ cat > "$TEAM_RT/SKILL_CATALOG.md" <<EOF
 等 oa-approval approve 之后，携带 approval_id 重试同一请求才会执行。
 EOF
 
+if [ "${CRED_BROKEN:-0}" -eq 1 ]; then
+	echo "error: 运行时凭据不可用（见上方警告）— 部署未完成，IM 适配器与技能将无法认证。" >&2
+	exit 1
+fi
 echo
 echo "部署完成: team=$TEAM"
 echo "  冒烟: cd $PKG && $VENV/bin/python chat.py --team $TEAM --skill sys-info '{}'"

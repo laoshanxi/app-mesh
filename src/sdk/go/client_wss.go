@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 )
@@ -19,7 +20,7 @@ type AppMeshClientWSS struct {
 func NewWSSClient(options Option) (*AppMeshClientWSS, error) {
 	uri := options.AppMeshURI
 	if uri == "" {
-		uri = "https://127.0.0.1:6058"
+		uri = DefaultWSSURI
 	}
 	parsed, err := ParseURL(uri)
 	if err != nil {
@@ -27,12 +28,7 @@ func NewWSSClient(options Option) (*AppMeshClientWSS, error) {
 	}
 
 	// ensure scheme is wss/ws
-	switch parsed.Scheme {
-	case "https":
-		parsed.Scheme = "wss"
-	case "http":
-		parsed.Scheme = "ws"
-	}
+	ensureWScheme(parsed)
 
 	wssRequester := &WSSRequester{
 		WSSConnection: NewWSSConnection(),
@@ -81,6 +77,23 @@ func (c *AppMeshClientWSS) forwardTarget() string {
 	return c.wssReq.getForwardTo()
 }
 
+// sseRequest opens an SSE stream over a direct HTTPS connection to the same
+// REST listener the WSS control channel runs on: the framed transport cannot
+// carry a chunked stream, so streams bypass it like the file data channel.
+func (w *WSSRequester) sseRequest(ctx context.Context, method string, apiPath string, queries url.Values,
+	headers map[string]string, body []byte) (int, io.ReadCloser, http.Header, error) {
+	base := w.baseURL
+	switch base.Scheme {
+	case "wss":
+		base.Scheme = "https"
+	case "ws":
+		base.Scheme = "http"
+	}
+	return sseSideChannel{base: base, token: w.getAccessToken(), agent: userAgentWSS, signer: w.getRequestSigner(),
+		clientCert: w.sslClientCert, clientKey: w.sslClientKey, caFile: w.sslCAFile}.open(ctx, method, apiPath,
+		queries, headers, body)
+}
+
 // DownloadFileContext downloads a file through the WSS control channel plus HTTP(S) streaming data path.
 // When applyFileAttributes is true, returned POSIX metadata is applied locally best-effort.
 func (c *AppMeshClientWSS) DownloadFileContext(ctx context.Context, remoteFile, localFile string,
@@ -93,24 +106,13 @@ func (c *AppMeshClientWSS) DownloadFileContext(ctx context.Context, remoteFile, 
 		localFile = filepath.Base(remoteFile)
 	}
 
-	headers := map[string]string{
-		headerFilePath: remoteFile,
-	}
-
-	status, msg, _, err := c.get(restPathDownload, nil, headers)
-	if err != nil {
-		return fmt.Errorf("download request failed: %w", err)
-	}
-	if status != http.StatusOK {
-		return newAPIErrorText("download file", status, string(msg),
-			fmt.Sprintf("failed to download %q: status=%d msg=%s", remoteFile, status, msg))
-	}
-
+	// No control-channel preflight: the /ws side channel runs the identical daemon
+	// handler, so a preflight only re-read the whole file into a discarded WS message.
 	accessToken := c.wssReq.getAccessToken()
 	if accessToken == "" {
 		return fmt.Errorf("file transfer requires a bearer token")
 	}
-	auth := "Bearer " + accessToken
+	auth := headerBearerSpace + accessToken
 
 	// Prepare HTTP URL for streaming endpoint
 	base := c.wssReq.baseURL
@@ -129,8 +131,8 @@ func (c *AppMeshClientWSS) DownloadFileContext(ctx context.Context, remoteFile, 
 		return err
 	}
 	req = req.WithContext(ctx)
-	req.Header.Set("Authorization", auth)
-	req.Header.Set(headerFilePath, remoteFile)
+	req.Header.Set(headerAuthorization, auth)
+	req.Header.Set(headerFilePath, escapeRemoteFilePath(remoteFile))
 	if target := c.forwardTarget(); target != "" {
 		req.Header.Set(headerTargetHost, target)
 	}
@@ -194,7 +196,7 @@ func (c *AppMeshClientWSS) UploadFileContext(ctx context.Context, localFile, rem
 	defer f.Close()
 
 	headers := map[string]string{
-		headerFilePath: remoteFile,
+		headerFilePath: escapeRemoteFilePath(remoteFile),
 	}
 
 	if applyFileAttributes {
@@ -221,7 +223,7 @@ func (c *AppMeshClientWSS) UploadFileContext(ctx context.Context, localFile, rem
 	if accessToken == "" {
 		return fmt.Errorf("file transfer requires a bearer token")
 	}
-	auth := "Bearer " + accessToken
+	auth := headerBearerSpace + accessToken
 
 	base := c.wssReq.baseURL
 	scheme := "https"
@@ -239,8 +241,8 @@ func (c *AppMeshClientWSS) UploadFileContext(ctx context.Context, localFile, rem
 		return err
 	}
 	req = req.WithContext(ctx)
-	req.Header.Set("Authorization", auth)
-	req.Header.Set(headerFilePath, remoteFile)
+	req.Header.Set(headerAuthorization, auth)
+	req.Header.Set(headerFilePath, escapeRemoteFilePath(remoteFile))
 	req.Header.Set("Content-Type", "application/octet-stream")
 	if target := c.forwardTarget(); target != "" {
 		req.Header.Set(headerTargetHost, target)

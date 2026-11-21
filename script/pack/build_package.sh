@@ -29,6 +29,11 @@ copy_dex() {
     local bin
     for bin in /usr/local/bin/dex /usr/local/bin/dexuser; do
         [[ -x "$bin" ]] || die "Dex binary not found at ${bin} (install_build_deps.sh installs it there)"
+        # The packaged dex must be the fork build: upstream dex silently ignores
+        # oauth2.pkce, so the appmesh- version stamp proves PKCE enforcement is real.
+        if [[ "$bin" == */dex ]] && ! "$bin" version 2>/dev/null | grep -q 'appmesh-'; then
+            die "Dex at ${bin} is not the fork build (no appmesh- version stamp): rebuild it with install_build_deps.sh"
+        fi
         install -m 755 "$bin" "${PACKAGE_HOME}/bin/$(basename "$bin")"
         info "Copied $(basename "$bin") into the main package ($("$bin" version 2>/dev/null || echo 'version unknown'))"
     done

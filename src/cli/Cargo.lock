@@ -69,7 +69,7 @@ checksum = "330a5ed07fa54e4702c9d6c4174f74427fc0ef6e214bbd677ae50a5099946470"
 
 [[package]]
 name = "appm"
-version = "3.0.3"
+version = "3.0.5"
 dependencies = [
  "anyhow",
  "appmesh",
@@ -99,7 +99,7 @@ dependencies = [
 
 [[package]]
 name = "appmesh"
-version = "3.0.20"
+version = "3.0.23"
 dependencies = [
  "async-trait",
  "base64 0.23.1",

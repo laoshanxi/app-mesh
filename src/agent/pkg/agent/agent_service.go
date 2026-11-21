@@ -41,9 +41,11 @@ const (
 	HTTPHeaderKeyAppmeshForwarded = "X-AppMesh-Forwarded"
 	HTTPHeaderKeyAppmeshRoute     = "X-AppMesh-Forward-Route"
 	HTTPHeaderKeyAppmeshProcess   = "X-AppMesh-Process-Key"
-	HTTPHeaderKeyXSendFileSocket  = "X-Send-File-Socket"
-	HTTPHeaderKeyXRecvFileSocket  = "X-Recv-File-Socket"
-	HTTPHeaderKeyFilePath         = "X-File-Path"
+	// Marks the bearer-only precheck the daemon exempts from signature enforcement.
+	HTTPHeaderKeyAgentPrecheck   = "X-Appmesh-Agent-Precheck"
+	HTTPHeaderKeyXSendFileSocket = "X-Send-File-Socket"
+	HTTPHeaderKeyXRecvFileSocket = "X-Recv-File-Socket"
+	HTTPHeaderKeyFilePath        = "X-File-Path"
 
 	// PermissionHostForward gates X-Target-Host forwarding on the engine; the
 	// agent enforces the same grant before it opens the outbound connection.
@@ -51,11 +53,6 @@ const (
 
 	TCPChunkBlockSize = appmesh.TCPChunkBlockSize
 )
-
-func isPublicForwardRequest(r *http.Request) bool {
-	return r.Method == http.MethodGet &&
-		(r.URL.Path == "/appmesh/auth/config" || r.URL.Path == "/.well-known/oauth-protected-resource")
-}
 
 func isSubscriptionRequest(r *http.Request) bool {
 	return r.URL.Path == "/appmesh/subscribe" || strings.HasSuffix(r.URL.Path, "/subscribe") ||
@@ -74,14 +71,22 @@ func stripInternalClientProof(r *http.Request) {
 	}
 }
 
-func validateForwardBearer(ctx context.Context, localConn *Connection, authorization string) (*Response, error) {
+// newForwardPrecheckRequest builds the bearer-only /appmesh/principal/self probe
+// gating X-Target-Host forwarding; the precheck marker exempts it from the
+// daemon's mandatory signature enforcement.
+func newForwardPrecheckRequest(authorization string) *Request {
 	request := &Request{appmesh.NewRequest()}
 	request.HTTPMethod = http.MethodGet
 	request.RequestURI = "/appmesh/principal/self"
 	request.ClientAddress = "agent-forward-check"
 	request.Headers[HTTPUserAgentHeaderName] = UserAgentAppmeshSDK
 	request.Headers[HTTPHeaderKeyAuthorization] = authorization
-	return localConn.sendRequestDataWithContext(ctx, request)
+	request.Headers[HTTPHeaderKeyAgentPrecheck] = "1"
+	return request
+}
+
+func validateForwardBearer(ctx context.Context, localConn *Connection, authorization string) (*Response, error) {
+	return localConn.sendRequestDataWithContext(ctx, newForwardPrecheckRequest(authorization))
 }
 
 func writeForwardValidationResponse(w http.ResponseWriter, response *Response) {
@@ -142,17 +147,23 @@ func getLocalConnection() (*Connection, error) {
 	}
 	// A daemon without the TCP port fails every dial: warn once per minute,
 	// keep the repeated failures at debug level.
-	if last := lastTCPDialWarnNs.Load(); last == 0 || time.Since(time.Unix(0, last)) > time.Minute {
-		lastTCPDialWarnNs.Store(time.Now().UnixNano())
-		logger.Warnf("TCP connect to local daemon <%s> failed (%v), trying WSS <%s>", localTCPAddr, err, localWSSAddr)
-	} else {
-		logger.Debugf("TCP connect to local daemon <%s> failed (%v), using WSS <%s>", localTCPAddr, err, localWSSAddr)
-	}
+	warnTCPDialFallback(err)
 	return getOrCreateWSSConnection(localWSSAddr, config.ConfigData.REST.SSL.VerifyServer)
 }
 
 // getDelegateClient lazily builds the shared HTTP client for forwarding requests
 // (http.Client is concurrency-safe and pools connections, so one instance suffices).
+
+// newAgentTransport is the shared dial/keepalive tuning for the agent's
+// internal HTTP clients; callers own the TLS policy.
+func newAgentTransport(tlsCfg *tls.Config) *http.Transport {
+	return &http.Transport{
+		TLSClientConfig: tlsCfg,
+		DialContext:     (&net.Dialer{Timeout: 10 * time.Second}).DialContext,
+		IdleConnTimeout: 90 * time.Second,
+	}
+}
+
 func getDelegateClient() *http.Client {
 	delegateClientOnce.Do(func() {
 		// Load custom CA if server verification is enabled
@@ -167,14 +178,10 @@ func getDelegateClient() *http.Client {
 		delegateClient = &http.Client{
 			// No overall/header timeout: the async backend may legitimately delay the
 			// response (long-poll, async run/wait, large transfers); only connect is bounded.
-			Transport: &http.Transport{
-				TLSClientConfig: &tls.Config{
-					InsecureSkipVerify: !config.ConfigData.REST.SSL.VerifyServer,
-					RootCAs:            serverCA, // Use the custom CA if available
-				},
-				DialContext:     (&net.Dialer{Timeout: 10 * time.Second}).DialContext,
-				IdleConnTimeout: 90 * time.Second,
-			},
+			Transport: newAgentTransport(&tls.Config{
+				InsecureSkipVerify: !config.ConfigData.REST.SSL.VerifyServer,
+				RootCAs:            serverCA, // Use the custom CA if available
+			}),
 		}
 	})
 	return delegateClient
@@ -185,6 +192,9 @@ func getDelegateClient() *http.Client {
 // allowError is retained for API compatibility; read errors only drop the dead
 // connection from the pool, and the next request reconnects.
 func MonitorConnectionResponse(conn *Connection, allowError bool) {
+	// deleteConnection skips unpooled one-shot connections, so close here too
+	// (once-guarded) or the in-flight waiter hangs and the fd leaks.
+	defer conn.close()
 	defer deleteConnection(conn)
 
 	for {
@@ -195,6 +205,42 @@ func MonitorConnectionResponse(conn *Connection, allowError bool) {
 		}
 
 		conn.onResponse(response)
+	}
+}
+
+// watchCorsAllowlist reloads config.yaml when its mtime changes and swaps the
+// CORS allowlist, mirroring the daemon's hot reload without an agent restart.
+func watchCorsAllowlist(ctx context.Context, allowlist *utils.CORSAllowlist) {
+	latestMtime := func() time.Time {
+		var latest time.Time
+		for _, path := range config.ConfigFileCandidates() {
+			if info, err := os.Stat(path); err == nil && info.ModTime().After(latest) {
+				latest = info.ModTime()
+			}
+		}
+		return latest
+	}
+	lastMod := latestMtime()
+	ticker := time.NewTicker(15 * time.Second)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			current := latestMtime()
+			if !current.After(lastMod) {
+				continue
+			}
+			lastMod = current
+			if err := config.Reload(); err != nil {
+				logger.Warnf("Config reload for the CORS allowlist failed: %v", err)
+				continue
+			}
+			origins := config.ConfigData.REST.CorsAllowOrigins
+			allowlist.Set(origins)
+			logger.Infof("CORS allowlist reloaded from config: %d origin(s)", len(origins))
+		}
 	}
 }
 
@@ -227,8 +273,9 @@ func ListenAndServeREST(ctx context.Context) error {
 	corsDisabled := config.ConfigData.REST.CORSDisabled
 	utils.EnableGlobalCORS(!corsDisabled)
 	corsConfig := utils.DefaultCORSConfig
-	corsConfig.AllowedOrigins = config.ConfigData.REST.CorsAllowOrigins
-	logger.Infof("CORS enabled: %v, allowlisted origins: %d", !corsDisabled, len(corsConfig.AllowedOrigins))
+	corsAllowlist := utils.NewCORSAllowlist(config.ConfigData.REST.CorsAllowOrigins)
+	corsConfig.LiveOrigins = corsAllowlist
+	logger.Infof("CORS enabled: %v, allowlisted origins: %d", !corsDisabled, len(config.ConfigData.REST.CorsAllowOrigins))
 
 	// HTTP router using gorilla/mux
 	router := mux.NewRouter()
@@ -246,13 +293,18 @@ func ListenAndServeREST(ctx context.Context) error {
 	// Apply CORS globally
 	if !corsDisabled {
 		router.Use(utils.Cors(corsConfig))
+		// Follow daemon-side CORS hot reloads (PUT /appmesh/config, SIGHUP): a stale
+		// startup snapshot would keep serving the old allowlist until an agent restart.
+		go watchCorsAllowlist(ctx, corsAllowlist)
 	}
 
 	// Grafana
 	grafana.RegisterGrafanaRESTHandler(router)
 
-	// docker.sock proxy
-	RegisterDockerRoutes(router)
+	// Container lifecycle service (absent when no Docker endpoint exists)
+	if err := RegisterContainerRoutes(router); err != nil {
+		logger.Infof("Docker container service disabled: %v", err)
+	}
 
 	// Static relay page for the browser OAuth callback on this entry origin.
 	// Must stay ahead of the catch-all forward to the daemon.
@@ -280,16 +332,18 @@ func ListenAndServeREST(ctx context.Context) error {
 }
 
 func newAuthReverseProxy() (http.Handler, string, error) {
+	if err := config.ValidateAbsoluteHTTPURL(config.OIDCData.Issuer); err != nil {
+		return nil, "", fmt.Errorf("invalid OIDC issuer")
+	}
+	if err := config.ValidateAbsoluteHTTPURL(config.OIDCData.AccessURL); err != nil {
+		return nil, "", fmt.Errorf("invalid OIDC access URL")
+	}
 	issuer, err := url.Parse(config.OIDCData.Issuer)
-	if err != nil || (issuer.Scheme != "http" && issuer.Scheme != "https") || issuer.Host == "" ||
-		issuer.Hostname() == "" || issuer.User != nil || issuer.RawQuery != "" || issuer.ForceQuery ||
-		issuer.Fragment != "" {
+	if err != nil {
 		return nil, "", fmt.Errorf("invalid OIDC issuer")
 	}
 	target, err := url.Parse(config.OIDCData.AccessURL)
-	if err != nil || (target.Scheme != "http" && target.Scheme != "https") || target.Host == "" ||
-		target.Hostname() == "" || target.User != nil || target.RawQuery != "" || target.ForceQuery ||
-		target.Fragment != "" {
+	if err != nil {
 		return nil, "", fmt.Errorf("invalid OIDC access URL")
 	}
 	issuerPath := strings.TrimSuffix(issuer.Path, "/")
@@ -306,15 +360,11 @@ func newAuthReverseProxy() (http.Handler, string, error) {
 			return nil, "", fmt.Errorf("failed to load the authentication-service CA: %w", err)
 		}
 	}
-	proxy.Transport = &http.Transport{
-		TLSClientConfig: &tls.Config{
-			MinVersion:         tls.VersionTLS12,
-			InsecureSkipVerify: !config.OIDCData.TLSVerify,
-			RootCAs:            authRoots,
-		},
-		DialContext:     (&net.Dialer{Timeout: 10 * time.Second}).DialContext,
-		IdleConnTimeout: 90 * time.Second,
-	}
+	proxy.Transport = newAgentTransport(&tls.Config{
+		MinVersion:         tls.VersionTLS12,
+		InsecureSkipVerify: !config.OIDCData.TLSVerify,
+		RootCAs:            authRoots,
+	})
 	proxy.ErrorHandler = func(w http.ResponseWriter, _ *http.Request, proxyErr error) {
 		logger.Warnf("Authentication-service reverse proxy failed: %v", proxyErr)
 		utils.HTTPError(w, "Authentication service is unavailable", http.StatusBadGateway)
@@ -409,30 +459,9 @@ func StartHTTPSServer(ctx context.Context, restAgentAddr string, router *mux.Rou
 	return serveTLS(ctx, restAgentAddr, server)
 }
 
-// servePlain serves the server without TLS and shuts it down gracefully on ctx cancel.
-func servePlain(ctx context.Context, address string, server *http.Server) error {
-	ln, err := net.Listen("tcp", address)
-	if err != nil {
-		return fmt.Errorf("failed to listen on %s: %w", address, err)
-	}
-	go func() {
-		<-ctx.Done()
-		shutdownCtx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-		defer cancel()
-		if err := server.Shutdown(shutdownCtx); err != nil {
-			logger.Warnf("Graceful shutdown failed: %v", err)
-		}
-	}()
-	logger.Infof("<App Mesh Agent> Listening on %s", address)
-	if err := server.Serve(ln); err != nil && err != http.ErrServerClosed {
-		return fmt.Errorf("plain server error: %w", err)
-	}
-	return nil
-}
-
-// serveTLS serves the server over TLS and shuts it down gracefully on ctx cancel.
-// (Not named ListenAndServeTLS to avoid the stdlib method's cert-path contract.)
-func serveTLS(ctx context.Context, address string, server *http.Server) error {
+// serve runs server on a fresh listener for address and shuts it down
+// gracefully on ctx cancel. wrap (optional) decorates the listener, e.g. with TLS.
+func serve(ctx context.Context, address string, server *http.Server, wrap func(net.Listener) net.Listener) error {
 	ln, err := net.Listen("tcp", address)
 	if err != nil {
 		return fmt.Errorf("failed to listen on %s: %w", address, err)
@@ -449,8 +478,27 @@ func serveTLS(ctx context.Context, address string, server *http.Server) error {
 	}()
 
 	logger.Infof("<App Mesh Agent> Listening on %s", address)
-	tlsListener := tls.NewListener(ln, server.TLSConfig)
-	if err := server.Serve(tlsListener); err != nil && err != http.ErrServerClosed {
+	if wrap != nil {
+		ln = wrap(ln)
+	}
+	return server.Serve(ln)
+}
+
+// servePlain serves the server without TLS.
+func servePlain(ctx context.Context, address string, server *http.Server) error {
+	if err := serve(ctx, address, server, nil); err != nil && err != http.ErrServerClosed {
+		return fmt.Errorf("plain server error: %w", err)
+	}
+	return nil
+}
+
+// serveTLS serves the server over TLS.
+// (Not named ListenAndServeTLS to avoid the stdlib method's cert-path contract.)
+func serveTLS(ctx context.Context, address string, server *http.Server) error {
+	err := serve(ctx, address, server, func(ln net.Listener) net.Listener {
+		return tls.NewListener(ln, server.TLSConfig)
+	})
+	if err != nil && err != http.ErrServerClosed {
 		return fmt.Errorf("server error: %w", err)
 	}
 	return nil
@@ -479,27 +527,27 @@ func HandleAppMeshRequest(w http.ResponseWriter, r *http.Request) {
 	forwardingHost := string(r.Header.Get(HTTPHeaderKeyXTargetHost))
 	if forwardingHost != "" {
 		r.Header.Del(HTTPHeaderKeyXTargetHost)
-		if !isPublicForwardRequest(r) {
-			authorization := strings.TrimSpace(r.Header.Get(HTTPHeaderKeyAuthorization))
-			if authorization == "" {
-				w.Header().Set("WWW-Authenticate", `Bearer realm="appmesh"`)
-				utils.HTTPError(w, "Forwarded requests require bearer authentication", http.StatusUnauthorized)
-				return
-			}
-			validation, validationErr := validateForwardBearer(r.Context(), localConn, authorization)
-			if validationErr != nil {
-				logger.Errorf("Failed to validate forwarding authentication: %v", validationErr)
-				utils.HTTPError(w, "authentication service is unavailable", http.StatusServiceUnavailable)
-				return
-			}
-			if validation.HTTPStatus < http.StatusOK || validation.HTTPStatus >= http.StatusMultipleChoices {
-				writeForwardValidationResponse(w, validation)
-				return
-			}
-			if !forwardPermissionGranted(validation) {
-				utils.HTTPError(w, "forwarding requires the "+PermissionHostForward+" permission", http.StatusForbidden)
-				return
-			}
+		// Forwarding is a capability regardless of target path: a public discovery
+		// path must not hand an anonymous caller a port-scan oracle.
+		authorization := strings.TrimSpace(r.Header.Get(HTTPHeaderKeyAuthorization))
+		if authorization == "" {
+			w.Header().Set("WWW-Authenticate", `Bearer realm="appmesh"`)
+			utils.HTTPError(w, "Forwarded requests require bearer authentication", http.StatusUnauthorized)
+			return
+		}
+		validation, validationErr := validateForwardBearer(r.Context(), localConn, authorization)
+		if validationErr != nil {
+			logger.Errorf("Failed to validate forwarding authentication: %v", validationErr)
+			utils.HTTPError(w, "authentication service is unavailable", http.StatusServiceUnavailable)
+			return
+		}
+		if validation.HTTPStatus < http.StatusOK || validation.HTTPStatus >= http.StatusMultipleChoices {
+			writeForwardValidationResponse(w, validation)
+			return
+		}
+		if !forwardPermissionGranted(validation) {
+			utils.HTTPError(w, "forwarding requires the "+PermissionHostForward+" permission", http.StatusForbidden)
+			return
 		}
 		if isSubscriptionRequest(r) {
 			utils.HTTPError(w, "Forwarded subscriptions require TCP or WebSocket", http.StatusMethodNotAllowed)
@@ -568,13 +616,7 @@ func HandleAppMeshRequest(w http.ResponseWriter, r *http.Request) {
 	request.Headers[HTTPUserAgentHeaderName] = UserAgentAppmeshSDK
 	if targetConnection != localConn {
 		request.Headers[HTTPUserAgentHeaderName] = UserAgentAppmeshTCP
-		// File download & upload
-		switch request.RequestURI {
-		case RestPathDownload:
-			request.Headers[HTTPHeaderKeyXRecvFileSocket] = "true"
-		case RestPathUpload:
-			request.Headers[HTTPHeaderKeyXSendFileSocket] = "true"
-		}
+		markFileTransferHeaders(request)
 	} else if request.RequestURI == RestPathDownload || request.RequestURI == RestPathUpload {
 		// TOCTOU: the daemon precheck validates the path and pins the file with
 		// open-then-verify; re-opening the client-supplied path on this side
@@ -592,12 +634,7 @@ func HandleAppMeshRequest(w http.ResponseWriter, r *http.Request) {
 		defer transferConn.close()
 		targetConnection = transferConn
 		request.Headers[HTTPUserAgentHeaderName] = UserAgentAppmeshTCP
-		switch request.RequestURI {
-		case RestPathDownload:
-			request.Headers[HTTPHeaderKeyXRecvFileSocket] = "true"
-		case RestPathUpload:
-			request.Headers[HTTPHeaderKeyXSendFileSocket] = "true"
-		}
+		markFileTransferHeaders(request)
 	}
 
 	resp, sendErr := targetConnection.sendRequestDataWithContext(r.Context(), request)
@@ -638,10 +675,17 @@ func ForwardAppMeshRequest(w http.ResponseWriter, r *http.Request, forwardingHos
 	if forwardingHost.Port() == "" {
 		targetHost = net.JoinHostPort(forwardingHost.Hostname(), strconv.Itoa(config.ConfigData.REST.RESTListenPort))
 	}
-	// Create a new request to be sent to the target server
-	targetURL := fmt.Sprintf("%s://%s%s?%s", forwardingHost.Scheme, targetHost, r.URL.Path, r.URL.RawQuery)
+	// Keep the percent-encoded path (RawPath); the target verifies signatures
+	// over the encoded bytes the client sent.
+	targetURL := &url.URL{
+		Scheme:   forwardingHost.Scheme,
+		Host:     targetHost,
+		Path:     r.URL.Path,
+		RawPath:  r.URL.RawPath,
+		RawQuery: r.URL.RawQuery,
+	}
 	logger.Debugf("Forwarding request: %s %s", r.Method, targetURL)
-	req, err := http.NewRequestWithContext(r.Context(), r.Method, targetURL, r.Body)
+	req, err := http.NewRequestWithContext(r.Context(), r.Method, targetURL.String(), r.Body)
 	if err != nil {
 		logger.Errorf("Failed to create forward request: %v", err)
 		utils.HTTPError(w, "failed to create forward request", http.StatusInternalServerError)
@@ -770,15 +814,20 @@ func SetDownloadHeaders(w http.ResponseWriter, fileName string) {
 	w.Header().Set("Pragma", "public")
 }
 
+// Upload size and copy-buffer bounds for SaveUploadedFile.
+const (
+	// maxUploadFileSize caps the incoming upload body (2 GB).
+	maxUploadFileSize = int64(2) << 30
+	// uploadCopyBufferSize is the chunk size for buffered copying (32 KB).
+	uploadCopyBufferSize = 32 * 1024
+)
+
 // SaveUploadedFile saves an uploaded file directly to the specified path without creating temp files.
 // It supports both multipart/form-data and direct body uploads.
 func SaveUploadedFile(w http.ResponseWriter, r *http.Request, filePath string) error {
 	if filePath == "" {
 		return errors.New("file path cannot be empty")
 	}
-
-	maxFileSize := int64(2) << 30 // 2GB in bytes
-	bufferSize := 32 * 1024       // 32KB chunks for buffered copying
 
 	// Create the destination file with proper permissions
 	dst, err := os.OpenFile(filePath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0600)
@@ -788,7 +837,7 @@ func SaveUploadedFile(w http.ResponseWriter, r *http.Request, filePath string) e
 	defer dst.Close()
 
 	// Limit the size of the incoming request body
-	r.Body = http.MaxBytesReader(w, r.Body, maxFileSize)
+	r.Body = http.MaxBytesReader(w, r.Body, maxUploadFileSize)
 
 	var src io.ReadCloser
 
@@ -822,7 +871,7 @@ func SaveUploadedFile(w http.ResponseWriter, r *http.Request, filePath string) e
 	defer src.Close()
 
 	// Use io.CopyBuffer for efficient streaming with a fixed-size buffer
-	buf := make([]byte, bufferSize)
+	buf := make([]byte, uploadCopyBufferSize)
 	if _, err := io.CopyBuffer(dst, src, buf); err != nil {
 		// In case of error, attempt to remove the partially written file
 		dst.Close()

@@ -7,6 +7,7 @@
 import json
 import logging
 import os
+import re
 import sys
 import warnings
 from contextlib import suppress
@@ -15,7 +16,7 @@ from enum import Enum, unique
 from http import HTTPStatus
 from http.cookiejar import DefaultCookiePolicy
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple, Union
+from typing import Any, Dict, Iterator, List, Optional, Tuple, Union
 from urllib import parse
 
 # Third-party imports
@@ -24,14 +25,18 @@ import requests
 from requests.structures import CaseInsensitiveDict
 
 # Local imports
+from . import request_signature
 from .app import App
 from .app_output import AppOutput
 from .app_run import AppRun, OutputHandler
 from .exceptions import AppMeshAuthError, AppMeshConnectionError, AppMeshRequestError
-from . import request_signature
+from .streaming import SseEnd, end_from_payload, iter_sse_events, raise_on_error_end, route_hint
 from .token_provider import StaticAccessTokenProvider, TokenProvider
 
 logger = logging.getLogger(__name__)
+
+# SSE stream routes sign the empty-body hash, the same exemption set as the JS SDK.
+_EMPTY_BODY_EXEMPT_STREAM_RE = re.compile(r"^/appmesh/app/[^/]+/(output|task)/stream$")
 
 
 class _RejectAllCookiesPolicy(DefaultCookiePolicy):
@@ -87,6 +92,12 @@ class AppMeshClient:
         - run_app_sync()
         - run_task()
         - cancel_task()
+
+        # Streaming (SSE; generator APIs)
+        - follow_output()
+        - run_task_stream()
+        - stream_run()
+        - send_input()
 
         # Event Subscription (AppMeshClientTCP/AppMeshClientWSS only; see `supports_events`)
         - subscribe()
@@ -149,6 +160,9 @@ class AppMeshClient:
     _HTTP_HEADER_KEY_X_FILE_MODE = "X-File-Mode"
     _HTTP_HEADER_KEY_X_FILE_USER = "X-File-User"
     _HTTP_HEADER_KEY_X_FILE_GROUP = "X-File-Group"
+    _HTTP_HEADER_KEY_X_OUTPUT_POSITION = "X-Output-Position"
+    _HTTP_HEADER_KEY_X_EXIT_CODE = "X-Exit-Code"
+    _HTTP_HEADER_KEY_X_INPUT_CLOSE = "X-Input-Close"
 
     @unique
     class _Method(Enum):
@@ -220,8 +234,8 @@ class AppMeshClient:
         self.request_timeout = request_timeout
         self._forward_to = None
 
-        self._api_key: Optional[str] = None
-        self._api_secret: Optional[str] = None
+        # One attribute holds the (key_id, secret) pair so enable/disable is a single assignment.
+        self._api_credentials: Optional[Tuple[str, str]] = None
         if api_key is not None or api_secret is not None:
             # Validate through the shared setter so partial pairs are rejected.
             self.enable_request_signature(api_key or "", api_secret or "")
@@ -330,33 +344,57 @@ class AppMeshClient:
             raise ValueError("key_id must be a non-empty string")
         if not isinstance(secret, str) or not secret:
             raise ValueError("secret must be a non-empty string")
-        self._api_key = key_id
-        self._api_secret = secret
+        self._api_credentials = (key_id, secret)
 
     def disable_request_signature(self) -> None:
         """Turn off request signing previously enabled via ``enable_request_signature``."""
-        self._api_key = None
-        self._api_secret = None
+        self._api_credentials = None
 
     def _request_signature_enabled(self) -> bool:
         """Signing is active only when both the key id and secret are set."""
-        return bool(self._api_key and self._api_secret)
+        return self._api_credentials is not None
 
     def _signature_headers(self, method: "AppMeshClient._Method", path: str, query: Optional[dict], body) -> dict:
         """Build the four signature headers for one HTTP request.
 
         ``body`` is the already-JSON-normalized body (str/bytes) or the raw
-        caller value. A callable body (a streamed upload) and the streamed file
-        endpoints sign the empty-string body hash — the documented exemption.
+        caller value. A callable body (a streamed upload) is accepted only on
+        the empty-body exempt paths (streamed file routes and SSE streams, the
+        JS SDK's ``isEmptyBodyExemptPath`` set) where it signs the empty-string
+        hash; anywhere else a lazily produced body cannot be hashed, so it is
+        rejected here instead of sending a request the daemon is bound to 401.
         """
+        if callable(body):
+            signing_path = request_signature.canonical_signing_path(path)
+            if (
+                signing_path not in request_signature.FILE_ENDPOINT_EMPTY_HASH_PATHS
+                and _EMPTY_BODY_EXEMPT_STREAM_RE.match(signing_path) is None
+            ):
+                raise ValueError(
+                    f"a callable body cannot be HMAC-signed on a non-exempt path ({path}); "
+                    "only the streamed file endpoints and SSE streams sign the empty-body hash"
+                )
+            body = None
+        key_id, secret = self._api_credentials or ("", "")
         return request_signature.signed_headers(
-            self._api_key,
-            self._api_secret,
+            key_id,
+            secret,
             method.value,
             path,
             query,
-            None if body is None or callable(body) else body,
+            body,
         )
+
+    @staticmethod
+    def _should_retry_unauthorized(signed: bool, resp: "requests.Response") -> bool:
+        """Whether a 401 justifies spending the provider's single-use refresh
+        token: an unsigned request's 401 is a bearer problem, but a signed
+        request rejected without an ``invalid_token`` WWW-Authenticate challenge
+        is a signature failure — force-refreshing there would burn the session
+        without fixing the request."""
+        if not signed:
+            return True
+        return "invalid_token" in resp.headers.get("WWW-Authenticate", "")
 
     def _append_signature_headers(self, headers: dict, method: str, path: str, query: Optional[dict] = None) -> None:
         """Attach the four signature headers to a caller-built request that does
@@ -364,9 +402,8 @@ class AppMeshClient:
         request). No-op when signing is not enabled. Streamed file endpoints
         sign the empty-string body hash — the streamed content is exempt."""
         if self._request_signature_enabled():
-            headers.update(
-                request_signature.signed_headers(self._api_key, self._api_secret, method, path, query, None)
-            )
+            key_id, secret = self._api_credentials or ("", "")
+            headers.update(request_signature.signed_headers(key_id, secret, method, path, query, None))
 
     def close(self) -> None:
         """Close the client and release resources."""
@@ -484,8 +521,8 @@ class AppMeshClient:
             raise_on_fail=False,
         )
 
-        output_position = int(resp.headers["X-Output-Position"]) if "X-Output-Position" in resp.headers else None
-        exit_code = int(resp.headers["X-Exit-Code"]) if "X-Exit-Code" in resp.headers else None
+        output_position = int(resp.headers[self._HTTP_HEADER_KEY_X_OUTPUT_POSITION]) if self._HTTP_HEADER_KEY_X_OUTPUT_POSITION in resp.headers else None
+        exit_code = int(resp.headers[self._HTTP_HEADER_KEY_X_EXIT_CODE]) if self._HTTP_HEADER_KEY_X_EXIT_CODE in resp.headers else None
 
         return AppOutput(status_code=resp.status_code, output=resp.text, output_position=output_position,
             exit_code=exit_code)
@@ -858,6 +895,195 @@ class AppMeshClient:
             logger.warning("Failed to cancel task for app '%s' with status %d: %s", app_name, resp.status_code, resp.text)
         return resp.status_code == HTTPStatus.OK
 
+    ########################################
+    # Streaming (SSE)
+    ########################################
+    def _sse_request(
+        self,
+        method: _Method,
+        path: str,
+        query: Optional[dict] = None,
+        body=None,
+    ) -> requests.Response:
+        """Open an SSE stream as a streamed response; SSE cannot ride a framed
+        (TCP/WSS) transport, so framed subclasses redirect this to a direct HTTPS side channel.
+        """
+        try:
+            return self._request_http(method, path=path, query=query, body=body)
+        except AppMeshRequestError as e:
+            # 404/405 on a streaming route almost always means base_url points at
+            # the agent REST listener, which carries no streaming routes — say so.
+            if e.status_code in (HTTPStatus.NOT_FOUND, HTTPStatus.METHOD_NOT_ALLOWED):
+                raise AppMeshRequestError(f"{e}{route_hint(e.status_code)}", e.status_code) from e
+            raise
+
+    def run_task_stream(self, app_name: str, data: str, timeout: int = 300) -> Iterator[str]:
+        """Streaming task RPC: send an invocation and yield incremental results as they arrive.
+
+        Streaming counterpart of run_task(): the worker may push any number of partials
+        (``worker.send_task_partial``) before its final reply, each yielded in order.
+        The streaming routes live on the engine's native listener (default wss/https
+        6058; via the web UI, 443) — a client left at the default ``base_url`` (the
+        agent REST listener, port 6060) has no streaming routes and gets 404/405.
+
+        Args:
+            app_name: Name of the target application (as registered in App Mesh).
+            data: Payload to deliver to the application (same contract as run_task).
+            timeout: Maximum seconds for the whole call; exceeding it raises AppMeshTimeoutError.
+
+        Returns:
+            The generator's return value is an ``SseEnd`` whose ``result`` carries the final
+            payload (the same string run_task would return); retrieve it with
+            ``end = yield from client.run_task_stream(...)`` or StopIteration.value.
+
+        Raises:
+            AppMeshTimeoutError: The task did not finish within ``timeout``.
+            AppMeshRequestError: The stream ended with an error.
+        """
+        query = {"timeout": str(timeout)} if timeout and timeout > 0 else None
+        resp = self._sse_request(AppMeshClient._Method.POST_STREAM, path=f"/appmesh/app/{app_name}/task/stream",
+            query=query, body=data)
+        end: Optional[SseEnd] = None
+        final_result: Optional[str] = None
+        try:
+            for event, payload in iter_sse_events(resp):
+                if event == "partial":
+                    yield str(payload.get("data", ""))
+                elif event == "final":
+                    final_result = payload.get("result")
+                elif event == "end":
+                    end = end_from_payload(payload, result=final_result)
+                    break
+        finally:
+            resp.close()
+        if end is None:
+            end = SseEnd(reason="closed", result=final_result)
+        raise_on_error_end(end)
+        return end
+
+    def follow_output(
+        self,
+        app_name: str,
+        stdout_position: int = 0,
+        process_uuid: str = "",
+        follow: bool = True,
+        timeout: int = 3600,
+    ) -> Iterator[str]:
+        """Stream an application's stdout incrementally over server-sent events.
+
+        Replays from ``stdout_position``, then (with ``follow=True``) yields live output
+        until exit/removal/timeout; the server de-duplicates the replay/live boundary,
+        so no polling or position bookkeeping is needed here. Streaming routes are
+        served on the engine's native listener (default wss/https 6058; via the web
+        UI, 443) — not the agent REST listener on the default ``base_url`` port 6060
+        (see ``run_task_stream``).
+
+        Args:
+            app_name: Name of the target application.
+            stdout_position: Byte cursor to start from (0 replays from the beginning).
+            process_uuid: Pin the stream to one run; empty follows the current run.
+            follow: ``False`` replays to the current end of output and stops.
+            timeout: Overall stream lifetime cap in seconds (server-side).
+
+        Returns:
+            The generator's return value is an ``SseEnd`` (``exit_code``/``position``
+            filled on a natural exit); retrieve it with
+            ``end = yield from client.follow_output(...)`` or StopIteration.value.
+
+        Raises:
+            AppMeshRequestError: The stream ended with an error.
+        """
+        query = {
+            "stdout_position": str(stdout_position),
+            "follow": "true" if follow else "false",
+            "timeout": str(timeout),
+        }
+        if process_uuid:
+            query["process_uuid"] = process_uuid
+        resp = self._sse_request(AppMeshClient._Method.GET_STREAM, path=f"/appmesh/app/{app_name}/output/stream",
+            query=query)
+        end: Optional[SseEnd] = None
+        try:
+            for event, payload in iter_sse_events(resp):
+                if event == "stdout":
+                    yield str(payload.get("output", ""))
+                elif event == "end":
+                    end = end_from_payload(payload)
+                    break
+        finally:
+            resp.close()
+        if end is None:
+            end = SseEnd(reason="closed")
+        raise_on_error_end(end)
+        return end
+
+    def stream_run(
+        self,
+        app: Union[App, str],
+        max_time: Union[int, str] = _DURATION_TWO_DAYS_ISO,
+        lifecycle: Union[int, str] = _DURATION_TWO_DAYS_HALF_ISO,
+    ) -> Iterator[str]:
+        """Run a one-shot application remotely and stream its stdout incrementally.
+
+        Equivalent to run_app_async() + follow_output() + delete_app(); serves continuous-output
+        processes (model inference, log producers) that the fully-buffered run_app_sync()
+        cannot show until completion. Like ``follow_output``, this needs the engine's
+        native listener (default wss/https 6058), not the agent REST listener 6060.
+
+        Args:
+            app: An ``App`` instance or a shell command string (same contract as run_app_async).
+            max_time: Maximum runtime for the remote process (seconds or ISO 8601 duration).
+            lifecycle: Retention window for the temporary run app (seconds or ISO 8601 duration).
+
+        Returns:
+            The generator's return value is the run's ``SseEnd`` (``exit_code`` on a
+            natural exit). The temporary application is always deleted on exit.
+
+        Raises:
+            AppMeshRequestError: The stream ended with an error.
+        """
+        run = self.run_app_async(app, max_time, lifecycle)
+        try:
+            end = yield from self.follow_output(run.app_name, process_uuid=run.process_uuid, follow=True,
+                timeout=max(self._parse_duration(max_time), self._parse_duration(lifecycle)))
+        finally:
+            with suppress(Exception):
+                self.delete_app(run.app_name)
+        return end
+
+    def send_input(self, app_name: str, data: Union[str, bytes], close: bool = False, process_uuid: str = "") -> int:
+        """Inject bytes into the stdin of a running application.
+
+        The application must be registered with ``stdin: "pipe"``; the daemon-held write
+        end makes it a conversational resource (interactive CLI, agent REPL) whose output
+        is read with follow_output().
+
+        Args:
+            app_name: Name of the target application.
+            data: Bytes (or text, encoded as UTF-8) to write to the process stdin.
+            close: Also close the pipe write end so the process reads EOF.
+            process_uuid: Restrict the write to this run; empty targets the current run.
+
+        Returns:
+            Number of bytes written.
+
+        Raises:
+            AppMeshRequestError: The stdin pipe buffer is full (retry with the
+                remainder) or the write failed.
+        """
+        if isinstance(data, str):
+            data = data.encode("utf-8")
+        header = {self._HTTP_HEADER_KEY_X_INPUT_CLOSE: "true"} if close else None
+        query = {"process_uuid": process_uuid} if process_uuid else None
+        resp = self._request_http(
+            AppMeshClient._Method.POST,
+            path=f"/appmesh/app/{app_name}/input",
+            query=query,
+            header=header,
+            body=data,
+        )
+        return int(resp.json().get("bytes_written", 0))
+
     def run_app_async(
         self,
         app: Union[App, str],
@@ -876,10 +1102,11 @@ class AppMeshClient:
             max_time: Maximum runtime for the remote process, after which the daemon kills it
                 (sent as the wire query parameter ``timeout``).
                 Accepts integer seconds or ISO 8601 duration format (e.g., 'P1Y2M3DT4H5M6S', 'P5W'). Defaults to `P2D`.
-            lifecycle: Total retention window for the temporary run app, after which the daemon
-                purges it (including its cached output); must cover ``max_time`` plus the time
-                needed to collect results (sent as the wire query parameter ``lifecycle``).
-                Accepts integer seconds or ISO 8601 duration format. Defaults to `P2DT12H`.
+            lifecycle: Retention window for the temporary run app (wire query parameter
+                ``lifecycle``; integer seconds or ISO 8601 duration, default `P2DT12H`). The
+                daemon purges at window expiry or ~60s after exit (the grace keeps output
+                readable for late pollers), so ``lifecycle`` must cover ``max_time`` plus
+                result collection.
 
         Returns:
             ``AppRun`` handle that captures the current ``forward_to`` target so later polling can
@@ -974,9 +1201,10 @@ class AppMeshClient:
             max_time: Maximum runtime for the remote process, after which the daemon kills it
                 (sent as the wire query parameter ``timeout``).
                 Accepts integer seconds or ISO 8601 duration format (e.g., 'P1Y2M3DT4H5M6S', 'P5W').
-            lifecycle: Total retention window for the temporary run app, after which the daemon
-                purges it (sent as the wire query parameter ``lifecycle``).
-                Accepts integer seconds or ISO 8601 duration format.
+            lifecycle: Retention window for the temporary run app (wire query parameter
+                ``lifecycle``; integer seconds or ISO 8601 duration). The daemon purges at
+                window expiry or ~60s after exit (the grace keeps output readable for late
+                pollers), so ``lifecycle`` must cover ``max_time`` plus result collection.
 
         Returns:
             ``(exit_code, stdout_text)``. ``exit_code`` is ``None`` when the server did not return
@@ -998,8 +1226,8 @@ class AppMeshClient:
 
         exit_code = None
         if resp.status_code == HTTPStatus.OK:
-            if "X-Exit-Code" in resp.headers:
-                exit_code = int(resp.headers["X-Exit-Code"])
+            if self._HTTP_HEADER_KEY_X_EXIT_CODE in resp.headers:
+                exit_code = int(resp.headers[self._HTTP_HEADER_KEY_X_EXIT_CODE])
 
         return exit_code, resp.text
 
@@ -1014,7 +1242,9 @@ class AppMeshClient:
     ) -> requests.Response:
         """Make an HTTP request. A callable ``body`` is invoked per attempt and must
         return a closeable stream (a file opened for reading)."""
-        url = parse.urljoin(self.base_url, path)
+        # urljoin drops a base path prefix; keep it on the wire and in the signature.
+        base = self.base_url.rstrip("/")
+        url = base + path if path.startswith("/") else parse.urljoin(base, path)
 
         base_headers = header.copy() if header else {}
         caller_manages_auth = any(key.lower() == self._HTTP_HEADER_KEY_AUTH.lower() for key in base_headers)
@@ -1043,12 +1273,16 @@ class AppMeshClient:
         signing = self._request_signature_enabled()
         if signing:
             params = request_signature.encode_query(query)
-            # The signature must bind the path exactly as it reaches the daemon.
-            # requests re-quotes the URL before the wire (spaces and non-ASCII
-            # become %XX), so derive the wire path with the same quoting
-            # requests applies (requests.utils.requote_uri) and sign that —
-            # signing the caller's raw path would 401 on the daemon.
-            wire_path = requests.utils.requote_uri(parse.urlsplit(url).path)
+            # Prepare with requests itself and sign the prepared URL's path:
+            # requests repairs the URL on send, so a separately derived wire
+            # path can drift and the daemon would verify a different path.
+            wire_method = "GET" if method is AppMeshClient._Method.GET_STREAM else method.value
+            if method is AppMeshClient._Method.POST_STREAM:
+                wire_method = "POST"
+            prepared = requests.Request(method=wire_method, url=url, params=params).prepare()
+            wire_path = parse.urlsplit(prepared.url).path
+            url = prepared.url
+            params = None  # the query is already inside the prepared URL
 
         # Streaming/multipart bodies cannot be assumed replayable after a 401 response.
         replayable = body is None or isinstance(body, (str, bytes, bytearray)) or callable(body)
@@ -1108,6 +1342,7 @@ class AppMeshClient:
                     and replayable
                     and provider is not None
                     and provider.can_refresh
+                    and self._should_retry_unauthorized(signing, resp)
                 ):
                     rejected_token = bearer_token
                     resp.close()
@@ -1123,4 +1358,5 @@ class AppMeshClient:
             raise AppMeshAuthError("TokenProvider failed to replace a rejected access token", HTTPStatus.UNAUTHORIZED)
 
         except requests.exceptions.RequestException as e:
-            raise AppMeshRequestError(f"HTTP request failed: {e}") from e
+            status = getattr(getattr(e, "response", None), "status_code", None)
+            raise AppMeshRequestError(f"HTTP request failed: {e}", status) from e

@@ -16,6 +16,7 @@
 
 import http from 'http'
 import nodeCrypto from 'node:crypto'
+import { inspect as utilInspect } from 'node:util'
 import msgpack from 'msgpack-lite'
 import fs, { writeFileSync, unlinkSync } from 'fs'
 import { tmpdir } from 'os'
@@ -101,7 +102,11 @@ function startMockServer () {
           res.writeHead(200, { 'Content-Type': 'application/json' })
           res.end('{"ok": true}')
         } else {
-          res.writeHead(401, { 'Content-Type': 'application/json' })
+          // An expired bearer carries the RFC 6750 invalid_token challenge; without it a signed 401 is terminal.
+          res.writeHead(401, {
+            'Content-Type': 'application/json',
+            'WWW-Authenticate': 'Bearer error="invalid_token", error_description="token expired"'
+          })
           res.end('{"message": "Unauthorized"}')
         }
       })
@@ -777,6 +782,18 @@ await assert('signer known-answer vectors match the daemon canonical form', asyn
   if (signer.toString().includes(SIG_SECRET)) throw new Error('toString must redact the secret')
 })
 
+await assert('signer secret never surfaces in JSON.stringify or util.inspect', async () => {
+  const signer = new RequestSigner(SIG_KEY_ID, SIG_SECRET)
+  const dumped = JSON.stringify(signer)
+  if (dumped.includes(SIG_SECRET)) throw new Error(`JSON.stringify leaked the secret: ${dumped}`)
+  // Default options = what console.log renders; non-enumerable props stay hidden.
+  const inspected = utilInspect(signer)
+  if (inspected.includes(SIG_SECRET)) throw new Error(`util.inspect leaked the secret: ${inspected}`)
+  // The hidden own property still backs signing.
+  if (!Object.prototype.hasOwnProperty.call(signer, '_secret')) throw new Error('the _secret own property must exist')
+  if (await signer.sign('canonical') !== hmacHex('canonical')) throw new Error('the hidden secret must still sign')
+})
+
 await assert('body hash: empty body, FIPS vector, and streamed-file exemption', async () => {
   if (await bodySha256Hex('/x', null) !== EMPTY_BODY_SHA256) throw new Error('null body must hash the empty string')
   if (await bodySha256Hex('/x', Buffer.alloc(0)) !== EMPTY_BODY_SHA256) throw new Error('empty body must hash the empty string')
@@ -824,6 +841,72 @@ await assert('canonical query order is UTF-8 bytes, not UTF-16 code units', () =
   if (encoded !== expected) throw new Error(`encoded form got ${encoded}`)
   const mapped = canonicalQuery({ '\uD83D\uDE00': '1', '\uFFFD': '2' })
   if (mapped !== expected) throw new Error(`map form got ${mapped}`)
+})
+
+await assert('canonicalQueryFromEncoded treats prototype names as plain data (daemon std::map)', () => {
+  // The daemon keeps every decoded key in a std::map, so a key named like an
+  // Object prototype member is data. A plain object used to drop
+  // toString/constructor/hasOwnProperty keys and lose __proto__ assignments.
+  if (canonicalQueryFromEncoded('toString=1&constructor=2&hasOwnProperty=3&valueOf=4') !==
+      'constructor=2&hasOwnProperty=3&toString=1&valueOf=4') {
+    throw new Error(`prototype-named keys must survive: ${canonicalQueryFromEncoded('toString=1&constructor=2&hasOwnProperty=3&valueOf=4')}`)
+  }
+  // "__proto__" is a real entry, never the prototype trap.
+  if (canonicalQueryFromEncoded('__proto__=x&a=1') !== '__proto__=x&a=1') {
+    throw new Error(`__proto__ must stay data: ${canonicalQueryFromEncoded('__proto__=x&a=1')}`)
+  }
+  // Dedup is on the DECODED key (daemon decodes each component, then emplaces):
+  // "%61" decodes to "a", so raw-key dedup used to keep both entries.
+  if (canonicalQueryFromEncoded('a=1&%61=2') !== 'a=1') {
+    throw new Error(`decoded-key first-wins: ${canonicalQueryFromEncoded('a=1&%61=2')}`)
+  }
+  // ... while two keys that merely LOOK alike encoded stay distinct entries.
+  if (canonicalQueryFromEncoded('a=1&a%61=2') !== 'a=1&aa=2') {
+    throw new Error(`distinct decoded keys both stay: ${canonicalQueryFromEncoded('a=1&a%61=2')}`)
+  }
+})
+
+await assert('canonicalQueryFromEncoded keeps empty segments like the daemon', () => {
+  // An empty segment inserts ("", "") and the canonical output keeps its "="
+  // (the daemon Adaptor loop has no empty-segment skip); a trailing '&' adds
+  // no segment because the loop ends at the string bounds.
+  if (canonicalQueryFromEncoded('a=1&&b=2') !== '=&a=1&b=2') {
+    throw new Error(`got ${canonicalQueryFromEncoded('a=1&&b=2')}`)
+  }
+  if (canonicalQueryFromEncoded('&&') !== '=') throw new Error(`got ${canonicalQueryFromEncoded('&&')}`)
+  if (canonicalQueryFromEncoded('a=1&') !== 'a=1') throw new Error('a trailing & adds no segment')
+})
+
+await assert('cross-language golden signature vectors (fixed ts/nonce)', async () => {
+  // The same five vectors are pinned by the daemon C++, Go, Java, Python, and
+  // Rust test suites; path/query are the wire-encoded forms fed straight into
+  // the canonical layer, so no time window is involved.
+  const vectors = [
+    { method: 'GET', path: '/appmesh/app/100%25', query: '', body: '',
+      ts: '1700000000', nonce: 'nonce-golden-0001',
+      sig: '1036298fce978dab3ca5393a17c8dbeafcd22e8394585a96ce5a60ad39694d8c' },
+    { method: 'GET', path: '/appmesh/app/list', query: 'flag=true&name=dh-bot', body: '',
+      ts: '1700000001', nonce: 'nonce-golden-0002',
+      sig: '0c9287088c6ca609fad7436f3f4646451faa8e180733e28e10e4eee11f34a9c5' },
+    { method: 'POST', path: '/appmesh/file/download', query: '', body: '',
+      ts: '1700000002', nonce: 'nonce-golden-0003',
+      sig: 'dea6aa318b1fc84f8ffaadc859e4b36a90a9d6c5619f737dd037c78e5d17ac7d' },
+    { method: 'GET', path: '/appmesh/app/%E4%B8%AD%E6%96%87', query: 'a=1%26b%3D2', body: '',
+      ts: '1700000003', nonce: 'nonce-golden-0004',
+      sig: '6cf618bfb9264d61d5b23dbaa42d366f59054bce99b9addab3253f98aaadb0ab' },
+    { method: 'POST', path: '/appmesh/appmesh/run', query: '', body: '{"command":"echo hi"}',
+      ts: '1700000004', nonce: 'nonce-golden-0005',
+      sig: '0a8de849eda2abf6389d40f11299aaf09e7b440615a6ee0c7e01012a92a1f876' }
+  ]
+  const signer = new RequestSigner('ak-golden', 'golden-secret')
+  for (const v of vectors) {
+    // bodySha256Hex with a non-exempt path hashes the given bytes verbatim.
+    const canonical = canonicalString(v.method, v.path, v.query,
+      await bodySha256Hex('/golden/vector', Buffer.from(v.body, 'utf8')), v.ts, v.nonce)
+    const got = await signer.sign(canonical)
+    if (got !== v.sig) throw new Error(`vector ${v.nonce} mismatch: ${got}`)
+    if (canonical.split('\n').length !== 6) throw new Error('canonical must be six \\n-joined segments')
+  }
 })
 
 await assert('HTTP transport attaches a verifiable signature (query, body, spaces)', async () => {
@@ -935,6 +1018,23 @@ await assert('HTTP 401 refresh retry re-signs with a fresh nonce', async () => {
   if (first.headers['x-nonce'] === second.headers['x-nonce']) {
     throw new Error('the retry must carry a fresh nonce (a replayed nonce is rejected by replay protection)')
   }
+})
+
+await assert('signed 401 without an invalid_token challenge never burns the refresh token', async () => {
+  const calls = []
+  const client = new AppMeshClient(baseURL, null, makeRefreshableProvider(calls))
+  client.enableRequestSignature(SIG_KEY_ID, SIG_SECRET)
+  // /appmesh/always-401 answers 401 WITHOUT a WWW-Authenticate challenge: a
+  // signature rejection, so the single-use refresh token must stay untouched
+  // and the 401 surfaces as the terminal typed error.
+  let status = null
+  try {
+    await client.request('get', '/appmesh/always-401')
+  } catch (error) {
+    status = error.statusCode ?? null
+  }
+  if (status !== 401) throw new Error(`expected the 401 to surface, got ${JSON.stringify(status)}`)
+  if (calls.length !== 0) throw new Error(`refreshAccessToken must not run, got ${calls.length} call(s)`)
 })
 
 await assert('streamed file upload signs the empty-body hash (documented exemption)', async () => {

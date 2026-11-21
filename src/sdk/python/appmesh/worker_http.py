@@ -17,6 +17,9 @@ from .exceptions import AppMeshError, AppMeshProcessSupersededError, AppMeshWork
 
 logger = logging.getLogger(__name__)
 
+# Wire header the daemon stamps on worker tasks (see X-AppMesh-Process-Key).
+HTTP_HEADER_KEY_X_APPMESH_PROCESS_KEY = "X-AppMesh-Process-Key"
+
 
 class AppMeshWorker:
     """Worker SDK for an App Mesh application interacting with the local App Mesh REST service over HTTPS.
@@ -108,7 +111,7 @@ class AppMeshWorker:
         """
         pkey, app_name = self._get_runtime_env()
         path = f"/appmesh/app/{app_name}/task"
-        headers = {"X-AppMesh-Process-Key": pkey}
+        headers = {HTTP_HEADER_KEY_X_APPMESH_PROCESS_KEY: pkey}
         failed_attempts = 0
 
         while True:
@@ -158,7 +161,7 @@ class AppMeshWorker:
     def send_task_result(self, result: Union[str, bytes]) -> None:
         """Send the result of a server-side invocation back to the original client.
 
-        Used by App Mesh application process to post the `result` to App Mesh service
+        Used by an App Mesh application process to post the `result` to App Mesh service
         after processing payload data so the invoking client can retrieve it.
 
         Args:
@@ -166,7 +169,7 @@ class AppMeshWorker:
         """
         pkey, app_name = self._get_runtime_env()
         path = f"/appmesh/app/{app_name}/task"
-        headers = {"X-AppMesh-Process-Key": pkey}
+        headers = {HTTP_HEADER_KEY_X_APPMESH_PROCESS_KEY: pkey}
 
         resp = self._client._request_http(
             AppMeshClient._Method.PUT,
@@ -179,3 +182,35 @@ class AppMeshWorker:
             msg = f"send_task_result failed with status {resp.status_code}: {resp.text}"
             self._logger.error(msg)
             raise AppMeshError(msg)
+
+    def send_task_partial(self, partial: Union[str, bytes]) -> bool:
+        """Push an incremental result to the invoking client before the final reply.
+
+        Delivered only to a ``run_task_stream`` caller; a one-shot ``run_task`` caller
+        silently ignores it. Use for continuous output (token streams, progress updates).
+
+        Args:
+            partial: Incremental payload delivered to the streaming caller in order.
+
+        Returns:
+            ``True`` when a streaming client received the partial.
+        """
+        pkey, app_name = self._get_runtime_env()
+        path = f"/appmesh/app/{app_name}/task/partial"
+        headers = {HTTP_HEADER_KEY_X_APPMESH_PROCESS_KEY: pkey}
+
+        resp = self._client._request_http(
+            AppMeshClient._Method.POST,
+            path=path,
+            header=headers,
+            body=partial,
+        )
+
+        if resp.status_code != HTTPStatus.OK:
+            msg = f"send_task_partial failed with status {resp.status_code}: {resp.text}"
+            self._logger.error(msg)
+            raise AppMeshError(msg)
+        try:
+            return bool(resp.json().get("delivered", False))
+        except ValueError:
+            return False

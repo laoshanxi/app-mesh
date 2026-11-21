@@ -19,6 +19,12 @@
 # The optional docker-compose.vault.yaml layer replaces the self-signed
 # generation with central issuance: every node's leaf certificates come from
 # the Vault PKI engine (APPMESH_SSL_SOURCE=vault).
+# Docker on a node is OFF by default (safely lazy). To enable it, mount the
+# host docker.sock into the node container AND grant the agent's user group
+# access to it (e.g. group_add: ["0"] on Docker Desktop, or the socket's own
+# group id), or point the agent at a remote daemon via DOCKER_HOST. A socket
+# mount without group access stays silently lazy — the node never reports a
+# Docker capability and nothing errors.
 name: appmesh_cluster
 services:
   appmesh_master:

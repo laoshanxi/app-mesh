@@ -172,6 +172,10 @@ pub struct Application {
     pub description: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub metadata: Option<serde_json::Value>,
+    /// Stdin wiring: `"pipe"` keeps the daemon-side write end open for
+    /// `send_input`; unset (default) uses /dev/null or the metadata launch file.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub stdin: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub working_dir: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -187,9 +191,6 @@ pub struct Application {
     /// Container network mode (host, bridge, none or a network name).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub docker_network: Option<String>,
-    /// Container backend: "api" (default, Docker Engine API) or "cli".
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub docker_backend: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub stdout_backup_count: Option<u32>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -371,6 +372,12 @@ impl ApplicationBuilder {
         self
     }
 
+    /// Sets the stdin wiring: `"pipe"` lets `send_input` drive the process while it runs.
+    pub fn stdin(mut self, mode: &str) -> Self {
+        self.app.stdin = Some(mode.to_string());
+        self
+    }
+
     /// Sets the working directory for the process.
     pub fn working_dir(mut self, dir: &str) -> Self {
         self.app.working_dir = Some(dir.to_string());
@@ -398,12 +405,6 @@ impl ApplicationBuilder {
     /// Sets the container network mode (host, bridge, none or a network name).
     pub fn docker_network(mut self, network: &str) -> Self {
         self.app.docker_network = Some(network.to_string());
-        self
-    }
-
-    /// Overrides the container backend: "api" (default) or "cli".
-    pub fn docker_backend(mut self, backend: &str) -> Self {
-        self.app.docker_backend = Some(backend.to_string());
         self
     }
 

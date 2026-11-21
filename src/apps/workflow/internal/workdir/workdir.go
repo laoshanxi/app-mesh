@@ -94,7 +94,7 @@ func (m *Manager) CheckpointPath(wfName, runID string) string {
 func (m *Manager) AddRunToIndex(wfName string, entry RunIndex) {
 	m.indexMu.Lock()
 	defer m.indexMu.Unlock()
-	indexPath := filepath.Join(m.baseDir, wfName, "runs.json")
+	indexPath := runIndexPath(m.baseDir, wfName)
 	entries := m.loadIndex(indexPath)
 	for i := range entries {
 		if entries[i].RunID == entry.RunID {
@@ -111,7 +111,7 @@ func (m *Manager) AddRunToIndex(wfName string, entry RunIndex) {
 func (m *Manager) UpdateRunInIndex(wfName, runID, status string, duration float64) {
 	m.indexMu.Lock()
 	defer m.indexMu.Unlock()
-	indexPath := filepath.Join(m.baseDir, wfName, "runs.json")
+	indexPath := runIndexPath(m.baseDir, wfName)
 	entries := m.loadIndex(indexPath)
 	for i := range entries {
 		if entries[i].RunID == runID {
@@ -127,7 +127,7 @@ func (m *Manager) UpdateRunInIndex(wfName, runID, status string, duration float6
 func (m *Manager) ListRuns(wfName string) []RunIndex {
 	m.indexMu.Lock()
 	defer m.indexMu.Unlock()
-	indexPath := filepath.Join(m.baseDir, wfName, "runs.json")
+	indexPath := runIndexPath(m.baseDir, wfName)
 	entries := m.loadIndex(indexPath)
 	sort.Slice(entries, func(i, j int) bool {
 		return entries[i].StartedAt > entries[j].StartedAt
@@ -139,7 +139,7 @@ func (m *Manager) ListRuns(wfName string) []RunIndex {
 func (m *Manager) CleanOldRuns(wfName string) {
 	m.indexMu.Lock()
 	defer m.indexMu.Unlock()
-	indexPath := filepath.Join(m.baseDir, wfName, "runs.json")
+	indexPath := runIndexPath(m.baseDir, wfName)
 	entries := m.loadIndex(indexPath)
 
 	// Sort oldest first.
@@ -246,17 +246,17 @@ func scheduleStatePath(baseDir, wfName string) string {
 	return filepath.Join(baseDir, wfName, "schedule-state.json")
 }
 
-// WriteScheduleState persists a workflow's last accounted schedule instant so a
-// restart re-bases instead of skipping it. Atomic (tmp+fsync+rename): no truncated file.
-func (m *Manager) WriteScheduleState(wfName string, last time.Time) error {
-	m.EnsureWorkflowDir(wfName)
-	data, err := json.Marshal(map[string]int64{"last_unix_ms": last.UnixMilli()})
-	if err != nil {
-		return err
-	}
-	path := scheduleStatePath(m.baseDir, wfName)
+// runIndexPath returns the per-workflow persisted run index file.
+func runIndexPath(baseDir, wfName string) string {
+	return filepath.Join(baseDir, wfName, "runs.json")
+}
+
+// AtomicWriteFile writes data via tmp+fsync+rename so readers never observe a
+// truncated file. The tmp sibling lands beside path, so path and tmp always
+// share one filesystem and the rename is atomic.
+func AtomicWriteFile(path string, data []byte, perm os.FileMode) error {
 	tmp := path + ".tmp"
-	f, err := os.OpenFile(tmp, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0600)
+	f, err := os.OpenFile(tmp, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, perm)
 	if err != nil {
 		return err
 	}
@@ -272,6 +272,17 @@ func (m *Manager) WriteScheduleState(wfName string, last time.Time) error {
 		return err
 	}
 	return os.Rename(tmp, path)
+}
+
+// WriteScheduleState persists a workflow's last accounted schedule instant so a
+// restart re-bases instead of skipping it. Atomic (tmp+fsync+rename): no truncated file.
+func (m *Manager) WriteScheduleState(wfName string, last time.Time) error {
+	m.EnsureWorkflowDir(wfName)
+	data, err := json.Marshal(map[string]int64{"last_unix_ms": last.UnixMilli()})
+	if err != nil {
+		return err
+	}
+	return AtomicWriteFile(scheduleStatePath(m.baseDir, wfName), data, 0600)
 }
 
 // ReadScheduleStates loads every workflow's persisted schedule state at once;
@@ -324,24 +335,7 @@ func (m *Manager) saveIndex(path string, entries []RunIndex) {
 		log.Printf("WARNING: failed to marshal index: %v", err)
 		return
 	}
-	tmp := path + ".tmp"
-	f, err := os.OpenFile(tmp, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0600)
-	if err != nil {
-		log.Printf("WARNING: failed to open %s: %v", tmp, err)
-		return
-	}
-	if _, err := f.Write(data); err != nil {
-		f.Close()
-		log.Printf("WARNING: failed to write %s: %v", tmp, err)
-		return
-	}
-	if err := f.Sync(); err != nil {
-		f.Close()
-		log.Printf("WARNING: failed to sync %s: %v", tmp, err)
-		return
-	}
-	f.Close()
-	if err := os.Rename(tmp, path); err != nil {
-		log.Printf("WARNING: failed to rename %s: %v", tmp, err)
+	if err := AtomicWriteFile(path, data, 0600); err != nil {
+		log.Printf("WARNING: failed to persist %s: %v", path, err)
 	}
 }

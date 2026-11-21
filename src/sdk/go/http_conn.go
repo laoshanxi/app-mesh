@@ -2,8 +2,6 @@
 package appmesh
 
 import (
-	"crypto/tls"
-	"fmt"
 	"net/http"
 	"time"
 )
@@ -14,30 +12,9 @@ type HTTPConnection struct {
 }
 
 func newHTTPConnection(clientCertFile string, clientCertKeyFile string, caFile string) (*HTTPConnection, error) {
-	tlsConfig := &tls.Config{MinVersion: tls.VersionTLS12}
-
-	// Server verification: a configured but missing/unreadable CA is a hard error;
-	// an empty CA path (InsecureSkipVerify or legacy SSLTrustedCA = "") disables it.
-	switch caFile {
-	case caSystemTrust:
-		// Verify against the system trust store (RootCAs left nil); see caSystemTrust.
-	case "":
-		tlsConfig.InsecureSkipVerify = true
-	default:
-		caCert, err := LoadCA(caFile)
-		if err != nil {
-			return nil, fmt.Errorf("failed to load server CA: %w", err)
-		}
-		tlsConfig.RootCAs = caCert
-	}
-
-	// Client certificate for mutual TLS (optional)
-	if clientCertFile != "" && clientCertKeyFile != "" {
-		clientCert, err := LoadCertificatePair(clientCertFile, clientCertKeyFile)
-		if err != nil {
-			return nil, fmt.Errorf("failed to load client certificate: %w", err)
-		}
-		tlsConfig.Certificates = []tls.Certificate{clientCert}
+	tlsConfig, err := newClientTLSConfig(caFile, clientCertFile, clientCertKeyFile)
+	if err != nil {
+		return nil, err
 	}
 
 	// Intentionally leave Jar nil. Engine SDK authentication is bearer-only and

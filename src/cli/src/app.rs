@@ -12,7 +12,7 @@ pub struct Cli {
     #[command(subcommand)]
     pub command: Commands,
 
-    /// Server host URL (default: last used or wss://127.0.0.1:6058)
+    /// Server host URL (default: last used, or wss://127.0.0.1:6058; ws:// when the local daemon runs plaintext)
     #[arg(short = 'H', long = "host-url", global = true)]
     pub host_url: Option<String>,
 
@@ -24,6 +24,10 @@ pub struct Cli {
     /// endpoint, including an explicit remote -H, and is remembered at logon
     #[arg(long = "ca-cert", global = true, value_name = "PATH")]
     pub ca_cert: Option<PathBuf>,
+
+    /// Skip Engine TLS certificate verification (insecure; remembered at logon)
+    #[arg(long = "no-verify", global = true, conflicts_with = "ca_cert")]
+    pub no_verify: bool,
 
     /// API key id for HMAC request signing (env: APPMESH_API_KEY); requires --api-secret
     #[arg(long = "api-key", global = true, value_name = "KEY_ID")]
@@ -218,10 +222,6 @@ pub struct AddArgs {
     /// Container network mode: host, bridge, none or a network name
     #[arg(long = "docker-network")]
     pub docker_network: Option<String>,
-
-    /// Container backend: api (default) or cli
-    #[arg(long = "docker-backend")]
-    pub docker_backend: Option<String>,
 
     /// Attach to existing process ID
     #[arg(short = 'P', long = "pid")]
@@ -526,12 +526,8 @@ pub struct GetArgs {
     pub local: String,
 
     /// Apply remote POSIX permissions and ownership to the downloaded file
-    #[arg(long = "apply-permissions", conflicts_with = "no_attr")]
+    #[arg(long = "apply-permissions")]
     pub apply_permissions: bool,
-
-    /// Deprecated compatibility flag; permissions are no longer applied by default
-    #[arg(short = 'a', long = "no-attr", hide = true, conflicts_with = "apply_permissions")]
-    pub no_attr: bool,
 }
 
 #[derive(Parser)]
@@ -549,12 +545,8 @@ pub struct PutArgs {
     pub overwrite: bool,
 
     /// Send local POSIX permissions and ownership with the uploaded file
-    #[arg(long = "apply-permissions", conflicts_with = "no_attr")]
+    #[arg(long = "apply-permissions")]
     pub apply_permissions: bool,
-
-    /// Deprecated compatibility flag; permissions are no longer sent by default
-    #[arg(short = 'a', long = "no-attr", hide = true, conflicts_with = "apply_permissions")]
-    pub no_attr: bool,
 }
 
 #[derive(Parser)]

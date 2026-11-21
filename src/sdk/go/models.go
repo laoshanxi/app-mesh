@@ -17,6 +17,7 @@ import (
 const (
 	DefaultHTTPURI            = "https://127.0.0.1:6060"
 	DefaultTCPURI             = "127.0.0.1:6059"
+	DefaultWSSURI             = "https://127.0.0.1:6058"
 	DefaultTokenExpireSeconds = 7 * (60 * 60 * 24) // default 7 day(s)
 )
 
@@ -33,6 +34,13 @@ const (
 	headerFileUser       = "X-File-User"
 	headerFileGroup      = "X-File-Group"
 	headerTargetHost     = "X-Target-Host"
+	headerInputClose     = "X-Input-Close"
+	headerAuthorization  = "Authorization"
+	headerBearerSpace    = "Bearer "
+	headerExitCode       = "X-Exit-Code"
+	headerOutputPosition = "X-Output-Position"
+	headerSubscriptionId = "X-Subscription-Id"
+	headerProcessKey     = "X-AppMesh-Process-Key"
 )
 
 // Platform-aware default SSL paths.
@@ -75,6 +83,9 @@ type Application struct {
 	Enabled           bool             `json:"enabled"`
 	StdoutBackupCount *int             `json:"stdout_backup_count"`
 	Metadata          *json.RawMessage `json:"metadata,omitempty"`
+	// Stdin selects the stdin wiring: empty (default) /dev/null or metadata
+	// launch file; "pipe" keeps the write end open for SendInput.
+	Stdin *string `json:"stdin,omitempty"`
 
 	// Time
 	StartTime     *int64 `json:"start_time"`
@@ -121,8 +132,6 @@ type Application struct {
 	DockerVolumes []string `json:"docker_volumes,omitempty"`
 	// DockerNetwork is the container network mode: host, bridge, none or a network name.
 	DockerNetwork *string `json:"docker_network,omitempty"`
-	// DockerBackend selects "api" (default) or "cli".
-	DockerBackend *string `json:"docker_backend,omitempty"`
 
 	DailyLimit    *DailyLimitation    `json:"daily_limitation"`
 	ResourceLimit *ResourceLimitation `json:"resource_limit"`

@@ -11,6 +11,9 @@ services:
     image: laoshanxi/appmesh:latest
     environment:
       - APPMESH_REST_PrometheusExporterListenPort=6061
+      # Metrics endpoints require config-view by default; this demo stack scrapes
+      # over the trusted Docker network instead (keep the published 6061 firewalled).
+      - APPMESH_REST_MetricsRequireAuth=false
     volumes:
       - /opt/appmesh/work # mount this to enable configuration persist
     cap_drop:
@@ -19,7 +22,7 @@ services:
       - no-new-privileges:true
     ports:
       - "443:443" # for appmesh_ui
-      - "6061:6061" # Prometheus exporter, unauthenticated: restrict this port
+      - "6061:6061" # Prometheus exporter (MetricsRequireAuth=false in this stack): restrict this port
     networks:
       - frontend
 

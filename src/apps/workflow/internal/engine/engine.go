@@ -2,7 +2,9 @@ package engine
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"maps"
 	"os"
 	"path/filepath"
 	"sync"
@@ -376,12 +378,7 @@ func runJob(job *models.Job, exec *executor.StepExecutor, ectx *expression.Conte
 		if opts.RecoveredSteps != nil {
 			if jobSteps, ok := opts.RecoveredSteps[job.Name]; ok {
 				for stepName, data := range jobSteps {
-					exitCode := toIntFromAny(data["exit_code"])
-					stdout, _ := data["stdout"].(string)
-					status, _ := data["status"].(string)
-					response, _ := data["response"].(string)
-					outputs, _ := data["outputs"].(map[string]string)
-					ectx.SetStepResult(job.Name, stepName, stdout, exitCode, status, response, outputs)
+					restoreRecoveredStep(ectx, job.Name, stepName, data)
 				}
 			}
 		}
@@ -421,12 +418,7 @@ func runJob(job *models.Job, exec *executor.StepExecutor, ectx *expression.Conte
 				if !completedSteps[stepName] {
 					continue
 				}
-				exitCode := toIntFromAny(data["exit_code"])
-				stdout, _ := data["stdout"].(string)
-				status, _ := data["status"].(string)
-				response, _ := data["response"].(string)
-				outputs, _ := data["outputs"].(map[string]string)
-				ectx.SetStepResult(job.Name, stepName, stdout, exitCode, status, response, outputs)
+				status := restoreRecoveredStep(ectx, job.Name, stepName, data)
 				log.StepSkipped(stepName, "recovered from checkpoint: "+status)
 			}
 		}
@@ -672,14 +664,23 @@ func persistStep(opts *Options, jobName, stepName, stdout string, exitCode int, 
 	})
 }
 
+// restoreRecoveredStep loads one checkpointed step's saved result into the
+// expression context so recovery keeps cross-job/step expressions working.
+// It returns the saved status for the caller's logging.
+func restoreRecoveredStep(ectx *expression.Context, jobName, stepName string, data map[string]any) string {
+	exitCode := toIntFromAny(data["exit_code"])
+	stdout, _ := data["stdout"].(string)
+	status, _ := data["status"].(string)
+	response, _ := data["response"].(string)
+	outputs, _ := data["outputs"].(map[string]string)
+	ectx.SetStepResult(jobName, stepName, stdout, exitCode, status, response, outputs)
+	return status
+}
+
 func mergeEnv(base, overlay map[string]string) map[string]string {
 	out := make(map[string]string, len(base)+len(overlay))
-	for k, v := range base {
-		out[k] = v
-	}
-	for k, v := range overlay {
-		out[k] = v
-	}
+	maps.Copy(out, base)
+	maps.Copy(out, overlay)
 	return out
 }
 
@@ -727,6 +728,22 @@ func evaluateNeeds(job *models.Job, wf *models.Workflow, statusMu *sync.RWMutex)
 // the sub run id, and the failure reason (empty when none was recorded).
 func runSubWorkflow(ctx context.Context, client *appmesh.AppMeshClient, wfName string, inputs map[string]string,
 	depth int, opts Options) (int, map[string]string, string, string) {
+	baseDir := opts.WorkflowBaseDir
+	if baseDir == "" {
+		baseDir, _ = os.Getwd()
+	}
+	yamlPath := filepath.Join(baseDir, wfName, "workflow.yaml")
+	wf, err := parser.LoadWorkflow(yamlPath)
+	if err != nil {
+		// Existence precedes ownership so a missing workflow reports not-found
+		// instead of a misleading cross-owner denial.
+		if os.IsNotExist(errors.Unwrap(err)) {
+			logger.Error(fmt.Sprintf("sub-workflow %q: workflow not found", wfName))
+			return 1, nil, "", fmt.Sprintf("sub-workflow %q: workflow not found", wfName)
+		}
+		logger.Error(fmt.Sprintf("sub-workflow %q: load failed: %v", wfName, err))
+		return 1, nil, "", fmt.Sprintf("sub-workflow %q: load failed: %v", wfName, err)
+	}
 	// A parent must not feed its inputs into another owner's workflow: the
 	// child's step commands run under the child owner's execution identity, so
 	// a cross-owner call would execute commands as that owner.
@@ -738,16 +755,6 @@ func runSubWorkflow(ctx context.Context, client *appmesh.AppMeshClient, wfName s
 			return 1, nil, "",
 				fmt.Sprintf("sub-workflow %q is not owned by the calling workflow's owner", wfName)
 		}
-	}
-	baseDir := opts.WorkflowBaseDir
-	if baseDir == "" {
-		baseDir, _ = os.Getwd()
-	}
-	yamlPath := filepath.Join(baseDir, wfName, "workflow.yaml")
-	wf, err := parser.LoadWorkflow(yamlPath)
-	if err != nil {
-		logger.Error(fmt.Sprintf("sub-workflow %q: load failed: %v", wfName, err))
-		return 1, nil, "", fmt.Sprintf("sub-workflow %q: load failed: %v", wfName, err)
 	}
 	if wf.On == nil || wf.On.WorkflowCall == nil {
 		logger.Error(fmt.Sprintf("sub-workflow %q: not callable (missing on.workflow_call)", wfName))
@@ -792,10 +799,10 @@ func runSubWorkflow(ctx context.Context, client *appmesh.AppMeshClient, wfName s
 	if subCtx != nil && wf.On.WorkflowCall != nil && len(wf.On.WorkflowCall.Outputs) > 0 {
 		outputs = make(map[string]string)
 		for name, out := range wf.On.WorkflowCall.Outputs {
-			val, err := expression.SubstituteForJobChecked(out.Value, subCtx, "")
+			val, err := expression.SubstituteValue(out.Value, subCtx, "")
 			if err != nil {
-				// One unresolved output fails the sub-workflow call.
-				outputErr = err
+				// One unresolved output (including a message-outputs miss) fails the sub-workflow call.
+				outputErr = fmt.Errorf("workflow_call output %q: %w", name, err)
 				break
 			}
 			outputs[name] = val
@@ -881,8 +888,6 @@ func cloneStringMap(m map[string]string) map[string]string {
 		return nil
 	}
 	out := make(map[string]string, len(m))
-	for k, v := range m {
-		out[k] = v
-	}
+	maps.Copy(out, m)
 	return out
 }

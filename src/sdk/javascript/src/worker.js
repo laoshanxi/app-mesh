@@ -6,7 +6,7 @@ if (typeof window !== 'undefined' && typeof window.document !== 'undefined') {
   throw new Error('AppMeshWorker is only available in Node.js environment. Use AppMeshClient for browser applications.')
 }
 
-import AppMeshClient, { AppMeshError } from './appmesh.js'
+import AppMeshClient, { AppMeshError, CONSTANTS } from './appmesh.js'
 
 /**
  * Error thrown when the daemon reports HTTP 412: this process key was superseded
@@ -189,7 +189,7 @@ class AppMeshWorker {
       const attemptStart = Date.now()
       try {
         const response = await this._client.request('get', path, null, {
-          headers: { 'X-AppMesh-Process-Key': processKey }
+          headers: { [CONSTANTS.HTTP_HEADER_KEY_X_APPMESH_PROCESS_KEY]: processKey }
         })
 
         if (response.status === 200) {
@@ -255,7 +255,7 @@ class AppMeshWorker {
     let response
     try {
       response = await this._client.request('put', path, result, {
-        headers: { 'X-AppMesh-Process-Key': processKey }
+        headers: { [CONSTANTS.HTTP_HEADER_KEY_X_APPMESH_PROCESS_KEY]: processKey }
       })
     } catch (error) {
       // request() throws AppMeshError on non-200
@@ -268,6 +268,37 @@ class AppMeshWorker {
       this._logger.error(msg)
       throw new Error(msg)
     }
+  }
+
+  /**
+   * Push an incremental result before the final reply. Delivered only to a caller
+   * streaming via `runTaskStream`; a one-shot `runTask` caller silently ignores it.
+   *
+   * @param {string|Buffer} partial - Incremental payload delivered to the streaming caller in order
+   * @returns {Promise<boolean>} `true` when a streaming client received the partial
+   * @throws {Error} If the partial push fails
+   */
+  async sendTaskPartial(partial) {
+    const { processKey, appName } = this._getRuntimeEnv()
+    const path = `/appmesh/app/${appName}/task/partial`
+
+    let response
+    try {
+      response = await this._client.request('post', path, partial, {
+        headers: { [CONSTANTS.HTTP_HEADER_KEY_X_APPMESH_PROCESS_KEY]: processKey }
+      })
+    } catch (error) {
+      // request() throws AppMeshError on non-200
+      this._logger.error(`sendTaskPartial failed with status ${error.statusCode}: ${error.message}`)
+      throw error
+    }
+
+    if (response.status !== 200) {
+      const msg = `sendTaskPartial failed with status ${response.status}: ${response.data}`
+      this._logger.error(msg)
+      throw new AppMeshError(msg)
+    }
+    return Boolean(response.data && response.data.delivered)
   }
 
   /**
@@ -380,6 +411,14 @@ class AppMeshWorkerTCP extends AppMeshWorker {
   async sendTaskResult(result) {
     await this._ensureClient()
     return super.sendTaskResult(result)
+  }
+
+  /**
+   * Push a task partial (overrides parent to ensure TCP client is initialized)
+   */
+  async sendTaskPartial(partial) {
+    await this._ensureClient()
+    return super.sendTaskPartial(partial)
   }
 
   /**

@@ -7,15 +7,66 @@ use std::path::{Path, PathBuf};
 
 pub const DEFAULT_WSS_PORT: u16 = 6058;
 
-#[derive(Serialize, Deserialize, Default, PartialEq, Eq)]
+/// Same override the daemon applies on config.yaml (it also creates the leaf
+/// when the file lacks it), so the CLI's local transport inference must honor
+/// it too. See docs/source/TLS.md.
+pub const ENV_REST_SSL_ENABLED: &str = "APPMESH_REST_SSL_SSLEnabled";
+
+/// Deployment env names; the single spelling of each key.
+pub const ENV_API_SECRET: &str = "APPMESH_API_SECRET";
+pub const ENV_API_KEY: &str = "APPMESH_API_KEY";
+pub const ENV_BEARER_TOKEN: &str = "APPMESH_BEARER_TOKEN";
+pub const ENV_HOME: &str = "APPMESH_HOME";
+pub const ENV_AUTH_ALLOW_HTTP: &str = "APPMESH_AUTH_ALLOW_HTTP";
+pub const ENV_AUTH_ACCESS_URL: &str = "APPMESH_AUTH_ACCESS_URL";
+
+/// Persisted config version 2: endpoint transport, verification, absolute CA path.
+pub const CONFIG_VERSION: u32 = 2;
+
+#[derive(Serialize, Deserialize, PartialEq, Eq)]
 pub struct CliConfig {
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default)]
+    pub version: u32,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub last_host: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub last_port: Option<u16>,
     /// CA bundle trusted for last_host, remembered from `--ca-cert` at logon.
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub last_ca_cert: Option<PathBuf>,
+    /// The last endpoint speaks plaintext (ws://) instead of TLS (wss://).
+    #[serde(default)]
+    pub last_plain: bool,
+    /// The last endpoint's certificate is verified while connecting.
+    #[serde(default = "verify_by_default")]
+    pub last_verify_server: bool,
+}
+
+fn verify_by_default() -> bool {
+    true
+}
+
+impl Default for CliConfig {
+    fn default() -> Self {
+        Self {
+            version: CONFIG_VERSION,
+            last_host: None,
+            last_port: None,
+            last_ca_cert: None,
+            last_plain: false,
+            last_verify_server: true,
+        }
+    }
+}
+
+/// The endpoint the CLI last reached, replayable without flags.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct RememberedEndpoint {
+    pub host: String,
+    pub port: u16,
+    pub plain: bool,
+    pub verify_server: bool,
+    pub ca_cert: Option<PathBuf>,
 }
 
 #[derive(Debug, Clone)]
@@ -251,7 +302,7 @@ fn lock_holder_dead(path: &Path) -> bool {
             // tokens can outlast it. Only a holder that has held for many
             // times the window is declared gone — that is the recycled-pid or
             // zombie case, not a slow refresh.
-            return !lock_older_than(path, HOLDER_PID_STALE_AFTER);
+            return lock_older_than(path, HOLDER_PID_STALE_AFTER);
         }
     }
     lock_older_than(path, SESSION_LOCK_STALE_AFTER)
@@ -374,40 +425,109 @@ fn ensure_private_file(path: &Path) -> Result<()> {
     Ok(())
 }
 
-/// Remember the endpoint. A `ca_cert` given here (logon with `--ca-cert`) replaces
-/// the remembered CA; without one, the CA already remembered for this endpoint stays.
-pub fn save_last_host(host: &str, port: u16, ca_cert: Option<&Path>) {
-    let ca_cert = ca_cert.map(Path::to_path_buf).or_else(|| load_last_ca_cert(host, port));
-    let cfg = CliConfig { last_host: Some(host.to_string()), last_port: Some(port), last_ca_cert: ca_cert };
-    if let Ok(content) = serde_json::to_string_pretty(&cfg) {
-        let path = config_path();
-        let _ = std::fs::write(&path, content + "\n");
-        set_mode(&path, 0o600);
+/// Remember the endpoint with the transport settings that reached it.
+pub fn save_last_endpoint(endpoint: &RememberedEndpoint) {
+    let cfg = CliConfig {
+        version: CONFIG_VERSION,
+        last_host: Some(endpoint.host.clone()),
+        last_port: Some(endpoint.port),
+        last_ca_cert: endpoint.ca_cert.as_deref().and_then(pin_ca_path),
+        last_plain: endpoint.plain,
+        last_verify_server: endpoint.verify_server,
+    };
+    persist_config(&cfg);
+}
+
+/// Pin the CA to an absolute path; symlinks stay unresolved so rotation behind the link survives.
+/// A path that no longer resolves is not remembered.
+fn pin_ca_path(path: &Path) -> Option<PathBuf> {
+    let absolute = if path.is_absolute() { path.to_path_buf() } else { std::env::current_dir().ok()?.join(path) };
+    absolute.exists().then_some(absolute)
+}
+
+pub fn load_last_endpoint() -> Option<RememberedEndpoint> {
+    let cfg = load_config_at(&config_path())?;
+    remembered_endpoint(&cfg)
+}
+
+fn remembered_endpoint(cfg: &CliConfig) -> Option<RememberedEndpoint> {
+    Some(RememberedEndpoint {
+        host: cfg.last_host.clone()?,
+        port: cfg.last_port.unwrap_or(DEFAULT_WSS_PORT),
+        plain: cfg.last_plain,
+        verify_server: cfg.last_verify_server,
+        ca_cert: cfg.last_ca_cert.clone(),
+    })
+}
+
+/// Read the persisted config. A newer CLI's file is returned untouched:
+/// rewriting it from this version would drop that format's fields.
+fn load_config_at(path: &Path) -> Option<CliConfig> {
+    let content = std::fs::read_to_string(path).ok()?;
+    serde_json::from_str(&content).ok()
+}
+
+fn persist_config(cfg: &CliConfig) {
+    let path = config_path();
+    // Never replace a newer CLI's file: this version would drop its fields.
+    if let Some(existing) = load_config_at(&path) {
+        if existing.version > CONFIG_VERSION {
+            return;
+        }
+    }
+    persist_config_at(&path, cfg);
+}
+
+fn persist_config_at(path: &Path, cfg: &CliConfig) {
+    let Ok(content) = serde_json::to_string_pretty(cfg) else {
+        return;
+    };
+    // Replace atomically: a parallel CLI may read at any time.
+    let Some(dir) = path.parent() else {
+        return;
+    };
+    let Ok(mut temp) = tempfile::NamedTempFile::new_in(dir) else {
+        let _ = std::fs::write(path, content + "\n");
+        set_mode(path, 0o600);
+        return;
+    };
+    let written = set_mode_result(temp.path(), 0o600).is_ok()
+        && temp.write_all(content.as_bytes()).is_ok()
+        && temp.write_all(b"\n").is_ok();
+    if !written {
+        return;
+    }
+    if temp.persist(path).is_ok() {
+        set_mode(path, 0o600);
     }
 }
 
-pub fn load_last_host() -> Option<(String, u16)> {
-    let content = std::fs::read_to_string(config_path()).ok()?;
-    let cfg: CliConfig = serde_json::from_str(&content).ok()?;
-    Some((cfg.last_host?, cfg.last_port.unwrap_or(DEFAULT_WSS_PORT)))
-}
-
-/// The CA bundle remembered for this endpoint at logon, if it is that endpoint.
-pub fn load_last_ca_cert(host: &str, port: u16) -> Option<PathBuf> {
-    let content = std::fs::read_to_string(config_path()).ok()?;
-    let cfg: CliConfig = serde_json::from_str(&content).ok()?;
-    (cfg.last_host.as_deref() == Some(host) && cfg.last_port.unwrap_or(DEFAULT_WSS_PORT) == port)
-        .then_some(cfg.last_ca_cert)
-        .flatten()
+/// Resolve the daemon's effective plaintext state: the
+/// APPMESH_REST_SSL_SSLEnabled env override wins over the config.yaml value,
+/// mirroring the daemon (Configuration::applyEnvConfig for a bool target: a
+/// numeric value enables when > 0, any other string enables only when exactly
+/// "true"; an empty value therefore disables). Malformed input the daemon's
+/// std::stoi would tolerate ("5x") is treated as non-numeric here.
+fn env_ssl_plain(value: Option<&str>, file_plain: bool) -> bool {
+    match value {
+        None => file_plain,
+        Some(v) => match v.parse::<i64>() {
+            Ok(n) => n <= 0,
+            Err(_) => v != "true",
+        },
+    }
 }
 
 /// Read daemon config.yaml for TLS config and WSS port.
 pub fn load_daemon_config() -> (Option<(String, u16)>, DaemonTlsConfig) {
+    // The env override applies even when no config file is found: the daemon
+    // creates the missing leaf, so it alone can switch the listeners to plain.
+    let ssl_env = std::env::var(ENV_REST_SSL_ENABLED).ok();
     let appmesh_home = detect_appmesh_home();
     let config_path = appmesh_home.as_ref().and_then(|home| detect_daemon_config_file(home));
 
     let Some(config_path) = config_path else {
-        return (None, DaemonTlsConfig::default());
+        return (None, DaemonTlsConfig { plain: env_ssl_plain(ssl_env.as_deref(), false), ..DaemonTlsConfig::default() });
     };
 
     let Ok(content) = std::fs::read_to_string(&config_path) else {
@@ -488,14 +608,14 @@ pub fn load_daemon_config() -> (Option<(String, u16)>, DaemonTlsConfig) {
         client_cert: client_cert.map(|p| resolve_path(&home, &p)),
         client_key: client_key.map(|p| resolve_path(&home, &p)),
         verify_server,
-        plain,
+        plain: env_ssl_plain(ssl_env.as_deref(), plain),
     };
 
     (address, tls)
 }
 
 fn detect_appmesh_home() -> Option<PathBuf> {
-    if let Ok(home) = std::env::var("APPMESH_HOME") {
+    if let Ok(home) = std::env::var(ENV_HOME) {
         let p = PathBuf::from(home);
         if p.exists() {
             return Some(p);
@@ -574,6 +694,138 @@ fn set_mode_result(path: &Path, mode: u32) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn write_config(path: &Path, json: &str) {
+        std::fs::write(path, json).expect("write test config");
+    }
+
+    #[test]
+    fn env_ssl_plain_mirrors_the_daemon_coercion() {
+        // Unset: the config.yaml value decides.
+        assert!(!env_ssl_plain(None, false));
+        assert!(env_ssl_plain(None, true));
+        // "false" and any non-"true" string switch to plain, like the daemon.
+        assert!(env_ssl_plain(Some("false"), false));
+        assert!(env_ssl_plain(Some("false"), true));
+        assert!(env_ssl_plain(Some(""), true));
+        assert!(env_ssl_plain(Some("TRUE"), false));
+        assert!(!env_ssl_plain(Some("true"), true));
+        assert!(!env_ssl_plain(Some("true"), false));
+        // Numeric coercion: > 0 keeps TLS, zero or negative goes plain.
+        assert!(!env_ssl_plain(Some("1"), true));
+        assert!(!env_ssl_plain(Some("+5"), true));
+        assert!(env_ssl_plain(Some("0"), false));
+        assert!(env_ssl_plain(Some("00"), false));
+        assert!(env_ssl_plain(Some("-2"), false));
+    }
+
+    #[test]
+    fn endpoint_transport_settings_roundtrip() {
+        let dir = tempfile::tempdir().expect("create config directory");
+        let path = dir.path().join("config.json");
+        let ca = dir.path().join("ca.pem");
+        std::fs::write(&ca, "-----BEGIN CERTIFICATE-----\n").expect("write CA");
+
+        persist_config_at(
+            &path,
+            &CliConfig {
+                version: CONFIG_VERSION,
+                last_host: Some("10.0.0.5".into()),
+                last_port: Some(6058),
+                last_ca_cert: Some(ca.clone()),
+                last_plain: false,
+                last_verify_server: false,
+            },
+        );
+        let cfg = load_config_at(&path).expect("reload config");
+        assert_eq!(cfg.last_host.as_deref(), Some("10.0.0.5"));
+        assert_eq!(cfg.last_ca_cert.as_deref(), Some(ca.as_path()));
+        assert!(!cfg.last_plain);
+        assert!(!cfg.last_verify_server, "an explicit verify choice must survive");
+    }
+
+    #[test]
+    fn plain_endpoint_settings_roundtrip() {
+        let dir = tempfile::tempdir().expect("create config directory");
+        let path = dir.path().join("config.json");
+
+        persist_config_at(
+            &path,
+            &CliConfig {
+                version: CONFIG_VERSION,
+                last_host: Some("gateway.example".into()),
+                last_port: Some(6058),
+                last_ca_cert: None,
+                last_plain: true,
+                last_verify_server: true,
+            },
+        );
+        let cfg = load_config_at(&path).expect("reload config");
+        assert!(cfg.last_plain, "the no-TLS choice must survive");
+        assert_eq!(cfg.last_host.as_deref(), Some("gateway.example"));
+    }
+
+    #[test]
+    fn stored_fields_load_as_written() {
+        // The loader never repairs or drops fields; an unusable CA path
+        // surfaces later as the CA loader's own error.
+        let dir = tempfile::tempdir().expect("create config directory");
+        let path = dir.path().join("config.json");
+        let missing = dir.path().join("gone.pem");
+        write_config(
+            &path,
+            &format!(
+                r#"{{"version":2,"last_host":"10.0.0.5","last_port":6058,"last_ca_cert":{},"last_verify_server":false}}"#,
+                serde_json::to_string(&missing).expect("serialize path")
+            ),
+        );
+
+        let cfg = load_config_at(&path).expect("load config");
+        assert_eq!(cfg.last_host.as_deref(), Some("10.0.0.5"));
+        assert_eq!(cfg.last_ca_cert.as_deref(), Some(missing.as_path()));
+    }
+
+    #[test]
+    fn newer_config_is_never_rewritten() {
+        // A later CLI may add fields; reading must not drop or repair them.
+        let dir = tempfile::tempdir().expect("create config directory");
+        let path = dir.path().join("config.json");
+        let missing = dir.path().join("gone.pem");
+        let content = format!(
+            r#"{{"version":99,"last_host":"10.0.0.5","last_port":6058,"last_ca_cert":{},"future_field":true}}"#,
+            serde_json::to_string(&missing).expect("serialize path")
+        );
+        write_config(&path, &content);
+
+        let cfg = load_config_at(&path).expect("load future config");
+        assert_eq!(cfg.version, 99);
+        assert_eq!(cfg.last_host.as_deref(), Some("10.0.0.5"));
+        assert_eq!(cfg.last_ca_cert.as_deref(), Some(missing.as_path()));
+        assert_eq!(std::fs::read_to_string(&path).expect("read future config"), content);
+    }
+
+    #[test]
+    fn remembered_ca_is_pinned_to_an_absolute_path() {
+        let dir = tempfile::tempdir().expect("create config directory");
+        let ca = dir.path().join("ca.pem");
+        std::fs::write(&ca, "-----BEGIN CERTIFICATE-----\n").expect("write CA");
+
+        assert_eq!(pin_ca_path(&ca), Some(ca.clone()));
+        assert_eq!(pin_ca_path(&dir.path().join("missing.pem")), None);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn remembered_ca_keeps_symlink_indirection() {
+        // Rotation swaps the certificate behind a stable symlink.
+        let dir = tempfile::tempdir().expect("create config directory");
+        let target = dir.path().join("ca-2026.pem");
+        std::fs::write(&target, "-----BEGIN CERTIFICATE-----\n").expect("write CA");
+        let link = dir.path().join("ca.pem");
+        std::os::unix::fs::symlink(&target, &link).expect("create CA symlink");
+
+        assert_eq!(pin_ca_path(&link), Some(link));
+    }
 
     fn test_session(endpoint: &str) -> StoredSession {
         StoredSession::new(

@@ -33,6 +33,16 @@ func NewWSSConnection() *WSSConnection {
 	return &WSSConnection{}
 }
 
+// ensureWScheme maps https/http URL schemes onto the wss/ws WebSocket schemes.
+func ensureWScheme(u *url.URL) {
+	switch u.Scheme {
+	case "https":
+		u.Scheme = "wss"
+	case "http":
+		u.Scheme = "ws"
+	}
+}
+
 // Connect establishes a WSS connection to the given address (url.URL expected).
 // sslClientCert and sslClientCertKey may be empty. sslCAPath may be empty to skip verification.
 func (w *WSSConnection) Connect(u *url.URL, sslClientCert, sslClientCertKey, sslCAPath, bearerToken string) error {
@@ -68,21 +78,18 @@ func (w *WSSConnection) Connect(u *url.URL, sslClientCert, sslClientCertKey, ssl
 	}
 
 	// Ensure scheme is wss:// or ws:// depending on tls config
-	switch u.Scheme {
-	case "https":
-		u.Scheme = "wss"
-	case "http":
-		u.Scheme = "ws"
-	}
+	ensureWScheme(u)
 
 	headers := http.Header{}
 	if bearerToken != "" {
-		headers.Set("Authorization", "Bearer "+bearerToken)
+		headers.Set(headerAuthorization, headerBearerSpace+bearerToken)
 	}
 	conn, _, err := dialer.Dial(u.String(), headers)
 	if err != nil {
 		return fmt.Errorf("failed to dial wss %s: %w", u.String(), err)
 	}
+	// gorilla defaults to no read limit; 160 MiB clears the daemon's 128 MiB forward ceiling.
+	conn.SetReadLimit(160 << 20)
 
 	w.muConn.Lock()
 	w.conn = conn

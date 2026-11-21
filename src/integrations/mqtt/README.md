@@ -34,6 +34,15 @@ Set the App Mesh bearer token before you run `mqtt_subscriber.py`:
 export APPMESH_BEARER_TOKEN=<access-token>
 ```
 
+Environment variables the subscriber reads:
+
+- `APPMESH_URL` — Engine base URL (default `https://127.0.0.1:6060`); set it when the
+  subscriber runs off the daemon host and points at the daemon's published address.
+- `APPMESH_CA` — path to the daemon CA bundle.
+- `APPMESH_SSL_VERIFY` — `false`/`0`/`no` disables certificate verification, an
+  existing file path is used as the CA bundle, any other value keeps default
+  verification. `APPMESH_CA` wins when both are set.
+
 If you run the subscriber off the daemon host (the daemon's self-signed certificate is
 not in the system CAs there), point the client at the daemon CA:
 

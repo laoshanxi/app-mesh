@@ -55,14 +55,30 @@ publish_default_workflow() {
     rm -f "$temporary"
 }
 
-# True when the daemon listens in plaintext (TLS terminates upstream). The
-# explicit env override wins; otherwise the packaged config's SSLEnabled key
-# decides (absent = TLS, the same default the daemon applies).
+# True when the daemon listens in plaintext. Mirrors the daemon: the
+# APPMESH_REST_SSL_SSLEnabled override wins (numeric > 0 or exactly "true"
+# enables), else work/config/config.yaml shadows config/config.yaml and a bare
+# `SSLEnabled: false` decides; absent key = TLS. Quoted values the daemon
+# rejects at startup assume TLS with a warning.
 tls_disabled() {
-    [ "${APPMESH_REST_SSL_SSLEnabled:-}" = "false" ] && return 0
-    [ "${APPMESH_REST_SSL_SSLEnabled:-}" = "true" ] && return 1
-    [ -f "${PROG_HOME}/config/config.yaml" ] &&
-        grep -Eq '^[[:space:]]*SSLEnabled:[[:space:]]*"?false"?' "${PROG_HOME}/config/config.yaml"
+    if [ -n "${APPMESH_REST_SSL_SSLEnabled+x}" ]; then
+        local value="${APPMESH_REST_SSL_SSLEnabled}"
+        if [[ "${value}" =~ ^[+-]?[0-9]+$ ]]; then
+            # std::stoi(envValue) > 0 enables: negative or all-zero digits disable.
+            [[ "${value}" == -* || "${value}" != *[1-9]* ]]
+            return
+        fi
+        [ "${value}" != "true" ]
+        return
+    fi
+    local config="${PROG_HOME}/work/config/config.yaml"
+    [ -f "${config}" ] || config="${PROG_HOME}/config/config.yaml"
+    [ -f "${config}" ] || return 1
+    if grep -Eq "^[[:space:]]*SSLEnabled:[[:space:]]*[\"']" "${config}"; then
+        log "WARN: SSLEnabled in ${config} is a quoted string the daemon rejects at startup; assuming TLS"
+        return 1
+    fi
+    grep -Eq "^[[:space:]]*SSLEnabled:[[:space:]]+false[[:space:]]*(#.*)?$" "${config}"
 }
 
 prepare_tls() {

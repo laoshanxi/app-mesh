@@ -30,7 +30,7 @@ var controlOperations = []string{"app-view-all", "app-subscribe"}
 
 func main() {
 	var server, clusterNodes string
-	flag.StringVar(&server, "server", "127.0.0.1:6059", "App Mesh TCP server address (host:port)")
+	flag.StringVar(&server, "server", appmesh.DefaultTCPURI, "App Mesh TCP server address (host:port)")
 	flag.StringVar(&clusterNodes, "cluster-nodes", "", "Comma-separated cluster node addresses")
 	flag.Parse()
 
@@ -50,7 +50,8 @@ func main() {
 	engineOption.PSK = psk
 	tcpClient, err := appmesh.NewTCPClient(engineOption)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "TCP client error:", err)
+		// Name the transport so a plain/TLS mismatch stands out from other errors.
+		fmt.Fprintf(os.Stderr, "TCP client error (transport: %s): %v\n", tlsconf.TransportName(), err)
 		os.Exit(1)
 	}
 	defer tcpClient.CloseConnection()

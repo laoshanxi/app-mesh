@@ -571,7 +571,9 @@ func TestSubstituteForCommand_MessageOutputsEnvelopeSubstitutes(t *testing.T) {
 	}
 }
 
-// Other unresolved references keep the lenient literal-kept behavior.
+// Other unresolved references keep the lenient literal-kept behavior: unknown
+// steps (a parallel producer may still populate them), unknown roots, and
+// over-deep outputs paths are not proven author mistakes.
 func TestSubstituteForCommand_OtherUnresolvedRefsStayLiteral(t *testing.T) {
 	ctx := plainMessageCtx("j", "qa")
 	ctx.SetStepResult("j", "sub", "", 0, "success", "", nil) // workflow sub-step, no outputs
@@ -579,7 +581,6 @@ func TestSubstituteForCommand_OtherUnresolvedRefsStayLiteral(t *testing.T) {
 		`echo ${{ steps.ghost.outputs.answer }}`,
 		`echo '${{ nosuchroot.x }}'`,
 		`echo ${{ steps.qa.outputs.answer.here }}`,
-		`echo ${{ steps.sub.outputs.missing }}`,
 	} {
 		got, _, err := SubstituteForCommand(cmd, ctx, "j")
 		if err != nil || got != cmd {
@@ -588,14 +589,77 @@ func TestSubstituteForCommand_OtherUnresolvedRefsStayLiteral(t *testing.T) {
 	}
 }
 
-// The miss fires only for a completed message step; plain text stays reachable via stdout.
+// A completed step that never produced the referenced outputs key fails the
+// substitution in the engine with the key and the produced keys named — the
+// literal ${{ }} must not reach the shell (bash "bad substitution").
+func TestSubstituteForCommand_StepOutputsKeyMissFails(t *testing.T) {
+	ctx := NewContext()
+	ctx.SetStepResult("j", "call-child", "", 0, "success", "",
+		map[string]string{"echo_val": "us-east-1"}) // workflow sub-step: declared echo_val only
+
+	_, _, err := SubstituteForCommand(`echo ${{ steps.call-child.outputs.answer }}`, ctx, "j")
+	if err == nil || !strings.Contains(err.Error(), `unresolved expression ${{ steps.call-child.outputs.answer }}`) ||
+		!strings.Contains(err.Error(), `step "call-child" produced no output "answer"`) ||
+		!strings.Contains(err.Error(), "it produced: echo_val") {
+		t.Fatalf("err = %v, want the no-such-output engine error naming key and produced keys", err)
+	}
+
+	// The cross-job shape fails the same way.
+	other := NewContext()
+	other.SetJobResult("child", map[string]map[string]any{
+		"call": {"stdout": "", "exit_code": 0, "status": "success", "response": "", "outputs": map[string]string{}},
+	}, "success")
+	_, _, err = SubstituteForCommand(`echo ${{ jobs.child.steps.call.outputs.answer }}`, other, "j")
+	if err == nil || !strings.Contains(err.Error(), `step "call" produced no output "answer"`) ||
+		!strings.Contains(err.Error(), "it produced no outputs") {
+		t.Fatalf("cross-job err = %v, want the empty-outputs engine error", err)
+	}
+
+	// toJSON(...) of the same reference too.
+	_, _, err = SubstituteForCommand(`echo ${{ toJSON(steps.call-child.outputs.answer) }}`, ctx, "j")
+	if err == nil || !strings.Contains(err.Error(), `step "call-child" produced no output "answer"`) {
+		t.Fatalf("toJSON err = %v, want the no-such-output engine error", err)
+	}
+
+	// A failed non-message step produced no outputs either.
+	failed := NewContext()
+	failed.SetStepResult("j", "boom", "", 7, "failure", "exit 7", nil)
+	if _, _, err := SubstituteForCommand(`echo ${{ steps.boom.outputs.answer }}`, failed, "j"); err == nil ||
+		!strings.Contains(err.Error(), `step "boom" did not succeed (status "failure")`) {
+		t.Fatalf("failed step err = %v, want the did-not-succeed miss", err)
+	}
+
+	// Value fields (workflow_call with-inputs here) share the miss contract.
+	if _, err := SubstituteValue(`got: ${{ steps.call-child.outputs.answer }}`, ctx, "j"); err == nil ||
+		!strings.Contains(err.Error(), `produced no output "answer"`) {
+		t.Fatalf("SubstituteValue err = %v, want the same engine error", err)
+	}
+
+	// A not-yet-run step stays lenient (a parallel producer may still populate it).
+	if got, _, err := SubstituteForCommand(`echo ${{ steps.ghost.outputs.answer }}`, ctx, "j"); err != nil || got != `echo ${{ steps.ghost.outputs.answer }}` {
+		t.Fatalf("pending step: got %q err %v, want literal kept", got, err)
+	}
+}
+
+// The miss also fires for a message step that did not succeed: its outputs were
+// never produced, so downstream references fail instead of passing a literal.
+// Plain text stays reachable via stdout.
 func TestSubstituteForCommand_MissOnlyForCompletedMessageSteps(t *testing.T) {
 	failed := NewContext()
 	failed.SetStepResult("j", "qa", "", 1, "failure", "boom", nil)
 	failed.MarkMessageStep("j", "qa")
-	got, _, err := SubstituteForCommand(`echo ${{ steps.qa.outputs.answer }}`, failed, "j")
-	if err != nil || got != `echo ${{ steps.qa.outputs.answer }}` {
-		t.Errorf("failed message step: got %q err %v, want literal kept", got, err)
+	_, _, err := SubstituteForCommand(`echo ${{ steps.qa.outputs.answer }}`, failed, "j")
+	if err == nil || !strings.Contains(err.Error(), `message step "qa" did not succeed`) ||
+		!strings.Contains(err.Error(), `unresolved expression ${{ steps.qa.outputs.answer }}`) {
+		t.Fatalf("failed message step err = %v, want the did-not-succeed miss", err)
+	}
+	// A skipped message step is the same author-facing situation.
+	skipped := NewContext()
+	skipped.SetStepResult("j", "qa", "", 0, "skipped", "", nil)
+	skipped.MarkMessageStep("j", "qa")
+	if _, _, err := SubstituteForCommand(`echo ${{ steps.qa.outputs.answer }}`, skipped, "j"); err == nil ||
+		!strings.Contains(err.Error(), `message step "qa" did not succeed`) {
+		t.Fatalf("skipped message step err = %v, want the did-not-succeed miss", err)
 	}
 	if got, bindings, err := SubstituteForCommand(`echo ${{ steps.qa.stdout }}`, plainMessageCtx("j", "qa"), "j"); err != nil ||
 		got != "echo $WF_E0" || bindings["WF_E0"] != "answer-from-py" {
@@ -696,5 +760,231 @@ func TestHasStatusFunction_Grouped(t *testing.T) {
 	}
 	if HasStatusFunction(`(steps.x.stdout == 'success()')`) {
 		t.Error("quoted status text inside a group must not count")
+	}
+}
+
+// A wrapped condition must behave like its bare form, or skipJob drops a
+// "${{ always() }}" job whose condition is in fact always-true.
+func TestHasStatusFunction_Wrapped(t *testing.T) {
+	for _, condition := range []string{"${{ always() }}", "${{ !failure() }}", "${{ success() }} && inputs.go"} {
+		if !HasStatusFunction(condition) {
+			t.Errorf("wrapped condition %q must be detected", condition)
+		}
+	}
+	if HasStatusFunction(`${{ steps.x.stdout == 'success()' }}`) {
+		t.Error("quoted status text inside a wrapper must not count")
+	}
+}
+
+// Dangling operators and unterminated literals are author mistakes: they must
+// error, never silently evaluate (an empty operand is truthy by legacy).
+func TestEvalCondition_Malformed(t *testing.T) {
+	ctx := NewContext()
+	ctx.Inputs["a"] = "x"
+	for _, condition := range []string{
+		"inputs.a == 'x' &&",
+		"inputs.a == 'x' ||",
+		"&& inputs.a == 'x'",
+		"inputs.a == 'unclosed",
+		`${{ always()`,
+	} {
+		if _, err := EvalConditionForJob(condition, ctx, ""); err == nil {
+			t.Errorf("condition %q must error", condition)
+		}
+	}
+}
+
+// An escaped double quote inside a quoted literal must not break the lexer's
+// parenthesis counting: the condition evaluates (to false), not hard-fails.
+func TestEvalCondition_EscapedQuoteParens(t *testing.T) {
+	ctx := NewContext()
+	ctx.SetStepResult("", "s", `weird "(unbalanced`, 0, "success", "", nil)
+	met, err := EvalConditionForJob(`steps.s.stdout == "weird \"(unbalanced"`, ctx, "")
+	if err != nil {
+		t.Fatalf("escaped-quote condition errored: %v", err)
+	}
+	if met {
+		t.Error("condition compares unequal literals, must be false")
+	}
+}
+
+// The scanner's three blind spots (comment, unquoted heredoc, ANSI-C $'…') desync it from
+// the shell's quote state: in such a command every expression must bind to $WF_E.
+func TestSubstituteForCommand_ScannerBlindSpotsBindEnv(t *testing.T) {
+	const sentinel = "$(touch /tmp/pwned-by-workflow)"
+	cases := []string{
+		"# don't change this line\necho start\n echo ${{ inputs.v }}",
+		"cat <<EOF\ndon't run ${{ inputs.v }}\nEOF",
+		`echo $'it\'s' ; echo ${{ inputs.v }}`,
+	}
+	for _, tmpl := range cases {
+		ctx := NewContext()
+		ctx.Inputs["v"] = sentinel
+		cmd, bindings, err := SubstituteForCommand(tmpl, ctx, "job1")
+		if err != nil {
+			t.Fatalf("template %q: unexpected error: %v", tmpl, err)
+		}
+		if strings.Contains(cmd, sentinel) {
+			t.Errorf("template %q: value spliced into command text: %q", tmpl, cmd)
+		}
+		if !strings.Contains(cmd, "$WF_E0") || len(bindings) != 1 || bindings["WF_E0"] != sentinel {
+			t.Errorf("template %q: value must arrive via one $WF_E binding, got cmd %q bindings %v", tmpl, cmd, bindings)
+		}
+	}
+}
+
+// An ordinary author variable that merely starts with $WF_E (here
+// $WF_ECHO_HOME) must not disable the environment-binding mechanism.
+func TestSubstituteForCommand_WFENamePrefixNoFallback(t *testing.T) {
+	ctx := NewContext()
+	ctx.Inputs["v"] = "a; rm -rf /"
+	cmd, bindings, err := SubstituteForCommand(`echo "cfg=$WF_ECHO_HOME" ${{ inputs.v }}`, ctx, "j")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if strings.Contains(cmd, "rm -rf") {
+		t.Errorf("value spliced into command text: %q", cmd)
+	}
+	if !strings.Contains(cmd, "$WF_ECHO_HOME") || !strings.Contains(cmd, "$WF_E0") {
+		t.Errorf("author variable must survive next to the generated reference: %q", cmd)
+	}
+	if bindings["WF_E0"] != "a; rm -rf /" {
+		t.Errorf("binding missing: %v", bindings)
+	}
+}
+
+// A generated $WF_E<n> must not shadow a variable the command already
+// references as a whole token (at a word boundary); the next free number is
+// used instead, and the author's own references stay untouched.
+func TestSubstituteForCommand_WFERefSkipsTakenNumbers(t *testing.T) {
+	ctx := NewContext()
+	ctx.Inputs["a"] = "VA"
+	ctx.Inputs["b"] = "VB"
+	cmd, bindings, err := SubstituteForCommand(`echo $WF_E0 ${{ inputs.a }} ${{ inputs.b }} "$WF_E2"`, ctx, "j")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if want := `echo $WF_E0 $WF_E1 $WF_E3 "$WF_E2"`; cmd != want {
+		t.Errorf("command: got %q, want %q", cmd, want)
+	}
+	if bindings["WF_E1"] != "VA" || bindings["WF_E3"] != "VB" || len(bindings) != 2 {
+		t.Errorf("bindings: %v", bindings)
+	}
+	// An exact token at end of text counts as taken too.
+	cmd, bindings, err = SubstituteForCommand(`echo ${{ inputs.a }} $WF_E0`, ctx, "j")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if want := `echo $WF_E1 $WF_E0`; cmd != want {
+		t.Errorf("command: got %q, want %q", cmd, want)
+	}
+	if bindings["WF_E1"] != "VA" || len(bindings) != 1 {
+		t.Errorf("bindings: %v", bindings)
+	}
+}
+
+// A legal command that merely contains '#', '<<' or $' still substitutes:
+// single-quote inlining is disabled for all of its expressions, which is
+// predictable (and the documented fallback).
+func TestSubstituteForCommand_DangerousConstructDisablesInlining(t *testing.T) {
+	ctx := NewContext()
+	ctx.Inputs["quote"] = "it's a & calc"
+	cmd, bindings, err := SubstituteForCommand(`echo 'tag=${{ inputs.quote }}' # deploy note`, ctx, "j")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if want := `echo 'tag=$WF_E0' # deploy note`; cmd != want {
+		t.Errorf("command: got %q, want %q", cmd, want)
+	}
+	if bindings["WF_E0"] != "it's a & calc" {
+		t.Errorf("binding missing: %v", bindings)
+	}
+	// Unquoted heredoc body: the shell expands $WF_E there, so the value still
+	// arrives — this is the semantically correct form for a heredoc.
+	cmd, bindings, err = SubstituteForCommand("cat <<EOF\nv=${{ inputs.quote }}\nEOF", ctx, "j")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if want := "cat <<EOF\nv=$WF_E0\nEOF"; cmd != want {
+		t.Errorf("command: got %q, want %q", cmd, want)
+	}
+	if bindings["WF_E0"] != "it's a & calc" {
+		t.Errorf("binding missing: %v", bindings)
+	}
+}
+
+// Value fields (env, workdir, with-inputs, call outputs) share the command
+// paths' miss contract: an outputs reference at a plain-text message step
+// fails even in lenient mode, while other unresolved references stay literal.
+func TestSubstituteValue_MessageOutputsPlainTextFails(t *testing.T) {
+	_, err := SubstituteValue(`got: ${{ steps.qa.outputs.answer }}`, plainMessageCtx("j", "qa"), "j")
+	if err == nil || !strings.Contains(err.Error(), `unresolved expression ${{ steps.qa.outputs.answer }}`) ||
+		!strings.Contains(err.Error(), `message step "qa" produced no answer`) {
+		t.Fatalf("err = %v, want the plain-text no-answer engine error", err)
+	}
+	// The cross-job shape fails the same way.
+	_, err = SubstituteValue(`got: ${{ jobs.other.steps.qa.outputs.answer }}`, plainMessageCtx("other", "qa"), "j")
+	if err == nil || !strings.Contains(err.Error(), `message step "qa" produced no answer`) {
+		t.Fatalf("cross-job err = %v, want the plain-text no-answer engine error", err)
+	}
+	// Lenient mode keeps every other unresolved reference literal.
+	if got, err := SubstituteValue(`v=${{ steps.ghost.stdout }}`, plainMessageCtx("j", "qa"), "j"); err != nil ||
+		got != `v=${{ steps.ghost.stdout }}` {
+		t.Fatalf("got %q err %v, want the literal reference kept", got, err)
+	}
+}
+
+// A message payload referencing a missing outputs.answer must fail substitution
+// (JSON and plain-text payloads alike) instead of shipping the literal
+// ${{ }} text to the target App.
+func TestSubstituteMessagePayload_MessageOutputsMissFails(t *testing.T) {
+	ctx := plainMessageCtx("j", "qa")
+	if _, err := SubstituteMessagePayload(`{"q":"${{ steps.qa.outputs.answer }}"}`, ctx, "j"); err == nil ||
+		!strings.Contains(err.Error(), `message step "qa" produced no answer`) {
+		t.Fatalf("json payload err = %v, want the plain-text no-answer error", err)
+	}
+	if _, err := SubstituteMessagePayload(`ask: ${{ steps.qa.outputs.answer }}`, ctx, "j"); err == nil ||
+		!strings.Contains(err.Error(), `message step "qa" produced no answer`) {
+		t.Fatalf("plain payload err = %v, want the plain-text no-answer error", err)
+	}
+	// A non-success message step is the same miss in a payload.
+	failed := NewContext()
+	failed.SetStepResult("j", "qa", "", 1, "failure", "boom", nil)
+	failed.MarkMessageStep("j", "qa")
+	if _, err := SubstituteMessagePayload(`{"q":"${{ steps.qa.outputs.answer }}"}`, failed, "j"); err == nil ||
+		!strings.Contains(err.Error(), `message step "qa" did not succeed`) {
+		t.Fatalf("failed-step payload err = %v, want the did-not-succeed miss", err)
+	}
+}
+
+// A condition whose reference cannot resolve evaluates false (GitHub semantics:
+// missing reference → empty string → falsy) instead of keeping the literal
+// braces text, which reads as a truthy non-empty string. Plain-text conditions
+// without ${{ }} keep their legacy truthiness.
+func TestEvalCondition_MissingRefIsFalse(t *testing.T) {
+	ctx := plainMessageCtx("j", "qa")
+	failed := NewContext()
+	failed.SetStepResult("j", "qa", "", 1, "failure", "boom", nil)
+	failed.MarkMessageStep("j", "qa")
+	cases := []struct {
+		ctx  *Context
+		cond string
+		want bool
+	}{
+		{ctx, `${{ steps.qa.outputs.answer }}`, false},          // plain-text miss
+		{ctx, `steps.qa.outputs.answer`, false},                 // bare form
+		{ctx, `${{ steps.qa.outputs.answer }} == 'yes'`, false}, // empty never equals 'yes'
+		{ctx, `!${{ steps.qa.outputs.answer }}`, true},          // negated empty
+		{failed, `${{ steps.qa.outputs.answer }}`, false},       // non-success producer
+		{ctx, `${{ steps.ghost.stdout }}`, false},               // unknown step
+		{NewContext(), `${{ inputs.mode }}`, false},             // missing input is ""
+		{ctx, `true`, true},                                     // plain text untouched
+		{ctx, `'nonempty'`, true},                               // quoted literal untouched
+		{ctx, `steps.qa.stdout == 'answer-from-py'`, true},      // resolvable refs untouched
+	}
+	for _, c := range cases {
+		if got := evalOK(t, c.cond, c.ctx, "j"); got != c.want {
+			t.Errorf("condition %q: got %v, want %v", c.cond, got, c.want)
+		}
 	}
 }

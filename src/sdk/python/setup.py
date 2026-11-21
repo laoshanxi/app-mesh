@@ -11,7 +11,15 @@ def get_version():
     """PyPI package version"""
     # 3.0 removes Engine-owned login/user APIs in favor of standard OAuth and
     # principal-based authorization. This is intentionally a major release.
-    return "3.0.19"
+    # 3.0.20 adds the streaming surface: follow_output/run_task_stream/
+    # stream_run generators, send_input, worker send_task_partial.
+    # 3.0.21 signs the exact prepared wire path (requests' own URL repair),
+    # keeps a base-URL path prefix in the signature and on the wire, swaps the
+    # signing key/secret pair atomically, and reads APPMESH_AUTH_ALLOW_HTTP.
+    # 3.0.23 points streaming callers at the engine's native listener: the
+    # streaming docstrings and a new 404/405 SSE error hint say streaming lives
+    # on wss/https 6058 (via the web UI, 443), never the agent REST port 6060.
+    return "3.0.23"
 
 
 # Dependencies

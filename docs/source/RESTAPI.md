@@ -49,6 +49,8 @@ endpoints, requests use an OAuth access token in the
 | POST | `/appmesh/app/{name}/enable` | Enable a non-system application |
 | POST | `/appmesh/app/{name}/disable` | Disable a non-system application |
 | GET | `/appmesh/app/{name}/output` | Read application output |
+| GET | `/appmesh/app/{name}/output/stream` | Stream application output over server-sent events |
+| GET | `/appmesh/app/{name}/health` | Get application health |
 
 ### Application field notes
 
@@ -56,7 +58,6 @@ endpoints, requests use an OAuth access token in the
 - `stdout_backup_count` — output files kept per application across restarts (default `0`: each start replaces the previous run's output). Ignored (with a warning) for Docker applications: their output is fetched from the container, not rotated files.
 - `daily_limitation.daily_start` / `daily_end` — seconds since UTC midnight (integers).
 - An application whose `end_time` is in the past, or whose `interval` is not a positive duration, is rejected with `400`.
-| GET | `/appmesh/app/{name}/health` | Get application health |
 
 Applications use `owner_principal_id`; REST input cannot create
 `system: true` applications or choose an arbitrary process user.
@@ -83,7 +84,11 @@ Common wiring is a first-class field, using the `docker run` spelling:
 | `docker_ports` | Array of `[hostIp:]hostPort:containerPort[/protocol]`, compiled into `HostConfig.PortBindings` |
 | `docker_volumes` | Array of bind strings (`/host:/container:rw`), compiled into `HostConfig.Binds` |
 | `docker_network` | `host`, `bridge`, `none` or a network name, compiled into `HostConfig.NetworkMode` |
-| `docker_backend` | `api` (default: Docker Engine API through the agent) or `cli` (docker/podman CLI; also selected by the legacy `APP_DOCKER_OPTS` env) |
+
+The agent's container service is the only Docker backend: the built-in agent
+embeds the official Docker Go client, and the daemon drives it over a
+PSK-signed loopback channel (no docker CLI involved). Common flags belong in
+the first-class fields above, everything else in `metadata`.
 
 `metadata` remains the full-power channel: it is merged into the Docker
 create request body, so any Docker field (including `User`, `Entrypoint`,
@@ -95,11 +100,12 @@ wiring above) > `metadata`. The container `User` follows the principal-bound
 
 Lifecycle semantics:
 
-- A missing image is pulled through the Docker Engine API (`POST /images/create`) — the daemon needs no docker CLI and no docker socket of its own. Registry credentials for private registries come from `secret_env` as `APP_DOCKER_REGISTRY_SERVER`, `APP_DOCKER_REGISTRY_USER` and `APP_DOCKER_REGISTRY_PASSWORD`; they never reach the container environment or the logs. `APP_DOCKER_IMG_PULL_TIMEOUT` (default 300 s) bounds the pull.
+- A missing image is pulled by the agent through the Docker Engine API — the daemon needs no docker CLI and no docker socket of its own. Container exits arrive through the agent's Docker-events subscription (polling stays armed as a fallback). Registry credentials for private registries come from `secret_env` as `APP_DOCKER_REGISTRY_SERVER`, `APP_DOCKER_REGISTRY_USER` and `APP_DOCKER_REGISTRY_PASSWORD`; they never reach the container environment or the logs. `APP_DOCKER_IMG_PULL_TIMEOUT` (default 300 s) bounds the pull.
 - Stopping sends SIGTERM first (`stop_grace_period`, default 10 s like `docker stop`) and SIGKILL only after the grace; the container is then removed deterministically.
 - `health_check_cmd` runs **inside the container** (via the exec API); a channel failure marks the application unhealthy rather than probing the host. When the image defines a HEALTHCHECK, App Mesh reads the verdict Docker already maintains instead and bypasses `health_check_cmd` — the probe is never executed twice.
 - Output is fetched from the container log; the `X-Output-Position` cursor is a nanosecond timestamp of the newest delivered line, so incremental reads never duplicate lines.
 - Restart means a fresh container: the previous container is removed and re-created (no state carry-over).
+- `Docker.Enable` (daemon config, hot-reloaded, default true; `APPMESH_DOCKER_Enable` overrides): false keeps the container service, the events push and image pulls off the node, and the daemon refuses container applications with a clear error.
 - `Docker.HostSecurityPolicy` (daemon config, hot-reloaded): `off` (default) / `audit` (log) / `enforce` (reject) for high-risk container settings (privileged, pid=host, binds of `/` or the Docker socket, CapAdd SYS_ADMIN/SYS_PTRACE).
 - `resource_limit.cpu` (fractional cores) maps to container `NanoCPUs` alongside `memory_mb`/`memory_virt_mb`/`cpu_shares`.
 - On-demand runs (`/appmesh/app/run`, `syncrun`) support Docker applications: the run starts the container, streams its output and reports the container exit code. The image must exist locally — an on-demand run never pulls (register the application to pull first).
@@ -115,6 +121,15 @@ Lifecycle semantics:
 | GET | `/appmesh/app/{name}/task` | Fetch the next task payload for a managed application process |
 | PUT | `/appmesh/app/{name}/task` | Return the task result from a managed application process |
 | DELETE | `/appmesh/app/{name}/task` | Cancel the pending task request for a managed application |
+| POST | `/appmesh/app/{name}/task/stream` | Send a task request and stream partial results (SSE) |
+| POST | `/appmesh/app/{name}/task/partial` | Push an incremental task result (worker RPC) |
+| POST | `/appmesh/app/{name}/input` | Inject bytes into the stdin of a pipe-stdin application |
+
+The streaming routes answer `text/event-stream` frames (partials, final
+result, terminal status) on the engine's native listener (default wss/https
+6058 — the agent REST listener 6060 carries no streaming routes). See
+[Streaming.md](Streaming.md)
+for the event contract, the stdin pipe mode, and the SDK generator APIs.
 
 ## Event subscription
 
@@ -132,6 +147,11 @@ Lifecycle semantics:
 | GET | `/appmesh/file/download` | Download a file |
 | POST | `/appmesh/file/upload` | Upload a file |
 | DELETE | `/appmesh/file/delete` | Delete a file (guarded by the dedicated file-delete permission) |
+| GET | `/appmesh/labels` | List host labels |
+| PUT | `/appmesh/label/{label}` | Set a host label |
+| DELETE | `/appmesh/label/{label}` | Delete a host label |
+| GET | `/appmesh/config` | Get runtime configuration |
+| POST | `/appmesh/config` | Update runtime configuration |
 
 ### File transfer notes
 
@@ -141,11 +161,6 @@ Lifecycle semantics:
 - The daemon's own installation tree (the directory that holds `bin/`, `ssl/`, `config/`, `script/` and `work/`, for example `/opt/appmesh`) is refused on both directions regardless of `REST.FileAllowedBaseDir`; symbolic links into it are resolved before the check. The `work/tmp` scratch subtree inside it is the one exchangeable exception.
 - An unset `REST.FileAllowedBaseDir` (the packaged default) jails transfers to the daemon's work directory tree (`BaseConfig.WorkingDirectory`, `/opt/appmesh/work` by default). Combined with the installation-tree exclusion above, the exchangeable default is the `work/tmp` scratch area. Set the option to an absolute path to allow transfers in another tree; every absolute path outside the jail is refused for download, upload, and delete.
 - Pseudo filesystems (`/proc`, `/sys`, `/dev`) are refused on every transfer: their files stat as regular size-0 files and would otherwise download as empty `200` bodies.
-| GET | `/appmesh/labels` | List host labels |
-| PUT | `/appmesh/label/{label}` | Set a host label |
-| DELETE | `/appmesh/label/{label}` | Delete a host label |
-| GET | `/appmesh/config` | Get runtime configuration |
-| POST | `/appmesh/config` | Update runtime configuration |
 
 ## Resources and metrics
 

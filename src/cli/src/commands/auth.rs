@@ -9,7 +9,7 @@ use zeroize::Zeroizing;
 use crate::app::{Cli, LoginfoArgs, LogoffArgs, LogonArgs};
 use crate::client::{build_client, build_client_with_auth, get_current_endpoint};
 use crate::output::format::short_principal;
-use crate::util::config::{self, StoredSession};
+use crate::util::config::{self, StoredSession, ENV_AUTH_ACCESS_URL, ENV_AUTH_ALLOW_HTTP};
 use crate::util::display_env::has_display;
 use crate::util::password::{prompt_password, prompt_username, read_password_stdin};
 
@@ -132,7 +132,7 @@ async fn password_login(oauth: &OAuthClient, args: &LogonArgs, builtin: bool) ->
 // Cluster issuers are plain HTTP on a protected network; the opt-in keeps the
 // default fail-closed for every other deployment.
 fn env_allows_plain_http() -> bool {
-    std::env::var("APPMESH_AUTH_ALLOW_HTTP")
+    std::env::var(ENV_AUTH_ALLOW_HTTP)
         .map(|value| !matches!(value.trim().to_ascii_lowercase().as_str(), "" | "0" | "false" | "no"))
         .unwrap_or(false)
 }
@@ -152,7 +152,7 @@ pub async fn logon(cli: &Cli, args: &LogonArgs) -> Result<i32> {
     let access_url = args
         .auth_access_url
         .clone()
-        .or_else(|| std::env::var("APPMESH_AUTH_ACCESS_URL").ok())
+        .or_else(|| std::env::var(ENV_AUTH_ACCESS_URL).ok())
         // The advertised browser_entry is a redirect origin for browsers, not a
         // client discovery route: it carries no issuer path and may use TLS the
         // CLI does not trust. Discovery defaults to the issuer itself.

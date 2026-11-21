@@ -7,6 +7,12 @@
 set -eu
 umask 077
 STATE=/vault-init-state/init.json
+# Completion marker for this sidecar's exclusive state volume: appmesh_master's
+# healthcheck gate (depends_on: service_healthy) waits for it, so the first
+# bootstrap cannot race an unfinished setup. Drop any stale marker from a
+# previous run first, so the gate reflects THIS run's progress.
+DONE=/vault-init-state/init.done
+rm -f "$DONE"
 # The official image drops to its vault user (resolve the name: the uid
 # differs across image families); this sidecar runs as root, so it prepares
 # the writable mounts the server needs. Idempotent no-ops when ownership
@@ -73,50 +79,63 @@ elif [ ! -f "$STATE.root-subject-ok" ]; then
 fi
 # Upsert, unlike an AppRole, is safe to repeat: one role issues both server
 # and client certificates (the generator's cfssl profiles carry both usages).
-# enforce_hostnames stays off because container hostnames carry underscores;
-# Vault drops underscore DNS SANs outright no matter the role (an early
-# validation, hashicorp/vault#31925), so the overlay dials the hyphenated
-# network alias instead.
+# Domain-scoped, never allow_any_name: nodes issue only for the cluster's own
+# names (APPMESH_PKI_ALLOWED_DOMAINS, comma-separated; default = this cluster).
+# Underscore hostnames are rejected either way (Vault drops underscore SANs;
+# enforce_hostnames is back at its default true), so nodes use the hyphenated
+# alias and the bootstrap maps underscore names onto it.
+PKI_DOMAINS="${APPMESH_PKI_ALLOWED_DOMAINS:-localhost,appmesh-master,appmesh-slave1,appmesh-slave2,appmesh-slave3,appmesh-client}"
+echo "PKI role appmesh-node issues for domains: ${PKI_DOMAINS}"
 vault write pki/roles/appmesh-node \
-    allow_any_name=true server_flag=true client_flag=true \
-    key_type=ec key_bits=256 ttl=19800h max_ttl=19800h \
-    enforce_hostnames=false >/dev/null
+    allowed_domains="${PKI_DOMAINS}" allow_bare_domains=true allow_subdomains=false \
+    server_flag=true client_flag=true \
+    key_type=ec key_bits=256 ttl=19800h max_ttl=19800h >/dev/null
 
 # Scoped owner policy for the appmesh engine bootstrap: manage the
-# replication KV path, follower policies and follower AppRoles, and issue
+# replication KV path (APPMESH_REPLICATION_VAULT_KV_PATH — the same override
+# the engine's VaultClient and appmesh-auth.sh honor), follower policies and
+# follower AppRoles (delete included: revocation destroys both), and issue
 # the node's own TLS certificates from the cluster CA.
-vault policy write appmesh-replication-owner - <<'HCL'
-path "secret/data/appmesh/replication/*" {
+KV_PATH="${APPMESH_REPLICATION_VAULT_KV_PATH:-appmesh/replication}"
+vault policy write appmesh-replication-owner - <<HCL
+path "secret/data/${KV_PATH}/*" {
     capabilities = ["create", "read", "update", "delete", "list"]
 }
-path "secret/metadata/appmesh/replication" {
+path "secret/metadata/${KV_PATH}" {
     capabilities = ["list"]
 }
-path "secret/metadata/appmesh/replication/*" {
+path "secret/metadata/${KV_PATH}/*" {
     capabilities = ["read", "list", "delete"]
 }
 path "pki/issue/appmesh-node" {
     capabilities = ["create", "update"]
 }
 path "sys/policies/acl/appmesh-follower-*" {
-    capabilities = ["create", "read", "update"]
+    capabilities = ["create", "read", "update", "delete"]
 }
 path "auth/approle/role/appmesh-follower-*" {
     capabilities = ["create", "read", "update", "delete"]
 }
 HCL
 
-if [ ! -f /replication/owner.vault-token ]; then
+# The owner token stays in its own volume; no follower can read it.
+if [ ! -f /vault-owner/owner.vault-token ]; then
     # An explicit TTL matching the root's horizon: "-ttl=0" silently falls
     # back to the system default (32 days) and nothing renews a service
     # token, so the cluster would stop replicating a month in without this.
+    # The vault.hcl max_lease_ttl (10 years, matching the root) lifts the
+    # system clamp that would otherwise cut this request to 768h; a token
+    # created before that config change stays clamped until re-created.
     vault token create -policy=appmesh-replication-owner -ttl=87600h \
         -display-name=appmesh-replication-owner -format=json |
-        awk -F'"' '/"client_token"/{print $4; exit}' >/replication/owner.vault-token
-    chmod 600 /replication/owner.vault-token
+        awk -F'"' '/"client_token"/{print $4; exit}' >/vault-owner/owner.vault-token
+    chmod 600 /vault-owner/owner.vault-token
 fi
 # The appmesh owner (uid 482) must read the token this root sidecar wrote.
-chown 482:482 /replication/owner.vault-token 2>/dev/null || true
+chown 482:482 /vault-owner/owner.vault-token 2>/dev/null || true
+
+# Setup (PKI role, policies, owner token) is complete: open the master's gate.
+touch "$DONE"
 
 # Watchdog: keep the server unsealed across restarts.
 while true; do

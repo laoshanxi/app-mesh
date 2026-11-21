@@ -30,7 +30,7 @@ class TestWSSFileDataChannelForwarding(unittest.TestCase):
     def _client(self, forward_to) -> AppMeshClientWSS:
         client = AppMeshClientWSS(("gateway.local", 6058), ssl_verify=False, bearer_token="token")
         client.forward_to = forward_to
-        client._request_http = mock.Mock()  # the control-channel precheck answers 200
+        client._request_http = mock.Mock()  # the upload control-channel precheck answers 200 (download has none)
         return client
 
     def test_download_data_request_carries_forward_target(self):

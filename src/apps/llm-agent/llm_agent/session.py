@@ -53,6 +53,16 @@ def mark_started(cwd: str) -> None:
             pass
 
 
+def discard_empty_workdir(cwd: str) -> None:
+    """Remove a session workdir a failed first turn just created (os.rmdir only
+    removes an empty directory, so any real content survives)."""
+    if cwd:
+        try:
+            os.rmdir(cwd)
+        except OSError:
+            pass
+
+
 def project_dir_name(cwd: str) -> str:
     """The CLI's directory name for a project under projects/: the cwd with every
     character outside [A-Za-z0-9] folded to "-" (verified against the CLI bundle and

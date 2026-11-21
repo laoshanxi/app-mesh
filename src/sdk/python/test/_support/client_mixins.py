@@ -25,8 +25,10 @@ def get_test_paths():
             "remote_tmp": r"C:\local\appmesh\work\tmp\2.log",
             "system_file": r"C:\Windows\System32\drivers\etc\hosts",
         }
+    # Sandboxes with a non-standard daemon home override the scratch location;
+    # the default matches the standard install (file jail covers the work tree).
     return {
-        "remote_tmp": "/opt/appmesh/work/tmp/2.log",
+        "remote_tmp": os.environ.get("APPMESH_TEST_WORK_TMP", "/opt/appmesh/work/tmp/2.log"),
         "system_file": "/etc/hosts",
     }
 
@@ -459,6 +461,141 @@ class TaskOperationMixin:
             self.assertFalse(result)
         finally:
             self.client.delete_app(app_name)
+
+
+# ---------------------------------------------------------------------------
+# Streaming tests — SSE over plain HTTP (70-75)
+# ---------------------------------------------------------------------------
+def drain(gen):
+    """Drains a generator; returns (items, return_value)."""
+    items = []
+    while True:
+        try:
+            items.append(next(gen))
+        except StopIteration as stop:
+            return items, stop.value
+
+
+class StreamingMixin:
+    """Streaming-surface tests: follow_output / run_task_stream / stream_run / send_input.
+
+    SSE answers only on the daemon REST listener, so these run on the plain-HTTP class
+    that dials the listener directly (TestWSSRest; the agent-facing TestHTTP cannot forward).
+    """
+
+    def test_70_stream_run_incremental(self):
+        """stream_run yields stdout incrementally and returns the exit marker."""
+        config.attach_test_bearer(self.client)
+        chunks, end = drain(self.client.stream_run(
+            "for i in 1 2 3; do echo line$i; sleep 0.3; done", max_time=30, lifecycle=60))
+        self.assertEqual("exit", end.reason)
+        self.assertEqual(0, end.exit_code)
+        # Incremental delivery: the sleeps separate three chunk arrivals.
+        self.assertGreaterEqual(len(chunks), 2)
+        self.assertIn("line1", "".join(chunks))
+        self.assertIn("line3", "".join(chunks))
+
+    def test_71_follow_output_replay_and_cursor(self):
+        """follow_output streams a run live, then replays from a cursor."""
+        config.attach_test_bearer(self.client)
+        run = self.client.run_app_async(App({"command": "echo -n 0123456789", "name": "SDK_STREAM_71"}),
+                                        max_time=30, lifecycle=120)
+        try:
+            chunks, end = drain(self.client.follow_output("SDK_STREAM_71", process_uuid=run.process_uuid,
+                                                          follow=True, timeout=30))
+            self.assertEqual("0123456789", "".join(chunks))
+            self.assertEqual("exit", end.reason)
+            self.assertEqual(0, end.exit_code)
+            self.assertEqual(10, end.position)
+            # A cursor replay returns only the tail.
+            tail, tail_end = drain(self.client.follow_output("SDK_STREAM_71", stdout_position=4, follow=False,
+                                                             timeout=30))
+            self.assertEqual("456789", "".join(tail))
+            self.assertEqual(10, tail_end.position)
+        finally:
+            with contextlib.suppress(Exception):
+                self.client.delete_app("SDK_STREAM_71")
+
+    def test_72_follow_output_exit_code(self):
+        """A failed run ends the stream with its nonzero exit code."""
+        config.attach_test_bearer(self.client)
+        run = self.client.run_app_async(App({"command": "exit 7", "shell": True, "name": "SDK_STREAM_72"}),
+                                        max_time=30, lifecycle=120)
+        try:
+            chunks, end = drain(self.client.follow_output("SDK_STREAM_72", process_uuid=run.process_uuid,
+                                                          follow=True, timeout=30))
+            self.assertEqual("exit", end.reason)
+            self.assertEqual(7, end.exit_code)
+        finally:
+            with contextlib.suppress(Exception):
+                self.client.delete_app("SDK_STREAM_72")
+
+    def test_73_task_stream_partials(self):
+        """run_task_stream yields worker partials before the final result."""
+        config.attach_test_bearer(self.client)
+        try:
+            self.client.get_app("py-task")
+        except Exception:
+            self.skipTest("bundled py-task app is not registered on this daemon")
+        # The payload builds its own worker over the test client's base URL (shifted
+        # sandbox ports); the warning filter keeps noise out of the captured worker
+        # stdout, which is the task's final result.
+        payload = ("import warnings; warnings.filterwarnings('ignore')\n"
+                   "from appmesh import AppMeshWorker\n"
+                   f"w = AppMeshWorker(base_url='{self.client.base_url}', ssl_verify=False)\n"
+                   "w.send_task_partial('alpha ')\n"
+                   "w.send_task_partial('beta')\n"
+                   "print('final-payload', end='')")
+        chunks, end = drain(self.client.run_task_stream("py-task", payload, timeout=30))
+        self.assertEqual(["alpha ", "beta"], chunks)
+        self.assertEqual("final", end.reason)
+        self.assertTrue((end.result or "").endswith("final-payload"))
+
+    def test_74_task_stream_error_end(self):
+        """A task against a processless app ends the stream as a request error."""
+        config.attach_test_bearer(self.client)
+        app_name = "SDK_STREAM_74"
+        try:
+            self.client.add_app(App({"command": "sleep 1000", "name": app_name, "enabled": False}))
+            with self.assertRaises(AppMeshRequestError):
+                drain(self.client.run_task_stream(app_name, "print('never')", timeout=10))
+        finally:
+            self.client.delete_app(app_name)
+
+    def test_75_send_input_pipe(self):
+        """stdin pipe injection drives an interactive process turn by turn."""
+        config.attach_test_bearer(self.client)
+        app_name = "SDK_STREAM_75"
+        try:
+            self.client.add_app(App({"command": "cat", "name": app_name, "stdin": "pipe", "permission": 0}))
+            # The scheduler needs a moment to start the process; a send before
+            # that answers 409, so retry briefly.
+            for _ in range(20):
+                try:
+                    self.client.send_input(app_name, "ping-input\n")
+                    break
+                except AppMeshRequestError:
+                    time.sleep(0.5)
+            else:
+                self.fail("send_input never accepted: process did not start")
+            # cat echoes the write; the pump lands it on disk within ~200ms.
+            echoed = ""
+            for _ in range(10):
+                chunks, _end = drain(self.client.follow_output(app_name, follow=False, timeout=30))
+                echoed = "".join(chunks)
+                if "ping-input" in echoed:
+                    break
+                time.sleep(0.5)
+            self.assertIn("ping-input", echoed)
+            # EOF closes the conversation: cat exits 0 and the stream ends.
+            self.client.send_input(app_name, b"", close=True)
+            end_chunks, end = drain(self.client.follow_output(app_name, follow=True, timeout=30))
+            self.assertIn("ping-input", "".join(end_chunks))
+            self.assertEqual("exit", end.reason)
+            self.assertEqual(0, end.exit_code)
+        finally:
+            with contextlib.suppress(Exception):
+                self.client.delete_app(app_name)
 
 
 # ---------------------------------------------------------------------------

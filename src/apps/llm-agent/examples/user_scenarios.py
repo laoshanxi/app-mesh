@@ -2,19 +2,24 @@
 """How a user uses llm-agent — runnable end-to-end journeys against a live daemon.
 
 Two interaction models (see README "Two scenarios, two Apps"):
-  A — batch: talk to the shared App (`llm-agent`), one final answer per turn.
-  B — interactive: an admin-provisioned worker App per session; talk to it by name and
-      stream its STDOUT.
+  A — batch: talk to the shared App (`llm-agent`), one final answer per turn
+      (a_stream shows the same App streaming token by token).
+  B — interactive: an admin-provisioned worker App per session; talk to it by
+      name with the same streaming channel.
+
+Streaming rides the task RPC itself (``run_task_stream``): each token is a partial on the
+same call, the final envelope carries completion metadata; no STDOUT subscription, no races.
 
 Prereqs: a running daemon with the `llm-agent` App enabled and a Claude key set
 (ANTHROPIC_API_KEY as a secured env var; the claude-agent-sdk wheel bundles the Claude
 Code CLI, so no Node is needed). For B, an admin-provisioned worker
 (--worker-app/--worker-session). The caller supplies a bearer whose Engine
-principal has app-run-task and, for B streaming, app-subscribe.
+principal has app-run-task.
 
 Run:
   python3 user_scenarios.py --list
   python3 user_scenarios.py a_single
+  python3 user_scenarios.py a_stream
   python3 user_scenarios.py b_interactive --worker-app llm-agent-sess-S1 --worker-session S1
 """
 import argparse
@@ -62,44 +67,36 @@ def new_session_id():
 
 
 class WorkerStream:
-    """Canonical Scenario B client: ONE long-lived STDOUT subscription, many turns.
+    """Canonical streaming client: ``run_task_stream`` partials ARE the answer tokens; one
+    call per turn — no subscription, no race handling — on the shared App or any worker."""
 
-    The streamed tokens ARE the answer; ``run_task`` only delivers each turn's input and
-    returns completion metadata. The subscription stays open for the whole session.
-    """
-
-    def __init__(self, client, worker, sid, task_timeout):
+    def __init__(self, client, app, sid, task_timeout):
         self._client = client
-        self._worker = worker
+        self._app = app
         self._sid = sid
         self._timeout = task_timeout
-        self._buf = []
-        self._sub = client.subscribe(worker, ["STDOUT"], callback=self._on_event)
-        time.sleep(1.0)  # let the subscription go live before the first turn
-
-    def _on_event(self, evt):
-        txt = _event_text(evt)
-        if txt:
-            self._buf.append(txt)
-            sys.stdout.write(txt)
-            sys.stdout.flush()
 
     def send(self, text):
-        self._buf.clear()
         payload = {"action": "session_send", "session_id": self._sid, "input": text, "stream": True}
-        resp = json.loads(self._client.run_task(self._worker, json.dumps(payload), timeout=self._timeout))
-        time.sleep(0.3)  # let trailing STDOUT events arrive
+        answer = []
+        gen = self._client.run_task_stream(self._app, json.dumps(payload), timeout=self._timeout)
+        while True:
+            try:
+                chunk = next(gen)
+            except StopIteration as stop:  # the generator's return value is the end marker
+                end = stop.value
+                break
+            answer.append(chunk)
+            sys.stdout.write(chunk)
+            sys.stdout.flush()
+        resp = json.loads(end.result) if end.result else {}
         if resp.get("status") != "ok":
             raise AgentError(resp.get("message", "error"), resp.get("data"))
-        return "".join(self._buf), (resp.get("data") or {})
+        return "".join(answer), (resp.get("data") or {})
 
     def close(self):
-        try:
-            self._client.unsubscribe(self._sub.subscription_id)
-        except Exception:
-            pass
-        try:  # session_close → worker exits → daemon removes the App
-            self._client.run_task(self._worker, json.dumps(
+        try:  # session_close → a worker exits and the daemon removes its App
+            self._client.run_task(self._app, json.dumps(
                 {"action": "session_close", "session_id": self._sid}), timeout=20)
         except Exception:
             pass
@@ -112,11 +109,6 @@ class AgentError(Exception):
         self.data = data
 
 
-def _event_text(evt):
-    data = getattr(evt, "data", None) or {}
-    return data.get("output", "") if isinstance(data, dict) else ""
-
-
 def a_single(a, cfg):
     """A1 — batch: ask once, get one answer."""
     print("[A1] one batch turn.")
@@ -124,6 +116,18 @@ def a_single(a, cfg):
     r = a.ask(sid, "In one sentence: what is App Mesh?")
     print(f"     answer={r['answer']!r}  iterations={r['iterations']}  turn_tokens={r['turn_tokens']}")
     a.close(sid)
+
+
+def a_stream(a, cfg):
+    """A3 — the same shared App, streaming token by token."""
+    print("[A3] streaming turn on the shared App (no worker, no subscription).")
+    stream = a.worker_stream(a.app, new_session_id())
+    try:
+        print("     assistant: ", end="", flush=True)
+        answer, meta = stream.send("Count slowly from 1 to 5, one number per line.")
+        print(f"\n       [done: iterations={meta.get('iterations')} turn_tokens={meta.get('turn_tokens')}]")
+    finally:
+        stream.close()
 
 
 def a_multiturn(a, cfg):
@@ -143,22 +147,22 @@ def _need_worker(cfg):
 
 
 def b_interactive(a, cfg):
-    """B — interactive: ONE App, ONE open STDOUT subscription, many streaming turns."""
-    print("[B] one subscription, multiple streaming turns on the worker App.")
+    """B — interactive: one isolated worker App per session, many streaming turns."""
+    print("[B] isolated session worker, multiple streaming turns (context stays private).")
     if not _need_worker(cfg):
         return
     stream = a.worker_stream(cfg.worker_app, cfg.worker_session)
     try:
         for msg in ["Hi! Remember the number 7.", "What number did I give you?", "Say goodbye in one word."]:
             print(f"\n     you: {msg}\n     assistant: ", end="", flush=True)
-            _answer, meta = stream.send(msg)  # tokens already rendered live by the callback
+            _answer, meta = stream.send(msg)  # tokens already rendered live by the stream
             print(f"\n       [done: iterations={meta.get('iterations')} turn_tokens={meta.get('turn_tokens')}]")
     finally:
         stream.close()
         print("\n     session closed (worker removed).")
 
 
-SCENARIOS = {"a_single": a_single, "a_multiturn": a_multiturn, "b_interactive": b_interactive}
+SCENARIOS = {"a_single": a_single, "a_multiturn": a_multiturn, "a_stream": a_stream, "b_interactive": b_interactive}
 
 
 def main():

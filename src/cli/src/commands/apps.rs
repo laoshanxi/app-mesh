@@ -143,9 +143,6 @@ fn build_app_from_args(args: &AddArgs) -> Result<Application> {
     if let Some(ref network) = args.docker_network {
         builder = builder.docker_network(network);
     }
-    if let Some(ref backend) = args.docker_backend {
-        builder = builder.docker_backend(backend);
-    }
     if let Some(num) = args.stdout_backup_count {
         builder = builder.stdout_backup_count(num);
     }

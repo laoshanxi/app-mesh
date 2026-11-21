@@ -319,6 +319,25 @@ migrate_renamed_bundled_apps() {
     done
 }
 
+# Prints template roles that the persisted authorization lacks, space separated.
+missing_template_roles() {
+    local template="${PROG_HOME}/config/authorization.yaml"
+    local runtime="${PROG_HOME}/work/config/authorization.yaml"
+    [ -f "$template" ] && [ -f "$runtime" ] || return 0
+    comm -23         <(awk '/^  roles:/{r=1;next} /^  [A-Za-z]/{r=0} r&&/^    [A-Za-z0-9_-]+:/{print $1}' "$template" | sort)         <(awk '/^  roles:/{r=1;next} /^  [A-Za-z]/{r=0} r&&/^    [A-Za-z0-9_-]+:/{print $1}' "$runtime" | sort) |
+        tr -d ':' | tr '\n' ' '
+}
+
+# Prints "role.permission" entries the template grants to a role the persisted
+# authorization lacks; an upgraded install otherwise misses new permissions until a 403.
+missing_template_permissions() {
+    local template="${PROG_HOME}/config/authorization.yaml"
+    local runtime="${PROG_HOME}/work/config/authorization.yaml"
+    [ -f "$template" ] && [ -f "$runtime" ] || return 0
+    local extract='/^  roles:/{r=1;next} /^  [A-Za-z]/{r=0} r&&/^    [A-Za-z0-9_-]+:/{role=substr($1,1,length($1)-1);next} r&&/^      - /{print role"."substr($2,1,length($2))}'
+    comm -23 <(awk "$extract" "$template" | sort) <(awk "$extract" "$runtime" | sort) | tr '\n' ' '
+}
+
 write_env_entry() {
     local target="$1"
     local name="$2"
@@ -836,6 +855,16 @@ setup_permissions() {
 
 setup_ssl_certificates() {
     local ssl_dir="${PROG_HOME}/ssl"
+    if [ "${APPMESH_SSL_SOURCE:-file}" = "vault" ]; then
+        # The Vault PKI bootstrap issued the five daemon-consumed files. There
+        # is no ca-key.pem, and local generation must never overwrite them.
+        if [ ! -f "${ssl_dir}/server.pem" ] && [ -x "${AUTH_LAUNCHER}" ]; then
+            "${AUTH_LAUNCHER}" bootstrap || die "Vault PKI TLS bootstrap failed"
+        fi
+        [ -f "${ssl_dir}/server.pem" ] ||
+            die "The Vault PKI source is selected but no TLS material was issued; run ${AUTH_LAUNCHER} bootstrap"
+        return
+    fi
     if [ "${APPMESH_FRESH_INSTALL:-}" = "Y" ] || [ ! -f "${ssl_dir}/server.pem" ]; then
         info "Generating SSL certificates"
         if [ -f "${ssl_dir}/generate_ssl_cert.sh" ]; then
@@ -884,6 +913,20 @@ print_startup_instructions() {
             echo "  appm logon --username admin@appmesh.local"
         else
             echo "  appm logon --browser"
+        fi
+        # An upgraded install keeps its persisted authorization; name roles only the new template ships.
+        local new_roles
+        new_roles="$(missing_template_roles)"
+        if [ -n "$new_roles" ]; then
+            echo "New role(s) in this version (absent from the persisted authorization): $new_roles"
+            echo "  adopt via the role API; definitions: ${PROG_HOME}/config/authorization.yaml"
+        fi
+        # Same for permissions added to roles that already exist (else 403 at use time).
+        local new_permissions
+        new_permissions="$(missing_template_permissions)"
+        if [ -n "$new_permissions" ]; then
+            echo "New permission(s) this version grants (absent from the persisted authorization): $new_permissions"
+            echo "  add via the role API; definitions: ${PROG_HOME}/config/authorization.yaml"
         fi
         echo
         echo "Logs: ${PROG_HOME}/work/server.log"

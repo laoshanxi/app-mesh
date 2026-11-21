@@ -32,6 +32,11 @@ type (
 
 		SSL appmesh.SSLConfig `yaml:"SSL"`
 	}
+	DockerConfig struct {
+		// Mirrors the daemon's Docker.Enable: false keeps the container
+		// service and events push off this node.
+		Enable bool `yaml:"enable"`
+	}
 	OIDCConfig struct {
 		Issuer    string `yaml:"issuer"`
 		AccessURL string `yaml:"access_url"`
@@ -40,7 +45,8 @@ type (
 	}
 
 	Configuration struct {
-		REST RESTConfig `yaml:"REST"`
+		REST   RESTConfig   `yaml:"REST"`
+		Docker DockerConfig `yaml:"Docker"`
 	}
 )
 
@@ -68,6 +74,9 @@ var ConfigData = Configuration{
 			VerifyServer:                true,
 		},
 	},
+	Docker: DockerConfig{
+		Enable: true,
+	},
 }
 
 var OIDCData = OIDCConfig{
@@ -85,6 +94,32 @@ func init() {
 	}
 }
 
+// Reload re-reads config.yaml (files plus env overrides) into ConfigData,
+// idempotent with the startup load, to follow daemon-side hot reloads. The
+// file stores relative SSL paths, so the reload re-resolves them like the
+// startup load does; without it a reloaded TLS dial reads a relative CA path
+// against the process work directory and fails certificate setup.
+func Reload() error {
+	if err := readConfig(); err != nil {
+		return err
+	}
+	ResolveAbsolutePaths()
+	return nil
+}
+
+// Installation-root layout names; mirrors the daemon's APPMESH_WORK_* macros.
+const (
+	WorkDirName   = "work"
+	TmpDirName    = "tmp"
+	ConfigDirName = "config"
+)
+
+// ConfigFileCandidates lists the config locations the loader searches and a watcher stats.
+func ConfigFileCandidates() []string {
+	home := GetAppMeshHomeDir()
+	return []string{filepath.Join(home, WorkDirName, ConfigDirName, "config.yaml"), filepath.Join(home, ConfigDirName, "config.yaml")}
+}
+
 // Convert all relative paths to absolute paths
 func ResolveAbsolutePaths() {
 	ConfigData.REST.SSL.SSLCAPath = ResolveAbsolutePath(ConfigData.REST.SSL.SSLCAPath)
@@ -92,6 +127,24 @@ func ResolveAbsolutePaths() {
 	ConfigData.REST.SSL.SSLCertificateKeyFile = ResolveAbsolutePath(ConfigData.REST.SSL.SSLCertificateKeyFile)
 	ConfigData.REST.SSL.SSLClientCertificateFile = ResolveAbsolutePath(ConfigData.REST.SSL.SSLClientCertificateFile)
 	ConfigData.REST.SSL.SSLClientCertificateKeyFile = ResolveAbsolutePath(ConfigData.REST.SSL.SSLClientCertificateKeyFile)
+}
+
+// canonicalYAML parses YAML through a generic map, rewriting keys to the
+// yaml-tag casing of targetType (see canonicalizeKeys), and returns the
+// canonical bytes plus the parsed map: which keys the file actually defines
+// governs environment overrides (viper/mapstructure used to match keys
+// case-insensitively). The caller unmarshals the bytes into the target struct.
+func canonicalYAML(data []byte, targetType reflect.Type) ([]byte, map[string]interface{}, error) {
+	var fileConfig map[string]interface{}
+	if err := yaml.Unmarshal(data, &fileConfig); err != nil {
+		return nil, nil, err
+	}
+	canonicalizeKeys(fileConfig, targetType)
+	content, err := yaml.Marshal(fileConfig)
+	if err != nil {
+		return nil, nil, err
+	}
+	return content, fileConfig, nil
 }
 
 // readConfig loads the application config.yaml from files and environment variables.
@@ -106,17 +159,7 @@ func readConfig() error {
 		return fmt.Errorf("failed to read config file: %w", err)
 	}
 
-	// Parse into a generic map first: it records which keys the file actually
-	// defines (environment overrides apply only to existing keys) and lets us
-	// canonicalize key casing to the struct yaml tags (viper/mapstructure used
-	// to match keys case-insensitively).
-	var fileConfig map[string]interface{}
-	if err := yaml.Unmarshal(data, &fileConfig); err != nil {
-		return fmt.Errorf("failed to unmarshal config: %w", err)
-	}
-	canonicalizeKeys(fileConfig, reflect.TypeOf(Configuration{}))
-
-	content, err := yaml.Marshal(fileConfig)
+	content, fileConfig, err := canonicalYAML(data, reflect.TypeOf(Configuration{}))
 	if err != nil {
 		return fmt.Errorf("failed to unmarshal config: %w", err)
 	}
@@ -208,13 +251,8 @@ func readOIDCConfig() error {
 	root := struct {
 		OIDC OIDCConfig `yaml:"OIDC"`
 	}{OIDC: OIDCConfig{TLSVerify: true}}
-	var fileConfig map[string]interface{}
-	if err := yaml.Unmarshal(data, &fileConfig); err != nil {
-		return fmt.Errorf("failed to unmarshal oidc config: %w", err)
-	}
 	// Canonicalize key casing to the struct yaml tags, as in readConfig.
-	canonicalizeKeys(fileConfig, reflect.TypeOf(root))
-	content, err := yaml.Marshal(fileConfig)
+	content, _, err := canonicalYAML(data, reflect.TypeOf(root))
 	if err != nil {
 		return fmt.Errorf("failed to unmarshal oidc config: %w", err)
 	}
@@ -241,10 +279,10 @@ func readOIDCConfig() error {
 	if root.OIDC.Issuer == "" || root.OIDC.AccessURL == "" {
 		return fmt.Errorf("OIDC issuer and access URL must be non-empty absolute URLs")
 	}
-	if err := validateAbsoluteHTTPURL(root.OIDC.Issuer); err != nil {
+	if err := ValidateAbsoluteHTTPURL(root.OIDC.Issuer); err != nil {
 		return fmt.Errorf("invalid OIDC issuer: %w", err)
 	}
-	if err := validateAbsoluteHTTPURL(root.OIDC.AccessURL); err != nil {
+	if err := ValidateAbsoluteHTTPURL(root.OIDC.AccessURL); err != nil {
 		return fmt.Errorf("invalid OIDC access URL: %w", err)
 	}
 	OIDCData = root.OIDC
@@ -260,7 +298,9 @@ func firstNonEmptyEnv(names ...string) string {
 	return ""
 }
 
-func validateAbsoluteHTTPURL(value string) error {
+// ValidateAbsoluteHTTPURL rejects anything that is not a bare absolute
+// http(s) URL (no credentials, query, or fragment).
+func ValidateAbsoluteHTTPURL(value string) error {
 	parsed, err := url.Parse(value)
 	if err != nil {
 		return err

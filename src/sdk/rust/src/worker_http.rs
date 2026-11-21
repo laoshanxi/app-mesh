@@ -4,6 +4,7 @@
 use bytes::Bytes;
 use http::StatusCode;
 use log::{error, warn};
+use serde_json::Value;
 use std::collections::HashMap;
 use std::env;
 use std::sync::Arc;
@@ -12,6 +13,7 @@ use std::time::Instant;
 use tokio::sync::watch;
 
 use crate::client_http::AppMeshClient;
+use crate::constants::HTTP_HEADER_KEY_X_APPMESH_PROCESS_KEY;
 use crate::error::AppMeshError;
 use crate::response_ext::ResponseExt;
 
@@ -79,7 +81,7 @@ impl AppMeshWorker {
         let path = format!("/appmesh/app/{}/task", app_name);
 
         let mut headers = HashMap::new();
-        headers.insert("X-AppMesh-Process-Key".to_string(), pkey);
+        headers.insert(HTTP_HEADER_KEY_X_APPMESH_PROCESS_KEY.to_string(), pkey);
 
         let mut stop_rx = self.stop_tx.subscribe();
         let mut attempts: u32 = 0;
@@ -135,7 +137,7 @@ impl AppMeshWorker {
         let path = format!("/appmesh/app/{}/task", app_name);
 
         let mut headers = HashMap::new();
-        headers.insert("X-AppMesh-Process-Key".to_string(), pkey);
+        headers.insert(HTTP_HEADER_KEY_X_APPMESH_PROCESS_KEY.to_string(), pkey);
 
         let resp = self.client.raw_request(Method::PUT, &path, Some(result), Some(headers), None, false).await?;
 
@@ -146,5 +148,34 @@ impl AppMeshWorker {
             return Err(AppMeshError::RequestFailed { status, message: text });
         }
         Ok(())
+    }
+
+    /// Push an incremental result to the invoking client before the final reply.
+    ///
+    /// Delivered only when the caller opened the streaming task channel
+    /// (`AppMeshClient::run_task_stream`); a one-shot `run_task` caller never
+    /// sees it. For continuous-output services (token streams, progress updates).
+    ///
+    /// Returns `true` when a streaming client received the partial.
+    pub async fn send_task_partial(&self, partial: &str) -> Result<bool, AppMeshError> {
+        use reqwest::Method;
+
+        let (pkey, app_name) = Self::get_runtime_env()?;
+        let path = format!("/appmesh/app/{}/task/partial", app_name);
+
+        let mut headers = HashMap::new();
+        headers.insert(HTTP_HEADER_KEY_X_APPMESH_PROCESS_KEY.to_string(), pkey);
+
+        let resp =
+            self.client.raw_request(Method::POST, &path, Some(partial.as_bytes()), Some(headers), None, false).await?;
+
+        let status = resp.status();
+        if status != StatusCode::OK {
+            let text = resp.text()?;
+            error!("send_task_partial failed with status {}: {}", status, text);
+            return Err(AppMeshError::RequestFailed { status, message: text });
+        }
+        // A non-JSON reply (older daemon) means nothing was delivered.
+        Ok(resp.json::<Value>().ok().and_then(|v| v.get("delivered").and_then(Value::as_bool)).unwrap_or(false))
     }
 }

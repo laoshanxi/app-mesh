@@ -158,7 +158,10 @@ func main() {
 	restDone := initializeServices(ctx)
 	go monitorParentProcess(ctx, stop)
 
-	changeWorkDir(path.Join(config.GetAppMeshHomeDir(), "work", "tmp"))
+	// Docker container events -> daemon push (noop without a Docker endpoint)
+	agent.StartContainerEventsPush(ctx)
+
+	changeWorkDir(path.Join(config.GetAppMeshHomeDir(), config.WorkDirName, config.TmpDirName))
 
 	// Wait for shutdown signal
 	<-ctx.Done()

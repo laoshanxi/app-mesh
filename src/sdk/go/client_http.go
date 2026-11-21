@@ -46,6 +46,9 @@ type Option struct {
 	// InsecureSkipVerify disables server certificate verification (testing only; same as SSLTrustedCA = "").
 	InsecureSkipVerify bool
 
+	// PlainTransport dials the TCP frame port without TLS (daemon SSL.SSLEnabled=false).
+	PlainTransport bool
+
 	JWTToken string // Access token set directly without a network call.
 
 	// TokenProvider supplies and refreshes access tokens (see token_provider.go).
@@ -72,6 +75,11 @@ type Option struct {
 
 	// HTTPTimeout is the overall timeout for http.Client requests; honored when non-zero.
 	HTTPTimeout time.Duration
+
+	// RestPort is the daemon REST listener port for the TCP transport's SSE
+	// side channel (SSE cannot ride the framed protocol); 0 uses port 6058.
+	// HTTP and WSS already talk to the REST listener.
+	RestPort int
 }
 
 // NewHTTPClient builds an HTTP-backed client for App Mesh REST APIs.
@@ -124,8 +132,13 @@ func newHTTPClientWithRequester(options Option, r Requester) (*AppMeshClient, er
 	}
 	// Applies to every transport: a TCP/WSS requester arrives here without the option.
 	req.setForwardTo(options.ForwardTo)
-	if options.RequestSignatureKeyID != "" {
-		req.setRequestSigner(newRequestSigner(options.RequestSignatureKeyID, options.RequestSignatureSecret))
+	// A partial API-key pair is a misconfiguration; enabling requires both halves.
+	if options.RequestSignatureKeyID != "" || options.RequestSignatureSecret != "" {
+		signer, err := newRequestSigner(options.RequestSignatureKeyID, options.RequestSignatureSecret)
+		if err != nil {
+			return nil, err
+		}
+		req.setRequestSigner(signer)
 	}
 
 	c := &AppMeshClient{
@@ -174,12 +187,18 @@ func (r *AppMeshClient) ClearToken() {
 // signatures"). The key pair comes from POST /appmesh/security/apikeys; the
 // secret is kept in memory only and never logged. The signature is an
 // integrity layer on top of the bearer token, not a replacement for it.
-func (r *AppMeshClient) WithRequestSignature(keyID, secret string) {
+// An empty key ID disables signing; an empty secret is an error.
+func (r *AppMeshClient) WithRequestSignature(keyID, secret string) error {
 	if keyID == "" {
 		r.req.setRequestSigner(nil)
-		return
+		return nil
 	}
-	r.req.setRequestSigner(newRequestSigner(keyID, secret))
+	signer, err := newRequestSigner(keyID, secret)
+	if err != nil {
+		return err
+	}
+	r.req.setRequestSigner(signer)
+	return nil
 }
 
 // GetToken returns the current in-memory access token.
@@ -357,12 +376,12 @@ func (r *AppMeshClient) getAppOutput(ctx context.Context, appName string, stdout
 		HTTPBody:    string(body),
 	}
 
-	if exitStr := hdr.Get("X-Exit-Code"); exitStr != "" {
+	if exitStr := hdr.Get(headerExitCode); exitStr != "" {
 		if ec, err := strconv.Atoi(exitStr); err == nil {
 			resp.ExitCode = &ec
 		}
 	}
-	if posStr := hdr.Get("X-Output-Position"); posStr != "" {
+	if posStr := hdr.Get(headerOutputPosition); posStr != "" {
 		if pos, err := strconv.ParseInt(posStr, 10, 64); err == nil {
 			resp.OutputPosition = &pos
 		}
@@ -539,6 +558,11 @@ func (r *AppMeshClient) CancelTask(appName string) (bool, error) {
 // The returned AppRun captures the current forward target so Wait can keep polling the same
 // cluster node even if the client forwarding setting changes later.
 func (r *AppMeshClient) RunAppAsync(app Application, maxTime int, lifecycle int) (*AppRun, error) {
+	return r.runAppAsync(context.Background(), app, maxTime, lifecycle)
+}
+
+// runAppAsync implements RunAppAsync bounded by ctx (shared with StreamRunContext).
+func (r *AppMeshClient) runAppAsync(ctx context.Context, app Application, maxTime int, lifecycle int) (*AppRun, error) {
 	if app.Name == "" {
 		return nil, fmt.Errorf("application name is required")
 	}
@@ -550,7 +574,8 @@ func (r *AppMeshClient) RunAppAsync(app Application, maxTime int, lifecycle int)
 	q := url.Values{}
 	q.Set("timeout", fmt.Sprintf("%d", maxTime))
 	q.Set("lifecycle", fmt.Sprintf("%d", lifecycle))
-	code, raw, _, err := r.post("/appmesh/app/run", q, nil, appJson)
+	code, raw, _, err := r.req.SendContext(ctx, http.MethodPost, "/appmesh/app/run", q,
+		withJSONContentType(nil, appJson), bytes.NewBuffer(appJson))
 	if err != nil {
 		return nil, fmt.Errorf("run app async request failed: %w", err)
 	}
@@ -651,7 +676,7 @@ func (r *AppMeshClient) RunAppSyncChecked(app Application, maxTime int, lifecycl
 	if err != nil {
 		return 0, "", false, fmt.Errorf("run app sync request failed: %w", err)
 	}
-	if ec := hdr.Get("X-Exit-Code"); ec != "" {
+	if ec := hdr.Get(headerExitCode); ec != "" {
 		if v, err2 := strconv.Atoi(ec); err2 == nil {
 			exitCode, ok = v, true
 		}

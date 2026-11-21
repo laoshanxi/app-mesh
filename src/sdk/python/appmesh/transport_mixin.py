@@ -19,6 +19,7 @@ from .app_run import OutputHandler
 from .client_http import AppMeshClient
 from .exceptions import AppMeshAppRemovedError, AppMeshAuthError, AppMeshConnectionError, AppMeshRequestError
 from . import request_signature
+from .streaming import route_hint
 from .subscribe import (
     EVENT_TYPE_DISCONNECTED,
     AppEvent,
@@ -99,6 +100,10 @@ class TransportClientMixin:
         )
         provider = None if caller_manages_auth else self._token_provider
         rejected_token = None
+        # Snapshot for the 401 gate below (same rule as the HTTP transport): a
+        # signed request only refreshes when the server pins the blame on the
+        # bearer (see AppMeshClient._should_retry_unauthorized).
+        signing = self._request_signature_enabled()
 
         for attempt in range(2):
             transport = self._transport
@@ -163,10 +168,11 @@ class TransportClientMixin:
                 # message uuid serves as the nonce (Security.md, "Signature
                 # format"). Applied after the uuid, headers, query and body are
                 # final and before serialization, with a fresh uuid per attempt.
+                key_id, secret = self._api_credentials or ("", "")
                 appmesh_request.headers.update(
                     request_signature.signed_headers(
-                        self._api_key,
-                        self._api_secret,
+                        key_id,
+                        secret,
                         method.value,
                         path,
                         appmesh_request.query,
@@ -205,6 +211,7 @@ class TransportClientMixin:
                 and attempt == 0
                 and provider is not None
                 and provider.can_refresh
+                and self._should_retry_unauthorized(signing, response)
             ):
                 rejected_token = token
                 continue
@@ -225,6 +232,53 @@ class TransportClientMixin:
             return response
 
         raise AppMeshAuthError("TokenProvider failed to replace a rejected access token", HTTPStatus.UNAUTHORIZED)
+
+    def _sse_request(
+        self,
+        method: AppMeshClient._Method,
+        path: str,
+        query: Optional[dict] = None,
+        body=None,
+    ) -> requests.Response:
+        """Open an SSE stream over a direct HTTPS connection.
+
+        The framed transport cannot carry a chunked event stream, so streaming endpoints
+        bypass it (like the WSS file data channel); without a bearer token the daemon
+        answers 401.
+        """
+        from urllib import parse as _parse
+
+        headers = {self._HTTP_HEADER_KEY_USER_AGENT: self._HTTP_USER_AGENT_TRANSPORT}
+        token = self._get_bearer_token()
+        if token:
+            headers[self._HTTP_HEADER_KEY_AUTH] = f"Bearer {token}"
+        # Same empty-body hash exemption as the streamed file side channels.
+        self._append_signature_headers(headers, method.value.replace("_STREAM", ""), path, query)
+        url = _parse.urljoin(self.base_url, path)
+        request_kwargs = {
+            "url": url,
+            "headers": headers,
+            "cert": self.ssl_client_cert,
+            "verify": self.ssl_verify,
+            "timeout": self.request_timeout,
+        }
+        try:
+            if method in (AppMeshClient._Method.GET_STREAM, AppMeshClient._Method.GET):
+                resp = self.session.get(params=query, stream=True, **request_kwargs)
+            else:
+                resp = self.session.post(params=query, data=body, stream=True, **request_kwargs)
+        except requests.exceptions.RequestException as e:
+            raise AppMeshConnectionError(f"SSE request failed: {e}") from e
+        if resp.status_code in (HTTPStatus.UNAUTHORIZED, HTTPStatus.FORBIDDEN):
+            raise AppMeshAuthError(f"HTTP {resp.status_code}: {resp.reason}", resp.status_code)
+        try:
+            resp.raise_for_status()
+        except requests.exceptions.HTTPError as e:
+            # 404/405 on a streaming route: the base_url likely points at the agent
+            # REST listener, which carries no streaming routes — say so.
+            raise AppMeshRequestError(f"SSE request failed: {e}{route_hint(resp.status_code)}",
+                                      resp.status_code) from e
+        return resp
 
     def add_app(self, app: App, subscribe_events: Optional[list] = None, callback: Optional[EventCallback] = None) -> App:
         """Register an app, optionally subscribing atomically and wiring a local callback.
@@ -377,7 +431,7 @@ class TransportClientMixin:
                     exit_code = int(event.data.get("exit_code"))
                 except (TypeError, ValueError):
                     failure = AppMeshConnectionError(f"EXIT event for '{run.app_name}' carried an unparseable exit_code: "
-                        "{event.data.get('exit_code')!r}")
+                        f"{event.data.get('exit_code')!r}")
                 done.set()
             elif event.event_type == "REMOVED":
                 if exit_code is None and failure is None:

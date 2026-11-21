@@ -1,7 +1,7 @@
 """Task RPC handler: dispatches session_send / session_close, delegating each turn to
-the Claude Agent SDK. Runs in two roles — the shared App (many sessions, one stable cwd
-each) and a per-session worker (one session, streams to its own stdout, exits on
-close/reap).
+the Claude Agent SDK. Two roles — the shared App (many sessions, one stable cwd each) and a
+per-session worker (one session, exits on close/reap); token streaming rides task-RPC partials
+(``run_task_stream``) in both roles.
 
 No auth, quota, owner, tenant, session store, or per-session lock: the daemon authorizes
 ``run_task`` (RBAC + the worker App's owner-permission), the serve loop is serial, and
@@ -54,7 +54,9 @@ class Handler:
         self.exit_requested = False
 
     # ----- dispatch -----
-    def dispatch(self, payload: str) -> dict:
+    def dispatch(self, payload: str, partial=None) -> dict:
+        """`partial(chunk)` pushes an incremental result to a streaming caller
+        (run_task_stream); None in tests and legacy loops."""
         try:
             req = json.loads(payload)
         except Exception as e:
@@ -63,20 +65,20 @@ class Handler:
             return _err("request must be a JSON object")
         action = req.get("action")
         if action == "session_send":
-            return self._send(req)
+            return self._send(req, partial)
         if action == "session_close":
             return self._close(req)
         return _err(f"unknown action: {action}")
 
-    def _send(self, req) -> dict:
+    def _send(self, req, partial=None) -> dict:
         sid = req.get("session_id", "")
         if not sid:
             return _err("session_id required")
+        user_input = str(req.get("input") or "")
+        if not user_input.strip():
+            return _err("input is required")  # a blank prompt would still burn a full agent turn
         if self.worker_session_id and sid != self.worker_session_id:
             return _err("this worker serves a different session")
-        stream_requested = bool(req.get("stream"))
-        if stream_requested and not self.worker_session_id:
-            return _err("streaming is only available on a session worker App; the shared App does not stream")
 
         cwd = session.workdir(self.workspace, sid)
         resume = session.started(cwd)  # a prior turn COMPLETED here → continue it (not mere dir existence)
@@ -88,13 +90,25 @@ class Handler:
                 log.warning("session workdir %s: %s (running without a fixed cwd)", cwd, e)
                 cwd, resume = "", False
 
-        stream = ((lambda c: (sys.stdout.write(c), sys.stdout.flush()))
-                  if (stream_requested and self.worker_session_id) else None)
-        user_input = req.get("input") or ""
+        # Streaming rides the task RPC itself (run_task_stream partials), on shared App
+        # and workers alike; a one-shot worker caller keeps the legacy stdout echo
+        # for STDOUT-subscribing clients.
+        stream = None
+        if req.get("stream"):
+            if partial is not None and self.worker_session_id:
+                def stream(chunk, _push=partial):  # noqa: E731
+                    if not _push(chunk):
+                        sys.stdout.write(chunk)
+                        sys.stdout.flush()
+            elif partial is not None:
+                stream = partial
+            elif self.worker_session_id:
+                stream = lambda c: (sys.stdout.write(c), sys.stdout.flush())
         try:
             res = self._engine(user_input, cwd=cwd, continue_conversation=resume,
                                max_iterations=self._effective_max_iterations(req), stream=stream)
         except Exception as e:
+            session.discard_empty_workdir(cwd)  # don't strand the dir a failed first turn just created
             return _err(str(e))
         session.mark_started(cwd)  # only after a successful turn, so a failed first turn won't poison resume
         return _ok({"answer": res.answer, "iterations": res.iterations, "turn_tokens": res.turn_tokens})

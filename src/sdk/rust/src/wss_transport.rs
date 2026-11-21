@@ -65,8 +65,9 @@ impl WSSTransport {
 
         // File transfer relays the whole payload as one message/frame; the tungstenite
         // defaults (64 MiB message / 16 MiB frame) reject large forwarded downloads.
+        // Keep a finite cap: 160 MiB clears the daemon's 128 MiB forward ceiling and bounds OOM from a hostile peer.
         let config =
-            WebSocketConfig::default().max_message_size(None).max_frame_size(None);
+            WebSocketConfig::default().max_message_size(Some(160 << 20)).max_frame_size(Some(160 << 20));
         let (ws_stream, _) = connect_async_tls_with_config(request, Some(config), false, connector)
             .await
             .map_err(map_connect_error)?;

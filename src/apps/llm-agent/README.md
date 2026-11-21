@@ -3,8 +3,8 @@
 Run a **Claude Code agent on App Mesh**. A thin wrapper around the official
 [Claude Agent SDK](https://code.claude.com/docs/en/agent-sdk/python): it routes session
 turns over the App Mesh task RPC, gives each session a stable working directory, and
-streams a worker's output. The agent loop, tools, and conversation history are the
-SDK's; access control is the daemon's.
+streams assistant messages as task-RPC partials (`run_task_stream`). The agent loop,
+tools, and conversation history are the SDK's; access control is the daemon's.
 
 > **Built on Claude Code — runs Claude by default, but not Claude-only.** Out of the box it
 > runs Claude (Anthropic API, or Amazon Bedrock / Google Vertex). It can also drive other
@@ -46,9 +46,15 @@ package registers nothing itself):
 | App | one shared App — `llm-agent` | one worker App per session — `<app>-sess-<id>` |
 | Started by | llm image: started at boot; other installs: `appm enable -a llm-agent` after registration | admin, per session |
 | Sessions | many | exactly one, pre-assigned |
-| Streaming | no (returns the final answer) | yes (worker streams to its own STDOUT) |
+| Streaming | yes — `run_task_stream` delivers partials on the same call | yes — same channel; a worker also echoes to its STDOUT for legacy subscribers |
 | Lifecycle | long-lived (`exit: restart`) | exits on close/idle/max-life → daemon removes it (`exit: remove`) |
 | Config | [`config/llm-agent.yaml`](config/llm-agent.yaml) | [`config/llm-agent-worker.yaml`](config/llm-agent-worker.yaml) |
+
+Both Apps stream the same way: the caller opens the streaming task channel
+(`run_task_stream`, SDK ≥ 3.0.20) and receives each assistant message as one
+partial result (message-level chunks, not per-token deltas); the
+final envelope (`{"answer", "iterations", "turn_tokens"}`) closes the turn. Scenario B
+now isolates context (one private session per App) rather than enabling streaming.
 
 A session is just a stable working directory, `<workspace>/<session_id>`. The SDK keeps
 that conversation's history on disk keyed by the directory, so **continuing a session is
@@ -109,7 +115,8 @@ Restrict with `LLMAGENT_ALLOWED_TOOLS` (comma list) / `LLMAGENT_PERMISSION_MODE`
 
 ```jsonc
 // session_send — an unknown session_id is created on first use; reuse the same id to
-//                continue the conversation. `stream` only takes effect on a worker App.
+//                continue the conversation. With "stream": true each assistant message
+//                travels as a task-RPC partial (run_task_stream), on the shared App and workers alike.
 { "action": "session_send", "session_id": "...", "input": "hello",
   "stream": false, "max_iterations": 0 }
   → { "status":"ok", "data": { "answer", "iterations", "turn_tokens" } }
@@ -119,6 +126,16 @@ Restrict with `LLMAGENT_ALLOWED_TOOLS` (comma list) / `LLMAGENT_PERMISSION_MODE`
 ```
 
 Errors come back as `{ "status":"error", "message":"..." }`.
+
+With `stream: true`, call the streaming variant instead of the blocking one — each
+assistant message arrives as a partial on the same channel (not a per-token
+delta), and the envelope above is the final frame:
+
+```python
+for chunk in client.run_task_stream("llm-agent", json.dumps({..., "stream": True})):
+    print(chunk, end="", flush=True)
+# StopIteration.value.result carries the final envelope
+```
 
 ## Configuration (env)
 
@@ -193,11 +210,12 @@ as a failed step.
 
 ### Scenario B client flow
 
-One worker App per session; the client subscribes to its `STDOUT` **once** and keeps
-that subscription open, then converses turn after turn. `run_task` delivers each turn's
-input and blocks until the turn ends (returning completion metadata); the live tokens
-arrive on the STDOUT subscription during that call. See `b_interactive` / `WorkerStream`
-in [`examples/user_scenarios.py`](examples/user_scenarios.py).
+One worker App per session; the client converses turn after turn with
+`run_task_stream`: each turn's assistant messages arrive as partials on the same call, and the
+final envelope (answer, iterations, turn tokens) closes it. The worker's STDOUT echo
+keeps legacy STDOUT-subscribing clients working. See `b_interactive` / `WorkerStream`
+in [`examples/user_scenarios.py`](examples/user_scenarios.py) — and `a_stream`, which
+streams the **shared** App the same way.
 
 ## Models & providers
 
@@ -319,7 +337,7 @@ encrypted). It writes exactly the env / secured-env described here.
 | Turns fail with `Not logged in · Please run /login` | Same root cause: no model credential env reached the CLI — for a gateway setup check `ANTHROPIC_BASE_URL` **and** the secured `ANTHROPIC_AUTH_TOKEN`. |
 | Turn errors mentioning the CLI / spawn / config dir | The workspace (and thus `<workspace>/.claude`) isn't writable by the App's user — the App logs a warning about `CLAUDE_CONFIG_DIR` at startup. |
 | `turn_tokens: 0` (with a logged warning) | The SDK returned no usage for the turn — informational; the turn still ran. |
-| `streaming is only available on a session worker App` | `stream:true` was sent to the shared App — stream only on a Scenario B worker. |
+| `stream:true` shows no live tokens with plain `run_task` | `run_task` returns only the final envelope by design — use `run_task_stream` (SDK ≥ 3.0.20) to receive the partials. |
 
 ## Layout
 

@@ -31,7 +31,9 @@ func newRequestFromHTTP(req *http.Request) (*Request, error) {
 
 	r := &Request{appmesh.NewRequest()}
 	r.HTTPMethod = req.Method
-	r.RequestURI = req.URL.Path
+	// Keep the percent-encoded wire form: the daemon verifies signatures over
+	// the raw path, and EscapedPath preserves the client's original encoding.
+	r.RequestURI = req.URL.EscapedPath()
 	r.ClientAddress = req.RemoteAddr
 
 	// Copy headers and query parameters
@@ -62,6 +64,17 @@ func newRequestFromHTTP(req *http.Request) (*Request, error) {
 	}
 
 	return r, nil
+}
+
+// markFileTransferHeaders arms the daemon's socket file channel for a
+// download (X-Recv-File-Socket) or upload (X-Send-File-Socket) request.
+func markFileTransferHeaders(request *Request) {
+	switch request.RequestURI {
+	case RestPathDownload:
+		request.Headers[HTTPHeaderKeyXRecvFileSocket] = "true"
+	case RestPathUpload:
+		request.Headers[HTTPHeaderKeyXSendFileSocket] = "true"
+	}
 }
 
 // loadBodyFromHTTP reads and processes the HTTP request body

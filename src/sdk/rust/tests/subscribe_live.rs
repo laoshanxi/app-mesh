@@ -132,10 +132,15 @@ async fn test_live_tcp_file_transfer_guard() {
         .expect_err("guard must hold until close on the same connection");
     assert!(err.to_string().contains("not supported"), "got: {}", err);
 
+    // The remote path must sit in the exchangeable work/tmp scratch: the daemon jails transfers there.
     let plain = tcp_client();
     plain.set_token_provider(Some(static_provider(&bearer())));
     plain
-        .download_file("/etc/hosts", "/tmp/e2e-rust-plain", false)
+        .upload_file("/etc/hosts", "/opt/appmesh/work/tmp/e2e-rust-seed", true)
+        .await
+        .expect("a separate client instance must be able to upload");
+    plain
+        .download_file("/opt/appmesh/work/tmp/e2e-rust-seed", "/tmp/e2e-rust-plain", false)
         .await
         .expect("a separate client instance must be able to download");
 }

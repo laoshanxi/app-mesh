@@ -514,7 +514,7 @@ def case_periodic(ctx: Context, name: str) -> None:
 
             def schedules_started():
                 states = [ctx.app_or_none(client, app_name) for app_name in names]
-                expected_starts = [item[4] for item in schedules]
+                expected_starts = [item[3] for item in schedules]
                 return states if all(
                     app and (app.starts or 0) >= expected
                     for app, expected in zip(states, expected_starts)
@@ -978,9 +978,11 @@ def case_health_check_process(ctx: Context, name: str) -> None:
                 "shell": True,
                 "health_check_cmd": "true",
             }))
+            # The health worker sleeps a fixed 30 x ScheduleInterval between
+            # rounds, so the healthy flip can land a full round after the switch.
             healthy = ctx.poll(
                 lambda: (lambda app: app if app and app.health == 0 else None)(ctx.app_or_none(client, name)),
-                timeout=max(ctx.config.timeout, 15),
+                timeout=max(ctx.config.timeout, 40),
             )
             require(healthy, "successful health-check child was not finalized as healthy")
         finally:

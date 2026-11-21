@@ -5,11 +5,10 @@ Complete schema definition for App Mesh Workflow pipelines.
 ## Design Status
 
 The YAML shape below is shared by the current prototype and the ADR 0004 target
-model. The execution architecture is still being converged: `on.schedule`,
-`on.app_event`, `runs.json`, and `checkpoint.json`
-describe the v1 prototype path. In the target design, those trigger sources are
-external wrappers that create Workflow Runs through one Run API, and each Run
-Record is the single lifecycle/logging/checkpoint source of truth.
+model. The execution architecture is still being converged: `runs.json` and
+`checkpoint.json` describe the v1 prototype path. Trigger sources are engine-dispatched
+(`on.app_event`, `on.schedule` — see ADR 0004 "Schedule triggers"); in the target
+design each Run Record is the single lifecycle/logging/checkpoint source of truth.
 
 ## Minimal Example
 
@@ -158,7 +157,7 @@ Fires when a registered App emits a matching event.
 | Field | Type | Required | Default | Description |
 |-------|------|----------|---------|-------------|
 | `app` | string | yes | — | Name of the App to watch. |
-| `events` | list[string] | yes | — | Event types to match. Values: `START`, `EXIT`, `HEALTH`, `STATUS`, `REMOVED`. STDOUT is not a valid trigger event — use an external log-watcher App for stdout-based automation. |
+| `events` | list[string] | yes | — | Event types to match. Values: `START`, `EXIT`, `HEALTH`, `STATUS`, `REMOVED`. Any other value is rejected when the workflow is added. STDOUT is not a valid trigger event — use an external log-watcher App for stdout-based automation. |
 | `condition` | string | no | — | Simple expression evaluated against event data. `exit_code` is supported (`return_code` is an accepted alias). Operators: `==`, `!=`. Example: `"exit_code == 0"`. |
 
 ```yaml
@@ -169,11 +168,25 @@ on:
     condition: "exit_code == 0"
 ```
 
-### `on.schedule` — Cron Trigger (External)
+The engine arms its event subscription when the workflow is registered, so an
+event fired after `workflow add` triggers a run; events from before
+registration never do. Registering the trigger requires `workflow-admin`. A
+subscription the engine cannot install is reported in the workflow engine's
+output. Events publish under the registered App name: runs the Engine starts
+itself (enable, restart, restart-on-exit) match, while an ad-hoc
+`appm run <app>` instance (`<app>_<N>`) does not.
 
-> **Note:** The workflow engine does NOT dispatch cron schedules internally. To schedule a workflow on a cron, register an App Mesh cron App whose command is `appm workflow run <name>`. The `on.schedule` field is parsed for documentation/validation purposes but a warning is emitted at parse time.
+### `on.schedule` — Cron Trigger (Engine-Dispatched)
 
-Declares the intended cron schedule.
+The workflow engine dispatches cron schedules itself: registering a schedule
+trigger requires `workflow-admin`, the expression is validated at registration
+(a typo fails the `workflow_add` instead of silently never firing), and each
+run executes under a short-lived, run-scoped Engine capability — no external
+cron App and no non-expiring credential are involved. The last accounted fire
+time is persisted, so a restart re-bases from the last completed period, and
+periods missed while the engine was down are skipped (no catch-up burst).
+Dispatch is checked on the engine's scan tick, so a fire may land up to one
+scan interval late — never early.
 
 | Field | Type | Required | Default | Description |
 |-------|------|----------|---------|-------------|
@@ -182,8 +195,8 @@ Declares the intended cron schedule.
 ```yaml
 on:
   schedule:
-    - cron: "0 2 * * *"       # daily at 2am
-    - cron: "0 */6 * * *"     # every 6 hours
+    - cron: "0 2 * * * *"      # daily at 02:00:00
+    - cron: "0 */6 * * * *"    # every 6 hours
 ```
 
 ### `on.manual` — Manual/API Trigger
@@ -220,6 +233,8 @@ Trigger via CLI:
 ```bash
 appm workflow run data-pipeline --input environment=prod --input dry_run=false
 ```
+
+A manual/API trigger missing a `required` input is rejected at trigger time (the run never starts); automatic sources (schedule, app_event, recovery) fail the run at start with the same message.
 
 ### `on.workflow_call` — Callable by Other Workflows
 
@@ -277,7 +292,7 @@ Map of job name → Job definition. Job names must match `[a-zA-Z0-9_-]+`.
 |-------|------|----------|---------|-------------|
 | `needs` | list[string] | no | — | Job names that must complete before this job starts. Forms the DAG. |
 | `if` | string | no | — | Expression. Job runs only if true. Available functions: `success()`, `failure()`, `always()`. Default behavior: job runs only if all `needs` jobs succeeded. |
-| `node_label` | object | no | — | Target node selector. A `host` key routes directly; other keys are matched against node labels. Remote execution requires a manual caller bearer valid on the cluster's shared issuer. |
+| `node_label` | object | no | — | Target node selector. A `host` key routes directly; other keys are matched against node labels, which requires the workflow engine to run with `-cluster-nodes <node list>`. Remote execution requires a manual caller bearer valid on the cluster's shared issuer. |
 | `env` | object | no | — | Job-level environment variables. Merged with global `env` (job wins on conflict). |
 | `secret_env` | object | no | — | Job-level encrypted environment variables. Merged with global `secret_env`. |
 | `steps` | list[Step] | yes | — | Ordered list of Steps to execute serially. At least one step required. |
@@ -312,10 +327,10 @@ Each Step has a `name` and exactly one of four type keys: `command`, `app`, `mes
 | Field | Type | Required | Default | Description |
 |-------|------|----------|---------|-------------|
 | `name` | string | yes | — | Unique within the Job. Used in `${{ steps.<name>.* }}` references. Must match `[a-zA-Z0-9_-]+`. |
-| `if` | string | no | — | Expression. Step runs only if true. Default: runs if all prior steps in the job succeeded. |
+| `if` | string | no | — | Expression, bare (`failure()`) or wrapped (`${{ steps.prev.exit_code == 0 }}` — operators allowed inside the braces). Step runs only if true. Default: runs if all prior steps in the job succeeded. |
 | `timeout` | integer | no | 172800 (2 days) for command/app/workflow steps; 300 (5 minutes) for message steps | Maximum execution time in seconds. Step is killed and marked failed if exceeded. `0` falls back to the default — there is no "unlimited" mode. |
 | `retry` | object | no | — | Retry policy on failure. |
-| `continue-on-error` | bool | no | `false` | `true`: mark step as failed but continue to next step. Default: stop the job on failure. A step under `finally` is always `true`: the parser forces it, and the YAML value cannot turn it off. |
+| `continue-on-error` | bool | no | `false` | `true`: mark step as failed but continue to next step. Default: stop the job on failure. A step under `finally` is always `true`: the parser forces it, and the YAML value cannot turn it off. A tolerated failure keeps `steps.<name>.status` = `"failure"` (the raw outcome) but does not count for `success()`/`failure()` — GitHub Actions `conclusion` semantics. |
 | `env` | object | no | — | Step-level environment variables. Merged with job and global `env` (step wins). |
 | `secret_env` | object | no | — | Step-level encrypted environment variables. |
 
@@ -424,6 +439,10 @@ Sends a payload to a running long-lived App via the App Mesh Task API (`POST /ap
 
 **Outputs available:**
 - `${{ steps.<name>.response }}` — response body from the App
+- `${{ steps.<name>.outputs.answer }}` — the `data.answer` field when the App answers the
+  platform task convention `{"status":"ok","data":{"answer":...}}` (llm-agent does); the
+  clean way to chain LLM turns, and the only one safe for long products (see the 2048
+  note under Contexts)
 - `${{ steps.<name>.exit_code }}` — 0 if response received, non-zero on timeout/error
 - `${{ steps.<name>.status }}` — `"success"`, `"failure"`, or `"skipped"`
 
@@ -433,6 +452,12 @@ becomes the failure reason) rather than a swallowed success — so `if:`/`needs`
 `continue-on-error`, and retry behave correctly. The full body is still available as
 `${{ steps.<name>.response }}`. Responses that are not a JSON object with `status:"error"`
 (other JSON, plain text) are unaffected and remain successes on a received reply.
+
+**A payload that is a JSON document substitutes safely.** When the `payload` template is
+itself valid JSON (the common task shape), every `${{ }}` sits inside a string literal and
+its value is JSON-escaped — quotes, backslashes, or newlines in an input cannot break the
+document. Non-JSON payloads (plain text, or the bare `${{ toJSON(...) }}` composition
+pattern) substitute textually as before.
 
 ---
 
@@ -465,6 +490,66 @@ Invokes another workflow that declares `on.workflow_call`. Maximum nesting depth
 
 Expressions are enclosed in `${{ }}` and evaluated at runtime by the workflow engine.
 
+Value fields (`command`, `env`, `with`, ...) accept a plain reference inside `${{ }}`
+(for example `${{ steps.build.stdout }}`). `if:` conditions additionally accept a
+full expression inside the braces — operators, status functions and literals, for
+example `if: "${{ steps.build.exit_code >= 0 }}"` or `if: "${{ !failure() }}"` —
+with the same operator set as the bare form documented under Operators.
+Conditions may group sub-expressions with parentheses (for example
+`if: "(steps.build.exit_code == 0 && steps.test.exit_code == 0) || always()"`);
+parentheses inside quoted literals are data. An unbalanced parenthesis is a
+definition error: the step or job fails with the parser message instead of
+being silently skipped.
+
+### How values reach a shell command
+
+For `command` steps the engine never splices a value into the command text.
+Each expression becomes a `$WF_E<N>` environment reference, and the value is
+delivered as that variable — so a value like `a; rm -rf /` is always a single
+shell argument and can never inject syntax.
+
+```yaml
+- name: show
+  command: "echo v=${{ steps.build.stdout }}"   # runs as: echo v=$WF_E0
+```
+
+The one exception is an expression inside a single-quoted span, because the
+shell does not expand variables there. The engine substitutes those textually
+and escapes embedded single quotes, so the value stays one closed quoted word:
+
+```yaml
+- name: parse
+  command: "echo '${{ steps.ask.response }}' | python3 -c \"import sys, json; print(json.load(sys.stdin)['data']['answer'])\""
+```
+
+**Commands containing `#`, `<<` or `$'` never inline.** A comment, a heredoc
+and ANSI-C `$'…'` quoting each hide the real quote state from the engine's
+scanner, so inside such a command every expression — single-quoted spans
+included — takes the `$WF_E<N>` environment form instead (the engine logs one
+warning). An unquoted heredoc body expands the reference, which is the correct
+reading for a heredoc; a single-quoted span does not expand it, so
+restructure the command (double quotes, or drop the comment/heredoc) when the
+value must appear inside single quotes.
+
+**Windows shell steps do not expand expressions.** On Windows a `command`
+step with `shell: true` (the default) runs through cmd.exe — the daemon wraps
+it in a temporary `.bat` — which does not expand POSIX `$WF_E<N>` references
+and has no single quotes, so expression values never reach the command. Use
+`shell: false` (the engine substitutes values into the argument list itself,
+no shell involved) or keep expressions out of Windows shell commands. This is
+a platform limitation of shell steps, not of the engine host: the engine may
+run on a different OS than the target node.
+
+Keep such a command step small: the engine runs it as an App command line,
+which the daemon caps at 2048 characters. A full LLM response (JSON-escaped
+CJK triples in size) overflows the cap, so for long products reference
+`${{ steps.<name>.outputs.answer }}` in another `message` step instead — that
+value passes engine-side and never touches a command line. `jq` is not
+installed in the shipped images; use `python3` (present everywhere).
+
+Unquoted and double-quoted positions keep the environment-variable form and
+expand normally.
+
 ### Contexts
 
 | Context | Description | Example |
@@ -473,7 +558,7 @@ Expressions are enclosed in `${{ }}` and evaluated at runtime by the workflow en
 | `steps.<name>.exit_code` | Integer exit code | `${{ steps.build.exit_code }}` |
 | `steps.<name>.status` | `"success"`, `"failure"`, or `"skipped"` | `${{ steps.build.status }}` |
 | `steps.<name>.response` | Response body from a message step | `${{ steps.query.response }}` |
-| `steps.<name>.outputs.<key>` | Output from a workflow step | `${{ steps.sub.outputs.url }}` |
+| `steps.<name>.outputs.<key>` | Output from a sub-workflow step (any key) or the `answer` field from a message step (`outputs.answer`); rejected at load elsewhere | `${{ steps.sub.outputs.url }}` / `${{ steps.ask.outputs.answer }}` |
 | `job.status` | Current job aggregate status | `${{ job.status }}` |
 | `jobs.<name>.steps.<name>.*` | Cross-job step reference | `${{ jobs.build.steps.compile.stdout }}` |
 | `workflow.name` | Workflow name | `${{ workflow.name }}` |
@@ -551,6 +636,17 @@ jobs:
 
 ## Execution Semantics
 
+### Triggered Runs and the Base Application
+
+Running an application through `run` (the CLI, an SDK, or an `app` step) starts
+a **temporary run app** named `<name>_N` rather than re-using the registered
+application in place. Its events fire and its output is stored under that
+temporary name; the registered app's own `output` reflects its scheduled or
+registration-time starts, and `enable`/`disable`/`restart` (not `run`) are the
+operations that re-execute the registered app itself. To observe triggered-run
+events, subscribe to the run handle's app name (SDKs expose it) or use a
+wildcard subscription.
+
 ### Job Scheduling
 
 1. Jobs with no `needs` start immediately in parallel.
@@ -562,7 +658,7 @@ jobs:
 
 1. Steps within a job execute serially in declaration order.
 2. If a step fails (default), remaining steps in the job are skipped. `finally` steps still run.
-3. If a step has `continue-on-error: true`, the step is marked failed but the next step proceeds.
+3. If a step has `continue-on-error: true`, the step is marked failed but the next step proceeds. The tolerated failure does not count for `success()`/`failure()`.
 4. A step with `if: false` is skipped (status: `skipped`). Skipped steps do not count as failure.
 5. Retry attempts happen before evaluating `continue-on-error`. A step that succeeds on retry is marked `success`.
 

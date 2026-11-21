@@ -1,6 +1,9 @@
 package models
 
-import "fmt"
+import (
+	"fmt"
+	"strconv"
+)
 
 // StepType identifies what kind of step this is.
 type StepType int
@@ -143,8 +146,9 @@ type Workflow struct {
 }
 
 // ApplyInputDefaults merges the workflow_call and manual input definitions
-// (manual wins on key collision), applies defaults, and rejects a missing
-// required input (rejected at dispatch for manual runs, at run start otherwise).
+// (manual wins on key collision), applies defaults, validates declared types,
+// and rejects a missing required input (rejected at dispatch for manual runs,
+// at run start otherwise).
 func ApplyInputDefaults(wf *Workflow, inputs map[string]string) (map[string]string, error) {
 	if inputs == nil {
 		inputs = make(map[string]string)
@@ -164,13 +168,39 @@ func ApplyInputDefaults(wf *Workflow, inputs map[string]string) (map[string]stri
 		}
 	}
 	for k, def := range inputDefs {
-		if _, ok := inputs[k]; !ok {
-			if def.Default != nil {
-				inputs[k] = fmt.Sprintf("%v", def.Default)
-			} else if def.Required {
-				return nil, fmt.Errorf("required input %q not provided", k)
+		value, ok := inputs[k]
+		if !ok {
+			if def.Default == nil {
+				if def.Required {
+					return nil, fmt.Errorf("required input %q not provided", k)
+				}
+				continue
 			}
+			value = fmt.Sprintf("%v", def.Default)
+			inputs[k] = value
+		}
+		if err := validateInputType(k, def, value); err != nil {
+			return nil, err
 		}
 	}
 	return inputs, nil
+}
+
+// validateInputType enforces a declared input type at trigger time: a number
+// must parse as one and a boolean must be exactly true/false (the same
+// lowercase literals the condition evaluator reads), so a typo like
+// num=notanumber fails the dispatch instead of corrupting downstream numeric
+// comparisons.
+func validateInputType(name string, def InputParam, value string) error {
+	switch def.Type {
+	case "number":
+		if _, err := strconv.ParseFloat(value, 64); err != nil {
+			return fmt.Errorf("input %q type is number, got non-numeric value %q", name, value)
+		}
+	case "boolean":
+		if value != "true" && value != "false" {
+			return fmt.Errorf("input %q type is boolean, got %q (want true or false)", name, value)
+		}
+	}
+	return nil
 }

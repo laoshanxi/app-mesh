@@ -20,6 +20,14 @@ const CONSTANTS = Object.freeze({
   HTTP_HEADER_KEY_AUTH: "Authorization",
   HTTP_HEADER_KEY_X_TARGET_HOST: "X-Target-Host",
   HTTP_HEADER_KEY_X_FILE_PATH: "X-File-Path",
+  HTTP_HEADER_KEY_X_FILE_MODE: "X-File-Mode",
+  HTTP_HEADER_KEY_X_FILE_USER: "X-File-User",
+  HTTP_HEADER_KEY_X_FILE_GROUP: "X-File-Group",
+  HTTP_HEADER_KEY_X_OUTPUT_POSITION: "X-Output-Position",
+  HTTP_HEADER_KEY_X_EXIT_CODE: "X-Exit-Code",
+  HTTP_HEADER_KEY_X_INPUT_CLOSE: "X-Input-Close",
+  HTTP_HEADER_KEY_X_SUBSCRIPTION_ID: "X-Subscription-Id",
+  HTTP_HEADER_KEY_X_APPMESH_PROCESS_KEY: "X-AppMesh-Process-Key",
 });
 
 // Environment detection
@@ -106,6 +114,27 @@ class TransportDisconnectedError extends AppMeshError {
   constructor(message) {
     super(message, null, null, 'TRANSPORT_DISCONNECTED');
     this.name = 'TransportDisconnectedError';
+  }
+}
+
+/** The daemon rejected a request, or a stream ended with reason 'error' (Python AppMeshRequestError). */
+class AppMeshRequestError extends AppMeshError {
+  /**
+   * @param {string} message - Error message
+   * @param {number|null} [statusCode=null] - HTTP status code
+   */
+  constructor(message, statusCode = null) {
+    super(message, statusCode, null, 'REQUEST');
+    this.name = 'AppMeshRequestError';
+  }
+}
+
+/** A call or stream exceeded its overall timeout (Python AppMeshTimeoutError). */
+class AppMeshTimeoutError extends AppMeshError {
+  /** @param {string} message - Error message */
+  constructor(message) {
+    super(message, null, null, 'TIMEOUT');
+    this.name = 'AppMeshTimeoutError';
   }
 }
 
@@ -376,6 +405,113 @@ function _resolveSslOptions(sslConfig) {
   return opts;
 }
 
+/** Terminal marker of an SSE stream: the async generator's return value (Python SseEnd counterpart). */
+class SseEnd {
+  /**
+   * @param {string} reason - exit | removed | timeout | eof | final | disconnected | error | closed
+   * @param {Object} [fields] - Fields carried by the terminal `end` frame
+   * @param {number|null} [fields.exitCode] - Process exit code when reason is 'exit'
+   * @param {number|null} [fields.position] - Output streams: final stdout byte cursor
+   * @param {number|null} [fields.status] - Task streams: HTTP status carried by an error end frame
+   * @param {string|null} [fields.message] - Task streams: error message
+   * @param {string|null} [fields.result] - Task streams: the final result payload
+   */
+  constructor(reason, fields = {}) {
+    /** @type {string} One of the constructor's reason values; 'closed' = peer cut the stream */
+    this.reason = reason;
+    /** @type {number|null} Process exit code when reason is 'exit' */
+    this.exitCode = fields.exitCode ?? null;
+    /** @type {number|null} Output streams: final stdout byte cursor */
+    this.position = fields.position ?? null;
+    /** @type {number|null} Task streams: HTTP status carried by an error end frame */
+    this.status = fields.status ?? null;
+    /** @type {string|null} Task streams: error message */
+    this.message = fields.message ?? null;
+    /** @type {string|null} Task streams: the final result payload (the same string runTask would return) */
+    this.result = fields.result ?? null;
+  }
+}
+
+/**
+ * Yield `[event, payload]` pairs from an SSE body: a blank line dispatches the frame,
+ * `event:`/`data:` set its fields, `:` lines are heartbeats (Python iter_sse_events rules).
+ * @private
+ * @param {Object} body - Streamed response body (axios responseType 'stream')
+ */
+async function* _iterSseEvents(body) {
+  const decoder = new TextDecoder('utf-8');
+  let pending = '';
+  let eventName = 'message';
+  let dataLines = [];
+  for await (const chunk of body) {
+    pending += typeof chunk === 'string' ? chunk : decoder.decode(chunk, { stream: true });
+    let newline;
+    while ((newline = pending.indexOf('\n')) >= 0) {
+      const line = pending.slice(0, newline).replace(/\r$/, '');
+      pending = pending.slice(newline + 1);
+      if (line === '') {
+        if (eventName !== 'message' || dataLines.length > 0) {
+          const data = dataLines.join('\n');
+          let payload = {};
+          if (data) {
+            try {
+              payload = JSON.parse(data);
+            } catch (error) {
+              throw new AppMeshError(`malformed SSE frame (${eventName}): ${error.message}`);
+            }
+          }
+          yield [eventName, payload];
+        }
+        eventName = 'message';
+        dataLines = [];
+      } else if (line.startsWith(':')) {
+        // heartbeat comment
+      } else if (line.startsWith('event:')) {
+        eventName = line.slice('event:'.length).trim();
+      } else if (line.startsWith('data:')) {
+        dataLines.push(line.slice('data:'.length).trimStart());
+      }
+    }
+  }
+}
+
+/**
+ * Build the terminal marker from an `end` frame payload.
+ * @private
+ * @param {Object} payload - Parsed `end` frame data
+ * @param {Object} [extra] - Additional fields (e.g. the collected final result)
+ * @returns {SseEnd} Terminal marker
+ */
+function _endFromPayload(payload, extra = {}) {
+  return new SseEnd(String(payload.reason ?? 'closed'), {
+    exitCode: payload.exit_code,
+    position: payload.position,
+    status: payload.status,
+    message: payload.message,
+    ...extra
+  });
+}
+
+/**
+ * Turn an error/timeout terminal frame into the matching exception.
+ * @private
+ * @param {SseEnd} end - Terminal marker
+ * @throws {AppMeshRequestError} reason is 'error'
+ * @throws {AppMeshTimeoutError} reason is 'timeout'
+ * @throws {AppMeshError} reason is unknown
+ */
+function _raiseOnErrorEnd(end) {
+  if (end.reason === 'error') {
+    throw new AppMeshRequestError(end.message || 'stream failed with an error', end.status ?? null);
+  }
+  if (end.reason === 'timeout') {
+    throw new AppMeshTimeoutError(end.message || 'stream timed out');
+  }
+  if (!['exit', 'removed', 'eof', 'final', 'disconnected', 'closed'].includes(end.reason)) {
+    throw new AppMeshError(`stream ended with unknown reason: ${end.reason}`);
+  }
+}
+
 /**
  * AppMesh REST Service client
  */
@@ -644,6 +780,19 @@ class AppMeshClient {
     if (!canRefresh || typeof provider.refreshAccessToken !== 'function' || !_isReplayableBody(config.data)) {
       return response;
     }
+    // A signed request's 401 is terminal unless the server pins the blame on
+    // the bearer (WWW-Authenticate ... invalid_token): refresh tokens are
+    // single-use, so force-refreshing on a signature rejection would burn the
+    // session without fixing the request.
+    if (this._requestSigner) {
+      const headers = response.headers || {};
+      const challenge = typeof headers.get === 'function'
+        ? headers.get('WWW-Authenticate')
+        : (headers['WWW-Authenticate'] || headers['www-authenticate']);
+      if (!challenge || !challenge.includes('invalid_token')) {
+        return response;
+      }
+    }
 
     const rejectedToken = _extractBearerToken(config.headers) ?? (await this._getAccessToken());
     const newToken = await provider.refreshAccessToken(rejectedToken);
@@ -719,13 +868,13 @@ class AppMeshClient {
    *   session_login: false,
    *   description: "",
    *   metadata: "",
+   *   stdin: "none",         // "pipe" keeps the daemon-side write end open so sendInput() can drive the process
    *   working_dir: "",
    *   enabled: 1,
    *   docker_image: "",
    *   docker_ports: [],       // docker run -p spelling: "[hostIp:]hostPort:containerPort[/protocol]"
    *   docker_volumes: [],     // docker run -v spelling
    *   docker_network: null,   // host, bridge, none or a network name
-   *   docker_backend: null,   // "api" (default) or "cli"
    *   stdout_backup_count: 3,
    *   start_time: "",
    *   end_time: "",
@@ -807,8 +956,8 @@ class AppMeshClient {
 
     const response = await this._request("get", `/appmesh/app/${app_name}/output`, null, { params });
     // axios lowercases header names; the TCP transport keeps the daemon's exact case
-    const outPositionHeader = _getHeader(response.headers, "X-Output-Position");
-    const exitCodeHeader = _getHeader(response.headers, "X-Exit-Code");
+    const outPositionHeader = _getHeader(response.headers, CONSTANTS.HTTP_HEADER_KEY_X_OUTPUT_POSITION);
+    const exitCodeHeader = _getHeader(response.headers, CONSTANTS.HTTP_HEADER_KEY_X_EXIT_CODE);
     const outPosition = outPositionHeader ? parseInt(outPositionHeader, 10) : null;
     const exitCode = exitCodeHeader ? parseInt(exitCodeHeader, 10) : null;
     return new AppOutput(response.status, response.data, outPosition, exitCode);
@@ -837,7 +986,7 @@ class AppMeshClient {
     }
     if (response.status === 200) {
       // axios lowercases header names; the TCP transport keeps the daemon's exact case
-      const exitCodeHeader = _getHeader(response.headers, "X-Exit-Code");
+      const exitCodeHeader = _getHeader(response.headers, CONSTANTS.HTTP_HEADER_KEY_X_EXIT_CODE);
       if (exitCodeHeader) {
         exitCode = parseInt(exitCodeHeader, 10);
       }
@@ -931,6 +1080,164 @@ class AppMeshClient {
   async cancelTask(appName) {
     await this._request("delete", `/appmesh/app/${appName}/task`);
     return true;
+  }
+
+  /**
+   * Stream an application's stdout incrementally over server-sent events.
+   *
+   * Replays from `stdoutPosition`, then (with `follow`) yields new output until exit,
+   * removal or `timeout`. The server de-duplicates the replay/live boundary.
+   *
+   * @param {string} appName - Name of the target application
+   * @param {Object} [opts={}] - Stream options
+   * @param {number} [opts.stdoutPosition=0] - Byte cursor to start from (0 replays from the beginning)
+   * @param {string} [opts.processUuid=''] - Pin the stream to one run; empty follows the current run
+   * @param {boolean} [opts.follow=true] - `false` replays to the current end of output and stops
+   * @param {number} [opts.timeout=3600] - Overall stream lifetime cap in seconds (server-side)
+   * @returns {AsyncGenerator<string>} Yields each stdout chunk; the return value (final
+   *   `next()` result, `{ done: true, value }`) is the terminal {@link SseEnd} with
+   *   `exitCode`/`position` filled on a natural exit
+   * @throws {AppMeshRequestError} The stream ended with an error
+   */
+  async *followOutput(appName, opts = {}) {
+    const { stdoutPosition = 0, processUuid = '', follow = true, timeout = 3600 } = opts;
+    const params = {
+      stdout_position: String(stdoutPosition),
+      follow: follow ? "true" : "false",
+      timeout: String(timeout)
+    };
+    if (processUuid) {
+      params.process_uuid = processUuid;
+    }
+    const response = await this._sseRequest("get", `/appmesh/app/${appName}/output/stream`, { params });
+    let end = null;
+    try {
+      for await (const [event, payload] of _iterSseEvents(response.data)) {
+        if (event === "stdout") {
+          yield String(payload.output ?? "");
+        } else if (event === "end") {
+          end = _endFromPayload(payload);
+          break;
+        }
+      }
+    } catch (error) {
+      // Transport-level failure (connection reset) normalizes like _request
+      throw this.onError(error);
+    } finally {
+      response.data?.destroy?.();
+    }
+    if (end === null) {
+      end = new SseEnd("closed");
+    }
+    _raiseOnErrorEnd(end);
+    return end;
+  }
+
+  /**
+   * Streaming task RPC: send an invocation and yield incremental results as they arrive.
+   *
+   * The runTask() counterpart for continuous-output services (LLM agents): the worker
+   * pushes partial results (`worker.sendTaskPartial`) before its final reply, in order.
+   *
+   * @param {string} appName - Name of the target application
+   * @param {string} data - Payload to deliver to the application (same contract as runTask)
+   * @param {Object} [opts={}] - Stream options
+   * @param {number} [opts.timeout=300] - Maximum seconds for the whole call; the stream ends
+   *   with `SseEnd(reason='timeout')` (raised as AppMeshTimeoutError) when exceeded
+   * @returns {AsyncGenerator<string>} Yields each partial; the return value is an {@link SseEnd}
+   *   whose `result` carries the final payload (what runTask would return)
+   * @throws {AppMeshTimeoutError} The task did not finish within `timeout`
+   * @throws {AppMeshRequestError} The stream ended with an error
+   */
+  async *runTaskStream(appName, data, opts = {}) {
+    const { timeout = 300 } = opts;
+    const params = timeout && timeout > 0 ? { timeout: String(timeout) } : {};
+    const response = await this._sseRequest("post", `/appmesh/app/${appName}/task/stream`, { params, body: data });
+    let end = null;
+    let finalResult = null;
+    try {
+      for await (const [event, payload] of _iterSseEvents(response.data)) {
+        if (event === "partial") {
+          yield String(payload.data ?? "");
+        } else if (event === "final") {
+          finalResult = payload.result ?? null;
+        } else if (event === "end") {
+          end = _endFromPayload(payload, { result: finalResult });
+          break;
+        }
+      }
+    } catch (error) {
+      // Transport-level failure (connection reset) normalizes like _request
+      throw this.onError(error);
+    } finally {
+      response.data?.destroy?.();
+    }
+    if (end === null) {
+      end = new SseEnd("closed", { result: finalResult });
+    }
+    _raiseOnErrorEnd(end);
+    return end;
+  }
+
+  /**
+   * Run a one-shot application remotely and stream its stdout incrementally.
+   *
+   * runAppAsync() + followOutput() + deleteApp(): stdout chunks are yielded as produced,
+   * unlike the fully-buffered runAppSync() that answers only after completion.
+   *
+   * @param {Object|string} app - App config, or a shell command string (runs with `shell: true`, daemon-generated name)
+   * @param {string|number} [maxTime] - Maximum runtime for the remote process (seconds or ISO 8601 duration)
+   * @param {string|number} [lifecycle] - Retention window for the temporary run app (seconds or ISO 8601 duration)
+   * @returns {AsyncGenerator<string>} Yields each stdout chunk; the return value is the run's
+   *   {@link SseEnd} (`exitCode` on a natural exit). The temporary app is always deleted on exit.
+   * @throws {AppMeshRequestError} The stream ended with an error
+   */
+  async *streamRun(app, maxTime = CONSTANTS.DEFAULT_RUN_APP_TIMEOUT_SECONDS,
+    lifecycle = CONSTANTS.DEFAULT_RUN_APP_LIFECYCLE_SECONDS) {
+    const appConfig = typeof app === "string" ? { command: app, shell: true } : app;
+    const run = await this.runAppAsync(appConfig, maxTime, lifecycle);
+    let end;
+    try {
+      // Delegate to followOutput and re-yield: JS has no `yield from`.
+      const stream = this.followOutput(run.appName, {
+        processUuid: run.procUid,
+        follow: true,
+        timeout: Math.max(parseDuration(maxTime), parseDuration(lifecycle))
+      });
+      let next = await stream.next();
+      while (!next.done) {
+        yield next.value;
+        next = await stream.next();
+      }
+      end = next.value;
+    } finally {
+      try {
+        await this.deleteApp(run.appName);
+      } catch (_) { /* best-effort cleanup of the temporary run app */ }
+    }
+    return end;
+  }
+
+  /**
+   * Inject bytes into the stdin of a running application.
+   *
+   * The app must be registered with `stdin: "pipe"`: the daemon holds the write end
+   * open, making the process conversational (REPL) while followOutput() reads its output.
+   *
+   * @param {string} appName - Name of the target application
+   * @param {string|Buffer} data - Bytes (or text, encoded as UTF-8) to write to the process stdin
+   * @param {Object} [opts={}] - Write options
+   * @param {boolean} [opts.close=false] - Also close the pipe write end so the process reads EOF
+   * @param {string} [opts.processUuid=''] - Restrict the write to this run; empty targets the current run
+   * @returns {Promise<number>} Number of bytes written
+   * @throws {AppMeshError} The stdin pipe buffer is full (retry with the remainder) or the write failed
+   */
+  async sendInput(appName, data, opts = {}) {
+    const { close = false, processUuid = '' } = opts;
+    const headers = close ? { [CONSTANTS.HTTP_HEADER_KEY_X_INPUT_CLOSE]: "true" } : {};
+    const params = processUuid ? { process_uuid: processUuid } : {};
+    const response = await this._request("post", `/appmesh/app/${appName}/input`, data, { headers, params });
+    return parseInt(response.data?.bytes_written ?? 0, 10);
   }
 
   /**
@@ -1320,16 +1627,7 @@ class AppMeshClient {
    */
   async _request(method, path, body = null, options = {}) {
     // Ensure HTTPS agent is ready (first-call lazy setup for Node.js ESM)
-    if (ENV.isNode && _httpsReady && !this._client.defaults.httpsAgent) {
-      await _httpsReady;
-      if (_https) {
-        this._client.defaults.httpsAgent = new _https.Agent({
-          ..._resolveSslOptions(this._sslConfig),
-          keepAlive: true,
-          keepAliveMsecs: 3000
-        });
-      }
-    }
+    await this._ensureHttpsAgent();
 
     const { headers = {}, params = {}, config = {} } = options;
 
@@ -1362,6 +1660,77 @@ class AppMeshClient {
     } catch (error) {
       throw this.onError(error);
     }
+  }
+
+  /**
+   * Lazily install the shared https.Agent on the axios instance (Node.js ESM first-use setup).
+   * @private
+   */
+  async _ensureHttpsAgent() {
+    if (ENV.isNode && _httpsReady && !this._client.defaults.httpsAgent) {
+      await _httpsReady;
+      if (_https) {
+        this._client.defaults.httpsAgent = new _https.Agent({
+          ..._resolveSslOptions(this._sslConfig),
+          keepAlive: true,
+          keepAliveMsecs: 3000
+        });
+      }
+    }
+  }
+
+  /**
+   * Open a server-sent-events stream as a streamed response. Plain HTTP by design: SSE
+   * frames cannot ride a framed (TCP/WSS) transport, so framed subclasses redirect this
+   * hook to direct HTTPS (the WSS file data side-channel shape).
+   *
+   * @private
+   * @param {string} method - HTTP method ('get' or 'post')
+   * @param {string} path - Endpoint path
+   * @param {Object} [options={}] - `{ params, headers, body }`
+   * @returns {Promise<Object>} Axios response with a streamed `data` body
+   * @throws {AppMeshError} Non-200 statuses, like `_request`
+   */
+  async _sseRequest(method, path, options = {}) {
+    await this._ensureHttpsAgent();
+    const { params = {}, headers = {}, body } = options;
+    const requestConfig = {
+      method,
+      url: path,
+      withCredentials: false,
+      responseType: "stream",
+      // Own server-side lifetime and 15s heartbeats: axios's 5-minute default would cut long follows short.
+      timeout: 0,
+      headers: { ...headers },
+      params: { ...params }
+    };
+    if (body !== undefined && body !== null) {
+      requestConfig.data = body;
+    }
+    if (this._requestSigner) {
+      await this._applyRequestSignature(requestConfig);
+    }
+
+    let response;
+    try {
+      response = await this._client(requestConfig);
+    } catch (error) {
+      throw this.onError(error);
+    }
+    if (response.status !== 200) {
+      // The error reply is short; collect it for the message.
+      let detail = "";
+      try {
+        const chunks = [];
+        for await (const chunk of response.data) chunks.push(chunk);
+        detail = Buffer.concat(chunks).toString("utf8");
+      } catch (_) { /* socket already gone — raise a status-only error */ }
+      const message = detail
+        ? this._extractErrorMessage(detail)
+        : `SSE request failed with status ${response.status}`;
+      throw new AppMeshError(message, response.status, detail || null);
+    }
+    return response;
   }
 
   /**
@@ -1497,7 +1866,8 @@ class AppRun {
 // Export the main classes
 export {
   AppMeshClient, AppOutput, AppRun, AppMeshError, AppRemovedError, TransportDisconnectedError,
-  DEFAULT_CA_FILE, StaticAccessTokenProvider, RefreshTokenProvider, RequestSigner
+  AppMeshRequestError, AppMeshTimeoutError, SseEnd,
+  DEFAULT_CA_FILE, StaticAccessTokenProvider, RefreshTokenProvider, RequestSigner, CONSTANTS
 };
 // Exported for the TCP client (Node.js only); not part of the browser-facing API
 export { _resolveUid, _resolveGid, _resolveUserName, _resolveGroupName };

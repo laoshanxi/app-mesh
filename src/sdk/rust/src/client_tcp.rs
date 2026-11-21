@@ -3,6 +3,7 @@
 use async_trait::async_trait;
 use bytes::Bytes;
 use reqwest::{Method, StatusCode};
+use serde_json::Value;
 use std::collections::HashMap;
 use std::fs::File;
 use std::io::{Read, Write};
@@ -10,7 +11,10 @@ use std::path::Path;
 use std::sync::{Arc, Mutex};
 use uuid::Uuid;
 
-use crate::client_http::AppMeshClient;
+use crate::client_http::{
+    build_sse_side_channel, encode_file_path, encode_path_segment, open_sse_side_channel, task_body_bytes,
+    AppMeshClient, RunStream, SseKind, SseStream,
+};
 use crate::constants::*;
 use crate::error::AppMeshError;
 use crate::models::*;
@@ -221,6 +225,10 @@ impl Requester for TCPRequester {
         *self.signer.write().unwrap_or_else(|e| e.into_inner()) = signer;
     }
 
+    fn request_signer(&self) -> Option<RequestSigner> {
+        self.signer.read().unwrap_or_else(|e| e.into_inner()).clone()
+    }
+
     fn set_forward_to(&self, url: Option<String>) {
         *self.forward_to.lock().unwrap_or_else(|e| e.into_inner()) = url;
     }
@@ -275,10 +283,15 @@ impl Requester for TCPRequester {
 pub struct AppMeshClientTCP {
     client: Arc<AppMeshClient>,
     tcp_transport: Arc<Mutex<TCPTransport>>,
+    /// Direct HTTPS connection to the daemon's REST listener for SSE streams
+    /// (a framed transport cannot carry a chunked event stream).
+    rest_client: reqwest::Client,
+    rest_base_url: String,
 }
 
 impl AppMeshClientTCP {
-    /// Create a TCP transport client. Defaults to `127.0.0.1:6059`.
+    /// Create a TCP transport client. Defaults to `127.0.0.1:6059` with the
+    /// SSE side channel on the standard REST port 6058.
     /// An empty `ssl_verify` path is the legacy verification-disable form; prefer
     /// [`crate::ClientBuilderTCP`]'s explicit `danger_accept_invalid_certs(true)`.
     pub fn new(
@@ -287,27 +300,33 @@ impl AppMeshClientTCP {
         ssl_client_cert: Option<(String, String)>,
     ) -> Result<Arc<Self>> {
         let verify = crate::tls_config::resolve_ssl_verify(ssl_verify)?;
-        Self::new_with_verify(tcp_address, verify, ssl_client_cert, false)
+        Self::new_with_verify(tcp_address, verify, ssl_client_cert, false, None)
     }
 
     /// Create a TCP transport client with an explicit `SslVerify` mode (used by the
     /// builder so insecure mode is an explicit flag, never an empty-string sentinel).
     /// `plain` selects the TLS-at-gateway shape: a plaintext TCP connection.
+    /// `rest_port` overrides the SSE side channel's REST port (default 6058) for shifted-port daemons.
     pub(crate) fn new_with_verify(
         tcp_address: Option<(String, u16)>,
         verify: crate::tls_config::SslVerify,
         ssl_client_cert: Option<(String, String)>,
         plain: bool,
+        rest_port: Option<u16>,
     ) -> Result<Arc<Self>> {
         let tcp_address = tcp_address.unwrap_or_else(|| (DEFAULT_TCP_HOST.to_string(), DEFAULT_TCP_PORT));
-        let client_cert = ssl_client_cert.map(|(cert, key)| ClientCert::Pair(cert, key));
+        let client_cert = ssl_client_cert.clone().map(|(cert, key)| ClientCert::Pair(cert, key));
 
-        let tcp_transport = Arc::new(Mutex::new(TCPTransport::new(tcp_address.clone(), verify, client_cert, plain)));
+        let tcp_transport =
+            Arc::new(Mutex::new(TCPTransport::new(tcp_address.clone(), verify.clone(), client_cert, plain)));
         let tcp_requester = TCPRequester::with_shared_transport(Arc::clone(&tcp_transport));
         let url = format!("tcp://{}:{}", tcp_address.0, tcp_address.1);
         let client = AppMeshClient::with_requester(Box::new(tcp_requester), url);
 
-        Ok(Arc::new(Self { client, tcp_transport }))
+        let (rest_client, rest_base_url) =
+            build_sse_side_channel(&tcp_address.0, rest_port, &verify, ssl_client_cert, plain)?;
+
+        Ok(Arc::new(Self { client, tcp_transport, rest_client, rest_base_url }))
     }
 
     /// Get the underlying generic client for shared auth/app/task APIs.
@@ -343,7 +362,8 @@ impl AppMeshClientTCP {
             local_file
         };
         let mut headers = HashMap::new();
-        headers.insert(HTTP_HEADER_KEY_X_FILE_PATH.into(), remote_file.to_string());
+        // Encode: the daemon percent-decodes X-File-Path once, so a raw %2F/%2E would resolve elsewhere.
+        headers.insert(HTTP_HEADER_KEY_X_FILE_PATH.into(), encode_file_path(remote_file));
         headers.insert(HTTP_HEADER_KEY_X_RECV_FILE_SOCKET.into(), "true".into());
 
         let resp = self.client.raw_request(Method::GET, "/appmesh/file/download", None, Some(headers), None, true).await?;
@@ -383,7 +403,7 @@ impl AppMeshClientTCP {
     pub async fn delete_file(&self, remote_file: &str) -> Result<()> {
         self.ensure_no_active_demuxer()?;
         let mut headers = HashMap::new();
-        headers.insert(HTTP_HEADER_KEY_X_FILE_PATH.into(), remote_file.to_string());
+        headers.insert(HTTP_HEADER_KEY_X_FILE_PATH.into(), encode_file_path(remote_file));
         self.client.raw_request(Method::DELETE, "/appmesh/file/delete", None, Some(headers), None, true).await?;
         Ok(())
     }
@@ -419,7 +439,7 @@ impl AppMeshClientTCP {
         }
 
         let mut headers = HashMap::new();
-        headers.insert(HTTP_HEADER_KEY_X_FILE_PATH.into(), remote_file.to_string());
+        headers.insert(HTTP_HEADER_KEY_X_FILE_PATH.into(), encode_file_path(remote_file));
         headers.insert(HTTP_HEADER_CONTENT_TYPE.into(), "application/octet-stream".into());
         headers.insert(HTTP_HEADER_KEY_X_SEND_FILE_SOCKET.into(), "true".into());
         if overwrite {
@@ -479,6 +499,72 @@ impl AppMeshClientTCP {
         timeout: i32,
     ) -> Result<Option<i32>> {
         self.client.wait_for_async_run(run, stdout_handler, timeout).await
+    }
+
+    /// Push a fresh provider-managed bearer, then read the token the SSE side
+    /// channel needs (the daemon rejects tokenless streams with 401).
+    async fn sse_token(&self) -> Result<String> {
+        self.client.prepare_bearer().await?;
+        self.client.get_access_token().ok_or_else(|| AppMeshError::RequestFailed {
+            status: StatusCode::UNAUTHORIZED,
+            message: "Streaming requires a bearer token".into(),
+        })
+    }
+
+    /// Stream an application's stdout over the REST side channel (SSE cannot
+    /// ride the framed TCP transport); see [`AppMeshClient::follow_output`].
+    pub async fn follow_output(
+        &self,
+        app_name: &str,
+        stdout_position: i64,
+        process_uuid: &str,
+        follow: bool,
+        timeout: i32,
+    ) -> Result<SseStream> {
+        let path = format!("/appmesh/app/{}/output/stream", encode_path_segment(app_name));
+        let query = AppMeshClient::output_stream_query(stdout_position, process_uuid, follow, timeout);
+        let resp = open_sse_side_channel(
+            &self.rest_client,
+            &self.rest_base_url,
+            &self.sse_token().await?,
+            self.client.req.request_signer().as_ref(),
+            HTTP_USER_AGENT_TCP,
+            Method::GET,
+            &path,
+            Some(&query),
+            None,
+        )
+        .await?;
+        Ok(SseStream::new(SseKind::Output, resp))
+    }
+
+    /// Streaming task RPC over the REST side channel; see [`AppMeshClient::run_task_stream`].
+    pub async fn run_task_stream(&self, app_name: &str, data: Value, timeout: i32) -> Result<SseStream> {
+        let timeout = if timeout <= 0 { 300 } else { timeout };
+        let path = format!("/appmesh/app/{}/task/stream", encode_path_segment(app_name));
+        let query = AppMeshClient::task_stream_query(timeout);
+        let body = task_body_bytes(data)?;
+        let resp = open_sse_side_channel(
+            &self.rest_client,
+            &self.rest_base_url,
+            &self.sse_token().await?,
+            self.client.req.request_signer().as_ref(),
+            HTTP_USER_AGENT_TCP,
+            Method::POST,
+            &path,
+            Some(&query),
+            Some(&body),
+        )
+        .await?;
+        Ok(SseStream::new(SseKind::Task, resp))
+    }
+
+    /// One-shot run + stdout stream over the REST side channel; see [`AppMeshClient::stream_run`].
+    /// The temporary app is always deleted when the stream terminates or is dropped.
+    pub async fn stream_run(self: &Arc<Self>, app: &Application, max_time: i32, lifecycle: i32) -> Result<RunStream> {
+        let run = self.run_app_async(app, max_time, lifecycle).await?;
+        let stream = self.follow_output(&run.app_name, 0, &run.proc_uid, true, max_time.max(lifecycle)).await?;
+        Ok(RunStream::new(stream, Arc::clone(&self.client), run.app_name))
     }
 }
 

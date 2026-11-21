@@ -83,7 +83,7 @@ mod tests {
             .create_async()
             .await;
 
-        let signer = RequestSigner::new("ak-e2e", "e2e-secret");
+        let signer = RequestSigner::new("ak-e2e", "e2e-secret").expect("signer");
         let client = ClientBuilder::new()
             .url(server.url())
             .danger_accept_invalid_certs(true)
@@ -803,9 +803,10 @@ mod integration {
         upload_src.write_all(content).expect("write to temp file failed");
         upload_src.flush().unwrap();
 
-        // Choose a unique remote path to avoid "file already exist" errors.
+        // Choose a unique remote path to avoid "file already exist" errors. It
+        // must sit in the exchangeable work/tmp scratch: the daemon jails transfers there.
         let remote_path = format!(
-            "/tmp/appmesh_rust_integ_{}.txt",
+            "/opt/appmesh/work/tmp/appmesh_rust_integ_{}.txt",
             std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_millis()
         );
         let remote_path = remote_path.as_str();

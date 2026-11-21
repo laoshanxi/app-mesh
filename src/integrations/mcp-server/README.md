@@ -71,7 +71,7 @@ appm add --stdin appmesh_mcp_app.yaml
 
 ## Client registration
 
-Use a pre-registered public OAuth client. Configure its redirect URI for your MCP client. The built-in deployment includes the `appmesh-mcp-user` public client.
+Use a pre-registered public OAuth client. Configure its redirect URI for your MCP client. The built-in deployment includes the `appmesh-mcp-user` public client. The Dex deployment enforces PKCE S256 (`oauth2.pkce.enforce`): an MCP client that follows the MCP spec's authorization code + PKCE flow works unchanged; plain authorization-code requests are rejected.
 
 The MCP server publishes protected-resource metadata at:
 

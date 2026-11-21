@@ -2,6 +2,7 @@ package appmesh
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
@@ -75,7 +76,7 @@ func (r *WorkerHTTPContext) FetchTaskContext(ctx context.Context) (string, error
 	}
 
 	path := "/appmesh/app/" + appName + "/task"
-	headers := map[string]string{"X-AppMesh-Process-Key": key}
+	headers := map[string]string{headerProcessKey: key}
 
 	// Fixed 100ms floor per attempt: sleep only the remainder if the attempt
 	// finished early; otherwise retry immediately. No backoff (SDKContract.md).
@@ -109,6 +110,41 @@ func (r *WorkerHTTPContext) FetchTaskContext(ctx context.Context) (string, error
 	}
 }
 
+// SendTaskPartial pushes an incremental result before the final reply
+// (SendTaskResult), e.g. model token streams or progress updates. Delivered is
+// true only when the caller streams (RunTaskStream); a one-shot RunTask
+// silently ignores it.
+func (r *WorkerHTTPContext) SendTaskPartial(partial string) (bool, error) {
+	processKey, appName, err := r.getRuntimeEnv()
+	if err != nil {
+		return false, err
+	}
+
+	path := "/appmesh/app/" + appName + "/task/partial"
+	headers := map[string]string{
+		"Content-Type":   "text/plain",
+		headerProcessKey: processKey,
+	}
+
+	status, body, _, err := r.client.post(path, nil, headers, []byte(partial))
+	if err != nil {
+		return false, err
+	}
+
+	if status != http.StatusOK {
+		return false, errors.New("send_task_partial failed with status " + http.StatusText(status) + ": " +
+			string(body))
+	}
+
+	var resp struct {
+		Delivered bool `json:"delivered"`
+	}
+	if err := json.Unmarshal(body, &resp); err != nil {
+		return false, fmt.Errorf("failed to unmarshal send task partial response: %w", err)
+	}
+	return resp.Delivered, nil
+}
+
 // SendTaskResult sends the processed result bytes back to the original invoking client via App Mesh.
 func (r *WorkerHTTPContext) SendTaskResult(result string) error {
 	processKey, appName, err := r.getRuntimeEnv()
@@ -118,8 +154,8 @@ func (r *WorkerHTTPContext) SendTaskResult(result string) error {
 
 	path := "/appmesh/app/" + appName + "/task"
 	headers := map[string]string{
-		"Content-Type":          "text/plain",
-		"X-AppMesh-Process-Key": processKey,
+		"Content-Type":   "text/plain",
+		headerProcessKey: processKey,
 	}
 
 	status, body, err := r.client.put(path, nil, headers, []byte(result))
