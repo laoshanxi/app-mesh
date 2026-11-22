@@ -309,7 +309,7 @@ function Install-PythonPackages {
 function Install-Go {
     Write-Host "Installing Go programming language..." -ForegroundColor Cyan
     
-    $goVersion = "1.27.1"
+    $goVersion = "1.27.4"
     # keep a system Go that is newer than (or equal to) the pinned version
     $installedVer = $null
     if (Get-Command go -ErrorAction SilentlyContinue) {

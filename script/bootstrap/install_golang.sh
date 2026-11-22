@@ -1,7 +1,7 @@
 #!/bin/bash
 set -e
 
-GO_VER=1.27.1
+GO_VER=1.27.4
 
 # keep a system Go that is newer than (or equal to) the pinned version
 installed_ver=$(go version 2>/dev/null | sed -n 's/.*go\([0-9]*\.[0-9]*\(\.[0-9]*\)\{0,1\}\).*/\1/p')

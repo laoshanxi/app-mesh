@@ -129,8 +129,8 @@ if [ "$MODE" = "source" ]; then
 
     # install cmake (depend on g++, make, openssl-devel)
     # https://askubuntu.com/questions/355565/how-do-i-install-the-latest-version-of-cmake-from-the-command-line
-    cmake_version=3.22
-    cmake_build=1
+    cmake_version=3.31
+    cmake_build=12
     os="linux"
     platform="x86_64"
     if [ "$architecture" = "arm64" ]; then
@@ -145,14 +145,16 @@ fi
 # -----------------------------------------------------------------------------
 # boost (1.86+: Boost.Process V2), newer than any distro package
 # https://www.boost.org/users/download/
-BOOST_VER=86
+BOOST_VER=92
 $WGET_A https://zenlayer.dl.sourceforge.net/project/boost/boost/1.${BOOST_VER}.0/boost_1_${BOOST_VER}_0.tar.gz
 tar zxvf boost_1_${BOOST_VER}_0.tar.gz >/dev/null
 cd ./boost_1_${BOOST_VER}_0
+# histogram unused; local-visibility breaks b2 install
+sed -i '/<local-visibility>hidden/d' libs/histogram/build.jam
 ./bootstrap.sh --without-libraries=context,coroutine,exception,locale,log,math,python,random,serialization,mpi,test,wave,container,graph,graph_parallel,chrono,contract,json,nowide,stacktrace,type_erasure
 ./b2 variant=release optimization=space -j"$(($(nproc) / 2))"
 ./b2 install variant=release optimization=space >/dev/null
-ls -al /usr/local/lib/libboost_system.so.1.${BOOST_VER}.0 /usr/local/include/boost/thread.hpp
+ls -al /usr/local/lib/libboost_process.so.1.${BOOST_VER}.0 /usr/local/include/boost/thread.hpp
 cd "$ROOTDIR"
 
 # spdlog - build from source (pinned to v1.17.0 for stable behaviour);
@@ -195,12 +197,12 @@ if [ "$MODE" = "source" ]; then
 fi
 
 # drogon (requires C++17, GCC >= 8)
-# v1.9.13 omits <iomanip> for std::put_time / std::setprecision on non-Windows.
+# v1.9.14 omits <iomanip> for std::put_time / std::setprecision on non-Windows.
 GCC_MAJOR=$(gcc -dumpversion | cut -d. -f1)
 if [[ "$GCC_MAJOR" -lt 8 ]]; then
     echo "Drogon requires C++17 (GCC >= 8), skipping"
 else
-    git clone --depth=1 -b v1.9.13 --recurse-submodules --shallow-submodules https://github.com/drogonframework/drogon.git
+    git clone --depth=1 -b v1.9.14 --recurse-submodules --shallow-submodules https://github.com/drogonframework/drogon.git
     cd drogon && mkdir build && cd build
     if [ "$MODE" = "source" ]; then
         # $ORIGIN:/usr/local/ssl/lib keeps the packaged libraries self-contained
