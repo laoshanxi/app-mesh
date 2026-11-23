@@ -33,6 +33,7 @@ const HTTP_HEADER_KEY_X_RECV_FILE_SOCKET = 'X-Recv-File-Socket'
 // Wire-header names come from the shared CONSTANTS block.
 const HTTP_HEADER_KEY_USER_AGENT = CONSTANTS.HTTP_USER_AGENT_HEADER_NAME
 const HTTP_HEADER_KEY_X_FILE_PATH = CONSTANTS.HTTP_HEADER_KEY_X_FILE_PATH
+const HTTP_HEADER_KEY_X_FILE_OVERWRITE = CONSTANTS.HTTP_HEADER_KEY_X_FILE_OVERWRITE
 const HTTP_HEADER_KEY_AUTH = CONSTANTS.HTTP_HEADER_KEY_AUTH
 const HTTP_HEADER_KEY_X_TARGET_HOST = CONSTANTS.HTTP_HEADER_KEY_X_TARGET_HOST
 const HTTP_HEADER_KEY_X_SUBSCRIPTION_ID = CONSTANTS.HTTP_HEADER_KEY_X_SUBSCRIPTION_ID
@@ -899,9 +900,11 @@ class AppMeshClientTCP extends AppMeshClient {
    * @param {string} [filePath=null] - Remote destination path; defaults to the basename of localFile
    * @param {boolean} [applyAttrs=false] - Send local mode and best-effort user/group name
    * metadata so the server can recreate permissions and ownership when supported
+   * @param {boolean} [overwrite=false] - Replace an existing remote file; the
+   * default keeps the server's 409 refusal
    * @override
    */
-  async uploadFile(localFile, filePath = null, applyAttrs = false) {
+  async uploadFile(localFile, filePath = null, applyAttrs = false, overwrite = false) {
     this._ensureNoActiveDemuxer()
     if (!filePath) filePath = localFile.split(/[\\/]/).pop()
     if (!fs.existsSync(localFile)) {
@@ -912,6 +915,9 @@ class AppMeshClientTCP extends AppMeshClient {
       [HTTP_HEADER_KEY_X_FILE_PATH]: encodeURIComponent(filePath),
       'Content-Type': 'text/plain',
       [HTTP_HEADER_KEY_X_SEND_FILE_SOCKET]: 'true'
+    }
+    if (overwrite) {
+      headers[HTTP_HEADER_KEY_X_FILE_OVERWRITE] = 'true'
     }
 
     // Add file attributes

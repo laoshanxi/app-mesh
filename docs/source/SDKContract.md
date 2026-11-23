@@ -198,6 +198,12 @@ between machines and containers. Python, JavaScript, and C++ therefore default
 their optional permission/attribute argument to `false`; Go, Rust, and Java
 require an explicit boolean. The CLI uses `--apply-permissions` to opt in.
 
+Uploads never overwrite. The server refuses an existing destination with 409
+until the caller opts in: Python, JavaScript, and Java take an `overwrite`
+flag on the upload method, Rust exposes `upload_file_with` with the flag, Go
+takes `UploadOptions{Overwrite: true}`, and the CLI uses `--overwrite`. The
+wire form is the `X-File-Overwrite: true` header on every transport.
+
 ## Worker Task Loop (`fetch_task` / `send_task_result`)
 
 The worker half of the client/worker model: an App Mesh-managed application

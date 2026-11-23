@@ -43,6 +43,7 @@ public class AppMeshClient implements Closeable {
     static final String BEARER_PREFIX = "Bearer ";
     static final String X_TARGET_HOST_HEADER = "X-Target-Host";
     static final String X_FILE_PATH_HEADER = "X-File-Path";
+    static final String X_FILE_OVERWRITE_HEADER = "X-File-Overwrite";
     static final String X_EXIT_CODE_HEADER = "X-Exit-Code";
     static final String X_OUTPUT_POSITION_HEADER = "X-Output-Position";
     static final String X_INPUT_CLOSE_HEADER = "X-Input-Close";
@@ -1116,6 +1117,18 @@ public class AppMeshClient implements Closeable {
     }
 
     /**
+     * Upload a local file to the remote server.
+     *
+     * <p>When {@code preservePermissions} is true, local file metadata is sent in headers so the
+     * server can recreate permissions and ownership when supported. When {@code overwrite} is
+     * true, an existing remote file is replaced; the default keeps the server's 409 refusal.
+     */
+    public boolean uploadFile(String localFilePath, String remoteFile, boolean preservePermissions,
+            boolean overwrite) throws IOException {
+        return uploadFile(new File(localFilePath), remoteFile, preservePermissions, overwrite);
+    }
+
+    /**
      * Upload a local file to the remote server. Uses the local file's name as the remote file name.
      */
     public boolean uploadFile(String localFilePath, boolean preservePermissions) throws IOException {
@@ -1132,8 +1145,26 @@ public class AppMeshClient implements Closeable {
      * server can recreate permissions and ownership when supported.
      */
     public boolean uploadFile(File localFile, String remoteFile, boolean preservePermissions) throws IOException {
+        return uploadFile(localFile, remoteFile, preservePermissions, false);
+    }
+
+    /**
+     * Upload a local file to the remote server.
+     *
+     * <p>Plain-HTTP transport: POST streams the raw file bytes as the body; the agent
+     * proxy accepts the same route.
+     *
+     * <p>When {@code preservePermissions} is true, local file metadata is sent in headers so the
+     * server can recreate permissions and ownership when supported. When {@code overwrite} is
+     * true, an existing remote file is replaced; the default keeps the server's 409 refusal.
+     */
+    public boolean uploadFile(File localFile, String remoteFile, boolean preservePermissions,
+            boolean overwrite) throws IOException {
         Map<String, String> headers = new HashMap<>(commonHeaders());
         headers.put(X_FILE_PATH_HEADER, encodeURIComponent(remoteFile));
+        if (overwrite) {
+            headers.put(X_FILE_OVERWRITE_HEADER, "true");
+        }
 
         File file = localFile;
         if (!file.exists()) {

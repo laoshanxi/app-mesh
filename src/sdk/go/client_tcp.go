@@ -193,8 +193,10 @@ func (c *AppMeshClientTCP) DownloadFile(remoteFile, localFile string, applyFileA
 
 // UploadFileContext uploads a file through the TCP file-socket side channel.
 // When applyFileAttributes is true, local POSIX metadata is sent so the server can recreate it.
+// Optional UploadOptions replace an existing remote file; without them an
+// existing destination answers 409 Conflict.
 func (c *AppMeshClientTCP) UploadFileContext(ctx context.Context, localFile, remoteFile string,
-	applyFileAttributes bool) error {
+	applyFileAttributes bool, opts ...UploadOptions) error {
 	if err := c.ensureNoActiveDemuxer(); err != nil {
 		return err
 	}
@@ -216,6 +218,7 @@ func (c *AppMeshClientTCP) UploadFileContext(ctx context.Context, localFile, rem
 		headerFilePath:       escapeRemoteFilePath(remoteFile),
 		headerSendFileSocket: "true",
 	}
+	applyUploadOptions(headers, opts)
 
 	// Get the file attributes.
 	if applyFileAttributes {
@@ -264,8 +267,10 @@ func (c *AppMeshClientTCP) uploadFileChunks(ctx context.Context, file *os.File) 
 }
 
 // UploadFile uploads a local file via the TCP file-socket side channel.
-func (c *AppMeshClientTCP) UploadFile(localFile, remoteFile string, applyFileAttributes bool) error {
-	return c.UploadFileContext(context.Background(), localFile, remoteFile, applyFileAttributes)
+// Optional UploadOptions replace an existing remote file; without them an
+// existing destination answers 409 Conflict.
+func (c *AppMeshClientTCP) UploadFile(localFile, remoteFile string, applyFileAttributes bool, opts ...UploadOptions) error {
+	return c.UploadFileContext(context.Background(), localFile, remoteFile, applyFileAttributes, opts...)
 }
 
 // sseRequest opens an SSE stream over a direct HTTPS connection to the daemon

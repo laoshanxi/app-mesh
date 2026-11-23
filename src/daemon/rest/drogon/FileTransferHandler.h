@@ -35,7 +35,7 @@ class FdFileStream
 {
 public:
 	FdFileStream() = default;
-	explicit FdFileStream(int fd) : m_fd(fd) {}
+	explicit FdFileStream(int fd) : m_fd(fd) { m_good = fd >= 0; }
 	~FdFileStream() { close(); }
 	FdFileStream(const FdFileStream &) = delete;
 	FdFileStream &operator=(const FdFileStream &) = delete;

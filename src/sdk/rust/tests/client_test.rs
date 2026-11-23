@@ -587,6 +587,51 @@ mod tests {
         mock.assert_async().await;
     }
 
+    // upload_file_with must send X-File-Overwrite only when the caller opts in:
+    // the engine refuses an existing destination with 409 unless the header is
+    // present.
+    #[tokio::test]
+    async fn test_upload_file_overwrite_header() {
+        use std::io::Write;
+
+        let mut server = Server::new_async().await;
+
+        let content = b"AppMesh overwrite unit test\n";
+        let mut upload_src = tempfile::NamedTempFile::new().expect("failed to create temp upload file");
+        upload_src.write_all(content).expect("write to temp file failed");
+        upload_src.flush().unwrap();
+
+        let overwrite_mock = server
+            .mock("POST", "/appmesh/file/upload")
+            .match_header("x-file-path", "/tmp/upload_overwrite.txt")
+            .match_header("x-file-overwrite", "true")
+            .with_status(201)
+            .create_async()
+            .await;
+
+        let client = create_test_client(&server);
+        client
+            .upload_file_with(upload_src.path().to_str().unwrap(), "/tmp/upload_overwrite.txt", false, true)
+            .await
+            .expect("overwrite upload failed");
+        overwrite_mock.assert_async().await;
+
+        // The default upload must not carry the header.
+        let plain_mock = server
+            .mock("POST", "/appmesh/file/upload")
+            .match_header("x-file-path", "/tmp/upload_overwrite.txt")
+            .match_header("x-file-overwrite", Matcher::Missing)
+            .with_status(201)
+            .create_async()
+            .await;
+
+        client
+            .upload_file(upload_src.path().to_str().unwrap(), "/tmp/upload_overwrite.txt", false)
+            .await
+            .expect("default upload failed");
+        plain_mock.assert_async().await;
+    }
+
     #[tokio::test]
     async fn test_subscribe_unsupported_over_http() {
         let server = Server::new_async().await;

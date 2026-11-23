@@ -688,6 +688,61 @@ await assert('TCP upload sends owner/group names, not numeric ids', async () => 
   }
 })
 
+// ---- File upload overwrite flag ----
+//
+// The engine refuses an existing destination with 409 unless the upload
+// carries X-File-Overwrite: true. The SDK default stays no-overwrite, so the
+// header must be absent unless the caller asks for it.
+
+await assert('HTTP upload sends X-File-Overwrite only when requested', async () => {
+  const client = new AppMeshClient(baseURL)
+  const localFile = join(tmpdir(), 'appmesh_unit_upload_overwrite.txt')
+  writeFileSync(localFile, 'overwrite', 'utf8')
+  try {
+    uploadHeaders = null
+    await client.uploadFile(localFile, '/tmp/appmesh_unit_overwrite_target.txt', false, true)
+    if (!uploadHeaders) throw new Error('the upload never reached the mock server')
+    if (uploadHeaders['x-file-overwrite'] !== 'true') {
+      throw new Error(`expected X-File-Overwrite true, got ${JSON.stringify(uploadHeaders['x-file-overwrite'])}`)
+    }
+
+    uploadHeaders = null
+    await client.uploadFile(localFile, '/tmp/appmesh_unit_overwrite_target.txt')
+    if (!uploadHeaders) throw new Error('the second upload never reached the mock server')
+    if ('x-file-overwrite' in uploadHeaders) {
+      throw new Error(`default upload must not send X-File-Overwrite, got ${JSON.stringify(uploadHeaders['x-file-overwrite'])}`)
+    }
+  } finally {
+    try { unlinkSync(localFile) } catch (_) {}
+  }
+})
+
+await assert('TCP upload sends X-File-Overwrite only when requested', async () => {
+  const client = new AppMeshClientTCP(false)
+  const localFile = join(tmpdir(), 'appmesh_unit_tcp_upload_overwrite.txt')
+  writeFileSync(localFile, 'overwrite', 'utf8')
+  let sentHeaders = null
+  client._request = async (method, path, body, options) => {
+    sentHeaders = options.headers
+    return { headers: { 'X-Send-File-Socket': 'true' }, httpStatus: 200 }
+  }
+  client.tcpTransport.sendMessage = () => {}
+  try {
+    await client.uploadFile(localFile, '/tmp/appmesh_unit_tcp_overwrite_target.txt', false, true)
+    if (sentHeaders['X-File-Overwrite'] !== 'true') {
+      throw new Error(`expected X-File-Overwrite true, got ${JSON.stringify(sentHeaders['X-File-Overwrite'])}`)
+    }
+
+    sentHeaders = null
+    await client.uploadFile(localFile, '/tmp/appmesh_unit_tcp_overwrite_target.txt')
+    if ('X-File-Overwrite' in (sentHeaders || {})) {
+      throw new Error(`default upload must not send X-File-Overwrite, got ${JSON.stringify(sentHeaders['X-File-Overwrite'])}`)
+    }
+  } finally {
+    try { unlinkSync(localFile) } catch (_) {}
+  }
+})
+
 await assert('TCP download resolves names before chown and skips unknown ones', async () => {
   const client = new AppMeshClientTCP(false)
   const localFile = join(tmpdir(), 'appmesh_unit_tcp_download_attrs.txt')

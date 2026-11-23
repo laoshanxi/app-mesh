@@ -181,7 +181,7 @@ Two rules follow from this model:
 
 ## Secret protection
 
-The package creates a 256-bit master key for application `secret_env` values. The Engine uses AES-256-GCM. The key file must be a regular owner-only file.
+The package creates a 256-bit master key for application and workflow `secret_env` values. The Engine uses AES-256-GCM. The key file must be a regular owner-only file.
 
 Back up the master key with application state. App Mesh cannot recover encrypted values without this key.
 

@@ -126,8 +126,9 @@ Lifecycle semantics:
 | POST | `/appmesh/app/{name}/input` | Inject bytes into the stdin of a pipe-stdin application |
 
 The streaming routes answer `text/event-stream` frames (partials, final
-result, terminal status) on the engine's native listener (default wss/https
-6058 — the agent REST listener 6060 carries no streaming routes). See
+result, terminal status). The engine serves them natively (default
+wss/https 6058), and the agent REST listener (6060) relays them for local
+requests; they do not traverse node forwarding. See
 [Streaming.md](Streaming.md)
 for the event contract, the stdin pipe mode, and the SDK generator APIs.
 

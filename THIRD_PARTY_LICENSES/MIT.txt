@@ -22,9 +22,12 @@ SOFTWARE.
 
 Used by the following dependencies:
   - spdlog (Copyright (c) Gabi Melman)
-  - libwebsockets (Copyright (c) Andy Green, v4.0+)
+  - Drogon (Copyright (c) An Tao)
+  - JsonCpp (Copyright (c) Baptiste Lepilleur and The JsonCpp Authors)
   - yaml-cpp (Copyright (c) Jesse Beder)
   - jwt-cpp (Copyright (c) Dominik Thalhammer)
   - croncpp (Copyright (c) Marius Bancila)
-  - wildcards (Copyright (c) Nemanja Trifunovic)
   - hashidsxx (Copyright (c) Toon Schoenmakers)
+  - prometheus-cpp (Copyright (c) Jupp Mueller, Gregor Jasny)
+  - c-ares (Copyright (c) Massachusetts Institute of Technology, Daniel Stenberg and contributors)
+  - Brotli (Copyright (c) The Brotli Authors)

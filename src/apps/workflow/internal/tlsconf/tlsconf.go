@@ -15,6 +15,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
 
 	"gopkg.in/yaml.v3"
@@ -34,6 +35,20 @@ const EnvTransport = "APPMESH_ENGINE_TRANSPORT"
 
 // EnvConfigRoot overrides the daemon installation root probed for the effective config.yaml.
 const EnvConfigRoot = "APPMESH_ENGINE_CONFIG_ROOT"
+
+// EnvWebSocketPort and EnvRestListenPort mirror the daemon's APPMESH_REST_<Key>
+// overrides for the two REST listener ports; the workflow process inherits them
+// from the daemon.
+const (
+	EnvWebSocketPort  = "APPMESH_REST_WebSocketPort"
+	EnvRestListenPort = "APPMESH_REST_RestListenPort"
+)
+
+// Default REST listener ports from the shipped daemon config.yaml.
+const (
+	defaultWebSocketPort  = 6058
+	defaultRestListenPort = 6060
+)
 
 // VerifyEnabled reports whether daemon connections must verify the server
 // certificate. Verification is the default; any value other than an explicit
@@ -60,10 +75,41 @@ func TransportName() string {
 	return "tls"
 }
 
-// daemonSSLEnabled reads the daemon's effective SSL.SSLEnabled setting from
-// the first existing config file in its own search order.
-func daemonSSLEnabled() bool {
+// RESTPort returns the port of the daemon REST entry local Engine calls use:
+// the native WebSocketPort listener when enabled, otherwise the agent's
+// RestListenPort (the only REST entry when the native listener is disabled).
+func RESTPort() int {
+	cfg := readDaemonRESTConfig()
+	if cfg.webSocketPort > 0 {
+		return cfg.webSocketPort
+	}
+	return cfg.restListenPort
+}
+
+type daemonRESTConfig struct {
+	sslEnabled     bool
+	webSocketPort  int
+	restListenPort int
+}
+
+// readDaemonRESTConfig reads the daemon's effective REST settings from the
+// first existing config file in its own search order, then applies the
+// APPMESH_REST_<Key> overrides both processes honor. A missing file keeps the
+// shipped defaults (TLS on, 6058/6060); a broken file fails closed to TLS but
+// keeps the port defaults. Like the daemon, an out-of-range RestListenPort
+// falls back to its default.
+func readDaemonRESTConfig() daemonRESTConfig {
+	cfg := daemonRESTConfig{
+		sslEnabled:     true,
+		webSocketPort:  defaultWebSocketPort,
+		restListenPort: defaultRestListenPort,
+	}
 	root := os.Getenv(EnvConfigRoot)
+	if root == "" {
+		// A custom install exports APPMESH_HOME; the daemon's own config search
+		// starts at that home, so the engine must resolve the same tree.
+		root = os.Getenv("APPMESH_HOME")
+	}
 	if root == "" {
 		if runtime.GOOS == "windows" {
 			root = "c:/local/appmesh"
@@ -79,23 +125,59 @@ func daemonSSLEnabled() bool {
 		if err != nil {
 			continue // missing/unreadable: try the next candidate
 		}
-		var cfg struct {
+		var raw struct {
 			REST struct {
-				SSL struct {
+				WebSocketPort  *int `yaml:"WebSocketPort"`
+				RestListenPort *int `yaml:"RestListenPort"`
+				SSL            struct {
 					// Nil (key absent) keeps TLS on, like the daemon's own default.
 					SSLEnabled *bool `yaml:"SSLEnabled"`
 				} `yaml:"SSL"`
 			} `yaml:"REST"`
 		}
-		if err := yaml.Unmarshal(data, &cfg); err != nil {
-			return true // broken file: fail closed to TLS
+		if err := yaml.Unmarshal(data, &raw); err != nil {
+			return cfg // broken file: fail closed to TLS (and default ports)
 		}
-		if cfg.REST.SSL.SSLEnabled == nil {
-			return true
+		cfg.sslEnabled = raw.REST.SSL.SSLEnabled == nil || *raw.REST.SSL.SSLEnabled
+		// A port key absent from an existing file mirrors the daemon's parsed
+		// zero value: WebSocketPort 0 disables the native listener.
+		cfg.webSocketPort = 0
+		if raw.REST.WebSocketPort != nil {
+			cfg.webSocketPort = *raw.REST.WebSocketPort
 		}
-		return *cfg.REST.SSL.SSLEnabled
+		cfg.restListenPort = 0
+		if raw.REST.RestListenPort != nil {
+			cfg.restListenPort = *raw.REST.RestListenPort
+		}
+		break
 	}
-	return true
+	if v, ok := envInt(EnvWebSocketPort); ok {
+		cfg.webSocketPort = v
+	}
+	if v, ok := envInt(EnvRestListenPort); ok {
+		cfg.restListenPort = v
+	}
+	if cfg.restListenPort < 1000 || cfg.restListenPort > 65534 {
+		cfg.restListenPort = defaultRestListenPort
+	}
+	return cfg
+}
+
+func envInt(name string) (int, bool) {
+	value := strings.TrimSpace(os.Getenv(name))
+	if value == "" {
+		return 0, false
+	}
+	n, err := strconv.Atoi(value)
+	if err != nil {
+		return 0, false
+	}
+	return n, true
+}
+
+// daemonSSLEnabled reports whether the daemon's effective config enables TLS.
+func daemonSSLEnabled() bool {
+	return readDaemonRESTConfig().sslEnabled
 }
 
 // Apply sets the transport and verification fields of opt from the

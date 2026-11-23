@@ -374,6 +374,19 @@ public class AppMeshClientTCP extends AppMeshClient {
      */
     @Override
     public boolean uploadFile(File localFile, String remoteFile, boolean preservePermissions) throws IOException {
+        return uploadFile(localFile, remoteFile, preservePermissions, false);
+    }
+
+    /**
+     * Upload a file through the TCP file-socket side channel.
+     *
+     * <p>When {@code preservePermissions} is true, local file metadata is sent so the server can
+     * recreate permissions and ownership when supported. When {@code overwrite} is true, an
+     * existing remote file is replaced; the default keeps the server's 409 refusal.
+     */
+    @Override
+    public boolean uploadFile(File localFile, String remoteFile, boolean preservePermissions,
+            boolean overwrite) throws IOException {
         ensureNoActiveDemuxer();
         File file = localFile;
         Path localPath = file.toPath();
@@ -385,6 +398,9 @@ public class AppMeshClientTCP extends AppMeshClient {
         headers.put(X_FILE_PATH_HEADER, encodeURIComponent(remoteFile));
         headers.put("Content-Type", "application/octet-stream");
         headers.put(X_SEND_FILE_SOCKET_HEADER, "true");
+        if (overwrite) {
+            headers.put(X_FILE_OVERWRITE_HEADER, "true");
+        }
 
         if (preservePermissions) {
             headers.putAll(Utils.getFileAttributes(file));

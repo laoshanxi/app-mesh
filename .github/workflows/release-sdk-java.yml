@@ -1,5 +1,12 @@
 name: "release-sdk-java"
 
+# Publishes the Java SDK (laoshanxi:appmesh) to GitHub Packages on every push
+# that touches the SDK. Maven Central (repo1.maven.org) is published only by a
+# manual workflow_dispatch run, gated on the Central Portal secrets and on a
+# version-exists probe, so an already-published version is skipped.
+# Consuming GitHub Packages requires a GitHub token with read:packages; see
+# src/sdk/java/README.md for the exact settings.xml the consumer needs.
+
 # https://docs.github.com/en/actions/publishing-packages/publishing-java-packages-with-maven
 
 on:
@@ -55,3 +62,94 @@ jobs:
           fi
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  publish-central:
+    # Publishing to Maven Central is irreversible, so it must never happen on
+    # a push to main (which also fires for README-only edits).
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Harden Runner
+        uses: step-security/harden-runner@v2.21.1
+        with:
+          egress-policy: audit
+
+      - name: Check Central secrets
+        id: gate
+        # The secrets context is not available in a job-level if, so gate here.
+        env:
+          CENTRAL_TOKEN_USERNAME: ${{ secrets.CENTRAL_TOKEN_USERNAME }}
+          CENTRAL_TOKEN_PASSWORD: ${{ secrets.CENTRAL_TOKEN_PASSWORD }}
+          GPG_PRIVATE_KEY: ${{ secrets.GPG_PRIVATE_KEY }}
+        run: |
+          if [ -z "$CENTRAL_TOKEN_USERNAME" ] || [ -z "$CENTRAL_TOKEN_PASSWORD" ] || [ -z "$GPG_PRIVATE_KEY" ]; then
+            echo "::notice::Maven Central publishing skipped: CENTRAL_TOKEN_USERNAME, CENTRAL_TOKEN_PASSWORD and GPG_PRIVATE_KEY must all be configured as repository secrets."
+            echo "configured=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "configured=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: actions/checkout@v6
+        if: steps.gate.outputs.configured == 'true'
+
+      - uses: actions/setup-java@v5
+        if: steps.gate.outputs.configured == 'true'
+        with:
+          java-version: "11"
+          distribution: "temurin"
+
+      - name: Probe Maven Central for an existing version
+        id: probe
+        if: steps.gate.outputs.configured == 'true'
+        working-directory: "src/sdk/java/"
+        # A re-run for an already-published version must be a no-op.
+        run: |
+          VERSION=$(mvn --batch-mode -q help:evaluate -Dexpression=project.version -DforceStdout)
+          [ -n "$VERSION" ] || { echo "failed to evaluate project version"; exit 1; }
+          URL="https://repo1.maven.org/maven2/laoshanxi/appmesh/$VERSION/appmesh-$VERSION.pom"
+          STATUS=$(curl -sS -o /dev/null -w '%{http_code}' "$URL")
+          if [ "$STATUS" = "200" ]; then
+            echo "::notice::laoshanxi:appmesh:$VERSION is already published to Maven Central; skipping"
+            echo "publish=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "laoshanxi:appmesh:$VERSION is not on Maven Central (HTTP $STATUS); publishing"
+            echo "publish=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Import GPG key
+        if: steps.gate.outputs.configured == 'true' && steps.probe.outputs.publish == 'true'
+        env:
+          GPG_PRIVATE_KEY: ${{ secrets.GPG_PRIVATE_KEY }}
+        run: |
+          echo "$GPG_PRIVATE_KEY" | gpg --batch --import
+          KEY_ID=$(gpg --list-secret-keys --with-colons | awk -F: '/^sec:/ {print $5; exit}')
+          [ -n "$KEY_ID" ] || { echo "failed to read the GPG key id"; exit 1; }
+          echo "GPG_KEYID=$KEY_ID" >> "$GITHUB_ENV"
+
+      - name: Setup Maven settings.xml
+        if: steps.gate.outputs.configured == 'true' && steps.probe.outputs.publish == 'true'
+        # Maven 3.9 interpolates these bare placeholders from the environment.
+        run: |
+          mkdir -p ~/.m2
+          cat > ~/.m2/settings.xml <<'EOF'
+          <settings>
+              <servers>
+                  <server>
+                      <id>central</id>
+                      <username>${CENTRAL_TOKEN_USERNAME}</username>
+                      <password>${CENTRAL_TOKEN_PASSWORD}</password>
+                  </server>
+              </servers>
+          </settings>
+          EOF
+
+      - name: Publish to Maven Central
+        if: steps.gate.outputs.configured == 'true' && steps.probe.outputs.publish == 'true'
+        working-directory: "src/sdk/java/"
+        env:
+          CENTRAL_TOKEN_USERNAME: ${{ secrets.CENTRAL_TOKEN_USERNAME }}
+          CENTRAL_TOKEN_PASSWORD: ${{ secrets.CENTRAL_TOKEN_PASSWORD }}
+          MAVEN_GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
+        run: mvn --batch-mode deploy -Pcentral -DskipTests -Dgpg.keyname="$GPG_KEYID"

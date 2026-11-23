@@ -305,7 +305,7 @@ places:
 - `appmesh-auth.sh` / `appmesh-auth.ps1` render the Dex `grantTypes` without
   `"refresh_token"`, so no refresh tokens are issued or usable.
 
-Sessions then end at access-token expiry (15 minutes): the CLI reports
+Sessions then end at access-token expiry (30 minutes): the CLI reports
 "session expired, run 'appm logon' again" instead of attempting a refresh.
 Issuing a token set with `user-token --with-refresh` fails fast in this
 configuration, and a built-in SDK refresh-token provider pointed at this
@@ -380,7 +380,7 @@ export APPMESH_BEARER_TOKEN=$(sudo /opt/appmesh/script/appmesh-auth.sh automatio
 - The principal carries the `appmesh-maintenance` role (4 permissions; see
   [Roles](#roles)). Application registration and `run_task` return `403`.
 - Available only on the built-in authentication **owner** node.
-- Access tokens live 15 minutes, so refresh them periodically. The packaged
+- Access tokens live 30 minutes, so refresh them periodically. The packaged
   Prometheus stack re-mints every 5 minutes.
 
 ### Token set — access + refresh token (long-running SDK processes)
@@ -391,7 +391,7 @@ scope and the whole grant response is printed as JSON:
 
 ```shell
 echo 'your-password' | sudo /opt/appmesh/script/appmesh-auth.sh user-token --with-refresh
-# {"access_token":"...","refresh_token":"...","expires_in":900,"token_type":"Bearer"}
+# {"access_token":"...","refresh_token":"...","expires_in":1799,"token_type":"Bearer"}
 ```
 
 Without the flag the output is unchanged (access token only). The command
@@ -483,7 +483,7 @@ not enough for `appm loginfo`; it exits nonzero without a session file.
 `AppMeshClient` accepts a `bearer_token` or a `token_provider`. The built-in
 `PasswordGrantProvider` runs the password grant inside the SDK: it mints an
 access token on first use, re-mints shortly before expiry (the access token
-lives only 15 minutes), and re-authenticates once after an Engine 401. With
+lives only 30 minutes), and re-authenticates once after an Engine 401. With
 `password_file` the file is re-read on every grant, so a password rotation
 takes effect without a process restart:
 
@@ -558,7 +558,7 @@ OAuth clients defined in `src/apps/identity/dex.yaml`:
 
 | Item | Value |
 | --- | --- |
-| Access token | 15 minutes (JWT `exp - iat` = 900 seconds) |
+| Access token | 30 minutes (JWT `exp - iat` = 1800 seconds; the grant response reports `expires_in: 1799`) |
 | Signing keys | 6 hours |
 | Refresh token | Rotates on every use; `reuseInterval: 5m`; idle expiry `validIfNotUsedFor: 168h`; absolute cap `absoluteLifetime: 168h` (configurable via `oidc.yaml` `refresh_token_max_lifetime`) — rotation does not extend it |
 

@@ -170,7 +170,7 @@ Agents are just managed Apps: the same RBAC, scheduling, secrets, health checks,
 | CLI       | [`appm` command reference](https://app-mesh.readthedocs.io/en/latest/CLI.html)                                                                                                                                                                                                                           |
 | REST      | [REST APIs](https://app-mesh.readthedocs.io/en/latest/RESTAPI.html) · [OpenAPI spec](https://petstore.swagger.io/?url=https://raw.githubusercontent.com/laoshanxi/app-mesh/main/src/daemon/rest/openapi.yaml)                                                                              |
 | Web GUI   | [app-mesh-ui](https://github.com/laoshanxi/app-mesh-ui)                                                                                                                                                                                                                                                  |
-| SDKs      | [Python](https://app-mesh.readthedocs.io/en/latest/api/appmesh.html#module-appmesh.client_http) · [Golang](src/sdk/go/client_http.go) · [Rust](src/sdk/rust) · [Java](https://github.com/laoshanxi/app-mesh/packages/2227502) · [JavaScript](https://www.npmjs.com/package/appmesh) |
+| SDKs      | [Python](https://app-mesh.readthedocs.io/en/latest/api/appmesh.html#module-appmesh.client_http) · [Golang](src/sdk/go/README.md) · [Rust](src/sdk/rust) · [Java](src/sdk/java/README.md) · [JavaScript](https://www.npmjs.com/package/appmesh) |
 
 ## 💡 Success Stories
 

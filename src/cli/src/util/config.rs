@@ -97,15 +97,38 @@ fn app_dir_name() -> &'static str {
 }
 
 pub fn config_dir() -> PathBuf {
-    let base = dirs::config_dir().unwrap_or_else(|| PathBuf::from("."));
+    resolve_config_dir(state_root().as_deref())
+}
+
+fn session_dir() -> PathBuf {
+    resolve_session_dir(state_root().as_deref())
+}
+
+/// The CLI state root override: a non-empty APPMESH_HOME holds the config and
+/// OAuth session directories itself instead of sharing the OS locations, so
+/// parallel operators on one OS account get real session isolation.
+fn state_root() -> Option<PathBuf> {
+    std::env::var(ENV_HOME).ok().map(|value| value.trim().to_string()).filter(|value| !value.is_empty()).map(PathBuf::from)
+}
+
+/// Keep the on-disk layout under the chosen base: the app-named directory with
+/// the config file inside it, and the `oauth` leaf for sessions.
+fn resolve_config_dir(state_root: Option<&Path>) -> PathBuf {
+    let base = match state_root {
+        Some(root) => root.to_path_buf(),
+        None => dirs::config_dir().unwrap_or_else(|| PathBuf::from(".")),
+    };
     let dir = base.join(app_dir_name());
     let _ = std::fs::create_dir_all(&dir);
     set_mode(&dir, 0o700);
     dir
 }
 
-fn session_dir() -> PathBuf {
-    let base = dirs::data_local_dir().unwrap_or_else(|| PathBuf::from("."));
+fn resolve_session_dir(state_root: Option<&Path>) -> PathBuf {
+    let base = match state_root {
+        Some(root) => root.to_path_buf(),
+        None => dirs::data_local_dir().unwrap_or_else(|| PathBuf::from(".")),
+    };
     let dir = base.join(app_dir_name()).join("oauth");
     let _ = std::fs::create_dir_all(&dir);
     set_mode(&dir, 0o700);
@@ -118,11 +141,16 @@ pub struct StoredSession {
     pub engine_endpoint: String,
     pub oauth: OAuthConfig,
     pub tokens: TokenSet,
+    /// The signed-in principal's display name (or shortened principal id), so a
+    /// logon can name the session it displaces. Sessions written before this
+    /// field existed, and writers that cannot know it, carry `None`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub principal: Option<String>,
 }
 
 impl StoredSession {
-    pub fn new(engine_endpoint: String, oauth: OAuthConfig, tokens: TokenSet) -> Self {
-        Self { version: 1, engine_endpoint, oauth, tokens }
+    pub fn new(engine_endpoint: String, oauth: OAuthConfig, tokens: TokenSet, principal: Option<String>) -> Self {
+        Self { version: 1, engine_endpoint, oauth, tokens, principal }
     }
 }
 
@@ -135,6 +163,10 @@ pub fn shell_history_path() -> PathBuf {
 }
 
 fn session_file(session: &StoredSession) -> PathBuf {
+    session_file_at(&session_dir(), session)
+}
+
+fn session_file_at(dir: &Path, session: &StoredSession) -> PathBuf {
     let material = format!(
         "{}\n{}\n{}\n{}",
         session.engine_endpoint,
@@ -144,17 +176,27 @@ fn session_file(session: &StoredSession) -> PathBuf {
     );
     let digest = Sha256::digest(material.as_bytes());
     let name = digest.iter().map(|byte| format!("{:02x}", byte)).collect::<String>();
-    session_dir().join(format!("{}.json", name))
+    dir.join(format!("{}.json", name))
 }
 
 /// Atomically persist a complete token set and its issuer/client/audience binding.
 /// Refresh tokens remain in this CLI-owned file and are never copied to the Engine.
 pub fn save_session(session: &StoredSession) -> Result<()> {
-    let dir = session_dir();
-    ensure_private_directory(&dir)?;
-    let path = session_file(session);
+    save_session_in(&session_dir(), session)
+}
+
+fn save_session_in(dir: &Path, session: &StoredSession) -> Result<()> {
+    ensure_private_directory(dir)?;
+    // Read the victims before the write below supersedes them: a logon that
+    // displaces a different principal for this endpoint was the silent
+    // identity-swap foot-gun, so name what it replaces.
+    let displaced = displaced_principals(dir, session);
+    if let Some(notice) = replacement_notice(&session.engine_endpoint, &displaced, session.principal.as_deref()) {
+        eprintln!("{}", notice);
+    }
+    let path = session_file_at(dir, session);
     let bytes = serde_json::to_vec_pretty(session).context("serialize OAuth session")?;
-    let mut temp = tempfile::NamedTempFile::new_in(&dir).context("create OAuth session file")?;
+    let mut temp = tempfile::NamedTempFile::new_in(dir).context("create OAuth session file")?;
     set_mode_result(temp.path(), 0o600)?;
     temp.write_all(&bytes).context("write OAuth session")?;
     temp.write_all(b"\n").context("write OAuth session terminator")?;
@@ -162,11 +204,11 @@ pub fn save_session(session: &StoredSession) -> Result<()> {
     temp.persist(&path).map_err(|error| error.error).context("install OAuth session")?;
     set_mode_result(&path, 0o600)?;
     #[cfg(unix)]
-    std::fs::File::open(&dir).and_then(|directory| directory.sync_all()).context("sync OAuth session directory")?;
+    std::fs::File::open(dir).and_then(|directory| directory.sync_all()).context("sync OAuth session directory")?;
 
     // Exactly one active OAuth identity is selected per Engine endpoint. Remove stale
     // profiles only after the new session is durable.
-    for entry in std::fs::read_dir(&dir).context("list OAuth sessions")? {
+    for entry in std::fs::read_dir(dir).context("list OAuth sessions")? {
         let entry = entry?;
         let candidate = entry.path();
         if candidate == path || candidate.extension().and_then(|value| value.to_str()) != Some("json") {
@@ -179,6 +221,44 @@ pub fn save_session(session: &StoredSession) -> Result<()> {
         }
     }
     Ok(())
+}
+
+/// Principals of the stored sessions for this endpoint that this write is
+/// about to supersede. Unreadable files have no name to report and are skipped.
+fn displaced_principals(dir: &Path, session: &StoredSession) -> Vec<String> {
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return Vec::new();
+    };
+    let mut principals = Vec::new();
+    for entry in entries.flatten() {
+        let candidate = entry.path();
+        if candidate.extension().and_then(|value| value.to_str()) != Some("json") {
+            continue;
+        }
+        if let Ok(existing) = read_session_file(&candidate) {
+            if existing.engine_endpoint == session.engine_endpoint {
+                if let Some(previous) = existing.principal {
+                    if !principals.contains(&previous) {
+                        principals.push(previous);
+                    }
+                }
+            }
+        }
+    }
+    principals
+}
+
+/// The one-line notice for a write that displaces a stored session of another
+/// principal at the same endpoint; None when nothing is being displaced.
+fn replacement_notice(endpoint: &str, displaced: &[String], current: Option<&str>) -> Option<String> {
+    let mut replaced: Vec<&str> = Vec::new();
+    for previous in displaced {
+        if Some(previous.as_str()) != current && !replaced.contains(&previous.as_str()) {
+            replaced.push(previous.as_str());
+        }
+    }
+    (!replaced.is_empty())
+        .then(|| format!("Notice: this sign-in replaces the stored session of {} for {}.", replaced.join(", "), endpoint))
 }
 
 pub fn load_session(engine_endpoint: &str) -> Result<Option<StoredSession>> {
@@ -839,6 +919,7 @@ mod tests {
                 token_type: "Bearer".into(),
                 scope: None,
             },
+            None,
         )
     }
 
@@ -910,6 +991,87 @@ mod tests {
             std::fs::set_permissions(&broken, std::fs::Permissions::from_mode(0o600)).expect("restrict broken session");
         }
         assert!(load_session_from(dir.path(), "wss://engine:6058").is_err());
+    }
+
+    #[test]
+    fn state_root_overrides_the_cli_state_dirs() {
+        // Without the override the OS locations keep the existing layout.
+        if let Some(base) = dirs::config_dir() {
+            assert_eq!(resolve_config_dir(None), base.join(app_dir_name()));
+        }
+        if let Some(base) = dirs::data_local_dir() {
+            assert_eq!(resolve_session_dir(None), base.join(app_dir_name()).join("oauth"));
+        }
+        // APPMESH_HOME becomes the state root with the same layout inside it.
+        let home = PathBuf::from("/opt/operator-home");
+        assert_eq!(resolve_config_dir(Some(&home)), home.join(app_dir_name()));
+        assert_eq!(resolve_session_dir(Some(&home)), home.join(app_dir_name()).join("oauth"));
+    }
+
+    fn principal_session(endpoint: &str, principal: &str) -> StoredSession {
+        let mut session = test_session(endpoint);
+        session.principal = Some(principal.to_string());
+        session
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn save_supersedes_the_endpoint_and_secures_the_files() {
+        let dir = tempfile::tempdir().expect("create session directory");
+        let mut first = principal_session("wss://engine:6058", "admin@appmesh.local");
+        // A different issuer hashes to a different file at the same endpoint.
+        first.oauth = OAuthConfig::new("https://other-auth", "https://other-auth", "appmesh-cli");
+        save_session_in(dir.path(), &first).expect("save first profile");
+
+        let second = principal_session("wss://engine:6058", "admin@appmesh.local");
+        save_session_in(dir.path(), &second).expect("save second profile");
+
+        // Exactly one session remains for the endpoint, and the private modes hold.
+        let loaded = load_session_from(dir.path(), "wss://engine:6058").expect("load surviving session");
+        let loaded = loaded.expect("one session survives the supersede");
+        assert_eq!(loaded.principal.as_deref(), Some("admin@appmesh.local"));
+        use std::os::unix::fs::PermissionsExt;
+        let json_count = std::fs::read_dir(dir.path())
+            .expect("list sessions")
+            .filter_map(|entry| entry.ok())
+            .filter(|entry| entry.path().extension().and_then(|value| value.to_str()) == Some("json"))
+            .count();
+        assert_eq!(json_count, 1, "the superseded profile must be removed");
+        let file = session_file_at(dir.path(), &loaded);
+        let mode = std::fs::metadata(&file).expect("session file metadata").permissions().mode() & 0o777;
+        assert_eq!(mode, 0o600, "session files stay owner-only");
+        let dir_mode = std::fs::metadata(dir.path()).expect("session dir metadata").permissions().mode() & 0o777;
+        assert_eq!(dir_mode, 0o700, "the session directory stays owner-only");
+    }
+
+    #[test]
+    fn replacement_notice_names_only_other_principals() {
+        let notice_for = |displaced: &[&str], current: Option<&str>| {
+            replacement_notice(
+                "wss://engine:6058",
+                &displaced.iter().map(|name| name.to_string()).collect::<Vec<_>>(),
+                current,
+            )
+        };
+        // Displacing another principal is exactly the silent swap to surface.
+        let notice = notice_for(&["admin@appmesh.local"], Some("guest@appmesh.local")).expect("must notice the swap");
+        assert!(notice.contains("admin@appmesh.local"), "the replaced principal must be named: {}", notice);
+        assert!(notice.contains("wss://engine:6058"));
+        // Re-logging on as the same principal replaces nothing worth reporting.
+        assert!(notice_for(&["guest@appmesh.local"], Some("guest@appmesh.local")).is_none());
+        assert!(notice_for(&[], Some("guest@appmesh.local")).is_none());
+        // An unnamed current principal must still warn about the one displaced.
+        let notice = notice_for(&["admin@appmesh.local"], None).expect("unknown principal still displaces");
+        assert!(notice.contains("admin@appmesh.local"));
+        // Several displaced profiles are named once, on one line.
+        let notice = notice_for(
+            &["admin@appmesh.local", "viewer@appmesh.local", "admin@appmesh.local"],
+            Some("guest@appmesh.local"),
+        )
+        .expect("must notice the swap");
+        assert_eq!(notice.matches("admin@appmesh.local").count(), 1, "duplicates collapse: {}", notice);
+        assert!(notice.contains("viewer@appmesh.local"));
+        assert!(!notice.contains('\n'), "the notice stays on one line");
     }
 
     #[test]

@@ -691,7 +691,9 @@ func (r *AppMeshClient) RunAppSyncChecked(app Application, maxTime int, lifecycl
 // UploadFile uploads a local file to the remote server.
 // When applyFileAttributes is true, local POSIX mode/owner/group metadata is sent in headers
 // so the server can recreate permissions when supported.
-func (r *AppMeshClient) UploadFile(localFile, remoteFile string, applyFileAttributes bool) error {
+// Optional UploadOptions replace an existing remote file; without them an
+// existing destination answers 409 Conflict.
+func (r *AppMeshClient) UploadFile(localFile, remoteFile string, applyFileAttributes bool, opts ...UploadOptions) error {
 	// Default the remote filename to the local file's base name when omitted.
 	if remoteFile == "" {
 		remoteFile = filepath.Base(localFile)
@@ -708,6 +710,7 @@ func (r *AppMeshClient) UploadFile(localFile, remoteFile string, applyFileAttrib
 
 	// Plain-HTTP transport: POST streams the raw file bytes as the body.
 	headers := map[string]string{headerFilePath: escapeRemoteFilePath(remoteFile)}
+	applyUploadOptions(headers, opts)
 	// POSIX metadata headers; the server recreates permissions and ownership.
 	if applyFileAttributes {
 		attrs, err := fileAttributes(localFile)

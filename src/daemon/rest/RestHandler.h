@@ -69,6 +69,7 @@ protected:
 	void apiAgentContainerEvent(const std::shared_ptr<HttpRequest> &message);
 	void apiWorkflowCleanupOrphans(const std::shared_ptr<HttpRequest> &message);
 	void apiWorkflowRegistry(const std::shared_ptr<HttpRequest> &message);
+	void apiWorkflowSecret(const std::shared_ptr<HttpRequest> &message);
 	void apiEnrollFirstAdmin(const std::shared_ptr<HttpRequest> &message);
 
 	void apiAppView(const std::shared_ptr<HttpRequest> &message);

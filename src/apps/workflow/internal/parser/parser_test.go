@@ -162,6 +162,67 @@ jobs:
 	}
 }
 
+// A bare trigger key (`workflow_call:` with no value) is GitHub Actions'
+// "callable with no inputs" form: it must register as callable, not be dropped
+// as a null trigger. A genuinely absent workflow_call stays absent (not
+// callable), and a bare manual key stays dispatchable.
+func TestBareWorkflowCallTriggerIsCallable(t *testing.T) {
+	path := writeTmp(t, `
+name: callee-bare
+on:
+  workflow_call:
+jobs:
+  j:
+    steps:
+      - name: s
+        command: echo
+`)
+	wf, err := LoadWorkflow(path)
+	if err != nil {
+		t.Fatalf("bare workflow_call must parse: %v", err)
+	}
+	if wf.On == nil || wf.On.WorkflowCall == nil {
+		t.Fatalf("bare workflow_call must yield a non-nil trigger, got %+v", wf.On)
+	}
+	if len(wf.On.WorkflowCall.Inputs) != 0 {
+		t.Errorf("bare workflow_call must carry no inputs, got %+v", wf.On.WorkflowCall.Inputs)
+	}
+
+	bareManual := writeTmp(t, `
+name: bare-manual
+on:
+  manual:
+jobs:
+  j:
+    steps:
+      - name: s
+        command: echo
+`)
+	wf, err = LoadWorkflow(bareManual)
+	if err != nil {
+		t.Fatalf("bare manual must parse: %v", err)
+	}
+	if wf.On == nil || wf.On.Manual == nil {
+		t.Fatalf("bare manual must yield a non-nil trigger, got %+v", wf.On)
+	}
+
+	noTrigger := writeTmp(t, `
+name: no-trigger
+jobs:
+  j:
+    steps:
+      - name: s
+        command: echo
+`)
+	wf, err = LoadWorkflow(noTrigger)
+	if err != nil {
+		t.Fatalf("no-trigger workflow must parse: %v", err)
+	}
+	if wf.On != nil && wf.On.WorkflowCall != nil {
+		t.Fatal("an absent workflow_call must stay absent (not callable)")
+	}
+}
+
 func TestConcurrency(t *testing.T) {
 	path := writeTmp(t, `
 name: conc

@@ -346,7 +346,10 @@ int Utility::openFileWithinJail(const std::string &filePath, bool forWrite, cons
 						   forWrite ? (_O_WRONLY | _O_CREAT | _O_EXCL | _O_BINARY) : (_O_RDONLY | _O_BINARY),
 						   _S_IREAD | _S_IWRITE);
 	if (fd < 0)
+	{
+		LOG_ERR << fname << "Failed to open <" << filePath << ">: " << last_error_msg();
 		return -1;
+	}
 	resolvedOut = filePath;
 	struct _stat st
 	{
@@ -384,13 +387,23 @@ int Utility::openFileWithinJail(const std::string &filePath, bool forWrite, cons
 	{
 		fd = ::open(filePath.c_str(), O_RDONLY | O_CLOEXEC);
 		if (fd < 0)
+		{
+			LOG_ERR << fname << "Failed to open <" << filePath << "> for reading: " << last_error_msg();
 			return -1;
+		}
 		struct stat st
 		{
 		};
-		if (::fstat(fd, &st) != 0 || !S_ISREG(st.st_mode))
+		if (::fstat(fd, &st) != 0)
+		{
+			LOG_ERR << fname << "Failed to stat <" << filePath << ">: " << last_error_msg();
+			::close(fd);
+			return -1;
+		}
+		if (!S_ISREG(st.st_mode))
 		{
 			// Directories (and anything non-regular) are not transferable payloads.
+			LOG_ERR << fname << "Not a regular file, refusing the transfer of <" << filePath << ">";
 			::close(fd);
 			return -1;
 		}

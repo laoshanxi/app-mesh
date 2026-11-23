@@ -29,3 +29,5 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 Used by the following dependencies:
   - uriparser (Copyright (c) uriparser contributors)
+  - Trantor (Copyright (c) Tao An; Copyright (c) Shuo Chen)
+  - libuuid (Copyright (c) Theodore Ts'o; Linux packages)

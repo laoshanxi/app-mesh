@@ -2,10 +2,12 @@
 
 Large-model services produce output continuously and often accept input
 continuously. App Mesh serves those workloads with three streaming
-primitives on the engine's native HTTPS listener (the WSS/CLI port,
-default 6058; behind the web UI's reverse proxy, 443), so any HTTP
-client — `curl`, a browser `fetch`, an OpenAI-style consumer — receives
-tokens as they are produced:
+primitives, so any HTTP client — `curl`, a browser `fetch`, an
+OpenAI-style consumer — receives tokens as they are produced. The engine
+serves the two SSE routes on its native HTTPS listener (the WSS/CLI port,
+default 6058). The agent REST listener (6060) relays them for local
+requests, and the web UI's 443 reverse proxy passes them with response
+buffering off:
 
 | Primitive | Route | Purpose |
 |---|---|---|
@@ -13,12 +15,12 @@ tokens as they are produced:
 | Streaming task RPC | `POST /appmesh/app/{name}/task/stream` | Worker partials + final result over one call |
 | stdin injection | `POST /appmesh/app/{name}/input` | Drive a running process turn by turn |
 
-All three answer only on the engine's native listener (default wss/https
-6058) — the agent REST listener (6060) carries no streaming routes — and
-use the standard bearer authentication and the application permission
-model. The server pushes frames as `text/event-stream` (SSE); a comment
-line (`: ping`) arrives every 15 seconds as a keep-alive and disconnect
-probe.
+The SSE routes are native to the engine's HTTPS listener (default 6058)
+and the agent REST listener (6060) relays them for local requests; stdin
+injection is a plain POST that both listeners accept. All three use the
+standard bearer authentication and the application permission model. The
+server pushes frames as `text/event-stream` (SSE); a comment line
+(`: ping`) arrives every 15 seconds as a keep-alive and disconnect probe.
 
 ## Event contract
 
@@ -97,9 +99,9 @@ flushes one `partial` per assistant message, not per model token.
 
 Permission: `app-run-task` plus write access to the application. Framed
 transports cannot carry a chunked event stream (SDKs redirect these calls
-to a direct HTTPS side channel), and the agent REST listener (6060) has no
-streaming routes at all: streaming lives on the engine's native listener
-(6058).
+to a direct HTTPS side channel). The engine serves this route natively
+(6058); the agent REST listener (6060) relays it for local requests, but
+a request forwarded to another node (`X-Target-Host`) does not stream.
 
 ### Worker side
 
@@ -162,9 +164,11 @@ generator's return value is an `SseEnd` marker:
 ```python
 from appmesh import AppMeshClient
 
-# Streaming routes live on the engine's native listener (default wss/https
-# 6058) — the SDK's default base_url (the agent REST port 6060) has no
-# streaming routes, so point the client at the engine listener for these calls.
+# Streaming routes are native to the engine listener (default wss/https
+# 6058) and relayed by the agent REST listener (the SDK's default
+# base_url, port 6060) for local requests. Streams do not traverse
+# X-Target-Host forwarding, so point the client at the target engine
+# listener for a forwarded target.
 client = AppMeshClient("https://127.0.0.1:6058", bearer_token=TOKEN)
 
 # 1) stream a one-shot run
@@ -194,10 +198,11 @@ wait/subscribe APIs for now.
 
 ## Limits and scope
 
-- Streams do not traverse node forwarding (`X-Target-Host`), and the agent
-  REST listener (6060) carries no streaming routes; connect to the target
-  node's engine listener directly (wss/https, default 6058; via the web
-  UI, 443).
+- The agent REST listener (6060) relays streams for local requests only;
+  streams do not traverse node forwarding (`X-Target-Host`), so connect to
+  the target node's engine listener directly (wss/https, default 6058) for
+  a forwarded target. The web UI's 443 reverse proxy passes streaming
+  responses with response buffering off.
 - Browser `EventSource` cannot set an `Authorization` header; use `fetch`
   with a ReadableStream reader for bearer-authenticated streams.
 - An SSE replay covers the current run only; rotated stdout files keep

@@ -261,3 +261,50 @@ func TestApplyPlainSkipsCA(t *testing.T) {
 		t.Fatal("plain mode must not touch InsecureSkipVerify")
 	}
 }
+
+// TestRESTPortResolvesEffectiveConfig pins the local Engine REST entry: the
+// native WebSocketPort listener when enabled, else the agent RestListenPort;
+// APPMESH_REST_<Key> overrides win, and an existing config without the port
+// keys mirrors the daemon's parsed zero values.
+func TestRESTPortUsesAppMeshHomeWhenConfigRootUnset(t *testing.T) {
+	home := writeDaemonConfig(t, filepath.Join("work", "config", "config.yaml"),
+		"REST:\n  WebSocketPort: 0\n  RestListenPort: 7070\n")
+	t.Setenv(EnvConfigRoot, "")
+	t.Setenv("APPMESH_HOME", home)
+	t.Setenv(EnvWebSocketPort, "")
+	t.Setenv(EnvRestListenPort, "")
+	if got := RESTPort(); got != 7070 {
+		t.Fatalf("RESTPort() = %d, want 7070 from $APPMESH_HOME/work/config/config.yaml", got)
+	}
+}
+
+func TestRESTPortResolvesEffectiveConfig(t *testing.T) {
+	cases := []struct {
+		name    string
+		config  string
+		wsEnv   string
+		restEnv string
+		want    int
+	}{
+		{"no config uses shipped defaults", "", "", "", 6058},
+		{"native listener from config", "REST:\n  WebSocketPort: 7058\n  RestListenPort: 7060\n", "", "", 7058},
+		{"disabled native listener falls back to agent", "REST:\n  WebSocketPort: 0\n  RestListenPort: 7060\n", "", "", 7060},
+		{"absent keys mirror daemon zeros", "REST:\n  SSL:\n    SSLEnabled: true\n", "", "", 6060},
+		{"out-of-range agent port defaults", "REST:\n  WebSocketPort: 0\n  RestListenPort: 80\n", "", "", 6060},
+		{"env native port overrides config", "REST:\n  WebSocketPort: 7058\n  RestListenPort: 7060\n", "7090", "", 7090},
+		{"env agent port used when native disabled", "REST:\n  WebSocketPort: 0\n  RestListenPort: 7060\n", "", "7091", 7091},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Setenv(EnvConfigRoot, t.TempDir())
+			if tc.config != "" {
+				t.Setenv(EnvConfigRoot, writeDaemonConfig(t, filepath.Join("work", "config", "config.yaml"), tc.config))
+			}
+			t.Setenv(EnvWebSocketPort, tc.wsEnv)
+			t.Setenv(EnvRestListenPort, tc.restEnv)
+			if got := RESTPort(); got != tc.want {
+				t.Fatalf("RESTPort() = %d, want %d", got, tc.want)
+			}
+		})
+	}
+}

@@ -94,6 +94,17 @@ If authentication discovery fails while the stored access token is still valid, 
 
 For scripts and CI, set the `APPMESH_BEARER_TOKEN` environment variable. The CLI uses this token as-is until it expires. There is no refresh token and no local session. Run `appm logon` for interactive use.
 
+### State directory
+
+By default the CLI keeps its configuration in the operating system configuration directory and its OAuth sessions in the operating system data directory. A non-empty `APPMESH_HOME` replaces both as the state root:
+
+- Configuration file: `$APPMESH_HOME/AppMesh/.appmesh.config`
+- OAuth sessions: `$APPMESH_HOME/AppMesh/oauth`
+
+On Linux the application directory is `appmesh` in lower case.
+
+The override isolates operators that share one operating system account. Sessions in the operating system directories are not visible under an override, so run `appm logon` once for each state root. The state root must be writable by your user. Do not point `APPMESH_HOME` at a root-owned installation tree such as `/opt/appmesh`: a non-root operator cannot create the state directories there, and the command fails.
+
 ## Commands
 
 ```text
@@ -168,14 +179,16 @@ appm run --cmd 'uname -a' --shell
 appm exec -- uname -a
 appm shell
 
-appm get --remote /opt/appmesh/work/server.log --local ./server.log
-appm put --local ./input.txt --remote /tmp/input.txt
-appm put --local ./input.txt --remote /tmp/input.txt --overwrite
-appm rmfile --remote /tmp/input.txt
+appm get --remote /opt/appmesh/work/tmp/server.log --local ./server.log
+appm put --local ./input.txt --remote /opt/appmesh/work/tmp/input.txt
+appm put --local ./input.txt --remote /opt/appmesh/work/tmp/input.txt --overwrite
+appm rmfile --remote /opt/appmesh/work/tmp/input.txt
 appm resource
 appm metric
 ```
 
 `get` and `put` transfer the file content only. Add `--apply-permissions` to apply the remote POSIX permissions and ownership on download, or to send the local permissions and ownership on upload. `put` refuses an existing remote file with `409`; add `--overwrite` to replace it. `rmfile` removes one remote file.
+
+File transfers work only inside the file jail. With the packaged defaults the exchangeable area is `/opt/appmesh/work/tmp`; every path outside it answers `403 File path is not allowed`. The full jail rules, including how `REST.FileAllowedBaseDir` widens the area, are in [REST API](RESTAPI.md#files-labels-and-configuration).
 
 See [Deployment](Install.md) for installation procedures. See [Security](Security.md) for the security model. See [SDK Behavioral Contract](SDKContract.md) for SDK behavior.

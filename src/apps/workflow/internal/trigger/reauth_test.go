@@ -5,8 +5,11 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"net/http/httptest"
 	"slices"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -126,6 +129,55 @@ func TestCooldownDoesNotResetScanFailCounter(t *testing.T) {
 	s.refreshControlCapability("suppressed by cooldown")
 	if s.scanFails != 2 {
 		t.Fatalf("a suppressed attempt must leave the counter alone, got %d", s.scanFails)
+	}
+}
+
+// The scan goroutine and task-RPC handlers can observe 401s at the same time.
+// The shared bookkeeping must be race-free and the capability refresh
+// single-flight, so concurrent rejections do not each hit the Engine.
+func TestScanAndControlCapabilityRejectedConcurrent(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusUnauthorized)
+	}))
+	defer srv.Close()
+
+	client, err := appmesh.NewHTTPClient(appmesh.Option{AppMeshURI: srv.URL})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var (
+		refreshes atomic.Int32
+		inFlight  atomic.Int32
+		overlaps  atomic.Int32
+	)
+	s := &Service{
+		client:   client,
+		registry: NewRegistry(),
+		refreshControl: func(context.Context) error {
+			if inFlight.Add(1) > 1 {
+				overlaps.Add(1)
+			}
+			time.Sleep(2 * time.Millisecond)
+			inFlight.Add(-1)
+			refreshes.Add(1)
+			return nil
+		},
+	}
+
+	var wg sync.WaitGroup
+	for i := 0; i < 8; i++ {
+		wg.Add(2)
+		go func() { defer wg.Done(); s.scan() }()
+		go func() { defer wg.Done(); s.ControlCapabilityRejected() }()
+	}
+	wg.Wait()
+
+	if refreshes.Load() == 0 {
+		t.Fatal("a rejected capability must trigger a refresh")
+	}
+	if overlaps.Load() != 0 {
+		t.Fatalf("%d refresh calls reached the Engine concurrently, want single-flight", overlaps.Load())
 	}
 }
 

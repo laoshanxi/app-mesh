@@ -5,7 +5,8 @@ mod output;
 mod util;
 
 use anyhow::Result;
-use app::{Cli, Commands};
+use app::{Cli, Commands, WorkflowCommand};
+use appmesh::AppMeshError;
 use clap::Parser;
 use std::process;
 
@@ -20,7 +21,7 @@ async fn main() {
         log::set_max_level(log::LevelFilter::Debug);
     }
 
-    let code = match run(&cli).await {
+    let code = match run_with_session_recovery(&cli).await {
         Ok(code) => code,
         Err(e) => {
             let msg = extract_error_message(&e);
@@ -45,6 +46,72 @@ fn is_error_tolerant_mode(cli: &Cli) -> bool {
         Commands::View(args) => args.follow && args.app.is_some(),
         _ => false,
     }
+}
+
+/// Run a command once; when a read-only command is rejected with a 401, attempt
+/// one token refresh and, if that renewed the session, retry once. A command
+/// that changes state is never replayed. A dead refresh grant tears the stored
+/// session down and reports the logon hint instead of the bare "401" the
+/// command produced.
+async fn run_with_session_recovery(cli: &Cli) -> Result<i32> {
+    match run(cli).await {
+        Err(error) if session_recovery_applies(&cli.command, &error) => {
+            match client::recover_session_after_unauthorized(cli).await {
+                Ok(true) => run(cli).await,
+                Err(session_error) => Err(session_error),
+                Ok(false) => Err(error),
+            }
+        }
+        outcome => outcome,
+    }
+}
+
+/// Whole-command recovery replays the command from the start, so only commands
+/// that observe Engine state may use it: replaying a mutation repeats its side
+/// effects (a run script executes twice, a task is delivered twice, an upload is
+/// written again). Session-lifecycle commands and interactive shell are also
+/// excluded — logon must not restart its prompts, and a shell must not start
+/// over. When in doubt the command is not replayed.
+fn is_read_only_command(command: &Commands) -> bool {
+    match command {
+        Commands::Loginfo(_)
+        | Commands::View(_)
+        | Commands::Get(_)
+        | Commands::Config(_)
+        | Commands::Resource(_)
+        | Commands::Metric(_) => true,
+        // Workflow queries are task round-trips; only the read actions replay.
+        Commands::Workflow(args) => matches!(
+            args.command,
+            WorkflowCommand::Get(_)
+                | WorkflowCommand::List(_)
+                | WorkflowCommand::Runs(_)
+                | WorkflowCommand::Logs(_)
+                | WorkflowCommand::Output(_)
+                | WorkflowCommand::Detail(_)
+                | WorkflowCommand::Inputs(_)
+        ),
+        // A bare `label --view` lists; add/delete mutate and must not replay.
+        Commands::Label(args) => !args.add && !args.delete,
+        // Every other command changes state (logon/logoff, app lifecycle,
+        // run/exec/shell/task, file writes, log level, workflow mutations).
+        _ => false,
+    }
+}
+
+fn session_recovery_applies(command: &Commands, error: &anyhow::Error) -> bool {
+    is_read_only_command(command) && is_unauthorized(error)
+}
+
+/// Only a typed 401 status counts: error text mentioning "401" (server messages,
+/// connection errors) must not trigger a token refresh.
+fn is_unauthorized(error: &anyhow::Error) -> bool {
+    error.chain().any(|cause| {
+        matches!(
+            cause.downcast_ref::<AppMeshError>(),
+            Some(AppMeshError::RequestFailed { status, .. }) if status.as_u16() == 401
+        )
+    })
 }
 
 async fn run(cli: &Cli) -> Result<i32> {
@@ -140,5 +207,95 @@ mod tests {
         assert!(!is_error_tolerant_mode(&cli(&["ls", "-f"])));
         assert!(!is_error_tolerant_mode(&cli(&["view", "-a", "x"])));
         assert!(!is_error_tolerant_mode(&cli(&["config"])));
+    }
+
+    fn unauthorized_status(status: u16) -> AppMeshError {
+        AppMeshError::RequestFailed {
+            status: http::StatusCode::from_u16(status).expect("valid status"),
+            message: "WebSocket connect failed".into(),
+        }
+    }
+
+    #[test]
+    fn only_a_typed_401_status_triggers_recovery() {
+        // The 401 may sit anywhere in the context chain.
+        let chained = anyhow::Error::new(unauthorized_status(401)).context("Failed to list applications");
+        assert!(is_unauthorized(&chained));
+
+        // Another status, or plain text mentioning 401, must not refresh.
+        assert!(!is_unauthorized(&anyhow::Error::new(unauthorized_status(403))));
+        assert!(!is_unauthorized(&anyhow::Error::new(AppMeshError::ConnectionError(
+            "WebSocket connect failed: 401 Unauthorized".into()
+        ))));
+        assert!(!is_unauthorized(&anyhow::anyhow!("Engine rejected the access token: 401 Unauthorized")));
+    }
+
+    #[test]
+    fn read_only_commands_may_recover() {
+        let err = anyhow::Error::new(unauthorized_status(401));
+        // `view`/`view -f` only observe: a replay may reprint output but mutates
+        // nothing, so output follow and list watch may recover too.
+        for args in [
+            vec!["view"],
+            vec!["view", "-a", "x", "-f"],
+            vec!["view", "-f"],
+            vec!["loginfo"],
+            vec!["resource"],
+            vec!["metric"],
+            vec!["config"],
+            vec!["get", "-r", "/remote", "-l", "local"],
+            vec!["label", "--view"],
+            vec!["workflow", "list"],
+            vec!["workflow", "get", "wf"],
+            vec!["workflow", "runs", "wf"],
+            vec!["workflow", "logs", "-w", "wf", "RUN"],
+            vec!["workflow", "output", "-w", "wf", "RUN", "-j", "job", "-s", "step"],
+            vec!["workflow", "detail", "-w", "wf", "RUN"],
+            vec!["workflow", "inputs", "wf"],
+        ] {
+            assert!(session_recovery_applies(&cli(&args).command, &err), "{:?} may recover", args);
+        }
+    }
+
+    #[test]
+    fn state_changing_commands_never_replay() {
+        // A whole-command retry after a 401 would repeat the side effects:
+        // `run`/`exec` would execute the script twice, `task` would deliver the
+        // payload twice, and the app/file/workflow mutations would apply again.
+        let err = anyhow::Error::new(unauthorized_status(401));
+        for args in [
+            vec!["logon"],
+            vec!["logoff"],
+            vec!["shell"],
+            vec!["exec", "true"],
+            vec!["run", "-a", "x", "-c", "true"],
+            vec!["task", "app", "payload"],
+            vec!["add", "-a", "x", "-c", "y"],
+            vec!["rm", "-a", "x"],
+            vec!["enable", "-a", "x"],
+            vec!["disable", "-a", "x"],
+            vec!["restart", "-a", "x"],
+            vec!["put", "-r", "/remote", "-l", "local"],
+            vec!["rmfile", "-r", "/remote"],
+            vec!["log", "-L", "INFO"],
+            vec!["label", "-a", "-l", "k=v"],
+            vec!["label", "-d", "-l", "k"],
+            vec!["workflow", "add", "-f", "wf.yaml"],
+            vec!["workflow", "rm", "wf"],
+            vec!["workflow", "run", "wf"],
+            vec!["workflow", "cancel", "-w", "wf", "RUN"],
+            vec!["workflow", "rerun", "-w", "wf", "RUN"],
+        ] {
+            assert!(!session_recovery_applies(&cli(&args).command, &err), "{:?} must not replay", args);
+        }
+    }
+
+    #[test]
+    fn error_text_mentioning_401_never_recovers() {
+        // Even a read-only command must not replay on plain text that happens to
+        // contain "401"; only a typed 401 status proves the session was rejected.
+        let text = anyhow::anyhow!("Engine rejected the access token: 401 Unauthorized");
+        assert!(!session_recovery_applies(&cli(&["view"]).command, &text));
+        assert!(!session_recovery_applies(&cli(&["loginfo"]).command, &text));
     }
 }

@@ -529,6 +529,8 @@ public:
 #define PERMISSION_KEY_role_view "role-view"
 #define PERMISSION_KEY_permission_list "permission-list"
 #define PERMISSION_KEY_app_subscribe "app-subscribe"
+// Internal Workflow-controller operation; not a role permission.
+#define PERMISSION_KEY_workflow_secret "workflow-secret"
 
 namespace web
 {

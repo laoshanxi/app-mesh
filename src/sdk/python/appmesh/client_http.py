@@ -157,6 +157,7 @@ class AppMeshClient:
     _HTTP_HEADER_KEY_USER_AGENT = "User-Agent"
     _HTTP_HEADER_KEY_X_TARGET_HOST = "X-Target-Host"
     _HTTP_HEADER_KEY_X_FILE_PATH = "X-File-Path"
+    _HTTP_HEADER_KEY_X_FILE_OVERWRITE = "X-File-Overwrite"
     _HTTP_HEADER_KEY_X_FILE_MODE = "X-File-Mode"
     _HTTP_HEADER_KEY_X_FILE_USER = "X-File-User"
     _HTTP_HEADER_KEY_X_FILE_GROUP = "X-File-Group"
@@ -801,12 +802,19 @@ class AppMeshClient:
         finally:
             r.close()
 
-    def upload_file(self, local_file: str, remote_file: Optional[str] = None, preserve_permissions: bool = False) -> None:
+    def upload_file(
+        self,
+        local_file: str,
+        remote_file: Optional[str] = None,
+        preserve_permissions: bool = False,
+        overwrite: bool = False,
+    ) -> None:
         """Upload a local file (``remote_file`` defaults to the local file's basename).
 
         Plain-HTTP transport: POST streams the raw file bytes as the body; the
         agent proxy accepts the same route. ``preserve_permissions`` sends local
-        POSIX metadata so the server can recreate it.
+        POSIX metadata so the server can recreate it. ``overwrite`` replaces an
+        existing remote file; the default keeps the server's 409 refusal.
         """
         if not remote_file:
             remote_file = os.path.basename(local_file)
@@ -815,6 +823,8 @@ class AppMeshClient:
             raise FileNotFoundError(f"Local file not found: {local_file}")
 
         header = {self._HTTP_HEADER_KEY_X_FILE_PATH: parse.quote(remote_file)}
+        if overwrite:
+            header[self._HTTP_HEADER_KEY_X_FILE_OVERWRITE] = "true"
         if preserve_permissions:
             header.update(self._get_file_attributes(local_path))
 
@@ -911,8 +921,8 @@ class AppMeshClient:
         try:
             return self._request_http(method, path=path, query=query, body=body)
         except AppMeshRequestError as e:
-            # 404/405 on a streaming route almost always means base_url points at
-            # the agent REST listener, which carries no streaming routes — say so.
+            # 404/405 on a streaming route means the request reached neither the
+            # engine listener nor the agent's local relay — explain the routes.
             if e.status_code in (HTTPStatus.NOT_FOUND, HTTPStatus.METHOD_NOT_ALLOWED):
                 raise AppMeshRequestError(f"{e}{route_hint(e.status_code)}", e.status_code) from e
             raise
@@ -922,9 +932,10 @@ class AppMeshClient:
 
         Streaming counterpart of run_task(): the worker may push any number of partials
         (``worker.send_task_partial``) before its final reply, each yielded in order.
-        The streaming routes live on the engine's native listener (default wss/https
-        6058; via the web UI, 443) — a client left at the default ``base_url`` (the
-        agent REST listener, port 6060) has no streaming routes and gets 404/405.
+        The streaming routes are native to the engine listener (default wss/https
+        6058); the agent REST listener (the default ``base_url``, port 6060) relays
+        them for local requests. Streams do not traverse node forwarding
+        (``X-Target-Host``).
 
         Args:
             app_name: Name of the target application (as registered in App Mesh).
@@ -973,9 +984,9 @@ class AppMeshClient:
 
         Replays from ``stdout_position``, then (with ``follow=True``) yields live output
         until exit/removal/timeout; the server de-duplicates the replay/live boundary,
-        so no polling or position bookkeeping is needed here. Streaming routes are
-        served on the engine's native listener (default wss/https 6058; via the web
-        UI, 443) — not the agent REST listener on the default ``base_url`` port 6060
+        so no polling or position bookkeeping is needed here. The engine serves the
+        streaming routes natively (default wss/https 6058); the agent REST listener
+        on the default ``base_url`` (port 6060) relays them for local requests
         (see ``run_task_stream``).
 
         Args:
@@ -1027,8 +1038,9 @@ class AppMeshClient:
 
         Equivalent to run_app_async() + follow_output() + delete_app(); serves continuous-output
         processes (model inference, log producers) that the fully-buffered run_app_sync()
-        cannot show until completion. Like ``follow_output``, this needs the engine's
-        native listener (default wss/https 6058), not the agent REST listener 6060.
+        cannot show until completion. Like ``follow_output``, this uses the streaming
+        routes (engine-native 6058, relayed by the agent REST listener 6060 for local
+        requests).
 
         Args:
             app: An ``App`` instance or a shell command string (same contract as run_app_async).

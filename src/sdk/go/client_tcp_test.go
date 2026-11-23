@@ -2,19 +2,22 @@ package appmesh
 
 import (
 	"net"
+	"net/http"
 	"os"
 	"path/filepath"
 	"runtime"
+	"sync"
 	"testing"
 
 	"github.com/stretchr/testify/require"
+	"github.com/vmihailenco/msgpack/v5"
 )
 
 func TestAppmeshTCPFile(t *testing.T) {
-	client, err := NewTCPClient(Option{InsecureSkipVerify: true})
+	// Skip before dialing so offline runs skip instead of failing on connect.
+	token := requireBearerToken(t)
+	client, err := NewTCPClient(Option{InsecureSkipVerify: true, JWTToken: token})
 	require.Nil(t, err)
-
-	client.SetToken(requireBearerToken(t))
 
 	// With FileAllowedBaseDir unset the file API jails transfers to the daemon
 	// work tree, and inside it only work/tmp is exchangeable: upload to that
@@ -44,11 +47,11 @@ func TestAppmeshTCPFile(t *testing.T) {
 }
 
 func TestAppmeshTCPOperations(t *testing.T) {
-	client, err := NewTCPClient(Option{InsecureSkipVerify: true})
+	// Skip before dialing so offline runs skip instead of failing on connect.
+	token := requireBearerToken(t)
+	client, err := NewTCPClient(Option{InsecureSkipVerify: true, JWTToken: token})
 	require.NoError(t, err)
 	defer client.CloseConnection()
-
-	client.SetToken(requireBearerToken(t))
 
 	// 2. ListApps - verify count > 0
 	apps, err := client.ListApps()
@@ -150,4 +153,97 @@ func TestNewTCPClientPlainTransportSelection(t *testing.T) {
 	// Default mode dials TLS, so the same plaintext port fails the handshake.
 	_, err = NewTCPClient(Option{AppMeshURI: addr, InsecureSkipVerify: true})
 	require.Error(t, err, "TLS dial against a plaintext port must fail its handshake")
+}
+
+// startStaleFirstFrameServer accepts plaintext frames and records every
+// request. The first accepted connection closes right after reading its request
+// without replying (daemon idle-close); later connections answer 200.
+func startStaleFirstFrameServer(t *testing.T) (string, func() []Request) {
+	t.Helper()
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	require.NoError(t, err)
+	t.Cleanup(func() { ln.Close() })
+
+	var mu sync.Mutex
+	conns := 0
+	var seen []Request
+	go func() {
+		for {
+			conn, err := ln.Accept()
+			if err != nil {
+				return
+			}
+			mu.Lock()
+			conns++
+			first := conns == 1
+			mu.Unlock()
+			go func(conn net.Conn, first bool) {
+				defer conn.Close()
+				frame := readPipeFrame(conn)
+				if frame == nil {
+					return
+				}
+				var sent Request
+				if err := msgpack.Unmarshal(frame, &sent); err != nil {
+					return
+				}
+				mu.Lock()
+				seen = append(seen, sent)
+				mu.Unlock()
+				if first {
+					return
+				}
+				resp := &Response{UUID: sent.UUID, RequestURI: sent.RequestURI, HTTPStatus: http.StatusOK,
+					Body: []byte("{}"), Headers: map[string]string{}}
+				buf, err := resp.Serialize()
+				if err != nil {
+					return
+				}
+				writePipeFrame(conn, buf)
+			}(conn, first)
+		}
+	}()
+	return ln.Addr().String(), func() []Request {
+		mu.Lock()
+		defer mu.Unlock()
+		return append([]Request(nil), seen...)
+	}
+}
+
+// TestTCPRequesterRetriesIdempotentOnStaleConnection pins the direct-TCP
+// recovery rule: a GET that found its pooled connection closed by the daemon is
+// replayed once on a fresh connection.
+func TestTCPRequesterRetriesIdempotentOnStaleConnection(t *testing.T) {
+	addr, requests := startStaleFirstFrameServer(t)
+	client, err := NewTCPClient(Option{AppMeshURI: addr, PlainTransport: true, JWTToken: "test-token"})
+	require.NoError(t, err)
+	defer client.CloseConnection()
+
+	cfg, err := client.GetConfig()
+	require.NoError(t, err, "the retried GET must succeed on the fresh connection")
+	require.NotNil(t, cfg)
+
+	seen := requests()
+	require.Len(t, seen, 2, "a stale GET must be retried exactly once")
+	require.Equal(t, http.MethodGet, seen[0].HTTPMethod)
+	require.Equal(t, http.MethodGet, seen[1].HTTPMethod)
+	require.NotEqual(t, seen[0].UUID, seen[1].UUID, "the retry must use a fresh request UUID")
+}
+
+// TestTCPRequesterDoesNotReplayNonIdempotent pins the other half of the rule: a
+// POST that may already have executed is never replayed.
+func TestTCPRequesterDoesNotReplayNonIdempotent(t *testing.T) {
+	addr, requests := startStaleFirstFrameServer(t)
+	client, err := NewTCPClient(Option{AppMeshURI: addr, PlainTransport: true, JWTToken: "test-token"})
+	require.NoError(t, err)
+	defer client.CloseConnection()
+
+	_, err = client.SetConfig(map[string]interface{}{
+		"BaseConfig": map[string]interface{}{"LogLevel": "INFO"},
+	})
+	require.Error(t, err, "the lost POST reply must surface as an error")
+
+	seen := requests()
+	require.Len(t, seen, 1, "a POST must never be replayed")
+	require.Equal(t, http.MethodPost, seen[0].HTTPMethod)
 }

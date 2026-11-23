@@ -27,6 +27,10 @@ type ResponseMessage struct {
 	Message string `json:"message"`
 }
 
+// tempDirBase is the root of the agent's transfer staging directory; a var so
+// tests can redirect it to a scratch directory.
+var tempDirBase = config.GetAppMeshHomeDir()
+
 // readResponseFromConn reads and parses a new response from the connection
 func readResponseFromConn(conn *Connection) (*Response, error) {
 	data, err := conn.ReadMessage()
@@ -67,7 +71,7 @@ func (r *Response) downloadFileFromConn(conn *Connection, encodedPath string) er
 		return fmt.Errorf("decode base64 path: %w", err)
 	}
 
-	r.TempDownloadFilePath = path.Join(config.GetAppMeshHomeDir(), config.WorkDirName, config.TmpDirName, r.UUID)
+	r.TempDownloadFilePath = path.Join(tempDirBase, config.WorkDirName, config.TmpDirName, r.UUID)
 	remoteFile := string(bytes)
 
 	logger.Infof("Downloading remote file <%s> to local file <%s>", remoteFile, r.TempDownloadFilePath)
@@ -88,7 +92,13 @@ func (r *Response) prepareFileUpload(encodedPath string) error {
 		return fmt.Errorf("decode base64 path: %w", err)
 	}
 
-	r.TempUploadFilePath = path.Join(config.GetAppMeshHomeDir(), config.WorkDirName, config.TmpDirName, r.UUID)
+	r.TempUploadFilePath = path.Join(tempDirBase, config.WorkDirName, config.TmpDirName, r.UUID)
+	// The staging temp lives under work/tmp; create it so a fresh install
+	// (or a cleaned work dir) cannot break the transfer at handoff.
+	if err := os.MkdirAll(path.Dir(r.TempUploadFilePath), 0700); err != nil {
+		return fmt.Errorf("prepare temp dir: %w", err)
+	}
+
 	remoteFile := string(bytes)
 
 	logger.Debugf("Preparing to upload local file <%s> to remote file <%s>", r.TempUploadFilePath, remoteFile)
@@ -127,8 +137,10 @@ func (r *Response) readFileFromConn(conn *Connection, targetFilePath string) err
 	return bufWriter.Flush()
 }
 
-// writeToHTTPResponse applies the response to the HTTP response writer
-func (r *Response) writeToHTTPResponse(w http.ResponseWriter, req *http.Request) {
+// writeToHTTPResponse applies the response to the HTTP response writer.
+// The returned error marks a request that already failed: its client answer
+// is committed, so no follow-up transfer may still be attempted for it.
+func (r *Response) writeToHTTPResponse(w http.ResponseWriter, req *http.Request) error {
 	// Set headers
 	for k, v := range r.Headers {
 		w.Header().Set(k, v)
@@ -155,6 +167,7 @@ func (r *Response) writeToHTTPResponse(w http.ResponseWriter, req *http.Request)
 				status = http.StatusInternalServerError
 			}
 			utils.HTTPError(w, err.Error(), status)
+			return err
 		}
 		logger.Debugf("File REST call finished %s", r.UUID)
 	} else {
@@ -173,4 +186,5 @@ func (r *Response) writeToHTTPResponse(w http.ResponseWriter, req *http.Request)
 		}
 		logger.Debugf("REST call finished %s", r.UUID)
 	}
+	return nil
 }

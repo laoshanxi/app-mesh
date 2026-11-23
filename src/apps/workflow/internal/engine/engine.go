@@ -18,6 +18,7 @@ import (
 	"github.com/laoshanxi/app-mesh/src/apps/workflow/internal/logger"
 	"github.com/laoshanxi/app-mesh/src/apps/workflow/internal/models"
 	"github.com/laoshanxi/app-mesh/src/apps/workflow/internal/parser"
+	"github.com/laoshanxi/app-mesh/src/apps/workflow/internal/secrets"
 	"github.com/laoshanxi/app-mesh/src/apps/workflow/internal/tlsconf"
 	appmesh "github.com/laoshanxi/app-mesh/src/sdk/go"
 )
@@ -169,6 +170,8 @@ type Options struct {
 	// same-owner targets; nil WorkflowOwner disables the check (tests).
 	OwnerPrincipal string
 	WorkflowOwner  func(workflowName string) string
+	// daemon-backed secret_env crypto; the engine never reads the master key
+	SecretBroker secrets.Broker
 }
 
 func (o *Options) log() logger.Log {
@@ -431,29 +434,45 @@ func runJob(job *models.Job, exec *executor.StepExecutor, ectx *expression.Conte
 	log.JobStarted(job.Name)
 
 	mergedEnv := mergeEnv(wf.Env, job.Env)
-	mergedSecretEnv := mergeEnv(wf.SecretEnv, job.SecretEnv)
-
+	mergedSecretEnv, secretErr := resolveSecretEnv(opts.CancelCtx, opts.SecretBroker, wf.Name,
+		mergeEnv(wf.SecretEnv, job.SecretEnv))
 	jobFailed := false
-	for i := range job.Steps {
-		// Stop scheduling new steps once cancel is observed.
-		if opts.CancelCtx != nil && opts.CancelCtx.Err() != nil {
-			jobFailed = true
-			markStepsSkipped(job.Steps[i:], ectx, job.Name, "cancelled", log)
-			break
-		}
-		if completedSteps[job.Steps[i].Name] {
-			job.Steps[i].Result.Status = models.StatusSkipped
-			continue // already restored above; do not re-run (crash recovery)
-		}
-		if !runStep(&job.Steps[i], exec, ectx, mergedEnv, mergedSecretEnv, job.Name, opts, log) {
-			jobFailed = true
-			if job.Steps[i].ContinueOnError {
-				jobFailed = false
-				ectx.MarkContinueOnError(job.Name, job.Steps[i].Name)
-				continue
+	if secretErr != nil {
+		// A job-level secret that cannot be decrypted fails the job before any
+		// step can run, but still goes through the normal terminal path: the
+		// remaining steps are marked skipped, finally cleanup still runs, and
+		// the job result reaches checkpoints and OnJobDone.
+		jobFailed = true
+		mergedSecretEnv = nil
+		log.Error("JOB " + job.Name + " secret_env: " + secretErr.Error())
+		for i := range job.Steps {
+			if completedSteps[job.Steps[i].Name] {
+				continue // already restored from the checkpoint
 			}
-			markStepsSkipped(job.Steps[i+1:], ectx, job.Name, "previous step failed", log)
-			break
+			markStepsSkipped(job.Steps[i:i+1], ectx, job.Name, "secret_env failure", log)
+		}
+	} else {
+		for i := range job.Steps {
+			// Stop scheduling new steps once cancel is observed.
+			if opts.CancelCtx != nil && opts.CancelCtx.Err() != nil {
+				jobFailed = true
+				markStepsSkipped(job.Steps[i:], ectx, job.Name, "cancelled", log)
+				break
+			}
+			if completedSteps[job.Steps[i].Name] {
+				job.Steps[i].Result.Status = models.StatusSkipped
+				continue // already restored above; do not re-run (crash recovery)
+			}
+			if !runStep(wf.Name, &job.Steps[i], exec, ectx, mergedEnv, mergedSecretEnv, job.Name, opts, log) {
+				jobFailed = true
+				if job.Steps[i].ContinueOnError {
+					jobFailed = false
+					ectx.MarkContinueOnError(job.Name, job.Steps[i].Name)
+					continue
+				}
+				markStepsSkipped(job.Steps[i+1:], ectx, job.Name, "previous step failed", log)
+				break
+			}
 		}
 	}
 
@@ -478,7 +497,7 @@ func runJob(job *models.Job, exec *executor.StepExecutor, ectx *expression.Conte
 				job.Finally[i].Result.Status = models.StatusSkipped
 				continue
 			}
-			runStep(&job.Finally[i], exec, ectx, mergedEnv, mergedSecretEnv, job.Name, opts, log)
+			runStep(wf.Name, &job.Finally[i], exec, ectx, mergedEnv, mergedSecretEnv, job.Name, opts, log)
 		}
 		log.JobFinallyCompleted(job.Name)
 	}
@@ -516,8 +535,8 @@ func markStepsSkipped(steps []models.Step, ectx *expression.Context, jobName, re
 	}
 }
 
-func runStep(step *models.Step, exec *executor.StepExecutor, ectx *expression.Context, env, secretEnv map[string]string,
-	jobName string, opts *Options, log logger.Log) bool {
+func runStep(wfName string, step *models.Step, exec *executor.StepExecutor, ectx *expression.Context, env,
+	secretEnv map[string]string, jobName string, opts *Options, log logger.Log) bool {
 	if step.Condition != "" {
 		met, condErr := expression.EvalConditionForJob(step.Condition, ectx, jobName)
 		if condErr != nil {
@@ -547,7 +566,21 @@ func runStep(step *models.Step, exec *executor.StepExecutor, ectx *expression.Co
 	}
 
 	stepEnv := mergeEnv(env, step.Env)
-	stepSecretEnv := mergeEnv(secretEnv, step.SecretEnv)
+	stepSecrets, secretErr := resolveSecretEnv(opts.CancelCtx, opts.SecretBroker, wfName, step.SecretEnv)
+	if secretErr != nil {
+		exitCode := 1
+		reason := "secret_env: " + secretErr.Error()
+		step.Result.Status = models.StatusFailure
+		step.Result.ExitCode = &exitCode
+		step.Result.Stdout = reason
+		step.Result.Response = reason
+		ectx.SetStepResult(jobName, step.Name, reason, exitCode, models.StatusFailure, reason, nil)
+		persistStep(opts, jobName, step.Name, reason, exitCode, models.StatusFailure, reason, nil)
+		log.StepFailed(step.Name, exitCode, 0)
+		log.Error(fmt.Sprintf("STEP %s FAILED: %s", step.Name, reason))
+		return false
+	}
+	stepSecretEnv := mergeEnv(secretEnv, stepSecrets)
 
 	maxAttempts := 1
 	if step.Retry != nil {
@@ -682,6 +715,19 @@ func mergeEnv(base, overlay map[string]string) map[string]string {
 	maps.Copy(out, base)
 	maps.Copy(out, overlay)
 	return out
+}
+
+// resolveSecretEnv decrypts protected values through the daemon broker;
+// legacy plaintext passes through.
+func resolveSecretEnv(ctx context.Context, broker secrets.Broker, wfName string,
+	values map[string]string) (map[string]string, error) {
+	if len(values) == 0 {
+		return values, nil
+	}
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	return secrets.UnprotectMap(ctx, broker, wfName, values)
 }
 
 // evaluateNeeds checks dependency statuses following GitHub Actions semantics:

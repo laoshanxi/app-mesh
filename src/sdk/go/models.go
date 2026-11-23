@@ -30,6 +30,7 @@ const (
 	headerSendFileSocket = "X-Send-File-Socket"
 	headerRecvFileSocket = "X-Recv-File-Socket"
 	headerFilePath       = "X-File-Path"
+	headerFileOverwrite  = "X-File-Overwrite"
 	headerFileMode       = "X-File-Mode"
 	headerFileUser       = "X-File-User"
 	headerFileGroup      = "X-File-Group"
@@ -199,6 +200,25 @@ type Headers = map[string]string
 // OutputHandler is a callback for incremental stdout output.
 // data is the text chunk; position is the byte offset in the full output stream.
 type OutputHandler func(data string, position int64)
+
+// UploadOptions carries optional settings for the file upload methods. The zero
+// value keeps the server's default behavior: an upload to an existing remote
+// file answers 409 Conflict.
+type UploadOptions struct {
+	// Overwrite replaces an existing remote file. The default (false) keeps
+	// the server's 409 refusal for an existing destination.
+	Overwrite bool
+}
+
+// applyUploadOptions maps upload options onto the wire headers. The last
+// occurrence of an option wins, matching variadic override semantics.
+func applyUploadOptions(headers map[string]string, opts []UploadOptions) {
+	for _, opt := range opts {
+		if opt.Overwrite {
+			headers[headerFileOverwrite] = "true"
+		}
+	}
+}
 
 // PrintOutputHandler is a convenience OutputHandler that prints data to stdout.
 func PrintOutputHandler(data string, position int64) {

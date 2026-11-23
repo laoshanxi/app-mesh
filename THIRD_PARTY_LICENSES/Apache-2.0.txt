@@ -179,4 +179,3 @@
 
 Used by the following dependencies:
   - OpenSSL (Copyright (c) The OpenSSL Project Authors)
-  - prometheus-cpp (Copyright (c) Jupp Mueller)

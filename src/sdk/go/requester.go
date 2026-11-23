@@ -574,14 +574,41 @@ func framedHeaderGet(headers map[string]string, name string) string {
 	return ""
 }
 
+// idempotentMethod reports whether replaying the request cannot apply its
+// effect twice on the server.
+func idempotentMethod(method string) bool {
+	switch method {
+	case http.MethodGet, http.MethodHead, http.MethodOptions:
+		return true
+	default:
+		return false
+	}
+}
+
+// replayableRequest reports whether a request that failed on a broken
+// connection may be replayed: only an idempotent method with no unreplayable
+// body, and never after the caller's context was canceled.
+func replayableRequest(ctx context.Context, method string, body io.Reader, bodyBytes []byte) bool {
+	if ctx.Err() != nil {
+		return false
+	}
+	if !idempotentMethod(method) {
+		return false
+	}
+	return body == nil || bodyBytes != nil
+}
+
 // sendWithRetry issues the TCP request, replaying it exactly once with a
 // refreshed bearer when the first attempt returns 401 and a refresh-capable
-// provider is attached.
+// provider is attached, and exactly once on a fresh connection when an
+// idempotent request found its connection closed by the server.
 func (t *TCPRequester) sendWithRetry(ctx context.Context, method string, u url.URL, queries url.Values,
 	headers map[string]string, body io.Reader, bodyBytes []byte, refreshable bool, provider TokenProvider) (*Response,
 	error) {
 	signed := t.getRequestSigner() != nil
-	for attempt := 0; ; attempt++ {
+	transportRetried := false
+	authRetried := false
+	for {
 		bodyReader := body
 		if bodyBytes != nil {
 			bodyReader = bytes.NewReader(bodyBytes)
@@ -615,16 +642,26 @@ func (t *TCPRequester) sendWithRetry(ctx context.Context, method string, u url.U
 			req.Header.Set(k, v)
 		}
 
+		wasConnected := t.TCPConnection.Connected()
 		resp, err := t.request(req)
 		if err != nil {
+			// The daemon idle-closes pooled connections; the transport closes
+			// itself on the first I/O error, so a connection that was live and
+			// is now closed was stale. Replay idempotent requests once.
+			if !transportRetried && wasConnected && !t.TCPConnection.Connected() &&
+				replayableRequest(req.Context(), method, body, bodyBytes) {
+				transportRetried = true
+				continue
+			}
 			return nil, err
 		}
-		if resp.HTTPStatus == http.StatusUnauthorized && refreshable && attempt == 0 &&
+		if resp.HTTPStatus == http.StatusUnauthorized && refreshable && !authRetried &&
 			shouldRefreshOnUnauthorized(signed, framedHeaderGet(resp.Headers, "WWW-Authenticate")) {
 			if newToken, rerr := t.refreshRejectedToken(provider, token); rerr != nil {
 				// Refresh failed: surface the original 401 response with the error.
 				return resp, rerr
 			} else if newToken != token {
+				authRetried = true
 				continue // replay once with the refreshed bearer
 			}
 			return resp, nil

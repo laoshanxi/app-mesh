@@ -720,7 +720,9 @@ controller route that exposes only registered workflow definitions.
 
 ## Encrypted Environment Variables
 
-Use `secret_env` for sensitive values. They are encrypted at rest by the daemon. `env` is plaintext; `secret_env` is encrypted. Both become plain env vars inside the spawned process. `secret_env` can be set at the workflow, job, or step level (inner level wins on conflict).
+Use `secret_env` for sensitive values. Values are stored as `sp1:`-protected ciphertext (AES-256-GCM) keyed by the node master key. The daemon protects and decrypts them through a private loopback broker; the Workflow engine never reads the master key. `env` is plaintext; `secret_env` is encrypted. Both become plain env vars inside the spawned process. `secret_env` can be set at the workflow, job, or step level (inner level wins on conflict).
+
+`workflow get` returns the stored YAML with ciphertext and never echoes secret values. Definitions registered before this change run as-is (plaintext pass-through) and are re-encrypted when re-registered. Registration fails closed when the daemon cannot protect a value.
 
 ```yaml
 # secrets-demo.yaml

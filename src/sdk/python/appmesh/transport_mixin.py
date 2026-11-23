@@ -274,8 +274,8 @@ class TransportClientMixin:
         try:
             resp.raise_for_status()
         except requests.exceptions.HTTPError as e:
-            # 404/405 on a streaming route: the base_url likely points at the agent
-            # REST listener, which carries no streaming routes — say so.
+            # 404/405 on a streaming route: the base_url endpoint does not serve it
+            # (an older engine, or a proxy without the streaming location) — say so.
             raise AppMeshRequestError(f"SSE request failed: {e}{route_hint(resp.status_code)}",
                                       resp.status_code) from e
         return resp

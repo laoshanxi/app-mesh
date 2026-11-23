@@ -240,6 +240,8 @@ A manual/API trigger missing a `required` input is rejected at trigger time (the
 
 Declares this workflow as callable from another workflow's `workflow` step type. A workflow with only `on.workflow_call` is intended as a reusable sub-workflow. Note: the engine does not currently enforce trigger eligibility, so such a workflow can still be started via `appm workflow run`.
 
+The bare form (`workflow_call:` with no value) is valid and means callable with no inputs (GitHub Actions semantics). The same applies to `manual:` and `workflow_dispatch:`; a bare `app_event:` key is rejected because it requires `app` and `events`.
+
 | Field | Type | Required | Default | Description |
 |-------|------|----------|---------|-------------|
 | `inputs` | object | no | — | Input parameter definitions (same schema as `on.manual.inputs`). |

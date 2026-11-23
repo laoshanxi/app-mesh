@@ -76,8 +76,9 @@ class AppMeshClientTCP(TransportClientMixin, AppMeshClient):
             plain_transport: Dial plaintext TCP instead of TLS.
             rest_port: Port of the engine's native HTTPS listener (the WSS port) on the
               same daemon, used by the streaming side channel (follow_output /
-              run_task_stream); default 6058. Not the agent REST listener (6060),
-              which carries no streaming routes.
+              run_task_stream); default 6058. The local agent REST listener (6060)
+              relays these routes for local requests, but forwarding (X-Target-Host)
+              does not traverse nodes.
             bearer_token: Caller-owned access token.
             token_provider: Provider that supplies and refreshes access tokens.
             api_key: API key id for opt-in HMAC request signing (see
@@ -175,13 +176,20 @@ class AppMeshClientTCP(TransportClientMixin, AppMeshClient):
         if preserve_permissions:
             AppMeshClient._apply_file_attributes(local_path, resp.headers)
 
-    def upload_file(self, local_file: str, remote_file: Optional[str] = None, preserve_permissions: bool = False) -> None:
+    def upload_file(
+        self,
+        local_file: str,
+        remote_file: Optional[str] = None,
+        preserve_permissions: bool = False,
+        overwrite: bool = False,
+    ) -> None:
         """Upload a local file to the remote server through the TCP file-socket side channel.
 
         Args:
             local_file: Local file path.
             remote_file: Remote destination path; defaults to the local file's basename.
             preserve_permissions: Send local file permissions/ownership metadata when available.
+            overwrite: Replace an existing remote file; the default keeps the server's 409 refusal.
         """
         if not remote_file:
             remote_file = Path(local_file).name
@@ -196,6 +204,8 @@ class AppMeshClientTCP(TransportClientMixin, AppMeshClient):
             "Content-Type": "application/octet-stream",
             self._HTTP_HEADER_KEY_X_SEND_FILE_SOCKET: "true",
         }
+        if overwrite:
+            header[AppMeshClient._HTTP_HEADER_KEY_X_FILE_OVERWRITE] = "true"
         if preserve_permissions:
             header.update(AppMeshClient._get_file_attributes(local_path))
 

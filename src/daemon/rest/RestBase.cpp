@@ -102,6 +102,13 @@ namespace
 		const auto &path = message.m_relative_uri;
 		if (message.m_method == web::http::methods::GET && path == "/appmesh/internal/workflow/registry")
 			return {PERMISSION_KEY_view_all_app};
+		// Workflow secret broker: the daemon owns the master key.
+		if (message.m_method == web::http::methods::POST && path == "/appmesh/internal/workflow/secret")
+			return {PERMISSION_KEY_workflow_secret};
+		// The Engine's control capability checks that a derived app name is free
+		// before it registers a workflow pseudo-App.
+		if (message.m_method == web::http::methods::GET && path == "/appmesh/applications")
+			return {PERMISSION_KEY_view_all_app};
 		if (message.m_method == web::http::methods::POST && path == "/appmesh/app/run")
 			return {PERMISSION_KEY_run_app_async};
 		if (message.m_method == web::http::methods::GET && path == "/appmesh/labels")
@@ -166,7 +173,7 @@ namespace
 
 		if (claims.audience == InternalCapability::Audience::WorkflowControl)
 		{
-			// A distinct non-RBAC principal is returned only for the two control
+			// A distinct non-RBAC principal is returned only for the control
 			// operations issued by the Engine.  It is never a general system/admin
 			// principal and cannot pass any operation outside the capability.
 			return "internal:workflow-controller:" + claims.processUuid;

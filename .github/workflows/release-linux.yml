@@ -114,11 +114,15 @@ jobs:
       - name: Generate Changelog
         run: |
           cat > CHANGELOG.txt <<'CHANGELOG'
-          - Drogon and trantor replace the uWebSockets and ACE transports. The wire protocol does not change.
-          - The process engine runs on Boost.Process V2. The daemon requires C++17 (C++20 on Windows).
-          - libcurl and the C++ SDK are removed; RestClient uses trantor.
-          - REST.WorkerThreads and REST.TransportIoThreads replace the old thread pool settings, and derive from the CPU count.
-          - Requests are faster on the hot paths, /metrics answers without authentication, and a restart recovers attached apps.
+          - Transport: Drogon and trantor replace uWebSockets and ACE; the wire protocol is unchanged.
+          - Engine: Boost.Process V2 replaces ACE; C++17 required. libcurl and the C++ SDK are removed.
+          - Docker: containers run in the agent with the official Docker client; Docker.Enable is the master switch.
+          - LLM streaming: output follow, task partial events, and stdin, in all five SDKs.
+          - Request protection: replay protection, HMAC signatures, and API keys; off by default. Metrics require authentication.
+          - Plaintext: REST.SSL.SSLEnabled=false for TLS-terminating gateways; TLS stays the default.
+          - Cluster: owner-to-follower authorization replication; optional Vault for tokens and TLS.
+          - CLI: remembers endpoint transport, verification, and CA path.
+          - Files: jailed transfers; separate overwrite and delete permissions.
           CHANGELOG
           ls -R
 

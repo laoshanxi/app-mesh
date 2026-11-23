@@ -20,6 +20,7 @@ const CONSTANTS = Object.freeze({
   HTTP_HEADER_KEY_AUTH: "Authorization",
   HTTP_HEADER_KEY_X_TARGET_HOST: "X-Target-Host",
   HTTP_HEADER_KEY_X_FILE_PATH: "X-File-Path",
+  HTTP_HEADER_KEY_X_FILE_OVERWRITE: "X-File-Overwrite",
   HTTP_HEADER_KEY_X_FILE_MODE: "X-File-Mode",
   HTTP_HEADER_KEY_X_FILE_USER: "X-File-User",
   HTTP_HEADER_KEY_X_FILE_GROUP: "X-File-Group",
@@ -1348,8 +1349,10 @@ class AppMeshClient {
    * @param {string} [filePath=null] - Remote target path; defaults to the basename of localFile
    * @param {boolean} [applyAttrs=false] - In Node.js, send local permission bits plus
    * user/group (names when resolvable locally, numeric ids otherwise)
+   * @param {boolean} [overwrite=false] - Replace an existing remote file; the
+   * default keeps the server's 409 refusal
    */
-  async uploadFile(localFile, filePath = null, applyAttrs = false) {
+  async uploadFile(localFile, filePath = null, applyAttrs = false, overwrite = false) {
     if (!filePath) {
       // Node.js passes a path string; browser passes a File (use its name)
       const sourceName = typeof localFile === 'string' ? localFile : localFile && localFile.name;
@@ -1359,6 +1362,9 @@ class AppMeshClient {
       filePath = sourceName.split(/[\\/]/).pop();
     }
     const headers = { [CONSTANTS.HTTP_HEADER_KEY_X_FILE_PATH]: encodeURIComponent(filePath) };
+    if (overwrite) {
+      headers[CONSTANTS.HTTP_HEADER_KEY_X_FILE_OVERWRITE] = 'true';
+    }
     let body;
 
     if (ENV.isNode) {

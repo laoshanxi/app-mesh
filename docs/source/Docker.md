@@ -29,9 +29,9 @@ PUT /appmesh/app/myweb
 The same application with the CLI:
 
 ```shell
-appm add myweb -I nginx:1.27 -c "nginx -g 'daemon off;'" --docker-port 8080:80
-appm view myweb        # container_id, health, exit code, restarts
-appm logview myweb     # tail the container output
+appm add -a myweb -I nginx:1.27 -c "nginx -g 'daemon off;'" --docker-port 8080:80
+appm view -a myweb        # container_id, health, exit code, restarts
+appm view -a myweb -o     # tail the container output; add -f to follow
 ```
 
 Python SDK:
@@ -167,8 +167,8 @@ drives `depends_on` gating and appears in events (`HEALTH_CHANGE`).
 
 ## Logs and output
 
-`GET /appmesh/app/{name}/output` (or `appm logview`) tails the container's
-combined stdout/stderr. The `X-Output-Position` cursor is a nanosecond
+`GET /appmesh/app/{name}/output` (or `appm view -a <name> -o`) tails the
+container's combined stdout/stderr. The `X-Output-Position` cursor is a nanosecond
 timestamp: pass it back as `stdout_position` to read increments without
 duplicates. Output stays readable after the container exits, until the next
 start removes it.
