@@ -83,12 +83,18 @@ public:
 	bool deleteApiKey(const std::string &keyId, const std::string &requestingPrincipalId, bool manageAll);
 	bool apiKeySecret(const std::string &keyId, std::string &principalId, std::string &secret) const;
 
-	/// Serialize the policy in the on-disk shape ({"Authorization": {...}}); this
-	/// is the payload the cluster replication endpoint serves to followers.
+	/// Serialize the policy for the cluster replication endpoint. The shape is
+	/// the on-disk one, but API key secrets are plaintext: a follower must verify
+	/// request HMACs, so it needs the usable secret and re-encrypts it under its
+	/// own master key when it persists the snapshot. The endpoint is
+	/// token-authenticated and cluster deployments serve it over TLS.
 	Json::Value replicationSnapshotJson() const;
-	/// Replace the whole policy from a replicated owner snapshot. The snapshot is
-	/// validated before anything is committed: an invalid snapshot throws and
-	/// leaves the current policy untouched. Returns true when the policy changed.
+	/// Replace the whole policy from a replicated owner snapshot. API key secrets
+	/// arrive in the wire format (plaintext); only locally persisted policy (the
+	/// node's authorization file and its replica cache) must hold SecretProtector
+	/// ciphertext bound to this node's key. The snapshot is validated before
+	/// anything is committed: an invalid snapshot throws and leaves the current
+	/// policy untouched. Returns true when the policy changed.
 	bool applyReplicatedPolicy(const Json::Value &root);
 
 	static const std::string &systemPrincipalId();
@@ -113,7 +119,14 @@ private:
 		std::map<std::string, std::shared_ptr<AuthorizationPrincipal>> principals;
 		std::map<std::string, ApiKey> apiKeys;
 	};
-	static PolicyData parsePolicy(const Json::Value &root);
+	/// Where the parsed document comes from, which decides how API key secrets
+	/// are encoded in it.
+	enum class ApiKeySecretEncoding
+	{
+		Protected, ///< At rest: SecretProtector ciphertext bound to this node's key.
+		Plaintext  ///< Replication wire snapshot: the usable secret.
+	};
+	static PolicyData parsePolicy(const Json::Value &root, ApiKeySecretEncoding encoding);
 	static Json::Value policyToJson(const PolicyData &data);
 	void commitPolicyLocked(const PolicyData &data);
 	/// Single-writer guard: a replica serves the owner's policy read-only.

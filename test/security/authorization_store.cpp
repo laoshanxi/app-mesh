@@ -46,6 +46,46 @@ namespace
 		REQUIRE(in);
 		return std::string((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
 	}
+
+	/// Follower boot fidelity: replication is configured through the environment
+	/// and init() loads the follower-local replica cache. The guard restores the
+	/// process environment and removes the shared cache file on scope exit.
+	class ReplicaBoot
+	{
+	public:
+		explicit ReplicaBoot(const std::string &cacheContent)
+			: m_hadFrom(std::getenv("APPMESH_AUTH_REPLICATION_FROM") != nullptr),
+			  m_hadRole(std::getenv("APPMESH_AUTH_ROLE") != nullptr)
+		{
+			if (m_hadFrom)
+				m_from = std::getenv("APPMESH_AUTH_REPLICATION_FROM");
+			if (m_hadRole)
+				m_role = std::getenv("APPMESH_AUTH_ROLE");
+			setenv("APPMESH_AUTH_REPLICATION_FROM", "https://appmesh-master:6058", 1);
+			setenv("APPMESH_AUTH_ROLE", "follower", 1);
+			m_cacheFile = Utility::getWorkConfigFilePath("replica-policy.yaml");
+			Utility::createDirectory(fs::path(m_cacheFile).parent_path().string());
+			std::ofstream out(m_cacheFile, std::ios::binary | std::ios::trunc);
+			REQUIRE(out);
+			out << cacheContent;
+		}
+		~ReplicaBoot()
+		{
+			m_hadFrom ? setenv("APPMESH_AUTH_REPLICATION_FROM", m_from.c_str(), 1)
+					  : unsetenv("APPMESH_AUTH_REPLICATION_FROM");
+			m_hadRole ? setenv("APPMESH_AUTH_ROLE", m_role.c_str(), 1) : unsetenv("APPMESH_AUTH_ROLE");
+			Utility::removeFile(m_cacheFile);
+		}
+		ReplicaBoot(const ReplicaBoot &) = delete;
+		ReplicaBoot &operator=(const ReplicaBoot &) = delete;
+
+	private:
+		std::string m_from;
+		std::string m_role;
+		bool m_hadFrom;
+		bool m_hadRole;
+		std::string m_cacheFile;
+	};
 } // namespace
 
 TEST_CASE("API keys are bound to their owner's principal status", "[security][authorization]")
@@ -307,34 +347,33 @@ TEST_CASE("api key secrets are encrypted at rest and plaintext on the wire", "[s
 		REQUIRE(snapshot["Authorization"]["api_keys"][keyId]["secret"].asString() == plaintext);
 	}
 
-	SECTION("the persisted file encrypts and reloads through the public API")
+	SECTION("the persisted file encrypts the secret at rest")
 	{
 		store.save();
 		const auto path = Utility::getConfigFilePath(APPMESH_AUTHORIZATION_CONFIG_FILE, true);
 		const auto onDisk = readFile(path);
 		REQUIRE(onDisk.find(plaintext) == std::string::npos);
 		REQUIRE(onDisk.find("sp1:") != std::string::npos);
-
-		// A store reloaded from that file decrypts back to the same secret.
-		AuthorizationStore reloaded;
-		reloaded.applyReplicatedPolicy(Utility::yamlToJson(YAML::LoadFile(path)));
-		std::string owner, secret;
-		REQUIRE(reloaded.apiKeySecret(keyId, owner, secret));
-		REQUIRE(secret == plaintext);
 	}
 
-	SECTION("a plaintext secret is dropped")
+	SECTION("a plaintext secret in the persisted policy is dropped at boot")
 	{
+		// Plaintext is the wire format; at rest only ciphertext bound to this
+		// node's key is accepted, so an unencrypted credential on disk is not
+		// adopted.
 		Json::Value root = policyRoot(principalId);
 		Json::Value entry;
 		entry["principal"] = principalId;
 		entry["secret"] = "plaintext-secret";
 		entry["created_at"] = 1700000000;
 		root["Authorization"]["api_keys"]["ak-plain"] = entry;
-		AuthorizationStore plain;
-		REQUIRE(plain.applyReplicatedPolicy(root));
+		ReplicaBoot boot(Utility::jsonToYaml(root));
+		AuthorizationStore booted;
+		booted.init();
 		std::string owner, secret;
-		REQUIRE_FALSE(plain.apiKeySecret("ak-plain", owner, secret));
+		REQUIRE_FALSE(booted.apiKeySecret("ak-plain", owner, secret));
+		// The rest of the policy still loads.
+		REQUIRE(booted.get(principalId)->id() == principalId);
 	}
 
 	SECTION("an undecryptable stored secret drops that key only")
@@ -345,9 +384,61 @@ TEST_CASE("api key secrets are encrypted at rest and plaintext on the wire", "[s
 		entry["secret"] = "sp1:AAAA"; // valid prefix, truncated payload
 		entry["created_at"] = 1700000000;
 		root["Authorization"]["api_keys"]["ak-broken"] = entry;
-		AuthorizationStore broken;
-		REQUIRE(broken.applyReplicatedPolicy(root));
+		ReplicaBoot boot(Utility::jsonToYaml(root));
+		AuthorizationStore booted;
+		booted.init();
 		std::string owner, secret;
-		REQUIRE_FALSE(broken.apiKeySecret("ak-broken", owner, secret));
+		REQUIRE_FALSE(booted.apiKeySecret("ak-broken", owner, secret));
+		REQUIRE(booted.get(principalId)->id() == principalId);
+	}
+}
+
+// The owner serves the snapshot through the token-authenticated replication
+// endpoint; followers must verify request HMACs with the same secret. This is
+// the regression for a follower that read every wire secret as a corrupted
+// at-rest value: the key was dropped and the pull warned on every cycle.
+TEST_CASE("API keys replicate to a follower with a usable secret", "[security][authorization][replica]")
+{
+	ConfigGuard guard;
+	const auto principalId = Principal::stableId(ISSUER, SUBJECT);
+
+	AuthorizationStore owner;
+	REQUIRE(owner.applyReplicatedPolicy(policyRoot(principalId)));
+	const auto issued = owner.issueApiKey(principalId);
+	const auto keyId = issued["key_id"].asString();
+	const auto plaintext = issued["secret"].asString();
+	const auto snapshot = owner.replicationSnapshotJson();
+	REQUIRE(snapshot["Authorization"]["api_keys"][keyId]["secret"].asString() == plaintext);
+
+	std::string cachedText;
+	{
+		// Boot before the key existed, like a follower that pulls the change.
+		ReplicaBoot boot(Utility::jsonToYaml(policyRoot(principalId)));
+		AuthorizationStore follower;
+		follower.init();
+
+		REQUIRE(follower.applyReplicatedPolicy(snapshot));
+		std::string ownerId, secret;
+		REQUIRE(follower.apiKeySecret(keyId, ownerId, secret));
+		REQUIRE(ownerId == principalId);
+		REQUIRE(secret == plaintext);
+
+		// The next identical pull is a no-op: no rewrite, no repeated warning.
+		REQUIRE_FALSE(follower.applyReplicatedPolicy(snapshot));
+
+		// The follower re-encrypts the wire secret under its own node key.
+		cachedText = readFile(Utility::getWorkConfigFilePath("replica-policy.yaml"));
+		REQUIRE(cachedText.find(plaintext) == std::string::npos);
+		REQUIRE(cachedText.find("sp1:") != std::string::npos);
+	}
+
+	// A restart loads the encrypted replica cache and still verifies the key.
+	{
+		ReplicaBoot boot(cachedText);
+		AuthorizationStore restarted;
+		restarted.init();
+		std::string ownerId, secret;
+		REQUIRE(restarted.apiKeySecret(keyId, ownerId, secret));
+		REQUIRE(secret == plaintext);
 	}
 }

@@ -568,6 +568,11 @@ class AppMeshClientTCP extends AppMeshClient {
     this.tcpTransport = new TCPTransport(tcpAddress, sslConfig)
     this._demuxer = null
     this._demuxerEnablePromise = null
+    // Upgrading from a legacy direct read to the demuxer must not put two
+    // readers on one socket; these track the transition and in-flight reads.
+    this._demuxerStarting = false
+    this._directReads = 0
+    this._directReadWaiters = []
     // The SSE side channel (_sseRequest) dials the daemon's REST listener on the same host.
     this._restHost = tcpAddress[0]
     this._restPort = restPort ?? 6058
@@ -599,6 +604,13 @@ class AppMeshClientTCP extends AppMeshClient {
    * @override
    */
   async _request (method, path, body = null, options = {}) {
+    // A subscribe upgrade in progress owns the read side; wait for it so this
+    // request is routed by UUID instead of racing the new reader for frames
+    // (the subscribe ack could otherwise resolve this request, stranding
+    // subscribe). The wait precedes construction so signatures stay fresh.
+    if (this._demuxerStarting) {
+      await this._demuxerEnablePromise
+    }
     if (!this.tcpTransport.connected()) {
       await this.tcpTransport.connect()
     }
@@ -677,14 +689,27 @@ class AppMeshClientTCP extends AppMeshClient {
       }
       response = await respPromise
     } else {
-      // Legacy synchronous mode: read directly.
-      this.tcpTransport.sendMessage(serialized)
-      const respData = await this.tcpTransport.receiveMessage()
-      if (!respData || respData.length === 0) {
-        this.tcpTransport.close()
-        throw new Error('Socket connection broken')
+      // An upgrade claimed the read side while this request was being built;
+      // nothing has been sent yet, so rebuild behind the upgrade (fresh token
+      // and signature) and route by UUID instead of opening a second reader.
+      if (this._demuxerStarting) {
+        await this._demuxerEnablePromise
+        return this._request(method, path, body, options)
       }
-      response = new ResponseMessage().deserialize(respData)
+      // Legacy synchronous mode: read directly. Track the read so a concurrent
+      // subscribe waits for this response before starting the demuxer.
+      this._directReads++
+      try {
+        this.tcpTransport.sendMessage(serialized)
+        const respData = await this.tcpTransport.receiveMessage()
+        if (!respData || respData.length === 0) {
+          this.tcpTransport.close()
+          throw new Error('Socket connection broken')
+        }
+        response = new ResponseMessage().deserialize(respData)
+      } finally {
+        this._releaseDirectRead()
+      }
     }
 
     // Convert to standard response format matching axios structure
@@ -959,6 +984,9 @@ class AppMeshClientTCP extends AppMeshClient {
   /**
    * Subscribe to app events over TCP.
    *
+   * Resolves when the daemon acknowledges the subscription; it does not wait
+   * for the first event. Later events are delivered to `callback`.
+   *
    * @param {string} appName - Application name, or "*" for all apps.
    * @param {string[]} [events] - Event types: "START", "EXIT", "STDOUT", etc.
    * @param {function} callback - Called with event object for each received event.
@@ -1048,6 +1076,28 @@ class AppMeshClientTCP extends AppMeshClient {
   }
 
   /**
+   * Resolve when no legacy direct read owns the socket.
+   * @private
+   */
+  _waitForDirectReads () {
+    if (this._directReads === 0) return Promise.resolve()
+    return new Promise(resolve => this._directReadWaiters.push(resolve))
+  }
+
+  /**
+   * Account for a finished legacy direct read and wake a waiting upgrade.
+   * @private
+   */
+  _releaseDirectRead () {
+    this._directReads--
+    if (this._directReads === 0 && this._directReadWaiters.length > 0) {
+      const waiters = this._directReadWaiters
+      this._directReadWaiters = []
+      for (const resolve of waiters) resolve()
+    }
+  }
+
+  /**
    * Enable demuxer for concurrent request-response and event routing.
    * Serialized: two concurrent subscribe() calls on an unconnected transport
    * would otherwise both await connect() and both create a demuxer — two read
@@ -1060,13 +1110,23 @@ class AppMeshClientTCP extends AppMeshClient {
       await this._demuxerEnablePromise
       return
     }
+    // Set before any await so requests starting during the upgrade route through
+    // the demuxer instead of opening a second, competing direct read.
+    this._demuxerStarting = true
     this._demuxerEnablePromise = (async () => {
-      if (!this.tcpTransport.connected()) {
-        await this.tcpTransport.connect()
-      }
-      if (!this._demuxer || !this._demuxer._running) {
-        this._demuxer = new MessageDemuxer(this.tcpTransport)
-        this._demuxer.start()
+      try {
+        if (!this.tcpTransport.connected()) {
+          await this.tcpTransport.connect()
+        }
+        // A legacy direct read consumes frames itself; starting the demuxer now
+        // would race it and can strand either response forever.
+        await this._waitForDirectReads()
+        if (!this._demuxer || !this._demuxer._running) {
+          this._demuxer = new MessageDemuxer(this.tcpTransport)
+          this._demuxer.start()
+        }
+      } finally {
+        this._demuxerStarting = false
       }
     })()
     try {

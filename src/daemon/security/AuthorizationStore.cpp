@@ -271,7 +271,7 @@ void AuthorizationStore::init()
 	initializeFirstAdminEnrollment();
 }
 
-AuthorizationStore::PolicyData AuthorizationStore::parsePolicy(const Json::Value &root)
+AuthorizationStore::PolicyData AuthorizationStore::parsePolicy(const Json::Value &root, ApiKeySecretEncoding encoding)
 {
 	if (!root.isMember("Authorization") || !root["Authorization"].isObject())
 		throw std::invalid_argument("authorization.yaml must contain an Authorization object");
@@ -338,18 +338,29 @@ AuthorizationStore::PolicyData AuthorizationStore::parsePolicy(const Json::Value
 			{
 				const auto &definition = authorization["api_keys"][keyId];
 				const auto principalId = GET_JSON_STR_VALUE(definition, "principal");
-				// Decrypt for the wire snapshot.
 				std::string secret;
-				try
+				if (encoding == ApiKeySecretEncoding::Plaintext)
 				{
-					secret = readStoredSecret(keyId, GET_JSON_STR_VALUE(definition, "secret"));
+					// Wire snapshot: the owner sends the usable secret because the
+					// follower must verify request HMACs; saveLocked() encrypts it
+					// under this node's key.
+					secret = GET_JSON_STR_VALUE(definition, "secret");
 				}
-				catch (const std::exception &)
+				else
 				{
-					LOG_WAR << "AuthorizationStore::parsePolicy() dropped request-signing API key <" << keyId
-							<< ">: the stored secret is not a readable encrypted secret; restore the "
-							   "SecretProtector master key or reissue the key";
-					continue;
+					// Locally persisted policy: only ciphertext bound to this node's
+					// key is accepted.
+					try
+					{
+						secret = readStoredSecret(keyId, GET_JSON_STR_VALUE(definition, "secret"));
+					}
+					catch (const std::exception &)
+					{
+						LOG_WAR << "AuthorizationStore::parsePolicy() dropped request-signing API key <" << keyId
+								<< ">: the stored secret is not a readable encrypted secret; restore the "
+								   "SecretProtector master key or reissue the key";
+						continue;
+					}
 				}
 				// Dangling keys (principal removed by an external policy edit) are
 				// dropped with a warning instead of failing the whole policy load.
@@ -417,7 +428,7 @@ void AuthorizationStore::requireWritablePolicyLocked() const
 void AuthorizationStore::load(const Json::Value &root)
 {
 	std::lock_guard guard(m_mutex);
-	commitPolicyLocked(parsePolicy(root));
+	commitPolicyLocked(parsePolicy(root, ApiKeySecretEncoding::Protected));
 }
 
 std::shared_ptr<AuthorizationPrincipal> AuthorizationStore::resolve(const Principal &principal)
@@ -1052,7 +1063,9 @@ void AuthorizationStore::saveLocked() const
 	{
 		Json::Value entry;
 		entry["principal"] = key.principalId;
-		// At rest: encrypted; the replication wire snapshot stays plaintext for follower-side HMAC.
+		// At rest: encrypted with this node's key. The replication wire snapshot
+		// carries the plaintext secret for follower-side HMAC; the follower
+		// re-encrypts it here when it persists the snapshot.
 		entry["secret"] = SecretProtector::instance().protect(key.secret, apiKeySecretContext(keyId));
 		entry["created_at"] = key.createdAt;
 		apiKeys[keyId] = std::move(entry);
@@ -1098,7 +1111,7 @@ bool AuthorizationStore::applyReplicatedPolicy(const Json::Value &root)
 {
 	const static char fname[] = "AuthorizationStore::applyReplicatedPolicy() ";
 	std::lock_guard guard(m_mutex);
-	const auto incoming = parsePolicy(root);
+	const auto incoming = parsePolicy(root, ApiKeySecretEncoding::Plaintext);
 
 	// Single-writer replication: the owner snapshot wins, including over the
 	// follower-local auto-provisioned records, so a stale role-less shadow can

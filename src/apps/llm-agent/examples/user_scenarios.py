@@ -33,8 +33,10 @@ from appmesh import AppMeshClientTCP
 
 
 class LLMAgent:
-    def __init__(self, host, port, app, task_timeout=120):
-        self.client = AppMeshClientTCP(tcp_address=(host, int(port)), ssl_verify=False)
+    def __init__(self, host, port, app, task_timeout=120, rest_port=6058):
+        # run_task_stream() cannot ride the framed TCP transport: the SDK dials the
+        # engine's WSS/HTTPS listener directly (6058 unless WebSocketPort changed).
+        self.client = AppMeshClientTCP(tcp_address=(host, int(port)), rest_port=rest_port, ssl_verify=False)
         self.app = app
         self.task_timeout = task_timeout
 
@@ -171,6 +173,8 @@ def main():
     p.add_argument("--list", action="store_true")
     p.add_argument("--host", default=os.environ.get("APPMESH_TCP_HOST", "127.0.0.1"))
     p.add_argument("--port", default=os.environ.get("APPMESH_TCP_PORT", "6059"))
+    p.add_argument("--rest-port", type=int, default=int(os.environ.get("APPMESH_REST_PORT", "6058")),
+                   help="engine WSS/HTTPS port (the streaming side channel)")
     p.add_argument("--app", default=os.environ.get("LLMAGENT_APP", "llm-agent"))
     p.add_argument("--worker-app", default=os.environ.get("LLMAGENT_WORKER_APP", ""))
     p.add_argument("--worker-session", default=os.environ.get("LLMAGENT_WORKER_SESSION", ""))
@@ -187,7 +191,7 @@ def main():
     bearer = os.environ.get("APPMESH_BEARER_TOKEN")
     if not bearer:
         p.error("APPMESH_BEARER_TOKEN is required. Obtain it from the authentication service.")
-    a = LLMAgent(cfg.host, cfg.port, cfg.app, cfg.task_timeout).with_bearer(bearer)
+    a = LLMAgent(cfg.host, cfg.port, cfg.app, cfg.task_timeout, rest_port=cfg.rest_port).with_bearer(bearer)
     print(f"connected to {cfg.host}:{cfg.port}, app {cfg.app!r}\n")
     fails = 0
     for n in names:

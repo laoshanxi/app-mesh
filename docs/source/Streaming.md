@@ -209,3 +209,10 @@ wait/subscribe APIs for now.
   their `GET /appmesh/app/{name}/output?stdout_index=N` interface.
 - Request-signature hardening covers the streamed endpoints with the
   empty-body hash exemption, like the streamed file endpoints.
+- Engine and SDK versions are independent. The engine build tag is
+  `Version` in `GET /appmesh/config`, `appmesh_version` in
+  `GET /appmesh/resources` (both need `config-view`), the daemon startup
+  log, and `appmesh --version`; it is not expected to match an SDK version
+  (Python 3.0.20 is the first with these generators). Feature support
+  follows the endpoints, not the number: an engine that does not serve
+  these routes answers 404/405.

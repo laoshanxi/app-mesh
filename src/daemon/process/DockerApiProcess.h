@@ -72,7 +72,8 @@ public:
 	// Get process exit code from the inspect projection
 	int returnValue() const override;
 
-	// Get stdout content from the agent's demultiplexed log projection
+	// Get stdout content from the agent's demultiplexed log projection; once the
+	// container is gone, from this run's stdout slot (the terminate-time archive).
 	const std::string getOutputMsg(long *position = nullptr, int maxSize = APP_STD_OUT_VIEW_DEFAULT_SIZE,
 								   bool readLine = false) override;
 
@@ -119,6 +120,10 @@ private:
 
 	// The agent's log projection joined back into plain text (timestamps dropped).
 	static std::string joinLogLines(const Json::Value &logs);
+
+	// This run's own stdout slot (where terminateImpl archives the container
+	// logs); guarded by m_dockerMutex. Empty until the run starts.
+	std::string stdoutArchiveFile() const;
 
 	// SIGTERM grace before SIGKILL: stop_grace_period, docker's 10s default.
 	int stopGraceSeconds() const;

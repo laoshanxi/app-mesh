@@ -14,6 +14,7 @@
 #include <limits>
 #include <mutex>
 #include <sstream>
+#include <stdexcept>
 #include <thread>
 #include <tuple>
 #include <unistd.h>
@@ -489,10 +490,17 @@ std::optional<int> DockerApiProcess::execHealthProbe(const std::string &cmd)
 	return std::nullopt;
 }
 
+std::string DockerApiProcess::stdoutArchiveFile() const
+{
+	std::lock_guard guard(m_dockerMutex);
+	return m_stdoutFile;
+}
+
 void DockerApiProcess::archiveContainerLogs(const std::string &containerId)
 {
 	const static char fname[] = "DockerApiProcess::archiveContainerLogs() ";
-	if (m_stdoutFile.empty() || containerId.empty())
+	const auto stdoutFile = this->stdoutArchiveFile();
+	if (stdoutFile.empty() || containerId.empty())
 		return;
 	try
 	{
@@ -503,7 +511,7 @@ void DockerApiProcess::archiveContainerLogs(const std::string &containerId)
 			const auto output = joinLogLines(JSON::parse(resp->text, nullptr));
 			if (!output.empty())
 			{
-				std::ofstream out(m_stdoutFile, std::ios::app);
+				std::ofstream out(stdoutFile, std::ios::app);
 				out << output;
 			}
 		}
@@ -719,7 +727,10 @@ pid_t DockerApiProcess::startImpl(std::string cmd, std::string execUser, std::st
 	const static char fname[] = "DockerApiProcess::startImpl() ";
 	LOG_DBG << fname << "Entered";
 	(void)stdinPipe; // registration rejects pipe stdin for container apps
-	m_stdoutFile = stdoutFile;
+	{
+		std::lock_guard guard(m_dockerMutex);
+		m_stdoutFile = stdoutFile;
+	}
 
 	// Fail here: with the service off, the forwarded 404 would read as "image missing".
 	if (const auto unavailable = dockerUnavailableReason(); !unavailable.empty())
@@ -1108,6 +1119,26 @@ const std::string DockerApiProcess::getOutputMsg(long *position, int maxSize, bo
 			}
 		}
 		return output;
+	}
+
+	// No container is left (the run was stopped and its container removed, or it
+	// never created one): the output lives in this run's stdout slot, written by
+	// the terminate-time log archive. The base fallback reads the path attach()
+	// left behind, which is empty for container runs, and drops the archive.
+	if (const auto archiveFile = this->stdoutArchiveFile(); !archiveFile.empty())
+	{
+		try
+		{
+			return Utility::readFileCpp(archiveFile, position, maxSize, readLine);
+		}
+		catch (const std::invalid_argument &)
+		{
+			// A container-log cursor is a nanosecond stamp, not a byte offset:
+			// restart the archive read instead of failing the output request.
+			if (position)
+				*position = 0;
+			return Utility::readFileCpp(archiveFile, position, maxSize, readLine);
+		}
 	}
 
 	return AppProcess::getOutputMsg(position, maxSize, readLine);

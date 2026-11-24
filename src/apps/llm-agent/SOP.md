@@ -149,6 +149,9 @@ for token in client.run_task_stream("llm-agent-sess-S1", json.dumps(
 # StopIteration.value.result carries the final {"status","data"} envelope
 ```
 
+Streaming dials the engine's WSS/HTTPS listener on the same host (default 6058);
+pass `rest_port=<port>` to `AppMeshClientTCP` when `WebSocketPort` is not 6058.
+
 Real session (GLM): `Remember the number 7` → *"Got it — I'll remember the number **7**"* →
 `What number did I give you?` → *"You gave me the number **7**."* → close removes a worker
 App and its data. Full journeys: `python3 examples/user_scenarios.py a_stream` (shared App)

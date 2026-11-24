@@ -3,12 +3,16 @@
 Guards the App-Mesh-facing contract: continue_conversation continuity keyed by the
 session's cwd (first turn fresh, later turns continue), the blank-input guard,
 worker scoping, task-RPC streaming on shared App and workers, close dropping the
-workdir, and robustness to a malformed payload.
+workdir, robustness to a malformed payload, and the configured worker endpoint.
 """
+import argparse
 import json
 import os
+import sys
 import tempfile
+import types
 import unittest
+from unittest import mock
 
 from llm_agent import session
 from llm_agent.claude_sdk import Result
@@ -150,6 +154,39 @@ class HandlerTest(unittest.TestCase):
             f.write("x")
         self.assertEqual(_send(keep, session_id="s1", input="one")["status"], "error")
         self.assertTrue(os.path.isdir(session.workdir(ws2, "s1")))  # non-empty dir untouched
+
+
+class WorkerTransportTest(unittest.TestCase):
+    """The worker's task channel must dial the configured --server endpoint. A shifted
+    TcpApiPort used to be accepted by the CLI and then silently ignored: the SDK dialed
+    its 127.0.0.1:6059 default, so tasks (and their streaming partials) never arrived."""
+
+    def test_server_option_parses_host_port(self):
+        from llm_agent.__main__ import _parse_server
+        self.assertEqual(_parse_server("10.0.0.5:16059"), ("10.0.0.5", 16059))
+        self.assertEqual(_parse_server("appmesh.local:6059"), ("appmesh.local", 6059))
+        for bad in ("127.0.0.1", ":6059", "host:", "host:port", "host:0", "host:70000"):
+            with self.assertRaises(argparse.ArgumentTypeError):
+                _parse_server(bad)
+
+    def test_serve_hands_the_configured_address_to_the_worker(self):
+        from llm_agent import __main__ as main_mod
+        recorded = {}
+        stop = type("_Stop", (Exception,), {})
+
+        class _Worker:
+            def __init__(self, *, tcp_address):
+                recorded["address"] = tcp_address
+                raise stop
+
+        fake = types.ModuleType("appmesh")
+        fake.AppMeshWorkerTCP = _Worker
+        fake.AppMeshProcessSupersededError = type("Superseded", (Exception,), {})
+        fake.AppMeshWorkerRejectedError = type("Rejected", (Exception,), {})
+        with mock.patch.dict(sys.modules, {"appmesh": fake}):
+            with self.assertRaises(stop):
+                main_mod._serve(None, ("10.0.0.5", 16059))
+        self.assertEqual(recorded["address"], ("10.0.0.5", 16059))
 
 
 if __name__ == "__main__":
