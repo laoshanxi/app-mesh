@@ -517,6 +517,7 @@ function Assert-BuiltinOwner {
 }
 
 function Request-AutomationToken {
+    param([switch]$PassThru)
     Assert-BuiltinOwner
     $credential = Read-KeyValueFile $AutomationClientFile
     $accessUrl = Get-AuthEnvironmentOrYaml "APPMESH_AUTH_ACCESS_URL" $OidcConfig "access_url" "http://127.0.0.1:6065/auth"
@@ -542,6 +543,7 @@ function Request-AutomationToken {
     $token = ($response | ConvertFrom-Json).access_token
     $response = $null
     if (-not $token) { throw "The token response has no access_token" }
+    if ($PassThru) { return $token }
     [Console]::Out.Write($token)
 }
 
@@ -678,8 +680,8 @@ function Forget-InitialPassword {
 # Serve the Dex administration web UI (bin\dexuser.exe, built from the fork's
 # examples/example-app). It talks to the Dex administrative gRPC API over
 # mutual TLS, so it requires the same TLS material that gates the gRPC listener
-# in Render-DexConfig. The UI has no authentication of its own and therefore
-# listens on loopback only.
+# in Render-DexConfig. The UI admits any session or access token of the
+# authentication service without a role check, so it listens on loopback only.
 # The container entrypoint and the service environment file disable the UI with
 # APPMESH_AUTH_ADMIN_UI=off; the dexuser App then stays up but serves nothing,
 # like the identity App in external mode.
@@ -804,26 +806,33 @@ function Get-OidcSubjectForUserId {
 # POST one form to the administration UI (the dexuser System App, loopback
 # only). The UI answers every administrative write with a redirect: ?notice=
 # on success and ?error= on failure, so the Location header carries the result.
+# The administration routes require the automation bearer; only the ?notice=
+# redirect confirms a write; any other answer is a rejection.
 # $PasswordFile carries the password field through a private file so the value
 # never appears in a process argument list.
 function Invoke-AdminUiPost {
     param([string]$Path, [string]$Body, [string]$PasswordFile = "")
     $listen = if ($env:APPMESH_AUTH_ADMIN_LISTEN) { $env:APPMESH_AUTH_ADMIN_LISTEN } else { "127.0.0.1:6068" }
+    try { $token = Request-AutomationToken -PassThru } catch { $token = "" }
     $curlArguments = @("--silent", "--show-error", "--max-time", "10", "--request", "POST",
-        "--output", "NUL", "--dump-header", "-", "--data-raw", $Body)
+        "--output", "NUL", "--dump-header", "-", "--write-out", "\n%{http_code}", "--data-raw", $Body)
     if ($PasswordFile) { $curlArguments += @("--data-urlencode", "password@$PasswordFile") }
+    if ($token) { $curlArguments += @("--header", "Authorization: Bearer $token") }
     $headers = & curl.exe @curlArguments "http://$listen$Path"
     if ($LASTEXITCODE -ne 0) {
         throw "The administration UI is not reachable at http://${listen}; the dexuser System App must be running (see APPMESH_AUTH_ADMIN_UI)"
     }
+    $status = @($headers)[-1].Trim()
     $location = ""
     foreach ($line in ($headers -split "`r?`n")) {
         if ($line -match '^[Ll]ocation:\s*(.+?)\s*$') { $location = $Matches[1] }
     }
-    if ($location -match '[?&]error=([^&]*)') {
+    if ($location -match '^[^?]*\?notice=') { return }
+    if ($location -match '^[^?]*\?error=([^&]*)') {
         $detail = [System.Net.WebUtility]::UrlDecode($Matches[1])
         throw "The administration UI rejected the request: $detail"
     }
+    throw "The administration UI did not confirm the request (HTTP $status)"
 }
 
 function Add-User {
@@ -908,7 +917,10 @@ function Remove-User {
     # Recover it from the UI password list before the entry disappears; the
     # column layout mirrors the fork's admin.html passwords table.
     $listen = if ($env:APPMESH_AUTH_ADMIN_LISTEN) { $env:APPMESH_AUTH_ADMIN_LISTEN } else { "127.0.0.1:6068" }
-    $page = (& curl.exe --fail --silent --show-error --max-time 10 "http://$listen/admin?section=passwords") -join "`n"
+    try { $token = Request-AutomationToken -PassThru } catch { $token = "" }
+    $curlArguments = @("--fail", "--silent", "--show-error", "--max-time", "10")
+    if ($token) { $curlArguments += @("--header", "Authorization: Bearer $token") }
+    $page = (& curl.exe @curlArguments "http://$listen/admin?section=passwords") -join "`n"
     if ($LASTEXITCODE -ne 0) {
         throw "The administration UI is not reachable at http://${listen}; the dexuser System App must be running (see APPMESH_AUTH_ADMIN_UI)"
     }

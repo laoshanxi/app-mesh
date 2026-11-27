@@ -166,13 +166,10 @@ the authentication-service objects: users, OAuth clients, and sessions.
 It does not manage App Mesh authorization records. Set those through
 `add-user` or the REST API.
 
-The UI listens on loopback only (`http://127.0.0.1:6068`), because it has **no
-authentication of its own** — the same posture as the administrative gRPC API
-it drives. Open it through SSH port forwarding:
-
-```shell
-ssh -L 6068:127.0.0.1:6068 <host>
-```
+The UI listens on loopback only (`http://127.0.0.1:6068`). Its administration
+pages require a session, which the web UI's **Security > Users** page opens for
+the signed-in user (the `principal-set` permission is required). Without the web
+UI, manage users with `add-user` and `delete-user`.
 
 Key facts:
 
@@ -187,7 +184,7 @@ Key facts:
   `example-app` OAuth client; only the administration pages are supported.
 - `APPMESH_AUTH_ADMIN_LISTEN` changes the UI listener; the underlying gRPC API
   listens on `127.0.0.1:6067` (`APPMESH_AUTH_GRPC_LISTEN`). Keep both on
-  loopback: the UI has no authentication (see
+  loopback: the UI admits every account of the deployment (see
   [Security](Security.md#administration-interfaces)).
 
 ### Disabling the administration UI

@@ -1,6 +1,6 @@
 # App Mesh Java SDK
 
-Java client for App Mesh. Group and artifact ID: `laoshanxi:appmesh`.
+Java client for App Mesh. Group and artifact ID: `io.github.laoshanxi:appmesh`.
 
 ## Install from Maven Central
 
@@ -8,13 +8,13 @@ Maven Central is the standard channel. No repository or credential setup is need
 
 ```xml
 <dependency>
-    <groupId>laoshanxi</groupId>
+    <groupId>io.github.laoshanxi</groupId>
     <artifactId>appmesh</artifactId>
     <version>3.0.24</version>
 </dependency>
 ```
 
-Maven Central is published by the manual `release-sdk-java` workflow (`workflow_dispatch`) when the repository Central Portal secrets are configured. The workflow skips a version that is already published.
+A version appears on Maven Central after the manual `release-sdk-java` workflow (`workflow_dispatch`) publishes it. The workflow skips a version that is already published.
 
 ## Install from GitHub Packages
 
@@ -61,7 +61,7 @@ The repository `id` and the server `id` must both be `github`. Maven matches the
 
 ```xml
 <dependency>
-    <groupId>laoshanxi</groupId>
+    <groupId>io.github.laoshanxi</groupId>
     <artifactId>appmesh</artifactId>
     <version>3.0.24</version>
 </dependency>

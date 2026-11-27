@@ -1,6 +1,6 @@
 name: "release-sdk-java"
 
-# Publishes the Java SDK (laoshanxi:appmesh) to GitHub Packages on every push
+# Publishes the Java SDK (io.github.laoshanxi:appmesh) to GitHub Packages on every push
 # that touches the SDK. Maven Central (repo1.maven.org) is published only by a
 # manual workflow_dispatch run, gated on the Central Portal secrets and on a
 # version-exists probe, so an already-published version is skipped.
@@ -50,13 +50,13 @@ jobs:
         run: |
           VERSION=$(mvn --batch-mode -q help:evaluate -Dexpression=project.version -DforceStdout)
           [ -n "$VERSION" ] || { echo "failed to evaluate project version"; exit 1; }
-          BASE_URL="https://maven.pkg.github.com/laoshanxi/app-mesh/laoshanxi/appmesh/$VERSION"
+          BASE_URL="https://maven.pkg.github.com/laoshanxi/app-mesh/io/github/laoshanxi/appmesh/$VERSION"
           # -L follows the registry's 301; no --fail: a 404 means "not yet
           # published" and must fall through to the deploy branch below.
           POM_STATUS=$(curl -sSL -o /dev/null -w '%{http_code}' -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" "$BASE_URL/appmesh-$VERSION.pom")
           JAR_STATUS=$(curl -sSL -o /dev/null -w '%{http_code}' -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" "$BASE_URL/appmesh-$VERSION.jar")
           if [ "$POM_STATUS" = "200" ] && [ "$JAR_STATUS" = "200" ]; then
-            echo "laoshanxi:appmesh:$VERSION already deployed, skipping"
+            echo "io.github.laoshanxi:appmesh:$VERSION already deployed, skipping"
           else
             mvn --batch-mode deploy -DskipTests
           fi
@@ -108,13 +108,13 @@ jobs:
         run: |
           VERSION=$(mvn --batch-mode -q help:evaluate -Dexpression=project.version -DforceStdout)
           [ -n "$VERSION" ] || { echo "failed to evaluate project version"; exit 1; }
-          URL="https://repo1.maven.org/maven2/laoshanxi/appmesh/$VERSION/appmesh-$VERSION.pom"
+          URL="https://repo1.maven.org/maven2/io/github/laoshanxi/appmesh/$VERSION/appmesh-$VERSION.pom"
           STATUS=$(curl -sS -o /dev/null -w '%{http_code}' "$URL")
           if [ "$STATUS" = "200" ]; then
-            echo "::notice::laoshanxi:appmesh:$VERSION is already published to Maven Central; skipping"
+            echo "::notice::io.github.laoshanxi:appmesh:$VERSION is already published to Maven Central; skipping"
             echo "publish=false" >> "$GITHUB_OUTPUT"
           else
-            echo "laoshanxi:appmesh:$VERSION is not on Maven Central (HTTP $STATUS); publishing"
+            echo "io.github.laoshanxi:appmesh:$VERSION is not on Maven Central (HTTP $STATUS); publishing"
             echo "publish=true" >> "$GITHUB_OUTPUT"
           fi
 
