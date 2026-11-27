@@ -20,7 +20,7 @@ const (
 	restPathDownload = "/appmesh/file/download"
 
 	// defaultRESTPort is the SSE side channel's REST port when Option.RestPort is unset.
-	defaultRESTPort = 6058
+	defaultRESTPort = 6063
 )
 
 // AppMeshClientTCP interacts with the TCP server using REST API requests via a socket.

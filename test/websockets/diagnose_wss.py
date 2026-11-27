@@ -22,7 +22,7 @@ async def test_raw_websocket():
         return False
     
     host = "127.0.0.1"
-    port = 6058
+    port = 6063
     uri = f"wss://{host}:{port}/"
     
     logger.info(f"Attempting connection to {uri}")
@@ -82,13 +82,13 @@ async def main():
     print("\n[Step 1] Checking server connectivity...")
     import socket
     sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    result = sock.connect_ex(("127.0.0.1", 6058))
+    result = sock.connect_ex(("127.0.0.1", 6063))
     sock.close()
     
     if result == 0:
-        print("✓ Server port 6058 is open")
+        print("✓ Server port 6063 is open")
     else:
-        print("✗ Server port 6058 is NOT open (connection refused)")
+        print("✗ Server port 6063 is NOT open (connection refused)")
         print("  Troubleshooting:")
         print("  1. Check if AppMesh server is running: ps aux | grep appmesh")
         print("  2. Check server logs for errors")

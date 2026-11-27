@@ -53,10 +53,10 @@ pub const HTTP_USER_AGENT_WSS: &str = "appmesh/rust/wss";
 pub const DEFAULT_SSL_CA_CERT_PATH: &str = "/opt/appmesh/ssl/ca.pem";
 pub const DEFAULT_HTTP_URL: &str = "https://127.0.0.1:6060";
 pub const DEFAULT_TCP_HOST: &str = "127.0.0.1";
-pub const DEFAULT_TCP_PORT: u16 = 6059;
-pub const DEFAULT_WSS_PORT: u16 = 6058;
+pub const DEFAULT_TCP_PORT: u16 = 6062;
+pub const DEFAULT_WSS_PORT: u16 = 6063;
 /// REST listener the TCP/WSS clients use for their SSE streaming side channel.
-pub const DEFAULT_REST_PORT: u16 = 6058;
+pub const DEFAULT_REST_PORT: u16 = 6063;
 
 // Event subscription
 pub const EVENT_URI: &str = "/appmesh/event";

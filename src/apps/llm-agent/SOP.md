@@ -50,7 +50,7 @@ Check: `appm ls` shows `llm-agent` as `enabled`, health `OK`.
 CLI-only users skip this (`appm logon` did it). SDK calls need the raw token:
 
 ```bash
-TOKEN=$(curl -s -u "appmesh-cli:" -X POST http://127.0.0.1:6062/auth/token \
+TOKEN=$(curl -s -u "appmesh-cli:" -X POST http://127.0.0.1:6065/auth/token \
   -d grant_type=password -d username=admin@appmesh.local -d "password=<your password>" \
   --data-urlencode "scope=openid audience:server:client_id:appmesh-api" \
   | sed -n 's/.*"access_token"[[:space:]]*:[[:space:]]*"\([A-Za-z0-9._~-]*\)".*/\1/p')
@@ -139,7 +139,7 @@ appm add -D @config/llm-agent-worker.yaml --force \
 import json
 from appmesh import AppMeshClientTCP
 
-client = AppMeshClientTCP(tcp_address=("127.0.0.1", 6059), ssl_verify=False)
+client = AppMeshClientTCP(tcp_address=("127.0.0.1", 6062), ssl_verify=False)
 client.set_bearer_token("<token>")
 # llm-agent (shared App) or llm-agent-sess-S1 (isolated worker) — same channel
 for token in client.run_task_stream("llm-agent-sess-S1", json.dumps(

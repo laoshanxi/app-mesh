@@ -718,7 +718,7 @@ Jobs can target a specific cluster node via the `node_label` field. Steps in tha
 jobs:
   backup:
     node_label:
-      host: "db-server:6059"      # Direct host specification
+      host: "db-server:6062"      # Direct host specification
     steps:
       - name: dump
         command: "pg_dump -f /backup/db.sql"

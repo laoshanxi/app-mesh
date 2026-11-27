@@ -63,7 +63,7 @@ public class AppMeshClientWSS extends AppMeshClient {
     public static class Builder {
         private final AppMeshClient.Builder base = new AppMeshClient.Builder();
         private String host = "127.0.0.1";
-        private int port = 6058;
+        private int port = 6063;
         private int connectTimeout = WSSTransport.WSS_CONNECT_TIMEOUT;
         private Integer connectionLostTimeout;
 

@@ -127,7 +127,7 @@ Lifecycle semantics:
 
 The streaming routes answer `text/event-stream` frames (partials, final
 result, terminal status) on the engine's native listener (default wss/https
-6058 — the agent REST listener 6060 carries no streaming routes). See
+6063 — the agent REST listener 6060 carries no streaming routes). See
 [Streaming.md](Streaming.md)
 for the event contract, the stdin pipe mode, and the SDK generator APIs.
 

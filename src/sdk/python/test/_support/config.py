@@ -18,5 +18,5 @@ BASE_URL = os.environ.get("APPMESH_TEST_URL")
 # REST-over-WSS port used by the WSSRest transport tests, and the TCP/WSS
 # service ports used by the persistent-transport tests. Overridable so a
 # sandbox daemon on non-default ports can run the same suite.
-WSS_REST_PORT = int(os.environ.get("APPMESH_TEST_WSS_PORT", "6058"))
-TCP_PORT = int(os.environ.get("APPMESH_TEST_TCP_PORT", "6059"))
+WSS_REST_PORT = int(os.environ.get("APPMESH_TEST_WSS_PORT", "6063"))
+TCP_PORT = int(os.environ.get("APPMESH_TEST_TCP_PORT", "6062"))

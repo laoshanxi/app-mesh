@@ -43,7 +43,7 @@ from _support import config
 
 # WSS transport carries run_task/REST calls over a single persistent websocket (msgpack),
 # not urllib3 — so ssl_verify=False emits no per-request InsecureRequestWarning noise.
-WSS_ADDRESS = ("127.0.0.1", 6058)
+WSS_ADDRESS = ("127.0.0.1", 6063)
 
 WF_APP = "workflow"           # engine App name (default install)
 MSG_APP = "py-task"           # shipped App used to exercise message steps

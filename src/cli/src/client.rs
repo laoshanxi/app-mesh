@@ -428,7 +428,7 @@ mod tests {
 
     fn session_with_expiry(expires_at: Option<u64>) -> config::StoredSession {
         config::StoredSession::new(
-            "wss://engine:6058".to_string(),
+            "wss://engine:6063".to_string(),
             OAuthConfig::new("https://auth.example", "https://auth.example", "appmesh-cli"),
             TokenSet {
                 access_token: "access-token".into(),

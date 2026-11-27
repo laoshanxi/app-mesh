@@ -87,7 +87,7 @@ jobs:
             #    field 1 = the id, so no running Dex is needed here);
             # 2) once the daemon is up, exchange the launcher-generated
             #    appmesh-automation secret for a client_credentials token.
-            DEX_ISSUER="http://127.0.0.1:6062/auth"
+            DEX_ISSUER="http://127.0.0.1:6065/auth"
             AUTOMATION_SUB=$(python3 -c "import base64; cid=b\"appmesh-automation\"; print(base64.urlsafe_b64encode(bytes([0x0A,len(cid)])+cid).decode().rstrip(\"=\"))")
             PRINCIPAL_ID="oidc:$(DEX_ISSUER="$DEX_ISSUER" AUTOMATION_SUB="$AUTOMATION_SUB" python3 -c "import hashlib,os; print(hashlib.sha256(os.environ[\"DEX_ISSUER\"].encode()+b\"\x00\"+os.environ[\"AUTOMATION_SUB\"].encode()).hexdigest())")"
             install -d -m 700 /opt/appmesh/work/config
@@ -189,7 +189,7 @@ jobs:
             #    field 1 = the id, so no running Dex is needed here);
             # 2) once the daemon is up, exchange the launcher-generated
             #    appmesh-automation secret for a client_credentials token.
-            DEX_ISSUER="http://127.0.0.1:6062/auth"
+            DEX_ISSUER="http://127.0.0.1:6065/auth"
             AUTOMATION_SUB=$(python3 -c "import base64; cid=b\"appmesh-automation\"; print(base64.urlsafe_b64encode(bytes([0x0A,len(cid)])+cid).decode().rstrip(\"=\"))")
             PRINCIPAL_ID="oidc:$(DEX_ISSUER="$DEX_ISSUER" AUTOMATION_SUB="$AUTOMATION_SUB" python3 -c "import hashlib,os; print(hashlib.sha256(os.environ[\"DEX_ISSUER\"].encode()+b\"\x00\"+os.environ[\"AUTOMATION_SUB\"].encode()).hexdigest())")"
             install -d -m 700 /opt/appmesh/work/config

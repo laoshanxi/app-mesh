@@ -164,7 +164,7 @@ on:
     - cron: "0 23 * * *"
 jobs:
   digest:
-    node_label: { host: "ai-node:6059" }
+    node_label: { host: "ai-node:6062" }
     steps:
       - name: collect
         command: "journalctl -p err --since today --no-pager | tail -n 50"
@@ -267,7 +267,7 @@ jobs:
         command: "df -h /"
   summary:
     needs: [disk]
-    node_label: { host: "ai-node:6059" }
+    node_label: { host: "ai-node:6062" }
     steps:
       - name: ask
         message:

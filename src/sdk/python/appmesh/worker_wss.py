@@ -16,13 +16,13 @@ class AppMeshWorkerWSS(AppMeshWorker):
     """Worker SDK for interacting with the local App Mesh service over WebSockets (WSS).
 
     Example:
-        >>> worker = AppMeshWorkerWSS(wss_address=("127.0.0.1", 6058))
+        >>> worker = AppMeshWorkerWSS(wss_address=("127.0.0.1", 6063))
         >>> payload = worker.fetch_task()
     """
 
     def __init__(
         self,
-        wss_address: Tuple[str, int] = ("127.0.0.1", 6058),
+        wss_address: Tuple[str, int] = ("127.0.0.1", 6063),
         ssl_verify: Union[bool, str, None] = None,
         ssl_client_cert: Optional[Union[str, Tuple[str, str]]] = None,
         *,
@@ -35,7 +35,7 @@ class AppMeshWorkerWSS(AppMeshWorker):
             ``AppMeshWorkerTCP`` (``ssl_verify`` first); prefer keyword arguments.
 
         Args:
-            wss_address: Server address as (host, port) tuple, defaults to ("127.0.0.1", 6058).
+            wss_address: Server address as (host, port) tuple, defaults to ("127.0.0.1", 6063).
             ssl_verify: SSL server verification mode; same semantics as `AppMeshClientWSS`.
             ssl_client_cert: SSL client certificate file(s); same semantics as `AppMeshClientWSS`.
             logger: Optional logger instance.

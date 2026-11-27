@@ -49,10 +49,10 @@ def _discover_password_file():
 
 
 def _token_url() -> str:
-	"""token 端点归一化：env 可写 base（与 appmesh-auth.sh 的 http://127.0.0.1:6062
+	"""token 端点归一化：env 可写 base（与 appmesh-auth.sh 的 http://127.0.0.1:6065
 	约定一致）或完整端点。SDK 的 PasswordGrantProvider.token_url 是完整端点语义
 	（PyPI 3.0.10 与仓库 HEAD 一致；给 base 会打到 Dex 根路径 404），统一补全。"""
-	url = (os.getenv("DH_TOKEN_URL") or "http://127.0.0.1:6062").rstrip("/")
+	url = (os.getenv("DH_TOKEN_URL") or "http://127.0.0.1:6065").rstrip("/")
 	return url if url.endswith("/auth/token") else url + "/auth/token"
 
 

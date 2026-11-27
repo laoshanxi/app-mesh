@@ -20,7 +20,7 @@ import (
 // the option there made workflow jobs with node_label run on the local node while
 // the run record named the remote one.
 func TestConstructorKeepsForwardToForEveryTransport(t *testing.T) {
-	base := url.URL{Scheme: "https", Host: "gateway.local:6059"}
+	base := url.URL{Scheme: "https", Host: "gateway.local:6062"}
 	requesters := map[string]Requester{
 		"tcp":  &TCPRequester{TCPConnection: NewTCPConnection(), baseURL: base},
 		"wss":  &WSSRequester{WSSConnection: NewWSSConnection(), baseURL: base},

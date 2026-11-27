@@ -12,7 +12,7 @@ public class AppMeshWorkerWSS extends AppMeshWorker {
     }
 
     public AppMeshWorkerWSS() {
-        // default to localhost:6058 to mirror Python defaults
-        this("127.0.0.1", 6058);
+        // default to localhost:6063 to mirror Python defaults
+        this("127.0.0.1", 6063);
     }
 }

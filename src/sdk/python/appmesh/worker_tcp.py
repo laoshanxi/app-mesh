@@ -16,7 +16,7 @@ class AppMeshWorkerTCP(AppMeshWorker):
     """Worker SDK for interacting with the local App Mesh service over TCP (TLS).
 
     Example:
-        >>> worker = AppMeshWorkerTCP(tcp_address=("127.0.0.1", 6059))
+        >>> worker = AppMeshWorkerTCP(tcp_address=("127.0.0.1", 6062))
         >>> payload = worker.fetch_task()
     """
 
@@ -24,7 +24,7 @@ class AppMeshWorkerTCP(AppMeshWorker):
         self,
         ssl_verify: Union[bool, str, None] = None,
         ssl_client_cert: Optional[Union[str, Tuple[str, str]]] = None,
-        tcp_address: Tuple[str, int] = ("127.0.0.1", 6059),
+        tcp_address: Tuple[str, int] = ("127.0.0.1", 6062),
         *,
         logger: Optional[logging.Logger] = None,  # pylint: disable=redefined-outer-name
     ):
@@ -37,7 +37,7 @@ class AppMeshWorkerTCP(AppMeshWorker):
         Args:
             ssl_verify: SSL server verification mode; same semantics as `AppMeshClientTCP`.
             ssl_client_cert: SSL client certificate file(s); same semantics as `AppMeshClientTCP`.
-            tcp_address: Server address as (host, port) tuple, defaults to ("127.0.0.1", 6059).
+            tcp_address: Server address as (host, port) tuple, defaults to ("127.0.0.1", 6062).
             logger: Optional logger instance.
         """
         tcp_client = AppMeshClientTCP(ssl_verify=ssl_verify, ssl_client_cert=ssl_client_cert, tcp_address=tcp_address)

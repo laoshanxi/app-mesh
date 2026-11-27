@@ -304,7 +304,7 @@ pub struct AppMeshClientWSS {
     client: Arc<AppMeshClient>,
     http_client: reqwest::Client,
     base_url: String,
-    /// Direct HTTPS to the daemon's REST listener (`rest_port`, default 6058) for SSE
+    /// Direct HTTPS to the daemon's REST listener (`rest_port`, default 6063) for SSE
     /// streams: framed transports cannot carry a chunked stream; no total request timeout.
     rest_client: reqwest::Client,
     rest_base_url: String,
@@ -316,7 +316,7 @@ pub struct AppMeshClientWSS {
 }
 
 impl AppMeshClientWSS {
-    /// Create a WSS transport client. Defaults to `127.0.0.1:6058`.
+    /// Create a WSS transport client. Defaults to `127.0.0.1:6063`.
     /// An empty `ssl_verify` path is the legacy verification-disable form; prefer
     /// [`crate::ClientBuilderWSS`]'s explicit `danger_accept_invalid_certs(true)`.
     pub fn new(
@@ -332,7 +332,7 @@ impl AppMeshClientWSS {
     /// builder so insecure mode is an explicit flag, never an empty-string sentinel).
     /// `plain` selects the TLS-at-gateway shape: ws:// and a plaintext HTTPS side
     /// channel. `rest_port` overrides the SSE side channel's REST port (default
-    /// 6058) for shifted-port daemons.
+    /// 6063) for shifted-port daemons.
     pub(crate) fn new_with_verify(
         address: Option<(String, u16)>,
         verify: crate::tls_config::SslVerify,

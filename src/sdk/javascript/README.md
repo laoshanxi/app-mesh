@@ -151,7 +151,7 @@ const sslConfig = {
 
 // Auto-cleanup with context manager
 await withServer(
-  () => new AppMeshWorkerTCP(sslConfig, ["127.0.0.1", 6059]),
+  () => new AppMeshWorkerTCP(sslConfig, ["127.0.0.1", 6062]),
   async (server) => {
     const payload = await server.fetchTask();
     const result = processPayload(payload);
@@ -249,7 +249,7 @@ new AppMeshWorkerTCP(sslConfig, tcpAddress, options);
 **Parameters:**
 
 - `sslConfig` (object, optional) - SSL configuration (same as AppMeshWorker)
-- `tcpAddress` (array or object, optional) - `[host, port]` (legacy) or `{host, port}`. Default: `['127.0.0.1', 6059]`. The `{host, port}` object form is also accepted as the first argument: `new AppMeshWorkerTCP({host, port}, sslConfig)`
+- `tcpAddress` (array or object, optional) - `[host, port]` (legacy) or `{host, port}`. Default: `['127.0.0.1', 6062]`. The `{host, port}` object form is also accepted as the first argument: `new AppMeshWorkerTCP({host, port}, sslConfig)`
 - `options` (object, optional) - Same as AppMeshWorker
 
 ##### Methods

@@ -25,7 +25,7 @@
 
 ## 2. 前置条件
 
-1. 目标节点运行 App Mesh daemon（REST 6060 / TCP 6059 / WSS 6058 已开放）。
+1. 目标节点运行 App Mesh daemon（REST 6060 / TCP 6062 / WSS 6063 已开放）。
 2. `appm` CLI 可用，并已执行 `appm logon`（全新安装必须先 logon，见 DESIGN.md 第 9 节）。
 3. Python ≥ 3.10 可用（默认 `python3.14`，可用 `DH_PYTHON` 覆盖）。claude-agent-sdk 有此硬性要求。
 4. 模型凭据可用。默认读取本机 `~/.claude/settings.json` 的 `env` 块。
@@ -69,7 +69,7 @@ bash setup.sh --team demo
 **多节点 / 容器化部署注意**（用户视角实测结论）：
 
 - 用户与角色只能在 **authentication owner 节点**创建（follower 节点的 `add-user` 会被拒绝）；角色写入授权策略后有短暂落盘延迟，`add-user` 报"角色未定义"时稍候重试。
-- Dex 路由不在回环时（如 follower 容器内、`DH_TOKEN_URL` 指向内部网络的明文端点），需设置 `APPMESH_AUTH_ALLOW_HTTP=1` 放行受信内网明文，或把 `DH_TOKEN_URL` 指向回环转发（如 `127.0.0.1:6062 → <owner>:6062`）。
+- Dex 路由不在回环时（如 follower 容器内、`DH_TOKEN_URL` 指向内部网络的明文端点），需设置 `APPMESH_AUTH_ALLOW_HTTP=1` 放行受信内网明文，或把 `DH_TOKEN_URL` 指向回环转发（如 `127.0.0.1:6065 → <owner>:6065`）。
 - **大脑 App 的 env 必须带 `DH_TOKEN_URL` 与 `APPMESH_AUTH_ALLOW_HTTP`**：agent 的 Bash 子进程调技能时继承 App env，缺了技能侧密码流会被 SDK fail-closed 拒绝（部署模板 `apps/agent.yaml` 可按需加这两行 env）。
 
 ## 5. 使用

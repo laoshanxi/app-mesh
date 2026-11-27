@@ -26,7 +26,7 @@ type AppMeshClient struct {
 
 // Option for NewHttpClient
 type Option struct {
-	AppMeshURI string // URI of the App Mesh server; use "https://127.0.0.1:6060" for HTTP or "127.0.0.1:6059" for TCP.
+	AppMeshURI string // URI of the App Mesh server; use "https://127.0.0.1:6060" for HTTP or "127.0.0.1:6062" for TCP.
 	// The target host to which all requests will be forwarded; with this set, AppMeshURI will act as a proxy to
 	// forward requests.
 	ForwardTo string
@@ -77,7 +77,7 @@ type Option struct {
 	HTTPTimeout time.Duration
 
 	// RestPort is the daemon REST listener port for the TCP transport's SSE
-	// side channel (SSE cannot ride the framed protocol); 0 uses port 6058.
+	// side channel (SSE cannot ride the framed protocol); 0 uses port 6063.
 	// HTTP and WSS already talk to the REST listener.
 	RestPort int
 }

@@ -170,7 +170,7 @@ def main():
     p.add_argument("scenario", nargs="?", default="all")
     p.add_argument("--list", action="store_true")
     p.add_argument("--host", default=os.environ.get("APPMESH_TCP_HOST", "127.0.0.1"))
-    p.add_argument("--port", default=os.environ.get("APPMESH_TCP_PORT", "6059"))
+    p.add_argument("--port", default=os.environ.get("APPMESH_TCP_PORT", "6062"))
     p.add_argument("--app", default=os.environ.get("LLMAGENT_APP", "llm-agent"))
     p.add_argument("--worker-app", default=os.environ.get("LLMAGENT_WORKER_APP", ""))
     p.add_argument("--worker-session", default=os.environ.get("LLMAGENT_WORKER_SESSION", ""))

@@ -153,7 +153,7 @@ class TokenProviderTests(unittest.TestCase):
         oauth = OAuthClient(
             appmesh_client=engine,
             issuer=_OAuthSession.ISSUER,
-            access_url="http://127.0.0.1:6062/dex",
+            access_url="http://127.0.0.1:6065/dex",
             client_id="appmesh-cli",
         )
 
@@ -170,7 +170,7 @@ class TokenProviderTests(unittest.TestCase):
         oauth = OAuthClient(
             appmesh_client=engine,
             issuer=_OAuthSession.ISSUER,
-            access_url="http://127.0.0.1:6062/dex",
+            access_url="http://127.0.0.1:6065/dex",
             client_id="appmesh-cli",
         )
         oauth.authorization_request("http://127.0.0.1:49152/callback")
@@ -186,7 +186,7 @@ class TokenProviderTests(unittest.TestCase):
         oauth = OAuthClient(
             appmesh_client=engine,
             issuer=_OAuthSession.ISSUER,
-            access_url="http://127.0.0.1:6062/dex",
+            access_url="http://127.0.0.1:6065/dex",
             client_id="appmesh-cli",
         )
         request = oauth.authorization_request(
@@ -207,7 +207,7 @@ class TokenProviderTests(unittest.TestCase):
             "public_client_id": "appmesh-cli",
         }
         with patch.object(engine, "get_auth_config", return_value=config):
-            oauth = OAuthClient.from_appmesh(engine, access_url="http://127.0.0.1:6062/dex")
+            oauth = OAuthClient.from_appmesh(engine, access_url="http://127.0.0.1:6065/dex")
 
         request = oauth.authorization_request("http://127.0.0.1:49152/callback")
         scope = parse.parse_qs(parse.urlsplit(request["authorization_url"]).query)["scope"][0]
@@ -225,7 +225,7 @@ class TokenProviderTests(unittest.TestCase):
         }
         with patch.object(engine, "get_auth_config", return_value=config):
             oauth = OAuthClient.from_appmesh(
-                engine, access_url="http://127.0.0.1:6062/dex", scopes=caller_scopes
+                engine, access_url="http://127.0.0.1:6065/dex", scopes=caller_scopes
             )
 
         request = oauth.authorization_request("http://127.0.0.1:49152/callback")
@@ -249,7 +249,7 @@ class TokenProviderTests(unittest.TestCase):
         oauth = OAuthClient(
             appmesh_client=engine,
             issuer=_OAuthSession.ISSUER,
-            access_url="http://127.0.0.1:6062/dex",
+            access_url="http://127.0.0.1:6065/dex",
             client_id="appmesh-cli",
         )
         oauth._install({"access_token": "access-token", "token_type": "Bearer", "expires_in": 300})
@@ -265,7 +265,7 @@ class PlainHttpIssuerPolicy(unittest.TestCase):
     """Plain-HTTP issuers stay fail-closed unless the caller opts in."""
 
     def test_plain_http_issuer_requires_opt_in(self):
-        url = "http://appmesh_master:6062/auth"
+        url = "http://appmesh_master:6065/auth"
         with self.assertRaisesRegex(ValueError, "must use HTTPS"):
             OAuthClient._normalize_base_url(url, "issuer")
         with self.assertRaisesRegex(ValueError, "must use HTTPS"):

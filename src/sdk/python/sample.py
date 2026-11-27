@@ -8,7 +8,7 @@ from appmesh import AppMeshClient, App, OAuthClient
 
 # Engine traffic and authentication traffic are separate routes, even on one node.
 engine_url = os.environ.get("APPMESH_ENGINE_URL", "https://127.0.0.1:6060")
-auth_access_url = os.environ.get("APPMESH_AUTH_ACCESS_URL", "http://127.0.0.1:6062/auth")
+auth_access_url = os.environ.get("APPMESH_AUTH_ACCESS_URL", "http://127.0.0.1:6065/auth")
 engine_ca = os.environ.get("APPMESH_ENGINE_CA")
 auth_ca = os.environ.get("APPMESH_AUTH_CA_PATH")
 client = AppMeshClient(

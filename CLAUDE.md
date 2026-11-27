@@ -70,11 +70,11 @@ The `REST` section of `src/daemon/config.yaml` defines three port keys (env over
 
 | Port | Config key | Bound by | Transport / purpose |
 |------|------------|----------|---------------------|
-| 6060 | `RestListenPort` | Go agent | Agent HTTPS entry — reverse-proxies REST/WSS to the daemon over TCP 6059. Clients treat this as the primary management surface. The daemon never binds this port; it only uses the value to build URLs (OIDC, Docker API). |
-| 6059 | `TcpApiPort` | daemon | TCP API — msgpack-framed protocol used by SDK clients (`ClientTCP`) and by the agent's proxy/forwarding path |
-| 6058 | `WebSocketPort` | daemon | Single libwebsockets listener serving both HTTPS REST and WSS — SDK clients (`ClientWSS`) and event subscribe |
+| 6060 | `RestListenPort` | Go agent | Agent HTTPS entry — reverse-proxies REST/WSS to the daemon over TCP 6062. Clients treat this as the primary management surface. The daemon never binds this port; it only uses the value to build URLs (OIDC, Docker API). |
+| 6062 | `TcpApiPort` | daemon | TCP API — msgpack-framed protocol used by SDK clients (`ClientTCP`) and by the agent's proxy/forwarding path |
+| 6063 | `WebSocketPort` | daemon | Single libwebsockets listener serving both HTTPS REST and WSS — SDK clients (`ClientWSS`) and event subscribe |
 
-All ports authenticate the same Dex bearer. Additional ports: Dex itself listens on 6062 (issuer) and 6063 (telemetry healthz) when the bundled auth stack runs; the Dex administration web UI (the `dexuser` System App, `bin/dexuser` built from the Dex fork's `examples/example-app`) listens on **6064**, loopback only, driven by the Dex administrative gRPC API on 5557 (mutual TLS, loopback). The Go agent's Prometheus exporter uses the fixed convention **6061** when enabled (`APPMESH_REST_PrometheusExporterListenPort`, default `0` = off; all docker-compose deployments enable 6061).
+All ports authenticate the same Dex bearer. Additional ports: Dex itself listens on 6065 (issuer) and 6066 (telemetry healthz) when the bundled auth stack runs; the Dex administration web UI (the `dexuser` System App, `bin/dexuser` built from the Dex fork's `examples/example-app`) listens on **6068**, loopback only, driven by the Dex administrative gRPC API on 6067 (mutual TLS, loopback). The Go agent's Prometheus exporter uses the fixed convention **6061** when enabled (`APPMESH_REST_PrometheusExporterListenPort`, default `0` = off; all docker-compose deployments enable 6061).
 
 ## Binary Inspection Tools
 

@@ -345,7 +345,7 @@ class AppMeshWorkerTCP extends AppMeshWorker {
    * @param {Buffer|string} [sslConfig.cert] - Client certificate
    * @param {Buffer|string} [sslConfig.key] - Client key
    * @param {boolean} [sslConfig.rejectUnauthorized=true] - Whether to verify SSL
-   * @param {Array<string, number>|{host: string, port: number}} [tcpAddress=['127.0.0.1', 6059]] - TCP server address
+   * @param {Array<string, number>|{host: string, port: number}} [tcpAddress=['127.0.0.1', 6062]] - TCP server address
    * @param {Object} [options={}] - Additional options
    * @param {Object} [options.logger=console] - Logger instance
    * @param {AppMeshClientTCP} [options.client] - Pre-built client to reuse (shares its caller-owned bearer);
@@ -358,18 +358,18 @@ class AppMeshWorkerTCP extends AppMeshWorker {
    *   cert: fs.readFileSync('/opt/appmesh/ssl/client.pem'),
    *   key: fs.readFileSync('/opt/appmesh/ssl/client-key.pem')
    * };
-   * const worker = new AppMeshWorkerTCP(sslConfig, ['127.0.0.1', 6059]);
+   * const worker = new AppMeshWorkerTCP(sslConfig, ['127.0.0.1', 6062]);
    *
    * @example
    * // Share a single TCP client between client-role and worker-role usage:
    * import { AppMeshClientTCP } from 'appmesh/tcp';
-   * const client = new AppMeshClientTCP(sslConfig, ['127.0.0.1', 6059]);
+   * const client = new AppMeshClientTCP(sslConfig, ['127.0.0.1', 6062]);
    * client.setBearerToken(process.env.APPMESH_BEARER_TOKEN);
-   * const worker = new AppMeshWorkerTCP(sslConfig, ['127.0.0.1', 6059], { client });
+   * const worker = new AppMeshWorkerTCP(sslConfig, ['127.0.0.1', 6062], { client });
    */
   constructor (
     sslConfig = null,
-    tcpAddress = ['127.0.0.1', 6059],
+    tcpAddress = ['127.0.0.1', 6062],
     options = {}
   ) {
     // Accept the address-first object form: new AppMeshWorkerTCP({host, port}, sslConfig)

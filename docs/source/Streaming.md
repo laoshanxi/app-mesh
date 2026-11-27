@@ -3,7 +3,7 @@
 Large-model services produce output continuously and often accept input
 continuously. App Mesh serves those workloads with three streaming
 primitives on the engine's native HTTPS listener (the WSS/CLI port,
-default 6058; behind the web UI's reverse proxy, 443), so any HTTP
+default 6063; behind the web UI's reverse proxy, 443), so any HTTP
 client — `curl`, a browser `fetch`, an OpenAI-style consumer — receives
 tokens as they are produced:
 
@@ -14,7 +14,7 @@ tokens as they are produced:
 | stdin injection | `POST /appmesh/app/{name}/input` | Drive a running process turn by turn |
 
 All three answer only on the engine's native listener (default wss/https
-6058) — the agent REST listener (6060) carries no streaming routes — and
+6063) — the agent REST listener (6060) carries no streaming routes — and
 use the standard bearer authentication and the application permission
 model. The server pushes frames as `text/event-stream` (SSE); a comment
 line (`: ping`) arrives every 15 seconds as a keep-alive and disconnect
@@ -67,7 +67,7 @@ the live frames.
 
 ```
 $ curl -N -H "Authorization: Bearer $TOKEN" \
-    "https://127.0.0.1:6058/appmesh/app/inference/output/stream?follow=true"
+    "https://127.0.0.1:6063/appmesh/app/inference/output/stream?follow=true"
 event: stdout
 data: {"position":0,"output":"token1 token2 "}
 
@@ -99,7 +99,7 @@ Permission: `app-run-task` plus write access to the application. Framed
 transports cannot carry a chunked event stream (SDKs redirect these calls
 to a direct HTTPS side channel), and the agent REST listener (6060) has no
 streaming routes at all: streaming lives on the engine's native listener
-(6058).
+(6063).
 
 ### Worker side
 
@@ -163,9 +163,9 @@ generator's return value is an `SseEnd` marker:
 from appmesh import AppMeshClient
 
 # Streaming routes live on the engine's native listener (default wss/https
-# 6058) — the SDK's default base_url (the agent REST port 6060) has no
+# 6063) — the SDK's default base_url (the agent REST port 6060) has no
 # streaming routes, so point the client at the engine listener for these calls.
-client = AppMeshClient("https://127.0.0.1:6058", bearer_token=TOKEN)
+client = AppMeshClient("https://127.0.0.1:6063", bearer_token=TOKEN)
 
 # 1) stream a one-shot run
 for chunk in client.stream_run("python3 infer.py --prompt '...'"):
@@ -196,7 +196,7 @@ wait/subscribe APIs for now.
 
 - Streams do not traverse node forwarding (`X-Target-Host`), and the agent
   REST listener (6060) carries no streaming routes; connect to the target
-  node's engine listener directly (wss/https, default 6058; via the web
+  node's engine listener directly (wss/https, default 6063; via the web
   UI, 443).
 - Browser `EventSource` cannot set an `Authorization` header; use `fetch`
   with a ReadableStream reader for bearer-authenticated streams.

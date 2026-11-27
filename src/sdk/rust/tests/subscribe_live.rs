@@ -17,7 +17,7 @@ fn bearer() -> String {
 }
 
 fn tcp_client() -> Arc<AppMeshClientTCP> {
-    ClientBuilderTCP::new().address("127.0.0.1", 6059).danger_accept_invalid_certs(true).build().expect("build TCP client")
+    ClientBuilderTCP::new().address("127.0.0.1", 6062).danger_accept_invalid_certs(true).build().expect("build TCP client")
 }
 
 fn static_provider(token: &str) -> Arc<dyn TokenProvider> {
@@ -149,7 +149,7 @@ async fn test_live_tcp_file_transfer_guard() {
 #[ignore = "requires a running App Mesh daemon and APPMESH_BEARER_TOKEN"]
 async fn test_live_wss_wait_streams_stdout() {
     let client: Arc<AppMeshClientWSS> = ClientBuilderWSS::new()
-        .address("127.0.0.1", 6058)
+        .address("127.0.0.1", 6063)
         .danger_accept_invalid_certs(true)
         .build()
         .expect("build WSS client");

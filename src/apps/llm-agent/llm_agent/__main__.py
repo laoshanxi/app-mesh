@@ -45,7 +45,7 @@ def _env_int(key, default):
 
 def main(argv=None):
     p = argparse.ArgumentParser(prog="llm-agent")
-    p.add_argument("--server", default="127.0.0.1:6059", help="App Mesh TCP server host:port")
+    p.add_argument("--server", default="127.0.0.1:6062", help="App Mesh TCP server host:port")
     p.add_argument("--session-worker", action="store_true", help="run as a single-session worker (Scenario B)")
     p.add_argument("--session-id", default="", help="worker: the session id this worker serves")
     p.add_argument("--version", action="store_true")

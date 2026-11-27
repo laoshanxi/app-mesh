@@ -52,8 +52,8 @@ Do not use `--forward-to` for this one-time assignment. A direct remote connecti
 Use `-H` to sign in to an Engine directly:
 
 ```bash
-appm -H wss://node-a.example.com:6058 logon
-appm -H wss://node-a.example.com:6058 ls
+appm -H wss://node-a.example.com:6063 logon
+appm -H wss://node-a.example.com:6063 ls
 ```
 
 The session belongs to the selected Engine endpoint. The CLI verifies the authentication configuration before it reuses the session.
@@ -72,8 +72,8 @@ remembered at logon, so later commands need no flags. See
 Use `-F` when one Engine forwards requests to another Engine:
 
 ```bash
-appm -H wss://gateway.example.com:6058 -F node-b.example.com logon
-appm -H wss://gateway.example.com:6058 -F node-b.example.com ls
+appm -H wss://gateway.example.com:6063 -F node-b.example.com logon
+appm -H wss://gateway.example.com:6063 -F node-b.example.com ls
 ```
 
 The gateway forwards authentication discovery to the target. The client then gets a token directly from the shared authentication service. The gateway validates the token before it connects to the target. The target Engine validates the token again.
@@ -125,7 +125,7 @@ Commands:
   help      Print this message or the help of the given subcommand(s)
 
 Options:
-  -H, --host-url <HOST_URL>      Server host URL (default: last used, or wss://127.0.0.1:6058; ws:// when the local daemon runs plaintext)
+  -H, --host-url <HOST_URL>      Server host URL (default: last used, or wss://127.0.0.1:6063; ws:// when the local daemon runs plaintext)
   -F, --forward-to <FORWARD_TO>  Forward request to target host
   --ca-cert <PATH>               CA bundle trusted for the Engine certificate
   --no-verify                    Skip Engine TLS certificate verification (insecure; remembered for a remote endpoint)

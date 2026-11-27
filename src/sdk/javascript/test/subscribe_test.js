@@ -313,7 +313,7 @@ await assertAsync('read loop skips zero-length frames', async () => {
 // Concurrent subscribe() calls on an unconnected transport must create exactly
 // one demuxer (no dual read loops competing for the socket).
 await assertAsync('concurrent enableDemuxer creates a single demuxer', async () => {
-  const client = new AppMeshClientTCP(false, ['127.0.0.1', 6059])
+  const client = new AppMeshClientTCP(false, ['127.0.0.1', 6062])
   let connects = 0
   client.tcpTransport = {
     connected: () => connects > 0,
@@ -338,7 +338,7 @@ await assertAsync('oversized frame length rejected and socket closed', async () 
     constructor () { super(); this.destroyed = false }
     destroy () { this.destroyed = true; this.emit('close') }
   }
-  const transport = new TCPTransport(['127.0.0.1', 6059], null)
+  const transport = new TCPTransport(['127.0.0.1', 6062], null)
   const sock = new FakeSocket()
   transport.socket = sock
 
@@ -419,7 +419,7 @@ await assertAsync('chunks arriving between reads are buffered', async () => {
     payload.copy(b, 8)
     return b
   }
-  const transport = new TCPTransport(['127.0.0.1', 6059], null)
+  const transport = new TCPTransport(['127.0.0.1', 6062], null)
   const sock = new FakeSocket()
   transport.socket = sock
 
@@ -448,7 +448,7 @@ await assertAsync('read pump rejects on socket error, latches, and re-arms after
     constructor () { super(); this.destroyed = false }
     destroy () { this.destroyed = true; this.emit('close') }
   }
-  const transport = new TCPTransport(['127.0.0.1', 6059], null)
+  const transport = new TCPTransport(['127.0.0.1', 6062], null)
   const sock = new FakeSocket()
   transport.socket = sock
 

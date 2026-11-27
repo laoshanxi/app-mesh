@@ -343,7 +343,7 @@ class TestHeadersAttached(unittest.TestCase):
         ))
 
     def test_tcp_frame_carries_signature_headers_with_uuid_nonce(self):
-        client = AppMeshClientTCP(("127.0.0.1", 6059), ssl_verify=False,
+        client = AppMeshClientTCP(("127.0.0.1", 6062), ssl_verify=False,
                                   api_key="ak-3f9c2a81b0d4", api_secret=KAT_SECRET)
         transport = _FakeTransport()
         client.tcp_transport = transport
@@ -368,7 +368,7 @@ class TestHeadersAttached(unittest.TestCase):
         ))
 
     def test_tcp_unsigned_frame_has_no_signature_headers(self):
-        client = AppMeshClientTCP(("127.0.0.1", 6059), ssl_verify=False)
+        client = AppMeshClientTCP(("127.0.0.1", 6062), ssl_verify=False)
         transport = _FakeTransport()
         client.tcp_transport = transport
         transport.receive_message = lambda: _response_frame(transport.sent[-1])
@@ -395,7 +395,7 @@ class TestWSSFileSideChannelSignature(unittest.TestCase):
         return resp
 
     def _client(self) -> AppMeshClientWSS:
-        client = AppMeshClientWSS(("gateway.local", 6058), ssl_verify=False, bearer_token="token",
+        client = AppMeshClientWSS(("gateway.local", 6063), ssl_verify=False, bearer_token="token",
                                   api_key="ak-3f9c2a81b0d4", api_secret=KAT_SECRET)
         client._request_http = mock.Mock()  # the control-channel precheck answers 200
         return client

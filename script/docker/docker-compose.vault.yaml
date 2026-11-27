@@ -130,7 +130,7 @@ services:
       - APPMESH_AUTH_REPLICATION_TOKEN_VAULT_TOKEN_FILE=/opt/appmesh/work/auth/vault-owner/owner.vault-token
       # The issuer must stay one identical string on every node and client;
       # under this layer it is the hyphenated alias.
-      - APPMESH_AUTH_ISSUER=http://appmesh-master:6062/auth
+      - APPMESH_AUTH_ISSUER=http://appmesh-master:6065/auth
       # Central TLS: the bootstrap issues the owner's leaf certificates from
       # the Vault PKI with the same service token. The hyphenated alias is
       # the dial name the certificate must cover (Vault drops the underscore
@@ -178,9 +178,9 @@ services:
       - APPMESH_SSL_EXTRA_SAN=appmesh-slave1
       # Dial names follow the master's hyphenated alias: the certificate SAN
       # the TLS pulls verify against carries it, not the underscore name.
-      - APPMESH_AUTH_ISSUER=http://appmesh-master:6062/auth
-      - APPMESH_AUTH_ACCESS_URL=http://appmesh-master:6062/auth
-      - APPMESH_AUTH_REPLICATION_FROM=https://appmesh-master:6058
+      - APPMESH_AUTH_ISSUER=http://appmesh-master:6065/auth
+      - APPMESH_AUTH_ACCESS_URL=http://appmesh-master:6065/auth
+      - APPMESH_AUTH_REPLICATION_FROM=https://appmesh-master:6063
     volumes:
       # Overrides the base file's mount at the same target: under this layer
       # the projected path carries this follower's AppRole credential
@@ -209,9 +209,9 @@ services:
       - APPMESH_SSL_VAULT_ADDR=http://appmesh_vault:8200
       - APPMESH_SSL_VAULT_TOKEN_FILE=/opt/appmesh/work/auth/replication/appmesh_slave3.token
       - APPMESH_SSL_EXTRA_SAN=appmesh-slave3
-      - APPMESH_AUTH_ISSUER=http://appmesh-master:6062/auth
-      - APPMESH_AUTH_ACCESS_URL=http://appmesh-master:6062/auth
-      - APPMESH_AUTH_REPLICATION_FROM=https://appmesh-master:6058
+      - APPMESH_AUTH_ISSUER=http://appmesh-master:6065/auth
+      - APPMESH_AUTH_ACCESS_URL=http://appmesh-master:6065/auth
+      - APPMESH_AUTH_REPLICATION_FROM=https://appmesh-master:6063
     volumes:
       # AppRole credential projected at the base bearer path, like slave1.
       - type: volume
@@ -236,9 +236,9 @@ services:
       - APPMESH_SSL_VAULT_ADDR=http://appmesh_vault:8200
       - APPMESH_SSL_VAULT_TOKEN_FILE=/opt/appmesh/work/auth/replication/appmesh_slave2.token
       - APPMESH_SSL_EXTRA_SAN=appmesh-slave2
-      - APPMESH_AUTH_ISSUER=http://appmesh-master:6062/auth
-      - APPMESH_AUTH_ACCESS_URL=http://appmesh-master:6062/auth
-      - APPMESH_AUTH_REPLICATION_FROM=https://appmesh-master:6058
+      - APPMESH_AUTH_ISSUER=http://appmesh-master:6065/auth
+      - APPMESH_AUTH_ACCESS_URL=http://appmesh-master:6065/auth
+      - APPMESH_AUTH_REPLICATION_FROM=https://appmesh-master:6063
     volumes:
       # AppRole credential projected at the base bearer path, like slave1.
       - type: volume
@@ -254,8 +254,8 @@ services:
       # SAN the verification checks carries it, not the underscore name.
       # The issuer follows the same canonical string as every node.
       - APPMESH_URL=https://appmesh-master:6060
-      - APPMESH_AUTH_ISSUER=http://appmesh-master:6062/auth
-      - APPMESH_AUTH_ACCESS_URL=http://appmesh-master:6062/auth
+      - APPMESH_AUTH_ISSUER=http://appmesh-master:6065/auth
+      - APPMESH_AUTH_ACCESS_URL=http://appmesh-master:6065/auth
 
 volumes:
   # Vault server state, audit log, the operator sidecar's init material, and

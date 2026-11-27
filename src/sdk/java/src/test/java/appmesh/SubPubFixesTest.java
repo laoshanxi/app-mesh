@@ -87,7 +87,7 @@ public class SubPubFixesTest {
         int calls;
 
         ScriptedTCPClient() {
-            super("127.0.0.1", 6059);
+            super("127.0.0.1", 6062);
         }
 
         @Override
@@ -180,7 +180,7 @@ public class SubPubFixesTest {
         int calls;
 
         ScriptedWSSClient() {
-            super("127.0.0.1", 6058);
+            super("127.0.0.1", 6063);
         }
 
         @Override
@@ -219,19 +219,19 @@ public class SubPubFixesTest {
         Map<String, String> common = new HashMap<>();
         common.put("Authorization", "Bearer tok");
         Map<String, String> extra = new HashMap<>();
-        extra.put("X-Target-Host", "10.0.0.2:6059");
+        extra.put("X-Target-Host", "10.0.0.2:6062");
 
         Map<String, String> merged = AppMeshClientWSS.assembleRequestHeaders(common, extra, "Bearer tok");
         assertEquals("Bearer tok", merged.get("Authorization"),
                 "a per-request X-Target-Host must receive the bearer");
-        assertEquals("10.0.0.2:6059", merged.get("X-Target-Host"));
+        assertEquals("10.0.0.2:6062", merged.get("X-Target-Host"));
     }
 
     @Test
     public void testWSSClientWideForwardCarriesBearer() {
         Map<String, String> common = new HashMap<>();
         common.put("Authorization", "Bearer tok");
-        common.put("X-Target-Host", "10.0.0.2:6059");
+        common.put("X-Target-Host", "10.0.0.2:6062");
 
         Map<String, String> merged = AppMeshClientWSS.assembleRequestHeaders(common, null, "Bearer tok");
         assertEquals("Bearer tok", merged.get("Authorization"));
@@ -251,7 +251,7 @@ public class SubPubFixesTest {
         Map<String, String> common = new HashMap<>();
         common.put("Authorization", "Bearer tok");
         Map<String, String> extra = new HashMap<>();
-        extra.put("X-Target-Host", "10.0.0.2:6059");
+        extra.put("X-Target-Host", "10.0.0.2:6062");
         extra.put("Authorization", "Bearer caller");
 
         Map<String, String> merged = AppMeshClientWSS.assembleRequestHeaders(common, extra, "Bearer tok");
@@ -271,7 +271,7 @@ public class SubPubFixesTest {
     }
 
     private static AppMeshClientTCP liveTCPClient() {
-        return new AppMeshClientTCP.Builder().host("127.0.0.1").port(6059)
+        return new AppMeshClientTCP.Builder().host("127.0.0.1").port(6062)
                 .disableSSLVerify().jwtToken(liveBearer()).build();
     }
 
@@ -322,7 +322,7 @@ public class SubPubFixesTest {
 
     @Test
     public void testLiveWSSWaitStreams() throws Exception {
-        AppMeshClientWSS client = new AppMeshClientWSS.Builder().host("127.0.0.1").port(6058)
+        AppMeshClientWSS client = new AppMeshClientWSS.Builder().host("127.0.0.1").port(6063)
                 .disableSSLVerify().jwtToken(liveBearer()).build();
         try {
             org.json.JSONObject app = new JSONObject()
@@ -366,7 +366,7 @@ public class SubPubFixesTest {
 
     @Test
     public void testLiveTCP401RefreshRetry() throws Exception {
-        AppMeshClientTCP client = new AppMeshClientTCP.Builder().host("127.0.0.1").port(6059)
+        AppMeshClientTCP client = new AppMeshClientTCP.Builder().host("127.0.0.1").port(6062)
                 .disableSSLVerify().build();
         LiveStaleFreshProvider provider = new LiveStaleFreshProvider(liveBearer());
         client.setTokenProvider(provider);

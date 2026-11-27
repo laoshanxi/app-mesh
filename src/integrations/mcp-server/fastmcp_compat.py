@@ -333,7 +333,7 @@ class FastMCP(object):
 
         return Handler
 
-    def run(self, transport="http", host="0.0.0.0", port=6071, uvicorn_config=None):
+    def run(self, transport="http", host="0.0.0.0", port=6070, uvicorn_config=None):
         if transport not in ("http", "streamable-http"):
             raise RuntimeError("this fallback server supports the Streamable HTTP transport only")
         base = "https" if (uvicorn_config or {}).get("ssl_certfile") else "http"

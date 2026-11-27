@@ -56,10 +56,10 @@ Each gap blocks a working multi-node deployment of the bundled stack.
 ```
                  ┌─ owner node ────────────────────────────────┐
  clients ──────► │ Agent :6060 (public TLS)                    │
-                 │   └─ /auth/* ──► Dex 127.0.0.1:6062 (loopback) │
-                 │ Engine :6058 HTTPS + WSS / :6059 TCP         │
+                 │   └─ /auth/* ──► Dex 127.0.0.1:6065 (loopback) │
+                 │ Engine :6062 TCP / :6063 HTTPS + WSS         │
                  └──────────────┬───────────────────────────────┘
-                                │ forwarded requests (TLS TCP :6059,
+                                │ forwarded requests (TLS TCP :6062,
                                 │ msgpack, bearer unchanged)
                  ┌─ follower nodes ────────────────────────────┐
                  │ Engine only. identity App holds inert.       │
@@ -80,7 +80,7 @@ Two routes give followers access to the owner:
 | Route | issuer / access_url | When to use |
 |---|---|---|
 | A. Agent proxy (default) | `https://owner.example.com:6060/auth` | TLS front door. This route matches the rule "the issuer listener stays on loopback, Agent is the only public proxy". |
-| B. Protected network | `http://<owner-cluster-address>:6062/auth` with `APPMESH_AUTH_LISTEN` bound to the cluster interface | Container or compose networks and private networks only. Do not expose the plaintext listener publicly. |
+| B. Protected network | `http://<owner-cluster-address>:6065/auth` with `APPMESH_AUTH_LISTEN` bound to the cluster interface | Container or compose networks and private networks only. Do not expose the plaintext listener publicly. |
 
 The docker-compose cluster uses route B. The compose network is a protected
 cluster network.
@@ -95,7 +95,7 @@ the design behind it.
 
 ```shell
 sudo /opt/appmesh/script/setup.sh --auth-mode builtin --auth-role owner
-# Optional public issuer (default: http://127.0.0.1:6062/auth):
+# Optional public issuer (default: http://127.0.0.1:6065/auth):
 sudo /opt/appmesh/script/setup.sh --auth-mode builtin --auth-role owner \
      --oidc-issuer https://owner.example.com:6060/auth
 ```
@@ -137,7 +137,7 @@ packaged `auth-stack.yaml` default (`standalone`) then applies.
 |---|---|---|
 | `AuthStack.role` / `APPMESH_AUTH_ROLE` | `owner` | `follower` |
 | `OIDC.issuer` / `APPMESH_AUTH_ISSUER` | canonical issuer | identical string |
-| `OIDC.access_url` / `APPMESH_AUTH_ACCESS_URL` | loopback `http://127.0.0.1:6062/auth` is valid | a route that reaches the owner's Dex |
+| `OIDC.access_url` / `APPMESH_AUTH_ACCESS_URL` | loopback `http://127.0.0.1:6065/auth` is valid | a route that reaches the owner's Dex |
 | `OIDC.tls_verify`, `OIDC.ca_path` | as the route requires | as the route requires |
 | Dex process | runs as `identity` System App | never runs |
 | first-admin enrollment window | open until claimed, loopback only | none (`AuthorizationStore` opens it only for standalone/owner) |
@@ -210,17 +210,17 @@ example watch-and-push or mutation forwarding to a configured writer node.
 `script/docker/docker-compose.yaml` changes:
 
 - `appmesh_master`: `APPMESH_AUTH_ROLE=owner`,
-  `APPMESH_AUTH_ISSUER=http://appmesh_master:6062/auth`, and
-  `APPMESH_AUTH_LISTEN=0.0.0.0:6062`. The compose network only reaches
+  `APPMESH_AUTH_ISSUER=http://appmesh_master:6065/auth`, and
+  `APPMESH_AUTH_LISTEN=0.0.0.0:6065`. The compose network only reaches
   this listener. Do not publish the port publicly. A container healthcheck
   calls `appmesh-auth.sh service-health`.
 - `appmesh_slave*`: `depends_on: appmesh_master: service_healthy`,
   `APPMESH_AUTH_ROLE=follower`, the identical issuer, and an explicit
-  `APPMESH_AUTH_ACCESS_URL=http://appmesh_master:6062/auth`. The packaged
+  `APPMESH_AUTH_ACCESS_URL=http://appmesh_master:6065/auth`. The packaged
   `oidc.yaml` default points at loopback. That default is wrong on a
   follower.
 - Clients reach the issuer in-network at
-  `http://appmesh_master:6062/auth`. Host-side CLI usage publishes the
+  `http://appmesh_master:6065/auth`. Host-side CLI usage publishes the
   master REST port. For password and device flows only, bind the Dex port
   to host loopback. The CLI then passes `--auth-access-url`. This argument
   is routing-only. The published endpoints still must sit on the issuer
@@ -234,7 +234,7 @@ container. Use the loopback WSS listener and the packaged administrator
 password:
 
 ```shell
-docker exec appmesh_master sh -c 'printf "%s\n" "$(grep "^password=" /opt/appmesh/work/auth/secrets/initial-admin-credentials | cut -d= -f2-)" | /opt/appmesh/bin/appm -H wss://127.0.0.1:6058 logon --username admin@appmesh.local --password-stdin --auth-allow-http'
+docker exec appmesh_master sh -c 'printf "%s\n" "$(grep "^password=" /opt/appmesh/work/auth/secrets/initial-admin-credentials | cut -d= -f2-)" | /opt/appmesh/bin/appm -H wss://127.0.0.1:6063 logon --username admin@appmesh.local --password-stdin --auth-allow-http'
 ```
 
 - `--auth-allow-http` is necessary. The issuer uses plain HTTP on the
@@ -285,7 +285,7 @@ packaged compose cluster.
   `X-Target-Host`. The Go Agent handles this case: port 6060 becomes an
   HTTPS hop. The Engine gateway does not handle this case: it selects a
   TCP-msgpack forward to port 6060, and no listener serves that protocol
-  on the port. WSS clients, TCP clients, and explicit `:6059` targets
+  on the port. WSS clients, TCP clients, and explicit `:6062` targets
   work against the Engine gateway. This limitation is documented and is
   not changed here.
 - Browser flows (authorization code with PKCE) require browser access to

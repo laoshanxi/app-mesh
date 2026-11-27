@@ -573,8 +573,8 @@ configure_authentication() {
         if [ -x "$AUTH_LAUNCHER" ]; then
             APPMESH_AUTH_MODE="$mode" \
                 APPMESH_AUTH_ROLE="$role" \
-                APPMESH_AUTH_ISSUER="${issuer:-http://127.0.0.1:6062/auth}" \
-                APPMESH_AUTH_ACCESS_URL="${access_url:-http://127.0.0.1:6062/auth}" \
+                APPMESH_AUTH_ISSUER="${issuer:-http://127.0.0.1:6065/auth}" \
+                APPMESH_AUTH_ACCESS_URL="${access_url:-http://127.0.0.1:6065/auth}" \
                 APPMESH_AUTH_BROWSER_ENTRY="$browser_entry" \
                 APPMESH_AUTH_TLS_VERIFY="${tls_verify:-true}" \
                 APPMESH_AUTH_CA_PATH="$ca_path" \

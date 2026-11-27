@@ -36,14 +36,14 @@ KB_DIR="${KB_DIR:-$PKG/data/kb}"
 [ -d "$KB_DIR" ] || { echo "error: 知识库目录不存在: $KB_DIR" >&2; exit 1; }
 
 APPMESH_URL="${APPMESH_URL:-https://127.0.0.1:6060}"
-APPMESH_WSS="${APPMESH_WSS:-wss://127.0.0.1:6058}"
+APPMESH_WSS="${APPMESH_WSS:-wss://127.0.0.1:6063}"
 APPMESH_CA="${APPMESH_CA:-/opt/appmesh/ssl/ca.pem}"
-TOKEN_URL="${DH_TOKEN_URL:-http://127.0.0.1:6062}"
+TOKEN_URL="${DH_TOKEN_URL:-http://127.0.0.1:6065}"
 IM_PORT="${DH_IM_PORT:-7070}"
 # IM 适配器默认只听本机回环；对外暴露必须同时配 DH_IM_TOKEN（适配器端点鉴权）
 IM_BIND="${DH_IM_BIND:-127.0.0.1}"
 IM_TOKEN="${DH_IM_TOKEN:-}"
-TCP_API="${DH_TCP_API:-127.0.0.1:6059}"
+TCP_API="${DH_TCP_API:-127.0.0.1:6062}"
 if [ -z "${APPMESH_BEARER_TOKEN:-}" ]; then
 	# 部署引导 token：仅本脚本内的 API 调用使用（root 安装需 sudo 才能铸出）；
 	# 运行时凭据见下方 provider 密码文件，不走这里

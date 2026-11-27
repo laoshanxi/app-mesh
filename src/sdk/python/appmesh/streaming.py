@@ -106,9 +106,9 @@ def raise_on_error_end(end: SseEnd) -> None:
 
 def route_hint(status: int) -> str:
     """Pointer appended to SSE 404/405 errors: the daemon serves streaming routes
-    on its native listener (default wss/https 6058; via the web UI, 443), and the
+    on its native listener (default wss/https 6063; via the web UI, 443), and the
     agent REST listener (the client's default port 6060) has none."""
     if status in (404, 405):
         return (" Streaming is served by the engine's native listener (default wss/https port"
-                " 6058; via the web UI, 443), not the agent REST listener (default port 6060).")
+                " 6063; via the web UI, 443), not the agent REST listener (default port 6060).")
     return ""

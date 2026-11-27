@@ -33,9 +33,9 @@ Set these values:
 export APPMESH_URL=https://127.0.0.1:6060
 export APPMESH_CA=/opt/appmesh/ssl/ca.pem
 export APPMESH_AUTH_ISSUER=https://appmesh.example.com/auth
-export APPMESH_AUTH_ACCESS_URL=http://127.0.0.1:6062/auth
+export APPMESH_AUTH_ACCESS_URL=http://127.0.0.1:6065/auth
 export APPMESH_AUTH_AUDIENCE=appmesh-api
-export APPMESH_MCP_PUBLIC_URL=https://appmesh.example.com:6071
+export APPMESH_MCP_PUBLIC_URL=https://appmesh.example.com:6070
 ```
 
 | Variable | Default | Purpose |
@@ -50,7 +50,7 @@ export APPMESH_MCP_PUBLIC_URL=https://appmesh.example.com:6071
 | `APPMESH_AUTH_TLS_VERIFY` | `true` | TLS verification when no authentication CA path is set. |
 | `APPMESH_AUTH_AUDIENCE` | `appmesh-api` | Required resource audience. |
 | `APPMESH_MCP_HOST` | `0.0.0.0` | Listener address. |
-| `APPMESH_MCP_PORT` | `6071` | Listener port. |
+| `APPMESH_MCP_PORT` | `6070` | Listener port. |
 | `APPMESH_MCP_PUBLIC_URL` | derived | Public MCP base URL in metadata. |
 | `APPMESH_MCP_TLS_CERT` | unset | MCP HTTPS certificate. |
 | `APPMESH_MCP_TLS_KEY` | unset | MCP HTTPS private key. |

@@ -35,7 +35,7 @@ async fn live_device_flow_authorization_pending() {
 // the supported route for cluster issuers on a protected network.
 #[tokio::test]
 async fn plain_http_issuer_requires_opt_in() {
-    const UNROUTABLE_HTTP_ISSUER: &str = "http://issuer.invalid:6062/auth";
+    const UNROUTABLE_HTTP_ISSUER: &str = "http://issuer.invalid:6065/auth";
 
     let error = OAuthClient::discover(OAuthConfig::new(UNROUTABLE_HTTP_ISSUER, UNROUTABLE_HTTP_ISSUER, "appmesh-cli"))
         .await

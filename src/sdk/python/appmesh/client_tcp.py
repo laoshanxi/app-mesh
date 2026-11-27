@@ -50,7 +50,7 @@ class AppMeshClientTCP(TransportClientMixin, AppMeshClient):
 
     def __init__(
         self,
-        tcp_address: Tuple[str, int] = ("127.0.0.1", 6059),
+        tcp_address: Tuple[str, int] = ("127.0.0.1", 6062),
         ssl_verify: Union[bool, str, None] = None,
         ssl_client_cert: Optional[Union[str, Tuple[str, str]]] = None,
         *,
@@ -64,7 +64,7 @@ class AppMeshClientTCP(TransportClientMixin, AppMeshClient):
         """Construct a TCP transport client that reuses the standard App Mesh client API.
 
         Args:
-            tcp_address: Server address as (host, port) tuple, defaults to ("127.0.0.1", 6059).
+            tcp_address: Server address as (host, port) tuple, defaults to ("127.0.0.1", 6062).
             ssl_verify: SSL certificate verification behavior. Can be None, True, False, or a path to CA bundle.
               - None (default): Auto — use the App Mesh CA bundle if installed, otherwise system CAs
               - True: Use system CA certificates (e.g., /etc/ssl/certs/ on Linux)
@@ -76,7 +76,7 @@ class AppMeshClientTCP(TransportClientMixin, AppMeshClient):
             plain_transport: Dial plaintext TCP instead of TLS.
             rest_port: Port of the engine's native HTTPS listener (the WSS port) on the
               same daemon, used by the streaming side channel (follow_output /
-              run_task_stream); default 6058. Not the agent REST listener (6060),
+              run_task_stream); default 6063. Not the agent REST listener (6060),
               which carries no streaming routes.
             bearer_token: Caller-owned access token.
             token_provider: Provider that supplies and refreshes access tokens.
@@ -98,7 +98,7 @@ class AppMeshClientTCP(TransportClientMixin, AppMeshClient):
         # WSS port) on the same host; deployments with shifted ports pass rest_port.
         host = tcp_address[0]
         super().__init__(
-            base_url=f"{'http' if plain_transport else 'https'}://{host}:{rest_port or 6058}",
+            base_url=f"{'http' if plain_transport else 'https'}://{host}:{rest_port or 6063}",
             ssl_verify=ssl_verify,
             ssl_client_cert=ssl_client_cert,
             bearer_token=bearer_token,
