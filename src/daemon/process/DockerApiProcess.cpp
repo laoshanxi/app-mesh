@@ -722,11 +722,12 @@ void DockerApiProcess::terminateImpl()
 pid_t DockerApiProcess::startImpl(std::string cmd, std::string execUser, std::string workDir,
 								  std::map<std::string, std::string> envMap, std::shared_ptr<ResourceLimitation> limit,
 								  const std::string &stdoutFile, const Json::Value &stdinFileContent, int maxStdoutSize,
-								  bool stdinPipe)
+								  bool stdinPipe, const SandboxSpec &sandbox)
 {
 	const static char fname[] = "DockerApiProcess::startImpl() ";
 	LOG_DBG << fname << "Entered";
 	(void)stdinPipe; // registration rejects pipe stdin for container apps
+	(void)sandbox;   // a container is isolated by Docker, never by Landlock
 	{
 		std::lock_guard guard(m_dockerMutex);
 		m_stdoutFile = stdoutFile;

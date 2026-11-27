@@ -194,7 +194,16 @@ namespace
 			JSON_KEY_APP_last_exit,
 			JSON_KEY_APP_next_start_time,
 			JSON_KEY_APP_last_error,
+			JSON_KEY_APP_stdout_dispatched_bytes,
+			"register_time_TEXT",
+			"start_time_TEXT",
+			"end_time_TEXT",
+			"last_start_time_TEXT",
+			"last_exit_time_TEXT",
+			"next_start_time_TEXT",
 			JSON_KEY_APP_waiting_for,
+			JSON_KEY_APP_sandbox_mode,
+			JSON_KEY_APP_sandbox_workdir,
 			JSON_KEY_APP_task_id,
 			JSON_KEY_APP_task_status,
 			JSON_KEY_APP_stdout_file_count,
@@ -1104,6 +1113,8 @@ void RestHandler::apiAppDelete(const std::shared_ptr<HttpRequest> &message)
 																	appName.c_str())));
 			return;
 		}
+		// Last, after the run instances stopped: the workspaces named after the definition.
+		app->removeDefinitionWorkspaces();
 		message->reply(web::http::status_codes::OK,
 					   Utility::text2json(Utility::stringFormat("Application <%s> removed.", appName.c_str())));
 	}

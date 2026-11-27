@@ -27,7 +27,7 @@ std::string normalizeAppName(const std::string &name)
 
 ShellAppFileGen::ShellAppFileGen(const std::string &name, const std::string &cmd, const std::string &execUser,
 								 bool sessionLogin, const std::string &workingDir)
-	: m_usingSudo(false)
+	: m_workingDir(workingDir), m_usingSudo(false)
 {
 	const static char fname[] = "ShellAppFileGen::ShellAppFileGen() ";
 #if defined(_WIN32)
@@ -138,9 +138,9 @@ ShellAppFileGen::ShellAppFileGen(const std::string &name, const std::string &cmd
 	}
 #endif
 
-	// Prepare the shell command
-	m_fileName = Utility::escapeCommandLine(fileName);
-	m_shellCmd = Utility::stringFormat("bash '%s'", m_fileName.c_str());
+	// The command line escapes the path; the stored name stays usable as a path.
+	m_fileName = fileName;
+	m_shellCmd = Utility::stringFormat("bash '%s'", Utility::escapeCommandLine(fileName).c_str());
 
 	// Record the sudo login target; the wrapper is composed at spawn time so
 	// per-run environment values survive the login shell's environment reset.

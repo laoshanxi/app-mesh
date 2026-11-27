@@ -16,7 +16,7 @@ Declare an app once. The daemon keeps it running.
 
 - **Lifecycle** — start, stop, and recover the app after a crash or a daemon restart
 - **Scheduling** — cron, fixed intervals, start and end dates, daily time windows
-- **Protection** — health checks, CPU and memory limits, OS user, tenant isolation
+- **Protection** — health checks, CPU and memory limits, OS user, file system sandbox, tenant isolation
 - **Any app** — a native process or a Docker app
 
 Think systemd on every machine. Or Kubernetes desired state, for any app.
@@ -113,7 +113,7 @@ For native packages (`.deb`/`.rpm`), systemd setup, and cluster initialization, 
 | Hosting   | Scheduling             | Long- and short-running apps, periodic jobs, cron expressions, custom timings, and policy-driven [start/exit behaviors](https://app-mesh.readthedocs.io/en/latest/success/customize_app_startup_behavior.html)                                                                        |
 | Computing | Remote execution       | Run commands and scripts on any node; send [in-memory tasks](https://app-mesh.readthedocs.io/en/latest/RemoteTask.html) to running applications for high-performance computing                                                                                                        |
 | Computing | Workflow engine        | GitHub-Actions-style [YAML pipelines](https://app-mesh.readthedocs.io/en/latest/Workflow.html) with DAG scheduling, running natively on App Mesh                                                                                                                                      |
-| Platform  | Security               | OAuth/OIDC bearer authentication (RFC 6750) with Principal-based RBAC and multi-tenant isolation; SSL/TLS on TCP/HTTP/WebSocket; HMAC-PSK internal verification                                                                                                                       |
+| Platform  | Security               | OAuth/OIDC bearer authentication (RFC 6750) with Principal-based RBAC and multi-tenant isolation; [file system sandbox](https://app-mesh.readthedocs.io/en/latest/Sandbox.html) for native apps; SSL/TLS on TCP/HTTP/WebSocket; HMAC-PSK internal verification                                                                                                                       |
 | Platform  | Observability          | Built-in [Prometheus exporter](https://app-mesh.readthedocs.io/en/latest/PROMETHEUS.html), [Grafana datasource](https://app-mesh.readthedocs.io/en/latest/GrafanaDataSource.html), [Loki](https://app-mesh.readthedocs.io/en/latest/Loki.html) integration, host/app resource metrics |
 | Platform  | Extras                 | File upload/download API, remote shell execution, hot config reload, bash completion                                                                                                                                                                                                  |
 
@@ -200,24 +200,25 @@ Agents are just managed Apps: the same RBAC, scheduling, secrets, health checks,
 
 ## 🆚 Comparison
 
-| Feature                             | App Mesh       | [Nomad](https://www.nomadproject.io/) | [Rundeck](https://www.rundeck.com/open-source) | [Kubernetes](https://kubernetes.io/) | [systemd](https://systemd.io/) |
-| ----------------------------------- | -------------- | ------------------------------------ | ---------------------------------------------- | ----------------------------------- | --------- |
-| Control plane                       | None           | 3–5 servers      | 1 (HA: Enterprise)      | 3+ nodes       | None      |
-| Native (non-container) app          | √              | √                |                         |                | √         |
-| Docker app                          | √              | √                |                         | √              |           |
-| Keep running, health check          | √              | √                |                         | √              | √         |
-| Automatic node placement            |                | √                |                         | √              |           |
-| Cron schedule                       | √              | √                | √                       | CronJob        | Timers    |
-| Remote command or script            | √              | √                | √ SSH                   | √              |           |
-| Command in a running app            | √              | √                |                         | √              |           |
-| Task message to a running app       | √              |                  |                         |                |           |
-| Workflow                            | DAG            |                  | Steps                   | Add-on         |           |
-| LLM agent runtime, MCP server       | √              |                  |                         |                |           |
-| Auth and per-tenant RBAC            | OIDC           | OIDC             | ACL                     | OIDC, RBAC     |           |
-| Web GUI                             | √              | √                | √                       | Add-on         |           |
-| CLI                                 | √              | √                | √                       | √              | √         |
-| REST API                            | √              | √                | √                       | √              |           |
-| SDK                                 | 5 languages    | Go               |                         | Official       |           |
+| Feature                            | App Mesh     | [Nomad](https://www.nomadproject.io/) | [Rundeck](https://www.rundeck.com/open-source) | [Kubernetes](https://kubernetes.io/) | [systemd](https://systemd.io/) |
+| ---------------------------------- | ------------ | ------------------------------------- | ---------------------------------------------- | ------------------------------------ | ------------------------------ |
+| Control plane                      | None         | 3–5 servers                           | 1 (HA: Enterprise)                             | 3+ nodes                             | None                           |
+| Native (non-container) app         | √            | √                                     |                                                |                                      | √                              |
+| Docker app                         | √            | √                                     |                                                | √                                    |                                |
+| Keep running, health check         | √            | √                                     |                                                | √                                    | √                              |
+| Automatic node placement           |              | √                                     |                                                | √                                    |                                |
+| Cron schedule                      | √            | √                                     | √                                              | CronJob                              | Timers                         |
+| Remote command or script           | √            | √                                     | √ SSH                                          | √                                    |                                |
+| Command in a running app           | √            | √                                     |                                                | √                                    |                                |
+| Task message to a running app      | √            |                                       |                                                |                                      |                                |
+| Workflow                           | DAG          |                                       | Steps                                          | Add-on                               |                                |
+| LLM agent runtime, MCP server      | √            |                                       |                                                |                                      |                                |
+| File system sandbox for native apps | √ (Landlock) | exec2 driver                          |                                                |                                      | ProtectSystem                  |
+| Auth and per-tenant RBAC           | OIDC         | OIDC                                  | ACL                                            | OIDC, RBAC                           |                                |
+| Web GUI                            | √            | √                                     | √                                              | Add-on                               |                                |
+| CLI                                | √            | √                                     | √                                              | √                                    | √                              |
+| REST API                           | √            | √                                     | √                                              | √                                    |                                |
+| SDK                                | 5 languages  | Go                                    |                                                | Official                             |                                |
 
 ## 📚 Documentation
 
@@ -226,6 +227,7 @@ Agents are just managed Apps: the same RBAC, scheduling, secrets, health checks,
 - [Feature Overview](docs/source/FeatureOverview.md) — the full capability map behind Hosting and Computing
 - [Installation Guide](https://app-mesh.readthedocs.io/en/latest/Install.html)
 - [Security](https://app-mesh.readthedocs.io/en/latest/Security.html)
+- [Application Sandbox](https://app-mesh.readthedocs.io/en/latest/Sandbox.html) — confine native applications to their workspace with Landlock
 - [Workflow Guide](https://app-mesh.readthedocs.io/en/latest/Workflow.html)
 
 <details>

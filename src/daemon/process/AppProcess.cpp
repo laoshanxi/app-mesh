@@ -34,6 +34,7 @@
 #include "../ResourceLimitation.h"
 #include "../application/Application.h"
 #include "ForkExec.h"
+#include "LandlockPolicy.h"
 #include "LinuxCgroup.h"
 #include "ProcessService.h"
 #include "StdoutStrategy.h"
@@ -805,10 +806,10 @@ bool AppProcess::onTimerCheckStdout()
 ProcessStartResult AppProcess::start(std::string cmd, std::string user, std::string workDir,
 									 std::map<std::string, std::string> envMap, std::shared_ptr<ResourceLimitation> limit,
 									 const std::string &stdoutFile, const Json::Value &stdinFileContent, int maxStdoutSize,
-									 bool stdinPipe)
+									 bool stdinPipe, const SandboxSpec &sandbox)
 {
 	const pid_t pid = startImpl(std::move(cmd), std::move(user), std::move(workDir), std::move(envMap), std::move(limit),
-								stdoutFile, stdinFileContent, maxStdoutSize, stdinPipe);
+								stdoutFile, stdinFileContent, maxStdoutSize, stdinPipe, sandbox);
 	resolveStart(pid > 1, pid);
 	const bool accepted = isStartAccepted();
 	if (!accepted)
@@ -876,11 +877,24 @@ long AppProcess::writeStdin(const std::vector<std::uint8_t> &data, bool closePip
 pid_t AppProcess::startImpl(std::string cmd, std::string user, std::string workDir,
 							std::map<std::string, std::string> envMap, std::shared_ptr<ResourceLimitation> limit,
 							const std::string &stdoutFile, const Json::Value &stdinFileContent, int maxStdoutSize,
-							bool stdinPipe)
+							bool stdinPipe, const SandboxSpec &sandbox)
 {
 	const static char fname[] = "AppProcess::startImpl() ";
 
 	std::lock_guard guard(m_processMutex);
+
+#if !defined(__linux__)
+	// No sandbox on this platform: reject instead of running unrestricted by accident.
+	if (sandbox.mode != SandboxMode::Off)
+	{
+		const auto reason =
+			Utility::stringFormat("sandbox mode <%s> cannot be applied: Landlock is not available on this platform",
+								  sandboxModeName(sandbox.mode));
+		setStartError(reason);
+		LOG_ERR << fname << reason;
+		return INVALID_PID;
+	}
+#endif
 
 	// Tokenize once; validateCommand and the launcher share the same argv.
 	auto argv = Utility::str2argv(cmd);
@@ -1071,6 +1085,28 @@ pid_t AppProcess::startImpl(std::string cmd, std::string user, std::string workD
 	}
 #endif
 
+	// Built last, right before the fork: an unusable sandbox rejects the start.
+	int sandboxRuleset = -1;
+#if defined(__linux__)
+	if (sandbox.mode != SandboxMode::Off)
+	{
+		std::string error;
+		sandboxRuleset = LandlockPolicy::buildRuleset(sandbox.mode, workDir, Configuration::instance()->getWorkShareDir(),
+													  sandbox.readOnlyPaths, LandlockPolicy::detectAbi(), error);
+		if (sandboxRuleset < 0)
+		{
+			setStartError(Utility::stringFormat("sandbox mode <%s> cannot be applied: %s", sandboxModeName(sandbox.mode),
+												error.c_str()));
+			LOG_ERR << fname << "Process <" << cmd << "> " << startError();
+			if (pipeWriteForChild >= 0)
+				::close(pipeWriteForChild);
+			if (pipeReadForDaemon >= 0)
+				::close(pipeReadForDaemon);
+			return INVALID_PID;
+		}
+	}
+#endif
+
 	const auto childEnv = buildChildEnvironment(envMap);
 	boost::system::error_code ec;
 	// The signal-based handle has no default constructor, so the launcher result
@@ -1110,6 +1146,7 @@ pid_t AppProcess::startImpl(std::string cmd, std::string user, std::string workD
 	request.uid = uid;
 	request.gid = gid;
 	request.cgroupProcsFiles = cgroupProcsPaths;
+	request.landlockRulesetFd = sandboxRuleset;
 
 	// A stopped process service would drop the exit watch below and leave the
 	// run unfinalized: reject the start before forking.
@@ -1133,6 +1170,8 @@ pid_t AppProcess::startImpl(std::string cmd, std::string user, std::string workD
 		::close(pipeWriteForChild);
 		pipeWriteForChild = -1;
 	}
+	if (sandboxRuleset >= 0)
+		::close(sandboxRuleset); // the child closed its copy before execve
 
 	if (ec || !launched)
 	{

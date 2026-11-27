@@ -8,15 +8,18 @@
 #include <optional>
 #include <prometheus/counter.h>
 #include <prometheus/gauge.h>
+#include <sys/stat.h>
 #include <utility>
 
 #include "../../common/DateTime.h"
 #include "../../common/DurationParse.h"
 #include "../../common/Utility.h"
 #include "../../common/json.h"
+#include "../../common/os/chown.h"
 #include "../../common/os/filesystem.h"
 #include "../../common/os/linux.h"
 #include "../../common/os/proc.h"
+#include "../../common/os/user.h"
 #include "../Configuration.h"
 #include "../DailyLimitation.h"
 #include "../ResourceLimitation.h"
@@ -38,10 +41,40 @@ namespace
 	// second, so arm from the next second to avoid a same-second double computation.
 	constexpr std::chrono::seconds PERIODIC_RESPAWN_GAP{1};
 
+	// A removed workspace takes its Principal directory along when that is left empty.
+	void removeWorkspaceTree(const std::string &path)
+	{
+		Utility::removeDir(path);
+		std::error_code ec;
+		fs::remove(fs::path(path).parent_path(), ec);
+	}
+
 	bool isAllDigits(const std::string &text)
 	{
 		return !text.empty() && std::all_of(text.begin(), text.end(), [](unsigned char c) { return std::isdigit(c); });
 	}
+
+	// The administrator's sandbox.mode of a Principal; the node default when it is unset.
+	SandboxMode principalSandboxMode(const std::string &principalId, SandboxMode nodeDefault)
+	{
+		try
+		{
+			if (const auto principal = Security::instance()->principal(principalId); !principal->sandboxMode().empty())
+				return parseSandboxMode(principal->sandboxMode(), nodeDefault);
+		}
+		catch (const std::exception &)
+		{
+		}
+		return nodeDefault;
+	}
+
+#if !defined(_WIN32)
+	bool ownedBy(const std::string &path, uid_t uid)
+	{
+		struct stat st;
+		return ::stat(path.c_str(), &st) == 0 && st.st_uid == uid;
+	}
+#endif
 
 	// "[hostIp:]hostPort:containerPort[/proto]" — the docker run -p spelling.
 	void validateDockerPortSpec(const std::string &spec)
@@ -105,6 +138,8 @@ struct Application::Runtime
 		bool restartEvaluationPending = false;
 		std::uint64_t lifecycleGeneration = 0;
 		ScheduleIntent scheduleIntent = ScheduleIntent::NeedsPlan;
+		// The mode this run was started with; the policy may change while it runs.
+		SandboxMode sandbox = SandboxMode::Off;
 	};
 
 	template <typename Fn> void update(Fn &&fn)
@@ -632,6 +667,13 @@ void Application::FromJson(const std::shared_ptr<Application> &app, const Json::
 		app->m_scheduleKind = ScheduleKind::Continuous;
 		app->m_timer = std::make_shared<AppTimer>(app->m_startTime, app->m_endTime, app->m_dailyLimit);
 	}
+
+	// The sandbox assigns a workspace; an explicit directory would leave it. Recovery keeps the
+	// definition and refuses the start instead of blocking the daemon boot.
+	if (!fromRecover && !app->m_workdir.empty() && app->effectiveSandboxMode() != SandboxMode::Off)
+		throw std::invalid_argument(
+			"working_dir must be empty for a sandboxed application; drop working_dir or set the sandbox "
+			"mode of its owner to off");
 }
 
 Json::Value Application::AsJson(bool returnRuntimeInfo, void *ptree)
@@ -848,6 +890,16 @@ Json::Value Application::AsJson(bool returnRuntimeInfo, void *ptree)
 		{
 			result[JSON_KEY_APP_container_id] = containerId;
 		}
+		if (sandboxApplies())
+		{
+			// A running run reports the mode it started with.
+			const auto sandboxMode = process && process->running() ? run.sandbox : effectiveSandboxMode();
+			result[JSON_KEY_APP_sandbox_mode] = sandboxModeName(sandboxMode);
+			if (sandboxMode != SandboxMode::Off)
+			{
+				result[JSON_KEY_APP_sandbox_workdir] = sandboxWorkdir();
+			}
+		}
 		result[JSON_KEY_APP_health] = (this->health());
 		if (m_stdoutFileQueue->size())
 		{
@@ -926,6 +978,34 @@ void Application::remove()
 {
 	removeOwnedYamlFile(getYamlPath());
 	removeOwnedYamlFile((fs::path(Utility::getHomeDir()) / APPMESH_APPLICATION_DIR / (getName() + ".yaml")).string());
+}
+
+// The scratch workspace of an anonymous run goes with the run. Earlier data in it
+// and the workspace a run instance shares with its base application stay.
+void Application::removeScratchWorkspace()
+{
+	if (isOneShot() && m_runBaseApp.empty() && m_sandboxWorkspaceCreated.load())
+		removeWorkspaceTree(sandboxWorkdir());
+}
+
+// A deleted definition takes every workspace named after it: its own, and the ones
+// of its on-demand runs, which live under the calling Principals.
+void Application::removeDefinitionWorkspaces()
+{
+	if (!isPersistAble() || !m_runBaseApp.empty())
+		return;
+	const auto workspaces = fs::path(Configuration::instance()->getWorkDir()) / APPMESH_WORKSPACES_DIR;
+	std::error_code ec;
+	for (fs::directory_iterator it(workspaces, fs::directory_options::skip_permission_denied, ec), end; !ec && it != end;
+		 it.increment(ec))
+	{
+		removeWorkspaceTree((it->path() / m_name).string());
+	}
+}
+
+void Application::removePrincipalWorkspaces(const std::string &principalId)
+{
+	Utility::removeDir(principalWorkspaceDir(principalId)); // the sandbox root itself stays
 }
 
 void Application::removeOwnedYamlFile(const std::string &path)
@@ -1093,7 +1173,7 @@ bool Application::attach(int pid)
 			return true;
 		}
 		previous = std::move(*processLock);
-		(*processLock) = createProcess(m_dockerImage, m_name);
+		(*processLock) = createProcess(m_dockerImage, m_name, effectiveWorkdir());
 		m_processProof.reset(); // an attached process never received a key hand-over
 		(*processLock)->attach(pid, m_stdoutFile);
 		(*processLock)->markRecovered(); // not our child: maintainRuntime(now) detects its exit
@@ -1155,6 +1235,8 @@ bool Application::attach(int pid)
 				r.restartEvaluationPending = false;
 				r.lifecycleGeneration = m_runtime->lifecycleGeneration;
 				r.scheduleIntent = live ? Runtime::Run::ScheduleIntent::Dormant : Runtime::Run::ScheduleIntent::NeedsPlan;
+				// The recovered process keeps its kernel sandbox; report the matching policy.
+				r.sandbox = effectiveSandboxMode();
 			});
 	}
 
@@ -1422,6 +1504,17 @@ std::string Application::startRun(bool onDemand, int timeoutSeconds, const std::
 	if (!onDemand && !isEnabled())
 		return {};
 
+	// A sandboxed run works in its own workspace instead of the configured directory.
+	SandboxSpec sandbox;
+	sandbox.mode = effectiveSandboxMode();
+	auto workDir = m_workdir;
+	std::string workspaceError;
+	if (sandbox.mode != SandboxMode::Off)
+	{
+		workDir = sandboxWorkdir();
+		workspaceError = createSandboxWorkspace(workDir);
+	}
+
 	std::shared_ptr<AppProcess> process;
 	std::shared_ptr<AppProcess> previous;
 	std::shared_ptr<AppProcess> previousBuffer;
@@ -1445,7 +1538,7 @@ std::string Application::startRun(bool onDemand, int timeoutSeconds, const std::
 			return {};
 		}
 
-		process = createProcess(m_dockerImage, m_name);
+		process = createProcess(m_dockerImage, m_name, workDir);
 		previous = std::move(*processLock);
 		bufferPrevious = !onDemand && isRecurring() && m_bufferTime > 0 && previous && previous->running();
 		if (bufferPrevious)
@@ -1467,6 +1560,7 @@ std::string Application::startRun(bool onDemand, int timeoutSeconds, const std::
 				run.exitTime.reset();
 				run.restartEvaluationPending = false;
 				run.lifecycleGeneration = onDemand ? 0 : lifecycleGeneration;
+				run.sandbox = sandbox.mode;
 			});
 	}
 	if (lifecycleGuard.owns_lock())
@@ -1512,12 +1606,29 @@ std::string Application::startRun(bool onDemand, int timeoutSeconds, const std::
 	// per-spawn pre-shared key handed over through shared memory.
 	std::shared_ptr<HMACVerifier> processProof;
 	auto envMap = getMergedEnvMap();
+	if (sandbox.mode != SandboxMode::Off)
+	{
+		if (m_shellAppFile && sandbox.mode == SandboxMode::Strict)
+			sandbox.readOnlyPaths.push_back(m_shellAppFile->getShellFileName());
+		const auto reason = !workspaceError.empty() ? workspaceError : prepareSandboxRun(sandbox, workDir, envMap);
+		if (!reason.empty())
+		{
+			unsubscribeRunCompletion(completionSubscription);
+			// Finalize the never-started process: an unfinalized one blocks the next start.
+			process->resolveStart(false, INVALID_PID);
+			recordStartFailure(runId, reason, onDemand);
+			if (onDemand)
+				throw std::invalid_argument(reason);
+			return {};
+		}
+	}
 	if (usesProcessProof())
 	{
 		processProof = issueProcessProof(execUser, envMap);
 		if (!processProof)
 		{
 			unsubscribeRunCompletion(completionSubscription);
+			process->resolveStart(false, INVALID_PID);
 			recordStartFailure(runId, "failed to prepare the process proof shared memory", onDemand);
 			if (onDemand)
 				throw std::invalid_argument("Start process failed");
@@ -1525,14 +1636,16 @@ std::string Application::startRun(bool onDemand, int timeoutSeconds, const std::
 		}
 	}
 
-	LOG_INF << fname << "Starting application <" << m_name << "> with user <" << execUser << ">";
+	LOG_INF << fname << "Starting application <" << m_name << "> with user <" << execUser << ">"
+			<< (sandbox.mode == SandboxMode::Off ? std::string()
+												 : std::string(" in sandbox mode <") + sandboxModeName(sandbox.mode) + ">");
 	// First-class docker fields ride inside this launch-time metadata copy; the
 	// application definition keeps the user's original metadata untouched.
 	auto launchMetadata = m_metadata;
 	if (!m_dockerImage.empty())
 		compileDockerContainerFields(launchMetadata);
-	auto result = process->start(getCmdLine(), std::move(spawnUser), m_workdir, std::move(envMap), m_resourceLimit,
-								 m_stdoutFile, launchMetadata, APP_STD_OUT_MAX_FILE_SIZE, m_stdinPipe);
+	auto result = process->start(getCmdLine(), std::move(spawnUser), workDir, std::move(envMap), m_resourceLimit,
+								 m_stdoutFile, launchMetadata, APP_STD_OUT_MAX_FILE_SIZE, m_stdinPipe, sandbox);
 
 	if (processProof)
 		activateProcessProof(runId, processProof, result.accepted);
@@ -1787,6 +1900,142 @@ bool Application::waitProcessProofRead()
 	return proof->waitPSKRead();
 }
 
+bool Application::sandboxApplies() const { return !isSystemProtected() && m_dockerImage.empty(); }
+
+SandboxMode Application::effectiveSandboxMode() const
+{
+	const auto config = Configuration::instance();
+	if (!config || !config->sandboxEnabled() || !sandboxApplies())
+		return SandboxMode::Off;
+	const auto nodeDefault = parseSandboxMode(config->getSandboxMode(), SandboxMode::Off);
+	auto mode = principalSandboxMode(m_ownerPrincipalId, nodeDefault);
+	// An on-demand run executes the base application's definition: the stricter owner policy wins.
+	if (!m_runBaseApp.empty())
+	{
+		if (const auto base = config->getApp(m_runBaseApp, false))
+			mode = stricterSandboxMode(mode, principalSandboxMode(base->getOwnerPrincipalId(), nodeDefault));
+	}
+	return mode;
+}
+
+std::string Application::effectiveWorkdir() const
+{
+	return effectiveSandboxMode() == SandboxMode::Off ? m_workdir : sandboxWorkdir();
+}
+
+std::string Application::sandboxWorkdir() const
+{
+	// Run instances of one base application share a workspace named after the base.
+	const auto &key = m_runBaseApp.empty() ? m_name : m_runBaseApp;
+	return (fs::path(principalWorkspaceDir(m_ownerPrincipalId)) / key).string();
+}
+
+std::string Application::principalWorkspaceDir(const std::string &principalId)
+{
+	// The hash keeps the separators of a Principal ID out of the path.
+	const auto principalDir = Utility::sha256Hex(principalId).substr(0, 16);
+	return (fs::path(Configuration::instance()->getWorkDir()) / APPMESH_WORKSPACES_DIR / principalDir).string();
+}
+
+std::string Application::createSandboxWorkspace(const std::string &workdir)
+{
+	// Parents stay daemon-owned and traverse-only; the workspace is private to the execution user.
+	const auto traverseOnly = fs::perms::owner_all | fs::perms::group_exec | fs::perms::others_exec;
+	// A concurrent first run of the same application may create a component first.
+	const auto ensure = [](const std::string &path, fs::perms perms)
+	{
+		std::error_code ec;
+		return Utility::createDirectory(path, perms) || fs::is_directory(fs::path(path), ec);
+	};
+	const bool existed = fs::exists(workdir);
+	const auto principalDir = fs::path(workdir).parent_path();
+	std::error_code ec;
+	if (!ensure(principalDir.string(), traverseOnly) || !ensure(workdir, fs::perms::owner_all) ||
+		!ensure((fs::path(workdir) / "tmp").string(), fs::perms::owner_all))
+	{
+		return "failed to create the sandbox workspace <" + workdir + ">";
+	}
+	fs::permissions(principalDir, traverseOnly, ec);
+	m_sandboxWorkspaceCreated = !existed;
+	return {};
+}
+
+std::string Application::prepareSandboxRun(SandboxSpec &sandbox, const std::string &workdir,
+										   std::map<std::string, std::string> &envMap)
+{
+	const auto mode = std::string("sandbox mode <") + sandboxModeName(sandbox.mode) + ">";
+	if (!m_workdir.empty())
+		return "working_dir must be empty: " + mode + " assigns the workspace <" + workdir + ">";
+	const auto execUser = getExecUser();
+	if (os::getUid() == 0 && (execUser.empty() || execUser == "root"))
+		return mode + " requires a non-root execution_user";
+	// sudo cannot read its configuration under the read baseline, and no_new_privs
+	// blocks its elevation when the daemon itself is unprivileged.
+	const auto sudoUser = sudoLoginUser();
+	if (!sudoUser.empty() && sandbox.mode == SandboxMode::Strict)
+		return mode + " cannot be combined with session_login";
+	if (!sudoUser.empty() && os::getUid() != 0)
+		return mode + " cannot switch users with session_login: no_new_privs blocks sudo";
+
+	const auto ownerError = ensureWorkspaceOwner(workdir, execUser);
+	if (!ownerError.empty())
+		return ownerError;
+	envMap.emplace("TMPDIR", (fs::path(workdir) / "tmp").string());
+	envMap.emplace("HOME", workdir);
+	return {};
+}
+
+// The workspace belongs to the execution user: a changed user takes over the existing files.
+std::string Application::ensureWorkspaceOwner(const std::string &workdir, const std::string &execUser)
+{
+	const auto tmpDir = (fs::path(workdir) / "tmp").string();
+#if !defined(_WIN32)
+	if (const auto ids = os::getUidByName(execUser); ids && (!ownedBy(workdir, ids->first) || !ownedBy(tmpDir, ids->first)))
+	{
+		if (!os::chown(workdir, execUser, "", true))
+			return "failed to change the owner of the sandbox workspace <" + workdir + "> to <" + execUser + ">";
+	}
+#else
+	(void)workdir;
+	(void)execUser;
+#endif
+	return {};
+}
+
+// The health probe of a native application. A sandboxed application is probed under
+// its own user and sandbox; a probe the policy refuses reports the refusal.
+std::shared_ptr<AppProcess> Application::startHealthCheck()
+{
+	auto proc = std::make_shared<AppProcess>(std::weak_ptr<Application>());
+	SandboxSpec sandbox;
+	sandbox.mode = effectiveSandboxMode();
+	std::string user = getExecUser(), workDir = m_workdir, reason;
+	std::map<std::string, std::string> envMap;
+	if (sandbox.mode == SandboxMode::Off)
+	{
+		// Unsandboxed: as before, the daemon user in the default directory.
+		user.clear();
+		workDir.clear();
+	}
+	else
+	{
+		workDir = sandboxWorkdir();
+		reason = createSandboxWorkspace(workDir);
+		if (reason.empty())
+			reason = prepareSandboxRun(sandbox, workDir, envMap);
+	}
+	if (reason.empty())
+	{
+		proc->start(m_healthCheckCmd, user, workDir, std::move(envMap), nullptr, "", EMPTY_STR_JSON, 0, false, sandbox);
+	}
+	else
+	{
+		LOG_WAR << "Application::startHealthCheck() probe of application <" << m_name << "> refused: " << reason;
+		proc->setStartError(reason);
+	}
+	return proc;
+}
+
 const std::string Application::getExecUser() const
 {
 	if (m_kind == Kind::SystemAgent)
@@ -2013,17 +2262,20 @@ void Application::resetMetricHandles(MetricsState &metrics)
 	metrics.healthy.reset();
 }
 
-std::shared_ptr<AppProcess> Application::createProcess(const std::string &dockerImage, const std::string &appName)
+std::shared_ptr<AppProcess> Application::createProcess(const std::string &dockerImage, const std::string &appName,
+													   const std::string &workingDir)
 {
 	std::shared_ptr<AppProcess> process;
 	const auto weakSelf = std::weak_ptr<Application>(std::dynamic_pointer_cast<Application>(shared_from_this()));
 	m_stdoutFileQueue->enqueue();
 
-	if ((m_shellApp || m_sessionLogin) &&
-		(m_shellAppFile == nullptr || !Utility::isFileExist(m_shellAppFile->getShellFileName())))
+	// The script embeds its working directory: regenerate it when that changes.
+	if ((m_shellApp || m_sessionLogin) && (m_shellAppFile == nullptr || m_shellAppFile->workingDir() != workingDir ||
+										   !Utility::isFileExist(m_shellAppFile->getShellFileName())))
 	{
 		m_shellAppFile.reset();
-		m_shellAppFile = std::make_shared<ShellAppFileGen>(appName, m_commandLine, getExecUser(), m_sessionLogin, m_workdir);
+		m_shellAppFile =
+			std::make_shared<ShellAppFileGen>(appName, m_commandLine, getExecUser(), m_sessionLogin, workingDir);
 	}
 
 	if (!dockerImage.empty())

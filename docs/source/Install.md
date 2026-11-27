@@ -228,6 +228,9 @@ The main files are:
 - `authorization.yaml` for principals, roles, and bindings;
 - `auth-stack.yaml` for built-in service ownership and ports.
 
+The application file system sandbox is disabled by default. It needs a Linux kernel
+with Landlock (5.13 or later). See [Application sandbox](Sandbox.md).
+
 Use these environment variables for non-interactive authentication setup:
 
 ```text

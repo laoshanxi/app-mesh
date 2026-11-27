@@ -35,8 +35,8 @@ void HealthCheckTask::doHealthCheck()
 				}
 				else if (!app->isContainerized())
 				{
-					auto proc = std::make_shared<AppProcess>(std::weak_ptr<Application>());
-					const auto pid = proc->start(app->healthCheckCmd(), "", "", {}, nullptr, "", EMPTY_STR_JSON, 0).pid;
+					auto proc = app->startHealthCheck();
+					const auto pid = proc->getpid();
 					pid_t waited = 0;
 					if (pid > 1)
 					{

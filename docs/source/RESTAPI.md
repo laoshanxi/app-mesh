@@ -38,6 +38,10 @@ endpoints, requests use an OAuth access token in the
 
 `X-Target-Host` forwarding (cluster requests, `-F <node>` in the CLI) requires the `host-forward` permission on the authenticated principal; both the Engine and the Go agent reject a forward without it with 403. The packaged `appmesh-admin` role carries it, viewer/guest roles do not.
 
+A principal policy accepts `sandbox: {"mode": "off" | "write" | "strict"}`: the
+file system sandbox of the applications that Principal owns. An empty mode removes
+the override. See [Application sandbox](Sandbox.md).
+
 ## Applications
 
 | Method | URI | Purpose |
@@ -57,6 +61,7 @@ endpoints, requests use an OAuth access token in the
 - `permission` — share bits `<other><group>` (1 deny, 2 read, 3 write; `0` = everyone full access). When the field is omitted the application is registered **owner-only** (`11`); pass `0` explicitly to open it to every principal.
 - `stdout_backup_count` — output files kept per application across restarts (default `0`: each start replaces the previous run's output). Ignored (with a warning) for Docker applications: their output is fetched from the container, not rotated files.
 - `daily_limitation.daily_start` / `daily_end` — seconds since UTC midnight (integers).
+- `sandbox_mode` / `sandbox_workdir` — read-only runtime fields of native applications: the file system sandbox of the current or next run (`off`, `write`, `strict`) and its private workspace. A definition that sets `working_dir` is rejected with `400` while the sandbox mode of its owner is not `off`.
 - An application whose `end_time` is in the past, or whose `interval` is not a positive duration, is rejected with `400`.
 
 Applications use `owner_principal_id`; REST input cannot create
@@ -110,6 +115,7 @@ Lifecycle semantics:
 - `resource_limit.cpu` (fractional cores) maps to container `NanoCPUs` alongside `memory_mb`/`memory_virt_mb`/`cpu_shares`.
 - On-demand runs (`/appmesh/app/run`, `syncrun`) support Docker applications: the run starts the container, streams its output and reports the container exit code. The image must exist locally — an on-demand run never pulls (register the application to pull first). Windows hosts reject Docker applications.
 - On daemon start, labeled containers whose application no longer exists are logged as orphans; set `APPMESH_DOCKER_ORPHAN_SWEEP=delete` in the daemon environment to remove them.
+- `Sandbox.Enable` and `Sandbox.Mode` (daemon config, hot-reloaded): the file system sandbox of native applications and its node default mode (`off` / `write` / `strict`). `APPMESH_Sandbox_Enable` and `APPMESH_Sandbox_Mode` override them.
 
 ## Run and tasks
 
@@ -184,6 +190,8 @@ there. The run then continues until it finishes or reaches its timeout.
 | GET | `/appmesh/resources` | Get host resources |
 | GET | `/appmesh/metrics` | Get Prometheus metrics |
 | GET | `/metrics` | Get Prometheus metrics |
+
+The host resource document carries a `sandbox` object: `enabled` (`Sandbox.Enable`), `mode` (the node default), `supported` (the kernel provides Landlock) and `abi` (the Landlock ABI version, `0` when unsupported).
 
 ## Response headers
 

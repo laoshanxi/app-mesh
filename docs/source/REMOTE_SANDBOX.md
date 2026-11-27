@@ -101,6 +101,12 @@ Commands:
 2. `run.wait(stdout_handler=print_output_handler, timeout=timeout)` — real-time stdout streaming
 3. `KeyboardInterrupt` → disable + delete app, exit 130
 
+The remote sandbox sets `working_dir`. A remote Principal with a sandbox mode other
+than `off` rejects such a run, because a sandboxed application cannot set
+`working_dir`. Keep the sandbox off for the Principal that the remote sandbox uses
+(`sandbox.mode: off`), or run without the remote sandbox. See
+[Application sandbox](Sandbox.md).
+
 ### Key Design Decisions
 
 - `run_app_async` (not `run_app_sync`) for all execution — enables real-time stdout streaming

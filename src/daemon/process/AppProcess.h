@@ -20,6 +20,7 @@
 #if defined(_WIN32)
 #include "../../common/os/jobobject.hpp"
 #endif
+#include "LandlockPolicy.h"
 
 class LinuxCgroup;
 class ResourceLimitation;
@@ -48,7 +49,8 @@ public:
 	ProcessStartResult start(std::string cmd, std::string user, std::string workDir,
 							 std::map<std::string, std::string> envMap, std::shared_ptr<ResourceLimitation> limit,
 							 const std::string &stdoutFile = "", const Json::Value &stdinFileContent = EMPTY_STR_JSON,
-							 int maxStdoutSize = APP_STD_OUT_MAX_FILE_SIZE, bool stdinPipe = false);
+							 int maxStdoutSize = APP_STD_OUT_MAX_FILE_SIZE, bool stdinPipe = false,
+							 const SandboxSpec &sandbox = {});
 	void terminate();
 	void scheduleTermination(std::size_t timeoutSec, const std::string &from);
 	// Virtual: backends with detached activities (API image pulls) stay alive
@@ -104,7 +106,7 @@ protected:
 	virtual pid_t startImpl(std::string cmd, std::string user, std::string workDir,
 							std::map<std::string, std::string> envMap, std::shared_ptr<ResourceLimitation> limit,
 							const std::string &stdoutFile, const Json::Value &stdinFileContent, int maxStdoutSize,
-							bool stdinPipe);
+							bool stdinPipe, const SandboxSpec &sandbox);
 	virtual void terminateImpl();
 
 	// Backend state publication

@@ -1109,6 +1109,13 @@ components:
         connector_id: { type: string }
         status: { type: string, enum: [active, disabled, tombstoned] }
         execution_user: { type: string }
+        sandbox:
+          type: object
+          description: >-
+            Sandbox mode of the applications this Principal owns. Absent when the
+            Principal follows the node default (Sandbox.Mode).
+          properties:
+            mode: { type: string, enum: [off, write, strict] }
         roles:
           type: array
           items: { type: string }
@@ -1120,6 +1127,14 @@ components:
       properties:
         status: { type: string, enum: [active, disabled, tombstoned] }
         execution_user: { type: string }
+        sandbox:
+          type: object
+          properties:
+            mode:
+              type: string
+              description: >-
+                off | write | strict overrides the node default for the applications
+                of this Principal. An empty string removes the override.
         roles:
           type: array
           items: { type: string }
@@ -1214,6 +1229,23 @@ components:
           type: boolean
           description: Start the process as a login session (sudo --login semantics).
         working_dir: { type: string, description: Working directory for the process. }
+        sandbox_mode:
+          type: string
+          enum: [off, write, strict]
+          readOnly: true
+          description: >-
+            File system sandbox of the process. Present on native applications only;
+            containers are isolated by Docker and system applications are not sandboxed.
+            A running process reports the mode it was started with, an idle application
+            reports the mode of its next start. write limits writes to sandbox_workdir
+            and work/share; strict also limits reads to the system read baseline.
+        sandbox_workdir:
+          type: string
+          readOnly: true
+          description: >-
+            Private working directory of the application under work/workspaces.
+            Present when sandbox_mode is not off. An application with sandbox_mode
+            other than off must not set working_dir.
         docker_image: { type: string, description: Docker image to run instead of a local command. }
         env:
           type: object

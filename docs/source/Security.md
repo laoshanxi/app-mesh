@@ -136,6 +136,10 @@ An application stores `owner_principal_id`. A response can also contain `owner_d
 
 The Engine refuses to delete a principal that owns an application. A deleted principal becomes a role-free tombstone. This rule prevents automatic provisioning from creating a new owner with the same identity.
 
+## Application file system sandbox
+
+The [application sandbox](Sandbox.md) confines the file access of native application processes with Linux Landlock. The sandbox is disabled by default. An application definition has no sandbox field: the node (`Sandbox.Enable`, `Sandbox.Mode`) and the Principal (`sandbox.mode`) define the mode, and an application cannot weaken it. [Sandbox.md](Sandbox.md) is the single specification of the modes, the workspace, the requirements, and the limits.
+
 ## First administrator
 
 The built-in installation creates one packaged administrator identity. This identity has no App Mesh role before enrollment.

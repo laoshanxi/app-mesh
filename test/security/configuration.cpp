@@ -164,3 +164,86 @@ TEST_CASE("Environment overrides create a missing scalar leaf", "[security][conf
 	// value: only the leaf of an existing branch is created.
 	REQUIRE_FALSE(root.isMember("MISSING"));
 }
+
+// The sandbox is opt-in: a default installation never confines applications.
+TEST_CASE("Sandbox is off by default and hot-reloads", "[security][config]")
+{
+	Configuration::instance(std::make_shared<Configuration>());
+	REQUIRE_FALSE(Configuration::instance()->sandboxEnabled());
+	REQUIRE(Configuration::instance()->getSandboxMode() == "off");
+
+	Json::Value sandbox;
+	sandbox["Enable"] = true;
+	sandbox["Mode"] = "Write";
+	Json::Value root;
+	root["Sandbox"] = sandbox;
+	Configuration::instance()->hotUpdate(root);
+	REQUIRE(Configuration::instance()->sandboxEnabled());
+	REQUIRE(Configuration::instance()->getSandboxMode() == "write");
+	REQUIRE(Configuration::instance()->AsJson()["Sandbox"]["Mode"].asString() == "write");
+	Configuration::instance(std::make_shared<Configuration>());
+}
+
+// A typo must neither confine nor free every application.
+TEST_CASE("An unknown sandbox mode keeps the running setting", "[security][config]")
+{
+	Configuration::instance(std::make_shared<Configuration>());
+	Json::Value sandbox;
+	sandbox["Mode"] = "strict";
+	Json::Value root;
+	root["Sandbox"] = sandbox;
+	Configuration::instance()->hotUpdate(root);
+
+	sandbox["Mode"] = "enforce";
+	Configuration::instance()->hotUpdate(root);
+	REQUIRE(Configuration::instance()->getSandboxMode() == "strict");
+
+	// At boot an unknown mode falls back to off.
+	Json::Value boot;
+	boot["Sandbox"]["Enable"] = true;
+	boot["Sandbox"]["Mode"] = "enforce";
+	Configuration::instance(Configuration::FromJson(boot));
+	REQUIRE(Configuration::instance()->sandboxEnabled());
+	REQUIRE(Configuration::instance()->getSandboxMode() == "off");
+	Configuration::instance(std::make_shared<Configuration>());
+}
+
+TEST_CASE("Sandbox settings can be overridden from the environment", "[security][config]")
+{
+	struct EnvGuard
+	{
+		~EnvGuard()
+		{
+			::unsetenv("APPMESH_Sandbox_Enable");
+			::unsetenv("APPMESH_Sandbox_Mode");
+		}
+	} guard;
+	::setenv("APPMESH_Sandbox_Enable", "1", 1);
+	::setenv("APPMESH_Sandbox_Mode", "strict", 1);
+
+	Json::Value root;
+	root["Sandbox"]["Enable"] = false;
+	root["Sandbox"]["Mode"] = "off";
+	REQUIRE(Configuration::overrideConfigWithEnv(root));
+	const auto config = Configuration::FromJson(root);
+	REQUIRE(config->sandboxEnabled());
+	REQUIRE(config->getSandboxMode() == "strict");
+}
+
+// The switch is security-relevant: a malformed value is an error, never "off".
+TEST_CASE("A non-boolean Sandbox.Enable is rejected and changes nothing", "[security][config]")
+{
+	Configuration::instance(std::make_shared<Configuration>());
+	Json::Value sandbox;
+	sandbox["Enable"] = "true";
+	sandbox["Mode"] = "write";
+	Json::Value root;
+	root["Sandbox"] = sandbox;
+	REQUIRE_THROWS_AS(Configuration::instance()->hotUpdate(root), std::invalid_argument);
+	REQUIRE_FALSE(Configuration::instance()->sandboxEnabled());
+	REQUIRE(Configuration::instance()->getSandboxMode() == "off");
+
+	Json::Value boot;
+	boot["Sandbox"]["Enable"] = 1;
+	REQUIRE_THROWS_AS(Configuration::FromJson(boot), std::invalid_argument);
+}

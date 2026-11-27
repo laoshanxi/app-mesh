@@ -50,6 +50,7 @@
 #include <hashidsxx/hashids.h>
 #include <json/json.h>
 #include <openssl/crypto.h>
+#include <openssl/evp.h>
 #include <spdlog/sinks/rotating_file_sink.h>
 #include <spdlog/sinks/stdout_color_sinks.h>
 
@@ -1657,6 +1658,15 @@ std::string Utility::toHex(const unsigned char *data, size_t size)
 	result.reserve(size * 2);
 	boost::algorithm::hex_lower(data, data + size, std::back_inserter(result));
 	return result;
+}
+
+std::string Utility::sha256Hex(const std::string &text)
+{
+	unsigned char digest[EVP_MAX_MD_SIZE];
+	unsigned int length = 0;
+	if (EVP_Digest(text.data(), text.size(), digest, &length, EVP_sha256(), nullptr) != 1)
+		throw std::runtime_error("Failed to compute a SHA-256 digest");
+	return toHex(digest, length);
 }
 
 std::string Utility::stringFormat(const char *fmt_str, ...)

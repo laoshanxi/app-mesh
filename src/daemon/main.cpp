@@ -365,6 +365,16 @@ void AppMeshDaemon::initializeDirectories()
 	// Create working directories. runtime/ holds daemon-private state, share/
 	// is a sticky world-writable exchange area, workspaces/ the sandbox root.
 	Utility::createDirectory(config->getWorkDir());
+	// Execution users must reach runtime/, share/ and workspaces/ below it, whatever
+	// mode an installer or a container entrypoint left on the directory.
+	std::error_code workPermsEc;
+	const fs::path workDirPath(config->getWorkDir());
+	const auto workDirStatus = fs::status(workDirPath, workPermsEc);
+	if (!workPermsEc)
+	{
+		fs::permissions(workDirPath, workDirStatus.permissions() | fs::perms::group_exec | fs::perms::others_exec,
+						workPermsEc);
+	}
 
 	const auto runtimeDir = config->getRuntimeDir();
 	const auto stdoutDir = (fs::path(runtimeDir) / "stdout").string();
@@ -374,8 +384,10 @@ void AppMeshDaemon::initializeDirectories()
 	const auto shareDir = config->getWorkShareDir();
 	const auto workspacesDir = (fs::path(config->getWorkDir()) / APPMESH_WORKSPACES_DIR).string();
 
-	// Stale scripts from an unclean shutdown must not block script names.
+	// Stale scripts from an unclean shutdown must not block script names, and
+	// stale launch stdin files have no reader left.
 	Utility::removeDir(shellDir);
+	Utility::removeDir(stdinDir);
 
 	// No chown to the default exec user: runtime/ stays daemon-private and
 	// share/'s sticky-bit owner must stay the daemon user.
@@ -394,6 +406,7 @@ void AppMeshDaemon::initializeDirectories()
 	fs::permissions(fs::path(shareDir),
 					 fs::perms::owner_all | fs::perms::group_all | fs::perms::others_all | fs::perms::sticky_bit, sharePermsEc);
 	Utility::createDirectory(workspacesDir, traverseOnly);
+	fs::permissions(fs::path(workspacesDir), traverseOnly, sharePermsEc);
 
 	migrateLegacyDirectories(config->getWorkDir(), runtimeDir, stdoutDir, shareDir);
 

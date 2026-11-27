@@ -107,6 +107,16 @@ running as root. Windows does not perform Unix user switching.
 - An explicit `--user 0:0` runs the container daemon as root, but user switching still
   requires `DisableExecUser=false` and the necessary container capabilities.
 
+## Sandbox and Execution User
+
+The [application sandbox](Sandbox.md) confines a native process to its workspace with Linux Landlock. It complements the execution user; it does not replace it. [Sandbox.md](Sandbox.md) specifies the policy, the requirements, and the limits. This section lists what the sandbox changes for the execution user.
+
+- The sandbox requires a non-root process user. A root daemon must map the Principal to a non-root `execution_user` or set `BaseConfig.DefaultExecUser`. Otherwise the application does not start.
+- The sandbox always sets `no_new_privs`. Setuid binaries and file capabilities gain no privilege inside the sandbox.
+- A root daemon keeps `session_login` in mode `write`; mode `strict` refuses it. A non-root daemon refuses every `session_login` user switch: `sudo` cannot elevate under `no_new_privs`.
+- Each sandboxed application gets a workspace that is owned by the execution user. The sandbox sets `HOME` to that workspace; `HOME` is no longer the home directory of the execution user.
+- `health_check_cmd` of a sandboxed application runs as the execution user, not as the daemon user.
+
 ## Security Constraints
 
 - A resolved execution user whose UID is 0 is rejected for child-user switching.
@@ -124,3 +134,6 @@ running as root. Windows does not perform Unix user switching.
 | `BaseConfig.DefaultExecUser` | `config.yaml` | `""` | fallback native child user |
 | `BaseConfig.DisableExecUser` | `config.yaml` | `false` | disable native child-user switching |
 | `execution_user` | Principal in `authorization.yaml` | `""` | native child user materialized for that Principal's applications |
+| `Sandbox.Enable` | `config.yaml` | `false` | master switch of the application file system sandbox |
+| `Sandbox.Mode` | `config.yaml` | `off` | node default sandbox mode: `off`, `write`, or `strict` |
+| `sandbox.mode` | Principal in `authorization.yaml` | unset | sandbox mode of that Principal's applications; replaces the node default |

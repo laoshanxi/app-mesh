@@ -29,7 +29,7 @@ Declare *what* to run; the platform keeps it *running well*:
 
 - Native processes, Docker apps, or **adopt an already-running process** — full remote lifecycle
 - Auto-restart on crash (per-exit-code policies), automatic recovery after daemon restart
-- Health checks, CPU/memory limits, chosen OS user, tenant isolation
+- Health checks, CPU/memory limits, chosen OS user, file system sandbox, tenant isolation
 - Retained output history, viewable at any time
 
 ```bash

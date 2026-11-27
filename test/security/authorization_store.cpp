@@ -442,3 +442,58 @@ TEST_CASE("API keys replicate to a follower with a usable secret", "[security][a
 		REQUIRE(secret == plaintext);
 	}
 }
+
+// The principal sandbox.mode is an administrator override of the node default: it
+// is validated, persisted in the on-disk shape and follows the replication snapshot.
+TEST_CASE("A principal sandbox mode overrides the node default and replicates", "[security][authorization]")
+{
+	ConfigGuard guard;
+	AuthorizationStore store;
+	const auto principalId = Principal::stableId(ISSUER, SUBJECT);
+	REQUIRE(store.applyReplicatedPolicy(policyRoot(principalId)));
+	REQUIRE(store.get(principalId)->sandboxMode().empty());
+
+	SECTION("setting, keeping and clearing the override")
+	{
+		Json::Value strict;
+		strict["sandbox"]["mode"] = "strict";
+		store.updatePrincipal(principalId, strict);
+		REQUIRE(store.get(principalId)->sandboxMode() == "strict");
+		REQUIRE(store.principalsJson()[principalId]["sandbox"]["mode"].asString() == "strict");
+
+		// An update that does not mention the sandbox leaves the override alone.
+		Json::Value displayName;
+		displayName["display_name"] = "Alice";
+		store.updatePrincipal(principalId, displayName);
+		REQUIRE(store.get(principalId)->sandboxMode() == "strict");
+
+		Json::Value inherit;
+		inherit["sandbox"]["mode"] = "";
+		store.updatePrincipal(principalId, inherit);
+		REQUIRE(store.get(principalId)->sandboxMode().empty());
+		REQUIRE_FALSE(store.principalsJson()[principalId].isMember("sandbox"));
+	}
+
+	SECTION("an unknown mode or shape is rejected and changes nothing")
+	{
+		Json::Value unknown;
+		unknown["sandbox"]["mode"] = "enforce";
+		REQUIRE_THROWS_AS(store.updatePrincipal(principalId, unknown), std::invalid_argument);
+
+		Json::Value notAnObject;
+		notAnObject["sandbox"] = "strict";
+		REQUIRE_THROWS_AS(store.updatePrincipal(principalId, notAnObject), std::invalid_argument);
+		REQUIRE(store.get(principalId)->sandboxMode().empty());
+	}
+
+	SECTION("the replication snapshot carries the mode to a follower")
+	{
+		Json::Value write;
+		write["sandbox"]["mode"] = "write";
+		store.updatePrincipal(principalId, write);
+
+		AuthorizationStore follower;
+		REQUIRE(follower.applyReplicatedPolicy(store.replicationSnapshotJson()));
+		REQUIRE(follower.get(principalId)->sandboxMode() == "write");
+	}
+}

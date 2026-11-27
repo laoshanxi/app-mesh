@@ -128,6 +128,7 @@ workloads from one another.
 - Inspect the managed process tree.
 - Control retained output history.
 - Run an application as a selected operating-system user.
+- Confine the file access of a native application to its private workspace with the [application sandbox](Sandbox.md).
 - Isolate applications owned by different App Mesh users.
 
 **User value:** one application or tenant is less likely to exhaust a node or

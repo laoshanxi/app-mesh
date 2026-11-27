@@ -269,6 +269,8 @@ public:
 
 	// Lowercase hex encoding of raw bytes (HMAC digests, principal IDs)
 	static std::string toHex(const unsigned char *data, size_t size);
+	// Lowercase hex SHA-256 of text.
+	static std::string sha256Hex(const std::string &text);
 };
 
 #define PID_FILE "appmesh.pid"
@@ -318,6 +320,9 @@ public:
 #define JSON_KEY_Docker "Docker"
 #define JSON_KEY_Docker_Enable "Enable"
 #define JSON_KEY_Docker_HostSecurityPolicy "HostSecurityPolicy"
+#define JSON_KEY_Sandbox "Sandbox"
+#define JSON_KEY_Sandbox_Enable "Enable"
+#define JSON_KEY_Sandbox_Mode "Mode"
 #define JSON_KEY_DefaultExecUser "DefaultExecUser"
 #define JSON_KEY_DisableExecUser "DisableExecUser"
 #define JSON_KEY_WorkingDirectory "WorkingDirectory"
@@ -385,6 +390,9 @@ public:
 #define JSON_KEY_APP_stdout_dispatched_bytes "stdout_dispatched_bytes"
 #define JSON_KEY_APP_health_check_cmd "health_check_cmd"
 #define JSON_KEY_APP_working_dir "working_dir"
+// Runtime-only sandbox view of an application; never accepted as input.
+#define JSON_KEY_APP_sandbox_mode "sandbox_mode"
+#define JSON_KEY_APP_sandbox_workdir "sandbox_workdir"
 #define JSON_KEY_APP_register_time "register_time"
 #define JSON_KEY_APP_enabled "enabled"
 #define JSON_KEY_APP_daily_limitation "daily_limitation"

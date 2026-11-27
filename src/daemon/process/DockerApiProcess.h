@@ -98,7 +98,8 @@ protected:
 	// stdinPipe is rejected at registration; unused, satisfies the backend contract.
 	pid_t startImpl(std::string cmd, std::string execUser, std::string workDir, std::map<std::string, std::string> envMap,
 					std::shared_ptr<ResourceLimitation> limit, const std::string &stdoutFile,
-					const Json::Value &stdinFileContent, int maxStdoutSize, bool stdinPipe) override;
+					const Json::Value &stdinFileContent, int maxStdoutSize, bool stdinPipe,
+					const SandboxSpec &sandbox) override;
 	void terminateImpl() override;
 
 private:

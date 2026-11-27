@@ -24,7 +24,12 @@
 #include <unistd.h>
 
 #if defined(__linux__)
+#include <sys/prctl.h>
 #include <sys/syscall.h>
+#include <unistd.h>
+#ifndef SYS_landlock_restrict_self
+#define SYS_landlock_restrict_self 446
+#endif
 #endif
 
 namespace
@@ -38,6 +43,7 @@ namespace
 	constexpr int32_t STAGE_SETGID = 6;
 	constexpr int32_t STAGE_SETUID = 7;
 	constexpr int32_t STAGE_EXECVE = 8;
+	constexpr int32_t STAGE_LANDLOCK = 9;
 
 	const char *stageName(int stage)
 	{
@@ -59,6 +65,8 @@ namespace
 			return "setuid";
 		case STAGE_EXECVE:
 			return "execve";
+		case STAGE_LANDLOCK:
+			return "landlock";
 		default:
 			return "exec";
 		}
@@ -217,6 +225,18 @@ ForkExecResult forkExec(const ForkExecRequest &request)
 				errno = writeErrno;
 				failInChild(STAGE_CGROUP, reportFd);
 			}
+		}
+		if (request.landlockRulesetFd >= 0)
+		{
+#if defined(__linux__)
+			// Enter the sandbox while still privileged, before the identity drop.
+			if (::prctl(PR_SET_NO_NEW_PRIVS, 1, 0, 0, 0) != 0)
+				failInChild(STAGE_LANDLOCK, reportFd);
+			if (::syscall(SYS_landlock_restrict_self, request.landlockRulesetFd, 0) != 0)
+				failInChild(STAGE_LANDLOCK, reportFd);
+#else
+			failInChild(STAGE_LANDLOCK, reportFd);
+#endif
 		}
 		if (request.uid != 0)
 		{

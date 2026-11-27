@@ -20,6 +20,7 @@
 
 #include "../../common/TimerHandler.h"
 #include "../../common/os/models.h" // pid_t
+#include "../process/LandlockPolicy.h"
 #include "../rest/HttpRequest.h"
 #include "AppBehavior.h"
 #include "AppUtils.h"
@@ -53,6 +54,8 @@ public:
 	const std::string &healthCheckCmd() const;
 	const std::string &getOwnerPrincipalId() const;
 	int getOwnerPermission() const;
+	/// Sandbox of the next start of this application (Off for containers and system applications).
+	SandboxMode effectiveSandboxMode() const;
 	STATUS getStatus() const;
 	bool isPersistAble() const;
 	bool isManaged() const;
@@ -75,6 +78,8 @@ public:
 	/// (native apps, or a container app with neither an image HEALTHCHECK nor
 	/// health_check_cmd) or when the container channel failed.
 	std::optional<int> probeContainerHealth();
+	/// Starts health_check_cmd of a native application; a refused probe carries the reason.
+	std::shared_ptr<AppProcess> startHealthCheck();
 	bool isEnabled() const;
 	bool isSystemProtected() const;
 	int startupPhase() const;
@@ -91,6 +96,12 @@ public:
 	virtual void remove();
 	/// A same-name replacement writes the same stdout paths; destruction must not delete them.
 	void releaseStdoutFiles();
+	/// Workspace housekeeping for a removed application: the scratch workspace of an
+	/// anonymous run, or every workspace named after a deleted definition.
+	void removeScratchWorkspace();
+	void removeDefinitionWorkspaces();
+	/// Deletes every workspace of a Principal (work/workspaces/<principal>).
+	static void removePrincipalWorkspaces(const std::string &principalId);
 
 	virtual void dump();
 	virtual std::string getYamlPath();
@@ -176,7 +187,8 @@ private:
 	// Run creation and process callbacks
 	std::string startRun(bool onDemand, int timeoutSeconds, const std::shared_ptr<HttpRequest> &completionRequest = nullptr,
 						 std::uint64_t lifecycleGeneration = 0);
-	std::shared_ptr<AppProcess> createProcess(const std::string &dockerImage, const std::string &appName);
+	std::shared_ptr<AppProcess> createProcess(const std::string &dockerImage, const std::string &appName,
+											  const std::string &workingDir);
 	// Merge docker_ports/docker_volumes/docker_network into a copy of the app
 	// metadata as the Docker create request body (PortBindings/Binds/NetworkMode).
 	void compileDockerContainerFields(Json::Value &createBody) const;
@@ -205,6 +217,21 @@ private:
 	void scheduleNext(std::chrono::system_clock::time_point startFrom = std::chrono::system_clock::now());
 	void scheduleStartAt(const std::chrono::system_clock::time_point &when);
 	std::uint64_t consumeScheduledStart(const std::chrono::system_clock::time_point &now);
+
+	// Sandbox
+	/// True for native applications Landlock can confine.
+	bool sandboxApplies() const;
+	/// The directory a run starts in: the sandbox workspace when the next start is sandboxed.
+	std::string effectiveWorkdir() const;
+	std::string sandboxWorkdir() const;
+	static std::string principalWorkspaceDir(const std::string &principalId);
+	std::string ensureWorkspaceOwner(const std::string &workdir, const std::string &execUser);
+	/// Creates the workspace directories and notes whether this run created them;
+	/// returns the failure reason, empty on success.
+	std::string createSandboxWorkspace(const std::string &workdir);
+	/// Validates a sandboxed start and readies its workspace; returns the rejection reason, empty when accepted.
+	std::string prepareSandboxRun(SandboxSpec &sandbox, const std::string &workdir,
+								  std::map<std::string, std::string> &envMap);
 
 	// Effective launch configuration
 	const std::string getExecUser() const;
@@ -291,6 +318,8 @@ private:
 
 	// Runtime state
 	AppMeshProcess m_process;
+	// This run created its sandbox workspace, so no earlier data lives in it.
+	std::atomic<bool> m_sandboxWorkspaceCreated{false};
 	// Per-spawn pre-shared-key proof for managed system processes (Agent,
 	// Workflow); replaced on every spawn, accessed under the m_process lock.
 	std::shared_ptr<HMACVerifier> m_processProof;

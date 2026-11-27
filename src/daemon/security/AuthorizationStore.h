@@ -27,6 +27,8 @@ public:
 	Principal::Kind kind() const;
 	const std::string &status() const;
 	const std::string &executionUser() const;
+	/// Administrator override of the node sandbox mode: off | write | strict; empty inherits.
+	const std::string &sandboxMode() const;
 	const std::set<std::string> &roles() const;
 	bool active() const;
 
@@ -47,6 +49,7 @@ private:
 	std::string m_connectorId;
 	std::string m_status;
 	std::string m_executionUser;
+	std::string m_sandboxMode;
 	std::set<std::string> m_roles;
 };
 

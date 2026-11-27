@@ -21,6 +21,7 @@ Welcome to AppMesh's documentation!
    SDKContract.md
    Install.md
    WorkDir.md
+   Sandbox.md
    Ports.md
    Docker.md
    Loki.md

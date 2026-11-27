@@ -145,4 +145,17 @@ Docker:
   # enforce - reject the start with a clear error
   HostSecurityPolicy: "off"
 
+# File system sandbox for native applications (Linux Landlock). Each application
+# gets a private workspace under work/workspaces; work/share stays writable.
+Sandbox:
+  # Master switch. false runs every application unrestricted and ignores the
+  # sandbox.mode of every Principal.
+  Enable: false
+
+  # Node default for applications whose owner Principal sets no sandbox.mode.
+  # off     - no restriction
+  # write   - writes are limited to the application workspace and work/share
+  # strict  - write, and reads are limited to the system read baseline
+  Mode: "off"
+
 Labels: {}

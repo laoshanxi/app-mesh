@@ -31,6 +31,16 @@ struct JsonDocker
 	Json::Value AsJson() const;
 };
 
+/// Node-level sandbox switch and default mode (config.yaml `Sandbox`).
+struct JsonSandbox
+{
+	bool m_enable = false;
+	std::string m_mode = "off";
+	/// `previous` seeds the invalid-value fallback on reload.
+	static std::shared_ptr<JsonSandbox> FromJson(const Json::Value &jsonValue, const JsonSandbox *previous = nullptr);
+	Json::Value AsJson() const;
+};
+
 class Configuration
 {
 public:
@@ -149,6 +159,10 @@ public:
 	// Docker.HostSecurityPolicy: off (default) | audit | enforce, hot-reloaded.
 	std::string getDockerHostSecurityPolicy();
 	bool getDockerEnabled();
+	/// Sandbox.Enable; false ignores every Principal sandbox.mode.
+	bool sandboxEnabled() const;
+	/// Sandbox.Mode: off | write | strict, the default for Principals without sandbox.mode.
+	const std::string getSandboxMode() const;
 	std::string getRestListenAddress();
 	int getTcpApiPort();
 	int getWebSocketPort();
@@ -229,6 +243,7 @@ private:
 	std::shared_ptr<BaseConfig> m_baseConfig;
 	std::shared_ptr<JsonRest> m_rest;
 	std::shared_ptr<JsonDocker> m_docker;
+	std::shared_ptr<JsonSandbox> m_sandbox;
 	// Runtime exporter state is fixed at startup.
 	std::atomic<bool> m_runtimePrometheusEnabled = false; // read without m_hotupdateMutex
 

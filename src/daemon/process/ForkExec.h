@@ -22,6 +22,7 @@ struct ForkExecRequest
 	unsigned int gid = 0;
 	std::vector<std::string> cgroupProcsFiles;    ///< cgroup.procs leaves the child joins before exec
 	std::chrono::milliseconds execTimeout{10000}; ///< bound on the wait for the child's exec report
+	int landlockRulesetFd = -1;                   ///< >= 0: the child enters this Landlock domain before exec
 };
 
 struct ForkExecResult

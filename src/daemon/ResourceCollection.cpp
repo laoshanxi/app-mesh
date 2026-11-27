@@ -13,6 +13,7 @@
 #include "Configuration.h"
 #include "ResourceCollection.h"
 #include "application/Application.h"
+#include "process/LandlockPolicy.h"
 #include "process/LinuxCgroup.h"
 
 ResourceCollection::ResourceCollection() : m_appmeshStartTime(std::chrono::system_clock::now()) {}
@@ -261,6 +262,14 @@ Json::Value ResourceCollection::AsJson()
 	result["memory_source"] = res.m_memorySource;
 	result["swap_source"] = res.m_swapSource;
 	result["cgroup_version"] = res.m_cgroupVersion;
+	// Sandbox capability of this host; a non-zero abi is what sandboxed apps need.
+	const auto landlockAbi = LandlockPolicy::detectAbi();
+	Json::Value sandbox(Json::objectValue);
+	sandbox["enabled"] = Configuration::instance()->sandboxEnabled();
+	sandbox["mode"] = Configuration::instance()->getSandboxMode();
+	sandbox["supported"] = landlockAbi > 0;
+	sandbox["abi"] = landlockAbi;
+	result["sandbox"] = std::move(sandbox);
 	result[("mem_total_bytes")] = (res.m_total_bytes);
 	result["mem_available_bytes"] = res.m_available_bytes;
 	result["mem_current_bytes"] = res.m_current_bytes;

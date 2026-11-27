@@ -81,6 +81,7 @@ Configuration::Configuration()
 	m_label = std::make_unique<Label>();
 	m_rest = std::make_shared<JsonRest>();
 	m_docker = std::make_shared<JsonDocker>();
+	m_sandbox = std::make_shared<JsonSandbox>();
 }
 
 Configuration::~Configuration() {}
@@ -137,6 +138,13 @@ std::shared_ptr<Configuration> Configuration::FromJson(Json::Value &jsonValue, b
 		config->m_docker = JsonDocker::FromJson(jsonValue[JSON_KEY_Docker]);
 	}
 
+	// Sandbox
+	if (HAS_JSON_FIELD(jsonValue, JSON_KEY_Sandbox))
+	{
+		config->m_sandbox =
+			JsonSandbox::FromJson(jsonValue[JSON_KEY_Sandbox], previous ? previous->m_sandbox.get() : nullptr);
+	}
+
 	// Labels
 	if (HAS_JSON_FIELD(jsonValue, JSON_KEY_Labels))
 	{
@@ -164,6 +172,7 @@ void SigHupHandler(int signo)
 		try
 		{
 			auto configJson = Utility::yamlToJson(YAML::Load(Configuration::readConfiguration()));
+			Configuration::overrideConfigWithEnv(configJson); // same precedence as at boot
 			config->hotUpdate(configJson);
 		}
 		catch (const std::exception &e)
@@ -215,6 +224,9 @@ Json::Value Configuration::AsJson()
 
 	// Docker
 	result[JSON_KEY_Docker] = m_docker->AsJson();
+
+	// Sandbox
+	result[JSON_KEY_Sandbox] = m_sandbox->AsJson();
 
 	// Build version
 	result[JSON_KEY_VERSION] = std::string(__MICRO_VAR__(BUILD_TAG));
@@ -287,6 +299,48 @@ bool Configuration::getDockerEnabled()
 {
 	std::lock_guard guard(m_hotupdateMutex);
 	return m_docker ? m_docker->m_enable : true;
+}
+
+std::shared_ptr<JsonSandbox> JsonSandbox::FromJson(const Json::Value &jsonValue, const JsonSandbox *previous)
+{
+	auto sandbox = std::make_shared<JsonSandbox>();
+	if (HAS_JSON_FIELD(jsonValue, JSON_KEY_Sandbox_Enable))
+	{
+		// A malformed switch is an error: guessing "off" would silently confine nothing.
+		if (!jsonValue[JSON_KEY_Sandbox_Enable].isBool())
+			throw std::invalid_argument("Sandbox.Enable must be a boolean");
+		sandbox->m_enable = jsonValue[JSON_KEY_Sandbox_Enable].asBool();
+	}
+	if (previous)
+		sandbox->m_mode = previous->m_mode;
+	auto mode = GET_JSON_STR_VALUE(jsonValue, JSON_KEY_Sandbox_Mode);
+	std::transform(mode.begin(), mode.end(), mode.begin(), [](unsigned char c) { return std::tolower(c); });
+	if (mode == "off" || mode == "write" || mode == "strict")
+		sandbox->m_mode = mode;
+	else if (!mode.empty())
+		LOG_WAR << "Configuration::JsonSandbox::FromJson() ignored invalid Mode <" << mode
+				<< ">, expected off | write | strict";
+	return sandbox;
+}
+
+Json::Value JsonSandbox::AsJson() const
+{
+	Json::Value result = Json::Value(Json::objectValue);
+	result[JSON_KEY_Sandbox_Enable] = m_enable;
+	result[JSON_KEY_Sandbox_Mode] = m_mode;
+	return result;
+}
+
+bool Configuration::sandboxEnabled() const
+{
+	std::lock_guard guard(m_hotupdateMutex);
+	return m_sandbox->m_enable;
+}
+
+const std::string Configuration::getSandboxMode() const
+{
+	std::lock_guard guard(m_hotupdateMutex);
+	return m_sandbox->m_mode;
 }
 
 int Configuration::getRestListenPort()
@@ -900,6 +954,7 @@ bool Configuration::removeApp(const std::string &appName, const Application *exp
 	{
 		app->destroy();
 		app->clearMetrics();
+		app->removeScratchWorkspace();
 		LOG_DBG << fname << "Removed application <" << appName << ">";
 	}
 	EventDispatcher::instance()->removeByApp(appName);
@@ -1034,6 +1089,13 @@ void Configuration::hotUpdate(Json::Value &jsonValue)
 				SET_COMPARE(this->m_docker->m_enable, newConfig->m_docker->m_enable);
 			if (HAS_JSON_FIELD(docker, JSON_KEY_Docker_HostSecurityPolicy))
 				SET_COMPARE(this->m_docker->m_hostSecurityPolicy, newConfig->m_docker->m_hostSecurityPolicy);
+		}
+
+		// Sandbox
+		if (HAS_JSON_FIELD(jsonValue, JSON_KEY_Sandbox))
+		{
+			SET_COMPARE(this->m_sandbox->m_enable, newConfig->m_sandbox->m_enable);
+			SET_COMPARE(this->m_sandbox->m_mode, newConfig->m_sandbox->m_mode);
 		}
 
 		// REST
@@ -1183,6 +1245,8 @@ bool Configuration::overrideConfigWithEnv(Json::Value &jsonConfig)
 				}
 				else
 				{
+					LOG_WAR << fname << "Configuration key <" << dottedPath(i) << "> from environment <" << envKey
+							<< "> is ignored: <" << jsonKey << "> is not a section of the configuration";
 					break;
 				}
 			}

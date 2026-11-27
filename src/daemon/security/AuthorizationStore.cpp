@@ -151,6 +151,7 @@ const std::string &AuthorizationPrincipal::subject() const { return m_subject; }
 Principal::Kind AuthorizationPrincipal::kind() const { return m_kind; }
 const std::string &AuthorizationPrincipal::status() const { return m_status; }
 const std::string &AuthorizationPrincipal::executionUser() const { return m_executionUser; }
+const std::string &AuthorizationPrincipal::sandboxMode() const { return m_sandboxMode; }
 const std::set<std::string> &AuthorizationPrincipal::roles() const { return m_roles; }
 bool AuthorizationPrincipal::active() const { return m_status == "active"; }
 
@@ -177,6 +178,15 @@ void AuthorizationPrincipal::updatePolicy(const Json::Value &json)
 		m_executionUser = Utility::jsonStringField(json, "execution_user");
 	if (json.isMember("roles"))
 		m_roles = readStringSet(json["roles"], "roles");
+	if (json.isMember("sandbox"))
+	{
+		if (!json["sandbox"].isObject())
+			throw std::invalid_argument("principal sandbox must be an object");
+		// An empty mode returns the principal to the node default.
+		m_sandboxMode = json["sandbox"].isMember("mode") ? Utility::jsonStringField(json["sandbox"], "mode") : std::string();
+		if (m_sandboxMode != "off" && m_sandboxMode != "write" && m_sandboxMode != "strict" && !m_sandboxMode.empty())
+			throw std::invalid_argument("principal sandbox.mode must be off, write, or strict");
+	}
 	if (json.isMember("display_name"))
 		m_displayName = Utility::jsonStringField(json, "display_name");
 	if (json.isMember("email"))
@@ -197,6 +207,8 @@ Json::Value AuthorizationPrincipal::asJson() const
 	result["connector_id"] = m_connectorId;
 	result["status"] = m_status;
 	result["execution_user"] = m_executionUser;
+	if (!m_sandboxMode.empty())
+		result["sandbox"]["mode"] = m_sandboxMode;
 	result["roles"] = toJsonArray(m_roles);
 	return result;
 }
@@ -769,6 +781,7 @@ void AuthorizationStore::deletePrincipal(const std::string &principalId)
 			m_apiKeys.emplace(keyId, key);
 		throw;
 	}
+	Application::removePrincipalWorkspaces(principalId);
 	LOG_INF << fname << "tombstoned principal <" << principalId << "> and revoked its <" << removedKeys.size()
 			<< "> API key(s)";
 }
