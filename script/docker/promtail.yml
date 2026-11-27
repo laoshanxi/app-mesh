@@ -23,7 +23,7 @@ scrape_configs:
           - localhost
         labels:
           job: app
-          __path__: /opt/appmesh/work/stdout/*.out
+          __path__: /opt/appmesh/work/runtime/stdout/*.out
 
   - job_name: appmesh
     static_configs:

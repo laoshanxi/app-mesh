@@ -28,7 +28,7 @@ docker run -d -p 6060:6060 --restart=always --name appmesh \
 
 The file applies only on the first boot. See [Authentication](Authentication.md) for password and token operations.
 
-Persist `/opt/appmesh/work`. Back up this directory as one unit. It contains authentication state, authorization data, application definitions, and the master key for secured environment values.
+Persist `/opt/appmesh/work`. Back up this directory as one unit. It contains authentication state, authorization data, application definitions, and the master key for secured environment values. The directory layout is specified in [WorkDir.md](WorkDir.md).
 
 Mount `/var/run/docker.sock` only when App Mesh must manage Docker applications. Docker operations (including image pulls) go through the Docker Engine API via the built-in agent, so the daemon needs no docker CLI — only the socket. Grant the minimum required group access.
 

@@ -202,18 +202,18 @@ async fn sdk_20_file_download() {
     let c = authed().await;
     let tmp = tempfile::NamedTempFile::new().unwrap();
     // With FileAllowedBaseDir unset the file API jails transfers to the daemon
-    // work tree, and inside it only work/tmp is exchangeable: seed there, download.
+    // work tree, and inside it only work/share is exchangeable: seed there, download.
     let clean = Application::builder("_rt_dl_clean_")
-        .command("rm -f /opt/appmesh/work/tmp/rust_dl.txt")
+        .command("rm -f /opt/appmesh/work/share/rust_dl.txt")
         .shell(true)
         .build();
     let _ = c.run_app_sync(&clean, 5, 10).await;
     let seed = Application::builder("_rt_dl_seed_")
-        .command("echo rust_file_download > /opt/appmesh/work/tmp/rust_dl.txt")
+        .command("echo rust_file_download > /opt/appmesh/work/share/rust_dl.txt")
         .shell(true)
         .build();
     c.run_app_sync(&seed, 5, 10).await.unwrap();
-    c.download_file("/opt/appmesh/work/tmp/rust_dl.txt", tmp.path().to_str().unwrap(), false)
+    c.download_file("/opt/appmesh/work/share/rust_dl.txt", tmp.path().to_str().unwrap(), false)
         .await
         .unwrap();
     assert!(std::fs::metadata(tmp.path()).unwrap().len() > 0);
@@ -230,14 +230,14 @@ async fn sdk_21_file_roundtrip() {
     std::fs::write(&src, "rust_file_roundtrip").unwrap();
     // remove any leftover from a previous run — the daemon rejects overwrite
     let rm = Application::builder("_rt_clean_")
-        .command("rm -f /opt/appmesh/work/tmp/rust_rt.txt")
+        .command("rm -f /opt/appmesh/work/share/rust_rt.txt")
         .shell(true)
         .build();
     let _ = c.run_app_sync(&rm, 5, 10).await;
-    c.upload_file(src.to_str().unwrap(), "/opt/appmesh/work/tmp/rust_rt.txt", false)
+    c.upload_file(src.to_str().unwrap(), "/opt/appmesh/work/share/rust_rt.txt", false)
         .await
         .unwrap();
-    c.download_file("/opt/appmesh/work/tmp/rust_rt.txt", dst.to_str().unwrap(), false)
+    c.download_file("/opt/appmesh/work/share/rust_rt.txt", dst.to_str().unwrap(), false)
         .await
         .unwrap();
     assert_eq!(std::fs::read_to_string(&dst).unwrap(), "rust_file_roundtrip");

@@ -39,7 +39,7 @@ bool SharedMemory::create()
 	// Linux: Use tmpfs-based shared memory for fast in-memory access
 	shmName = (fs::path("/dev/shm/") / shmName).string();
 #elif defined(_WIN32)
-	shmName = (fs::path(Utility::getHomeDir()) / APPMESH_WORK_DIR / APPMESH_WORK_TMP_DIR / shmName).string();
+	shmName = (fs::path(Utility::getHomeDir()) / APPMESH_WORK_DIR / APPMESH_RUNTIME_DIR / shmName).string();
 #endif
 	m_shmPath = shmName;
 

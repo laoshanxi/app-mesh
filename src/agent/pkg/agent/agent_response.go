@@ -71,7 +71,7 @@ func (r *Response) downloadFileFromConn(conn *Connection, encodedPath string) er
 		return fmt.Errorf("decode base64 path: %w", err)
 	}
 
-	r.TempDownloadFilePath = path.Join(tempDirBase, config.WorkDirName, config.TmpDirName, r.UUID)
+	r.TempDownloadFilePath = path.Join(tempDirBase, config.WorkDirName, config.ShareDirName, r.UUID)
 	remoteFile := string(bytes)
 
 	logger.Infof("Downloading remote file <%s> to local file <%s>", remoteFile, r.TempDownloadFilePath)
@@ -92,8 +92,8 @@ func (r *Response) prepareFileUpload(encodedPath string) error {
 		return fmt.Errorf("decode base64 path: %w", err)
 	}
 
-	r.TempUploadFilePath = path.Join(tempDirBase, config.WorkDirName, config.TmpDirName, r.UUID)
-	// The staging temp lives under work/tmp; create it so a fresh install
+	r.TempUploadFilePath = path.Join(tempDirBase, config.WorkDirName, config.ShareDirName, r.UUID)
+	// The staging temp lives under work/share; create it so a fresh install
 	// (or a cleaned work dir) cannot break the transfer at handoff.
 	if err := os.MkdirAll(path.Dir(r.TempUploadFilePath), 0700); err != nil {
 		return fmt.Errorf("prepare temp dir: %w", err)
@@ -161,7 +161,7 @@ func (r *Response) writeToHTTPResponse(w http.ResponseWriter, req *http.Request)
 				status = http.StatusBadGateway
 			case errors.Is(err, os.ErrNotExist), errors.Is(err, syscall.EISDIR), errors.Is(err, syscall.ENOTDIR):
 				// These can only come from the agent's own staging temp file
-				// (work/tmp/<uuid>), i.e. local infrastructure trouble — 500,
+				// (work/share/<uuid>), i.e. local infrastructure trouble — 500,
 				// like the daemon maps its own internal failures (a missing
 				// remote file arrives as the daemon's 404, never as this error).
 				status = http.StatusInternalServerError

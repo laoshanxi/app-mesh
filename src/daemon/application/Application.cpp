@@ -349,7 +349,7 @@ void Application::FromJson(const std::shared_ptr<Application> &app, const Json::
 	app->m_description = Utility::stdStringTrim(GET_JSON_STR_VALUE(jsonObj, JSON_KEY_APP_description));
 
 	// TODO: consider i18n and legal file name
-	const static auto outputDir = (fs::path(Configuration::instance()->getWorkDir()) / "stdout");
+	const static auto outputDir = (fs::path(Configuration::instance()->getRuntimeDir()) / "stdout");
 	const auto fileName = Utility::stringFormat("appmesh.%s.out", app->m_name.c_str());
 	app->m_stdoutFile = (outputDir / fileName).string();
 	app->m_stdoutCacheNum = GET_JSON_INT_VALUE(jsonObj, JSON_KEY_APP_stdout_backup_count);

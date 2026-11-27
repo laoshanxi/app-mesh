@@ -147,7 +147,7 @@ jobs:
 
           # Test
           tail /opt/appmesh/work/server.log
-          tail /opt/appmesh/work/stdout/appmesh.agent.out
+          tail /opt/appmesh/work/runtime/stdout/appmesh.agent.out
           # sudo lldb -p $(cat /opt/appmesh/appmesh.pid) -o "thread backtrace all" -o "quit" || true
 
           TOKEN=""

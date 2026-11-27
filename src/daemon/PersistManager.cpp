@@ -83,7 +83,7 @@ std::shared_ptr<Snapshot> Snapshot::FromJson(const Json::Value &obj)
 const std::string &Snapshot::filePath()
 {
 	static const std::string path =
-		(std::filesystem::path(Configuration::instance()->getWorkTmpDir()) / SNAPSHOT_FILE_NAME)
+		(std::filesystem::path(Configuration::instance()->getRuntimeDir()) / SNAPSHOT_FILE_NAME)
 			.string();
 	return path;
 }
@@ -99,6 +99,11 @@ void Snapshot::persist()
 	{
 		ofs << JSON::dump(this->AsJson());
 		ofs.close();
+		// The temp sits in a traversable directory; keep it owner-only even
+		// when the rename below never happens.
+		std::error_code permsError;
+		std::filesystem::permissions(tmpFile,
+									 std::filesystem::perms::owner_read | std::filesystem::perms::owner_write, permsError);
 		std::error_code renameError;
 		std::filesystem::rename(tmpFile, target, renameError);
 		if (!renameError)

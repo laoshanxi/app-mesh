@@ -20,13 +20,13 @@ func TestAppmeshTCPFile(t *testing.T) {
 	require.Nil(t, err)
 
 	// With FileAllowedBaseDir unset the file API jails transfers to the daemon
-	// work tree, and inside it only work/tmp is exchangeable: upload to that
+	// work tree, and inside it only work/share is exchangeable: upload to that
 	// scratch, then download back and compare.
 	var scratch string
 	if runtime.GOOS == "windows" {
-		scratch = `C:\local\appmesh\work\tmp`
+		scratch = `C:\local\appmesh\work\share`
 	} else {
-		scratch = "/opt/appmesh/work/tmp"
+		scratch = "/opt/appmesh/work/share"
 	}
 	localFile := "go_file_test"
 	tempFile := filepath.Join(os.TempDir(), "go_file_test.copy")

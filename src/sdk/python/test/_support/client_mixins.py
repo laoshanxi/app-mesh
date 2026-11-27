@@ -17,18 +17,18 @@ from _support import config
 
 def get_test_paths():
     # With REST.FileAllowedBaseDir unset the file API jails transfers to the
-    # daemon work tree, and inside it only work/tmp is exchangeable, so remote
-    # transfers exercise the work/tmp scratch of the standard install.
+    # daemon work tree, and inside it only work/share is exchangeable, so remote
+    # transfers exercise the work/share exchange area of the standard install.
     # "system_file" stays outside the jail and must be refused.
     if sys.platform == "win32":
         return {
-            "remote_tmp": r"C:\local\appmesh\work\tmp\2.log",
+            "remote_tmp": r"C:\local\appmesh\work\share\2.log",
             "system_file": r"C:\Windows\System32\drivers\etc\hosts",
         }
     # Sandboxes with a non-standard daemon home override the scratch location;
     # the default matches the standard install (file jail covers the work tree).
     return {
-        "remote_tmp": os.environ.get("APPMESH_TEST_WORK_TMP", "/opt/appmesh/work/tmp/2.log"),
+        "remote_tmp": os.environ.get("APPMESH_TEST_WORK_SHARE", "/opt/appmesh/work/share/2.log"),
         "system_file": "/etc/hosts",
     }
 

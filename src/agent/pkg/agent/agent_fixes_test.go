@@ -421,7 +421,7 @@ func TestUploadTransferFailureFailsLoud(t *testing.T) {
 
 	body := strings.Repeat("a", 512*1024)
 	req := newAgentRequest(t, http.MethodPost, "https://agent"+RestPathUpload, io.NopCloser(strings.NewReader(body)),
-		map[string]string{HTTPHeaderKeyFilePath: "/opt/appmesh/work/tmp/fixa-upload.bin"})
+		map[string]string{HTTPHeaderKeyFilePath: "/opt/appmesh/work/share/fixa-upload.bin"})
 	recorder := httptest.NewRecorder()
 	HandleAppMeshRequest(recorder, req)
 
@@ -444,7 +444,7 @@ func TestUploadTransferSuccessKeeps200(t *testing.T) {
 
 	body := strings.Repeat("a", 512*1024)
 	req := newAgentRequest(t, http.MethodPost, "https://agent"+RestPathUpload, io.NopCloser(strings.NewReader(body)),
-		map[string]string{HTTPHeaderKeyFilePath: "/opt/appmesh/work/tmp/fixa-upload-ok.bin"})
+		map[string]string{HTTPHeaderKeyFilePath: "/opt/appmesh/work/share/fixa-upload-ok.bin"})
 	recorder := httptest.NewRecorder()
 	HandleAppMeshRequest(recorder, req)
 

@@ -849,9 +849,9 @@ mod integration {
         upload_src.flush().unwrap();
 
         // Choose a unique remote path to avoid "file already exist" errors. It
-        // must sit in the exchangeable work/tmp scratch: the daemon jails transfers there.
+        // must sit in the exchangeable work/share area: the daemon jails transfers there.
         let remote_path = format!(
-            "/opt/appmesh/work/tmp/appmesh_rust_integ_{}.txt",
+            "/opt/appmesh/work/share/appmesh_rust_integ_{}.txt",
             std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_millis()
         );
         let remote_path = remote_path.as_str();

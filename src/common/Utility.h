@@ -79,8 +79,10 @@ namespace fs = std::filesystem;
 #define APPMESH_AUTHORIZATION_CONFIG_FILE "authorization.yaml"
 #define APPMESH_APPLICATION_DIR "apps"
 #define APPMESH_WORK_DIR "work"
-#define APPMESH_WORK_TMP_DIR "tmp"
-#define APPMESH_WORK_UPLOAD_DIR "uploads" // drogon upload cache, lives under work/tmp
+#define APPMESH_WORK_SHARE_DIR "share" // shared exchange area, default app workdir
+#define APPMESH_WORKSPACES_DIR "workspaces" // per-principal sandbox workdir root
+#define APPMESH_RUNTIME_DIR "runtime" // daemon-private state root (stdio, shell, uploads, snapshot)
+#define APPMESH_WORK_UPLOAD_DIR "uploads" // drogon upload cache, lives under work/runtime
 #define APPMESH_WORK_CONFIG_DIR "config"
 #define DEFAULT_PROM_LISTEN_PORT 0
 #define DEFAULT_REST_LISTEN_PORT 6060

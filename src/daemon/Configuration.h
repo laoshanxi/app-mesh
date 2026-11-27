@@ -174,8 +174,10 @@ public:
 	const std::string getDefaultExecUser() const;
 	bool getDisableExecUser() const;
 	const std::string getWorkDir() const;
-	/// work/tmp under the working directory (uploads, snapshots, scratch).
-	const std::string getWorkTmpDir() const;
+	/// work/share under the working directory: shared exchange area, default app workdir.
+	const std::string getWorkShareDir() const;
+	/// work/runtime under the working directory: daemon-private state root (stdio, shell, uploads, snapshot).
+	const std::string getRuntimeDir() const;
 	bool getSslVerifyClient() const;
 	bool getSslVerifyServer() const;
 	bool getSslEnabled() const;

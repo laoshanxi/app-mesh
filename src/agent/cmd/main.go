@@ -161,7 +161,7 @@ func main() {
 	// Docker container events -> daemon push (noop without a Docker endpoint)
 	agent.StartContainerEventsPush(ctx)
 
-	changeWorkDir(path.Join(config.GetAppMeshHomeDir(), config.WorkDirName, config.TmpDirName))
+	changeWorkDir(path.Join(config.GetAppMeshHomeDir(), config.WorkDirName, config.ShareDirName))
 
 	// Wait for shutdown signal
 	<-ctx.Done()

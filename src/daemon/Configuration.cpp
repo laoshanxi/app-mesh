@@ -523,9 +523,14 @@ const std::string Configuration::getWorkDir() const
 		return (fs::path(Utility::getHomeDir()) / APPMESH_WORK_DIR).string();
 }
 
-const std::string Configuration::getWorkTmpDir() const
+const std::string Configuration::getWorkShareDir() const
 {
-	return (fs::path(getWorkDir()) / APPMESH_WORK_TMP_DIR).string();
+	return (fs::path(getWorkDir()) / APPMESH_WORK_SHARE_DIR).string();
+}
+
+const std::string Configuration::getRuntimeDir() const
+{
+	return (fs::path(getWorkDir()) / APPMESH_RUNTIME_DIR).string();
 }
 
 bool Configuration::corsAllowsOrigin(const std::string &origin) const
@@ -636,7 +641,7 @@ std::string Configuration::getFileAllowedBaseDir() const
 	std::lock_guard guard(m_hotupdateMutex);
 	// Unset means the daemon's work directory tree, not the whole filesystem:
 	// the file API defaults closed (inside it the own-installation exclusion
-	// still applies, leaving work/tmp as the exchangeable scratch area).
+	// still applies, leaving work/share and work/workspaces exchangeable).
 	if (m_rest->m_fileAllowedBaseDir.empty())
 		return getWorkDir();
 	return m_rest->m_fileAllowedBaseDir;
