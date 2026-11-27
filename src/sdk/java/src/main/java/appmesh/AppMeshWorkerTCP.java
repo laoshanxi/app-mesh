@@ -12,7 +12,7 @@ public class AppMeshWorkerTCP extends AppMeshWorker {
     }
 
     public AppMeshWorkerTCP() {
-        // default to localhost:6059 to mirror Python defaults
-        this("127.0.0.1", 6059);
+        // default to localhost:6062 to mirror Python defaults
+        this("127.0.0.1", 6062);
     }
 }

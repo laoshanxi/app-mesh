@@ -200,20 +200,24 @@ Agents are just managed Apps: the same RBAC, scheduling, secrets, health checks,
 
 ## 🆚 Comparison
 
-| Feature                  | App Mesh | [systemd](https://systemd.io/) | [crontab](https://crontab.guru/) |
-| ------------------------ | -------- | ------------------------------ | -------------------------------- |
-| Schedule accuracy        | Seconds  | Seconds                        | Minutes                          |
-| Language                 | C++17    | C                              | C                                |
-| Web GUI                  | √        |                                |                                  |
-| Command lines            | √        | √                              | √                                |
-| SDK                      | √        |                                |                                  |
-| Cron schedule expression | √        |                                | √                                |
-| Manage docker app        | √        |                                |                                  |
-| Session login            | √        |                                |                                  |
-| Manage stdout/stderr     | √        | √                              |                                  |
-| Health check             | √        |                                |                                  |
-| Authentication           | √        |                                |                                  |
-| Multi-tenant             | √        |                                | √                                |
+| Feature                             | App Mesh       | [Nomad](https://www.nomadproject.io/) | [Rundeck](https://www.rundeck.com/open-source) | [Kubernetes](https://kubernetes.io/) | [systemd](https://systemd.io/) |
+| ----------------------------------- | -------------- | ------------------------------------ | ---------------------------------------------- | ----------------------------------- | --------- |
+| Control plane                       | None           | 3–5 servers      | 1 (HA: Enterprise)      | 3+ nodes       | None      |
+| Native (non-container) app          | √              | √                |                         |                | √         |
+| Docker app                          | √              | √                |                         | √              |           |
+| Keep running, health check          | √              | √                |                         | √              | √         |
+| Automatic node placement            |                | √                |                         | √              |           |
+| Cron schedule                       | √              | √                | √                       | CronJob        | Timers    |
+| Remote command or script            | √              | √                | √ SSH                   | √              |           |
+| Command in a running app            | √              | √                |                         | √              |           |
+| Task message to a running app       | √              |                  |                         |                |           |
+| Workflow                            | DAG            |                  | Steps                   | Add-on         |           |
+| LLM agent runtime, MCP server       | √              |                  |                         |                |           |
+| Auth and per-tenant RBAC            | OIDC           | OIDC             | ACL                     | OIDC, RBAC     |           |
+| Web GUI                             | √              | √                | √                       | Add-on         |           |
+| CLI                                 | √              | √                | √                       | √              | √         |
+| REST API                            | √              | √                | √                       | √              |           |
+| SDK                                 | 5 languages    | Go               |                         | Official       |           |
 
 ## 📚 Documentation
 

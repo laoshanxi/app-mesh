@@ -206,7 +206,7 @@ jobs:
             GUEST_PW=$(awk -F= '$1=="password"{print $2}' /opt/appmesh/work/auth/secrets/initial-viewer-credentials)
             GUEST_JWT=$(curl -s -X POST \
               -d "grant_type=password&client_id=appmesh-cli&username=guest@appmesh.local&password=${GUEST_PW}&scope=openid%20audience:server:client_id:appmesh-api" \
-              http://127.0.0.1:6062/auth/token |
+              http://127.0.0.1:6065/auth/token |
               sed -n 's/.*"access_token"[[:space:]]*:[[:space:]]*"\([A-Za-z0-9._~-]*\)".*/\1/p')
             [ -n "$GUEST_JWT" ] || { echo "failed to obtain the password-grant token"; exit 1; }
             APPMESH_BEARER_TOKEN="$GUEST_JWT" appm ls >/dev/null
@@ -241,11 +241,11 @@ jobs:
             APPMESH_AUTH_ISSUER="$ISSUER" \
             APPMESH_AUTH_ACCESS_URL="$ISSUER" \
             APPMESH_AUTH_CA_PATH=/opt/appmesh/ssl/ca.pem \
-            APPMESH_MCP_PUBLIC_URL=http://127.0.0.1:6071 \
+            APPMESH_MCP_PUBLIC_URL=http://127.0.0.1:6070 \
               python3 /opt/appmesh/integrations/mcp-server/appmesh_server.py &
             METADATA=""
             for _ in $(seq 1 10); do
-              curl -sf http://127.0.0.1:6071/.well-known/oauth-protected-resource/mcp -o /dev/null && { METADATA=1; break; }
+              curl -sf http://127.0.0.1:6070/.well-known/oauth-protected-resource/mcp -o /dev/null && { METADATA=1; break; }
               sleep 2
             done
             [ -n "$METADATA" ] || { echo "MCP metadata unavailable"; exit 1; }

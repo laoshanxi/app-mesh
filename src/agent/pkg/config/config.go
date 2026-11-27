@@ -58,8 +58,8 @@ var ConfigData = Configuration{
 		RESTEnabled:                  true,
 		RESTListenAddress:            "127.0.0.1",
 		RESTListenPort:               6060,
-		TCPAPIPort:                   6059,
-		WebSocketPort:                6058,
+		TCPAPIPort:                   6062,
+		WebSocketPort:                6063,
 		PrometheusExporterListenPort: 0,
 		CORSDisabled:                 false,
 		CorsAllowOrigins:             []string{},
@@ -80,8 +80,8 @@ var ConfigData = Configuration{
 }
 
 var OIDCData = OIDCConfig{
-	Issuer:    "http://127.0.0.1:6062/auth",
-	AccessURL: "http://127.0.0.1:6062/auth",
+	Issuer:    "http://127.0.0.1:6065/auth",
+	AccessURL: "http://127.0.0.1:6065/auth",
 	TLSVerify: true,
 }
 

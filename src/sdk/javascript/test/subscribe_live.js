@@ -31,7 +31,7 @@ async function assertLive (name, fn) {
 const bearer = () => process.env.APPMESH_BEARER_TOKEN
 
 function liveTCP () {
-  const client = new AppMeshClientTCP(false, ['127.0.0.1', 6059])
+  const client = new AppMeshClientTCP(false, ['127.0.0.1', 6062])
   client.setBearerToken(bearer())
   return client
 }
@@ -89,7 +89,7 @@ await assertLive('live TCP file transfer guard', async () => {
 // A stale bearer is rejected with 401, the provider rotates it once, and the
 // replayed request succeeds over TCP.
 await assertLive('live TCP 401 refresh retry', async () => {
-  const client = new AppMeshClientTCP(false, ['127.0.0.1', 6059])
+  const client = new AppMeshClientTCP(false, ['127.0.0.1', 6062])
   let refreshed = 0
   client.setTokenProvider({
     getAccessToken: async () => (refreshed === 0 ? 'definitely-stale-token' : bearer()),

@@ -1,12 +1,12 @@
 ---
 OIDC:
   # App Mesh trusts one logical issuer. External identity systems stay upstream.
-  issuer: http://127.0.0.1:6062/auth
+  issuer: http://127.0.0.1:6065/auth
 
   # Network address this Engine node uses to reach discovery and signing keys. It may differ
   # from the canonical issuer in container, cluster, or hairpin deployments.
   # Discovery and token `iss` must still equal `issuer` exactly.
-  access_url: http://127.0.0.1:6062/auth
+  access_url: http://127.0.0.1:6065/auth
 
   # Browser entry that fronts the full issuer path (agent or web proxy), advertised in
   # /appmesh/auth/config. WSS/TCP clients cannot derive it from their own connection, so

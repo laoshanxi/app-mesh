@@ -68,7 +68,7 @@
 
 | 复用对象 | 复用方式 |
 |---|---|
-| llm-agent（`src/apps/llm-agent`） | 大脑。setup.sh 注册 App：`<venv>/bin/python -m llm_agent --server 127.0.0.1:6059`。工作目录指向仓库内 llm-agent 包。不修改其代码 |
+| llm-agent（`src/apps/llm-agent`） | 大脑。setup.sh 注册 App：`<venv>/bin/python -m llm_agent --server 127.0.0.1:6062`。工作目录指向仓库内 llm-agent 包。不修改其代码 |
 | Workflow 引擎 | 多步编排与定时任务。示例：`workflows/daily-digest.yaml` |
 | daemon RBAC / OIDC | 认证与授权。技能调用走最小权限账号 dh-bot |
 | 事件订阅 / 文件 API | 预留。Phase 2 使用 |

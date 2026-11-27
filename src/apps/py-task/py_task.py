@@ -46,12 +46,6 @@ class _StreamingOutput(StringIO):
             print(f"[py-task] send_task_partial failed ({exc}); continuing without partials",
                   file=sys.__stderr__, flush=True)
 
-    def finish(self) -> None:
-        """Forward a trailing line without a newline, then stop forwarding."""
-        if not self._skip_partial and self._pending:
-            rest, self._pending = self._pending, ""
-            self._emit(rest)
-
 
 def exec_with_output(code: Union[str, bytes], exec_globals: Optional[dict] = None,
                      send_partial: Optional[Callable[[str], bool]] = None) -> str:
@@ -65,7 +59,6 @@ def exec_with_output(code: Union[str, bytes], exec_globals: Optional[dict] = Non
             exec(code, namespace)
         except Exception:
             traceback.print_exc()
-    output_buffer.finish()
 
     return output_buffer.getvalue()
 

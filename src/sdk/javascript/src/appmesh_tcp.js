@@ -49,10 +49,10 @@ const HTTP_HEADER_KEY_X_FILE_GROUP = CONSTANTS.HTTP_HEADER_KEY_X_FILE_GROUP
  */
 class TCPTransport {
   /**
-   * @param {Array<string, number>} [address=['127.0.0.1', 6059]] - Server address [host, port]
+   * @param {Array<string, number>} [address=['127.0.0.1', 6062]] - Server address [host, port]
    * @param {Object|false|null} [sslConfig=null] - TLS tri-state (see class doc)
    */
-  constructor (address = ['127.0.0.1', 6059], sslConfig = null) {
+  constructor (address = ['127.0.0.1', 6062], sslConfig = null) {
     this.address = address
     this.sslConfig = sslConfig
     this.socket = null
@@ -353,7 +353,7 @@ function _isAddressObject (value) {
  */
 function _normalizeTcpAddress (address) {
   if (_isAddressObject(address)) {
-    return [address.host ?? '127.0.0.1', address.port ?? 6059]
+    return [address.host ?? '127.0.0.1', address.port ?? 6062]
   }
   return address
 }
@@ -547,11 +547,11 @@ class AppMeshClientTCP extends AppMeshClient {
    *
    * @param {Object|false|null} [sslConfig=null] - TLS config; same tri-state as AppMeshClient
    * (null=default CA, object=custom ca/cert/key, false=insecure).
-   * @param {Array<string, number>|{host: string, port: number}} [tcpAddress=['127.0.0.1', 6059]] - TCP server address
-   * @param {number} [restPort=6058] - REST port of the same daemon for the streaming side channel
+   * @param {Array<string, number>|{host: string, port: number}} [tcpAddress=['127.0.0.1', 6062]] - TCP server address
+   * @param {number} [restPort=6063] - REST port of the same daemon for the streaming side channel
    * (followOutput / runTaskStream); also honored as a `restPort` key on the `{host, port}` address object
    */
-  constructor (sslConfig = null, tcpAddress = ['127.0.0.1', 6059], restPort = null) {
+  constructor (sslConfig = null, tcpAddress = ['127.0.0.1', 6062], restPort = null) {
     // Accept the address-first object form: new AppMeshClientTCP({host, port}, sslConfig)
     if (_isAddressObject(sslConfig)) {
       const addr = sslConfig
@@ -575,7 +575,7 @@ class AppMeshClientTCP extends AppMeshClient {
     this._directReadWaiters = []
     // The SSE side channel (_sseRequest) dials the daemon's REST listener on the same host.
     this._restHost = tcpAddress[0]
-    this._restPort = restPort ?? 6058
+    this._restPort = restPort ?? 6063
     this._restChannelClient = null
   }
 

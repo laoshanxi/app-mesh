@@ -220,7 +220,7 @@
   <rect x="360" y="205" width="200" height="75" fill="white" stroke="#111" stroke-width="1.4"/>
   <text x="460" y="232" font-size="12.5" text-anchor="middle" fill="#111">Command line</text>
   <text x="460" y="249" font-size="10.5" text-anchor="middle" fill="#444">(appm, Rust)</text>
-  <text x="460" y="265" font-size="9.5" text-anchor="middle" fill="#444">WSS :6058 → engine</text>
+  <text x="460" y="265" font-size="9.5" text-anchor="middle" fill="#444">WSS :6063 → engine</text>
 
   <!-- JSON config -->
   <rect x="360" y="330" width="200" height="50" rx="25" fill="white" stroke="#111" stroke-width="1.4"/>
@@ -238,12 +238,12 @@
   <text x="920" y="228" font-size="12.5" text-anchor="middle" fill="#111">SDK</text>
   <text x="920" y="244" font-size="9.5" text-anchor="middle" fill="#444">C++ · Go · Java · JS</text>
   <text x="920" y="257" font-size="9.5" text-anchor="middle" fill="#444">Python · Rust</text>
-  <text x="920" y="271" font-size="9" text-anchor="middle" fill="#444">:6060 REST · :6058 WSS · :6059 TCP</text>
+  <text x="920" y="271" font-size="9" text-anchor="middle" fill="#444">:6060 REST · :6062 TCP · :6063 WSS</text>
 
   <!-- MCP Server (separate deployment, dashed) -->
   <rect x="1050" y="205" width="200" height="75" fill="white" stroke="#111" stroke-width="1.4" stroke-dasharray="5,3"/>
   <text x="1150" y="228" font-size="12.5" text-anchor="middle" fill="#111">MCP Server</text>
-  <text x="1150" y="244" font-size="9.5" text-anchor="middle" fill="#444">FastMCP · :6071 (own container)</text>
+  <text x="1150" y="244" font-size="9.5" text-anchor="middle" fill="#444">FastMCP · :6070 (own container)</text>
   <text x="1150" y="257" font-size="9.5" text-anchor="middle" fill="#444">OAuth resource server</text>
   <text x="1150" y="270" font-size="9" text-anchor="middle" fill="#444">validates bearer via issuer JWKS</text>
 
@@ -257,7 +257,7 @@
   <!-- daemon col1 -->
   <rect x="665" y="665" width="160" height="46" fill="white" stroke="#111" stroke-width="1.4"/>
   <text x="745" y="682" font-size="11.5" text-anchor="middle" fill="#111">Engine API</text>
-  <text x="745" y="696" font-size="9" text-anchor="middle" fill="#444">:6058 WSS/HTTPS · :6059 TCP</text>
+  <text x="745" y="696" font-size="9" text-anchor="middle" fill="#444">:6062 TCP · :6063 WSS/HTTPS</text>
   <text x="745" y="707" font-size="9" text-anchor="middle" fill="#444">events · task RPC · streaming</text>
 
   <rect x="665" y="727" width="160" height="40" fill="white" stroke="#111" stroke-width="1.4"/>
@@ -290,7 +290,7 @@
 
   <!-- System Apps -->
   <rect x="375" y="665" width="240" height="48" fill="white" stroke="#111" stroke-width="1.4"/>
-  <text x="495" y="684" font-size="11.5" text-anchor="middle" fill="#111">Identity — Dex :6062 (owner only)</text>
+  <text x="495" y="684" font-size="11.5" text-anchor="middle" fill="#111">Identity — Dex :6065 (owner only)</text>
   <text x="495" y="700" font-size="8.5" text-anchor="middle" fill="#444">OIDC issuer · dexuser admin UI · IdP federation</text>
 
   <rect x="375" y="729" width="240" height="58" fill="white" stroke="#111" stroke-width="1.4"/>
@@ -325,9 +325,9 @@
   <rect x="1060" y="815" width="220" height="80" fill="#f4f8f0" stroke="#6a8f5a" stroke-width="1" stroke-dasharray="3,2"/>
   <text x="1072" y="833" font-size="10" font-weight="bold" fill="#222">Cluster channels</text>
   <text x="1072" y="848" font-size="8.5" fill="#444">· X-Target-Host forward (bearer re-check)</text>
-  <text x="1072" y="861" font-size="8.5" fill="#444">· authz replication pull (token, :6058)</text>
+  <text x="1072" y="861" font-size="8.5" fill="#444">· authz replication pull (token, :6063)</text>
   <text x="1072" y="874" font-size="8.5" fill="#444">· one OIDC issuer cluster-wide</text>
-  <text x="1072" y="887" font-size="8.5" fill="#444">· events / workers via :6059 TCP</text>
+  <text x="1072" y="887" font-size="8.5" fill="#444">· events / workers via :6062 TCP</text>
 
   <!-- ======================= Linux managed ======================= -->
   <rect x="360" y="1000" width="240" height="60" rx="20" fill="white" stroke="#111" stroke-width="1.4"/>
@@ -362,7 +362,7 @@
     <path d="M842,128 L842,148 L1150,148 L1150,203" marker-end="url(#arrow)"/>
     <!-- CLI -> JSON config (modifying) -->
     <path d="M420,280 L420,328" marker-end="url(#arrow)"/>
-    <!-- CLI -> Engine API (WSS 6058 direct) -->
+    <!-- CLI -> Engine API (WSS 6063 direct) -->
     <path d="M460,280 L460,478 L829,478 L829,688 L827,688" marker-end="url(#arrow)"/>
     <!-- UI -> Agent (nginx proxy) -->
     <path d="M690,280 L690,458 L640,458 L640,533" marker-end="url(#arrow)"/>
@@ -431,8 +431,8 @@
 
   <!-- ======================= Labels ======================= -->
   <g font-size="9" font-style="italic" fill="#333">
-    <text x="472" y="488">WSS :6058 (direct)</text>
-    <text x="697" y="446">nginx proxy :6060 · /auth → Dex :6062</text>
+    <text x="472" y="488">WSS :6063 (direct)</text>
+    <text x="697" y="446">nginx proxy :6060 · /auth → Dex :6065</text>
     <text x="950" y="462">bearer forward (CA-verified)</text>
     <text x="330" y="940">model calls (egress)</text>
     <text x="618" y="682">task RPC</text>

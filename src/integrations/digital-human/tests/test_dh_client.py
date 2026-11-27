@@ -24,7 +24,7 @@ def test_provider_from_password_file(tmp_path, monkeypatch):
 	monkeypatch.delenv("APPMESH_BEARER_TOKEN", raising=False)
 	monkeypatch.setenv("DH_BOT_PASSWORD_FILE", str(pw))
 	monkeypatch.setenv("DH_BOT_USER", "dh-bot@demo.local")
-	monkeypatch.setenv("DH_TOKEN_URL", "http://127.0.0.1:6062")
+	monkeypatch.setenv("DH_TOKEN_URL", "http://127.0.0.1:6065")
 	c = dh_client.make_client()
 	assert isinstance(c, AppMeshClient)
 	assert isinstance(c._token_provider, PasswordGrantProvider)
@@ -45,7 +45,7 @@ def test_missing_or_bad_credentials_raise(monkeypatch, tmp_path):
 		dh_client.make_client()
 	(tmp_path / "pw").write_text("secret", encoding="utf-8")
 	monkeypatch.setenv("DH_BOT_PASSWORD_FILE", str(tmp_path / "pw"))
-	monkeypatch.setenv("DH_TOKEN_URL", "http://10.0.0.5:6062")  # 非回环明文 URL 被 SDK 拒绝
+	monkeypatch.setenv("DH_TOKEN_URL", "http://10.0.0.5:6065")  # 非回环明文 URL 被 SDK 拒绝
 	with pytest.raises(RuntimeError, match="凭据不可用"):
 		dh_client.make_client()
 	monkeypatch.delenv("DH_TOKEN_URL", raising=False)
@@ -57,8 +57,8 @@ def test_missing_or_bad_credentials_raise(monkeypatch, tmp_path):
 
 def test_token_url_normalized(monkeypatch):
 	monkeypatch.delenv("DH_TOKEN_URL", raising=False)
-	assert dh_client._token_url() == "http://127.0.0.1:6062/auth/token"
-	monkeypatch.setenv("DH_TOKEN_URL", "http://127.0.0.1:6062/")
-	assert dh_client._token_url() == "http://127.0.0.1:6062/auth/token"
-	monkeypatch.setenv("DH_TOKEN_URL", "http://10.0.0.5:6062/auth/token")
-	assert dh_client._token_url() == "http://10.0.0.5:6062/auth/token"
+	assert dh_client._token_url() == "http://127.0.0.1:6065/auth/token"
+	monkeypatch.setenv("DH_TOKEN_URL", "http://127.0.0.1:6065/")
+	assert dh_client._token_url() == "http://127.0.0.1:6065/auth/token"
+	monkeypatch.setenv("DH_TOKEN_URL", "http://10.0.0.5:6065/auth/token")
+	assert dh_client._token_url() == "http://10.0.0.5:6065/auth/token"

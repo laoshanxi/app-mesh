@@ -147,8 +147,8 @@ func TestNewPrincipalHTTPClientEndpointFollowsDaemonConfig(t *testing.T) {
 		t.Fatalf("TLS default must construct: %v", err)
 	}
 	client.CloseIdleConnections()
-	if engineURL != "https://127.0.0.1:6058" {
-		t.Fatalf("default engine URL = %q, want https://127.0.0.1:6058", engineURL)
+	if engineURL != "https://127.0.0.1:6063" {
+		t.Fatalf("default engine URL = %q, want https://127.0.0.1:6063", engineURL)
 	}
 
 	client, engineURL, err = newPrincipalHTTPClient(appmesh.Option{PlainTransport: true})
@@ -156,8 +156,8 @@ func TestNewPrincipalHTTPClientEndpointFollowsDaemonConfig(t *testing.T) {
 		t.Fatalf("plain transport must construct: %v", err)
 	}
 	client.CloseIdleConnections()
-	if engineURL != "http://127.0.0.1:6058" {
-		t.Fatalf("plain engine URL = %q, want http://127.0.0.1:6058", engineURL)
+	if engineURL != "http://127.0.0.1:6063" {
+		t.Fatalf("plain engine URL = %q, want http://127.0.0.1:6063", engineURL)
 	}
 
 	// The documented WebSocketPort: 0 configuration disables the native listener;

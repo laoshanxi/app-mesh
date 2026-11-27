@@ -268,6 +268,7 @@ namespace
 	// a container teardown (stop/kill/delete/log archive) trails the timeout kill
 	// by seconds, and today's completion then answers a success-shaped 200-empty
 	// long after the caller asked to wait.
+	constexpr std::int64_t SYNC_RUN_REPLY_GRACE_MS = 1500;
 	// TimerHandler must stay public: the timer registry binds this object through
 	// its enable_shared_from_this base, which private inheritance would break.
 	class HttpRequestSyncRun final : public HttpRequestAutoCleanup, public TimerHandler
@@ -288,7 +289,10 @@ namespace
 		{
 			if (timeoutSeconds <= 0)
 				return;
-			registerTimer(m_timerResponseId, 1000L * timeoutSeconds, 0, "HttpRequestSyncRun",
+			// The grace period lets the engine's own timeout kill land first and reply
+			// with the real exit code (process exit is sub-millisecond); only teardowns
+			// that keep trailing past it fall through to the 408.
+			registerTimer(m_timerResponseId, 1000L * timeoutSeconds + SYNC_RUN_REPLY_GRACE_MS, 0, "HttpRequestSyncRun",
 						  std::bind(&HttpRequestSyncRun::onTimerResponse, this));
 		}
 

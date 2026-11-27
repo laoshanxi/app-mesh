@@ -46,7 +46,7 @@ const (
 
 // Default REST listener ports from the shipped daemon config.yaml.
 const (
-	defaultWebSocketPort  = 6058
+	defaultWebSocketPort  = 6063
 	defaultRestListenPort = 6060
 )
 
@@ -95,7 +95,7 @@ type daemonRESTConfig struct {
 // readDaemonRESTConfig reads the daemon's effective REST settings from the
 // first existing config file in its own search order, then applies the
 // APPMESH_REST_<Key> overrides both processes honor. A missing file keeps the
-// shipped defaults (TLS on, 6058/6060); a broken file fails closed to TLS but
+// shipped defaults (TLS on, 6060/6063); a broken file fails closed to TLS but
 // keeps the port defaults. Like the daemon, an out-of-range RestListenPort
 // falls back to its default.
 func readDaemonRESTConfig() daemonRESTConfig {

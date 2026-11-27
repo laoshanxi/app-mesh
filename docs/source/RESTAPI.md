@@ -127,7 +127,7 @@ Lifecycle semantics:
 
 The streaming routes answer `text/event-stream` frames (partials, final
 result, terminal status). The engine serves them natively (default
-wss/https 6058), and the agent REST listener (6060) relays them for local
+wss/https 6063), and the agent REST listener (6060) relays them for local
 requests; they do not traverse node forwarding. See
 [Streaming.md](Streaming.md)
 for the event contract, the stdin pipe mode, and the SDK generator APIs.

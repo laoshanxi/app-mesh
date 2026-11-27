@@ -55,8 +55,8 @@ def _parse_server(value: str):
 
 def main(argv=None):
     p = argparse.ArgumentParser(prog="llm-agent")
-    p.add_argument("--server", type=_parse_server, default=("127.0.0.1", 6059), metavar="HOST:PORT",
-                   help="App Mesh TCP server host:port (default 127.0.0.1:6059)")
+    p.add_argument("--server", type=_parse_server, default=("127.0.0.1", 6062), metavar="HOST:PORT",
+                   help="App Mesh TCP server host:port (default 127.0.0.1:6062)")
     p.add_argument("--session-worker", action="store_true", help="run as a single-session worker (Scenario B)")
     p.add_argument("--session-id", default="", help="worker: the session id this worker serves")
     p.add_argument("--version", action="store_true")

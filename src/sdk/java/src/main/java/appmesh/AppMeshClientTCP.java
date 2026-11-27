@@ -24,7 +24,7 @@ public class AppMeshClientTCP extends AppMeshClient {
     private static final Logger LOGGER = Logger.getLogger(AppMeshClientTCP.class.getName());
     private static final int TCP_BLOCK_SIZE = 16 * 1024 - 128; // TLS-optimized chunk size
     /** Standard daemon REST listener port; the SSE streaming side channel dials it directly. */
-    private static final int DEFAULT_REST_PORT = 6058;
+    private static final int DEFAULT_REST_PORT = 6063;
     private final String host;
     private final int restPort;
     private final TCPTransport tcpTransport;
@@ -72,7 +72,7 @@ public class AppMeshClientTCP extends AppMeshClient {
     public static class Builder {
         private final AppMeshClient.Builder base = new AppMeshClient.Builder();
         private String host = "127.0.0.1";
-        private int port = 6059;
+        private int port = 6062;
         private int restPort = DEFAULT_REST_PORT;
 
         public Builder() {
@@ -90,7 +90,7 @@ public class AppMeshClientTCP extends AppMeshClient {
 
         /**
          * REST listener port of the same daemon; the SSE streaming side channel
-         * (followOutput / runTaskStream) dials it directly. Defaults to 6058.
+         * (followOutput / runTaskStream) dials it directly. Defaults to 6063.
          */
         public Builder restPort(int restPort) {
             this.restPort = restPort;
@@ -159,7 +159,7 @@ public class AppMeshClientTCP extends AppMeshClient {
     /**
      * SSE side channel base URL: the framed TCP transport cannot carry a chunked event
      * stream, so the streaming APIs dial the daemon's plain HTTPS REST listener directly
-     * (default 6058, override with {@code Builder.restPort}; the file-transfer side-channel shape).
+     * (default 6063, override with {@code Builder.restPort}; the file-transfer side-channel shape).
      */
     @Override
     protected String directRequestBaseURL() {

@@ -14,7 +14,7 @@ POLICY=${APPMESH_POLICY:-/opt/appmesh/work/config/authorization.yaml}
 # on packages that predate the bundled administration UI.
 DEXUSER_APP=${APPMESH_DEXUSER_APP:-/opt/appmesh/apps/dexuser.yaml}
 [ -f "${DEXUSER_APP}" ] || { echo "SKIP: the installed package has no dexuser System App"; exit 0; }
-ISSUER=${APPMESH_AUTH_ISSUER:-http://127.0.0.1:6062/auth}
+ISSUER=${APPMESH_AUTH_ISSUER:-http://127.0.0.1:6065/auth}
 TOKEN_URL="${ISSUER}/token"
 REST_ENTRY=${APPMESH_REST_ENTRY:-https://127.0.0.1:6060}
 TEST_EMAIL="ci-user@appmesh.local"

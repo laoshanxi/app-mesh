@@ -313,7 +313,7 @@ await assertAsync('read loop skips zero-length frames', async () => {
 // Concurrent subscribe() calls on an unconnected transport must create exactly
 // one demuxer (no dual read loops competing for the socket).
 await assertAsync('concurrent enableDemuxer creates a single demuxer', async () => {
-  const client = new AppMeshClientTCP(false, ['127.0.0.1', 6059])
+  const client = new AppMeshClientTCP(false, ['127.0.0.1', 6062])
   let connects = 0
   client.tcpTransport = {
     connected: () => connects > 0,
@@ -385,7 +385,7 @@ const failAfter = (promise, label, ms = 800) => Promise.race([
 // then drops the other reply — leaving subscribe pending forever.
 await assertAsync('subscribe is not starved by an in-flight direct read', async () => {
   const transport = createScriptedTransport()
-  const client = new AppMeshClientTCP(false, ['127.0.0.1', 6059])
+  const client = new AppMeshClientTCP(false, ['127.0.0.1', 6062])
   client.tcpTransport = transport
   try {
     const slow = client.request('get', '/appmesh/applications')
@@ -408,7 +408,7 @@ await assertAsync('subscribe is not starved by an in-flight direct read', async 
 // upgrade. It must wait and route by UUID, not open a second reader.
 await assertAsync('request resumed during an upgrade is rerouted, not raced', async () => {
   const transport = createScriptedTransport()
-  const client = new AppMeshClientTCP(false, ['127.0.0.1', 6059])
+  const client = new AppMeshClientTCP(false, ['127.0.0.1', 6062])
   client.tcpTransport = transport
   let releaseToken
   let tokenCalls = 0
@@ -442,7 +442,7 @@ await assertAsync('oversized frame length rejected and socket closed', async () 
     constructor () { super(); this.destroyed = false }
     destroy () { this.destroyed = true; this.emit('close') }
   }
-  const transport = new TCPTransport(['127.0.0.1', 6059], null)
+  const transport = new TCPTransport(['127.0.0.1', 6062], null)
   const sock = new FakeSocket()
   transport.socket = sock
 
@@ -523,7 +523,7 @@ await assertAsync('chunks arriving between reads are buffered', async () => {
     payload.copy(b, 8)
     return b
   }
-  const transport = new TCPTransport(['127.0.0.1', 6059], null)
+  const transport = new TCPTransport(['127.0.0.1', 6062], null)
   const sock = new FakeSocket()
   transport.socket = sock
 
@@ -552,7 +552,7 @@ await assertAsync('read pump rejects on socket error, latches, and re-arms after
     constructor () { super(); this.destroyed = false }
     destroy () { this.destroyed = true; this.emit('close') }
   }
-  const transport = new TCPTransport(['127.0.0.1', 6059], null)
+  const transport = new TCPTransport(['127.0.0.1', 6062], null)
   const sock = new FakeSocket()
   transport.socket = sock
 

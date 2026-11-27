@@ -19,7 +19,7 @@ func TestAppmeshWSSLogin(t *testing.T) {
 	// Skip before dialing so offline runs skip instead of failing on connect.
 	token := requireBearerToken(t)
 	client, err := NewWSSClient(Option{
-		AppMeshURI:         "https://127.0.0.1:6058",
+		AppMeshURI:         "https://127.0.0.1:6063",
 		InsecureSkipVerify: true,
 		JWTToken:           token,
 	})
@@ -49,7 +49,7 @@ func TestAppmeshWSSOperations(t *testing.T) {
 	// Skip before dialing so offline runs skip instead of failing on connect.
 	token := requireBearerToken(t)
 	client, err := NewWSSClient(Option{
-		AppMeshURI:         "https://127.0.0.1:6058",
+		AppMeshURI:         "https://127.0.0.1:6063",
 		InsecureSkipVerify: true,
 		JWTToken:           token,
 	})

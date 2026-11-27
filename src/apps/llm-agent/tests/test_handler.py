@@ -159,13 +159,13 @@ class HandlerTest(unittest.TestCase):
 class WorkerTransportTest(unittest.TestCase):
     """The worker's task channel must dial the configured --server endpoint. A shifted
     TcpApiPort used to be accepted by the CLI and then silently ignored: the SDK dialed
-    its 127.0.0.1:6059 default, so tasks (and their streaming partials) never arrived."""
+    its 127.0.0.1:6062 default, so tasks (and their streaming partials) never arrived."""
 
     def test_server_option_parses_host_port(self):
         from llm_agent.__main__ import _parse_server
         self.assertEqual(_parse_server("10.0.0.5:16059"), ("10.0.0.5", 16059))
-        self.assertEqual(_parse_server("appmesh.local:6059"), ("appmesh.local", 6059))
-        for bad in ("127.0.0.1", ":6059", "host:", "host:port", "host:0", "host:70000"):
+        self.assertEqual(_parse_server("appmesh.local:6062"), ("appmesh.local", 6062))
+        for bad in ("127.0.0.1", ":6062", "host:", "host:port", "host:0", "host:70000"):
             with self.assertRaises(argparse.ArgumentTypeError):
                 _parse_server(bad)
 

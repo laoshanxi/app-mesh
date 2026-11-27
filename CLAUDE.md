@@ -70,11 +70,11 @@ The `REST` section of `src/daemon/config.yaml` defines three port keys (env over
 
 | Port | Config key | Bound by | Transport / purpose |
 |------|------------|----------|---------------------|
-| 6060 | `RestListenPort` | Go agent | Agent HTTPS entry — reverse-proxies REST/WSS to the daemon over TCP 6059; primary client surface, never bound by the daemon |
-| 6059 | `TcpApiPort` | daemon | TCP API — msgpack-framed protocol used by SDK clients (`ClientTCP`) and by the agent's proxy/forwarding path |
-| 6058 | `WebSocketPort` | daemon | Single listener serving both HTTPS REST and WSS — SDK clients (`ClientWSS`), event subscribe, and daemon-to-daemon forwarding |
+| 6060 | `RestListenPort` | Go agent | Agent HTTPS entry — reverse-proxies REST/WSS to the daemon over TCP 6062; primary client surface, never bound by the daemon |
+| 6062 | `TcpApiPort` | daemon | TCP API — msgpack-framed protocol used by SDK clients (`ClientTCP`) and by the agent's proxy/forwarding path |
+| 6063 | `WebSocketPort` | daemon | Single listener serving both HTTPS REST and WSS — SDK clients (`ClientWSS`), event subscribe, and daemon-to-daemon forwarding |
 
-All ports authenticate the same Dex bearer. Additional ports: Dex 6062 (issuer) / 6063 (healthz), the `dexuser` admin UI 6064 (loopback, gRPC 5557), and the agent's Prometheus exporter 6061 (`APPMESH_REST_PrometheusExporterListenPort`, default off).
+All ports authenticate the same Dex bearer. Additional ports: Dex 6065 (issuer) / 6066 (healthz), the `dexuser` admin UI 6068 (loopback, gRPC 6067), and the agent's Prometheus exporter 6061 (`APPMESH_REST_PrometheusExporterListenPort`, default off).
 
 ## Binary Inspection Tools
 
@@ -152,7 +152,7 @@ The core service. Initialization flows through `main.cpp`: framework init → co
 
 `HMACVerifier` is not a singleton — each managed system spawn (Agent, Workflow) gets a fresh instance; `Configuration`, `Security`, `ResourceCollection`, `PersistManager`, and `HealthCheckTask` use `static instance()`.
 
-**Request flow:** Client → `DrogonAdaptor` (HTTPS/WSS) or `TcpAdaptor` (TCP 6059) in `rest/drogon/` → `WORKER` queue (lock-free `moodycamel::BlockingConcurrentQueue`) → `RestHandler` (regex-based route dispatch) → handler method → response.
+**Request flow:** Client → `DrogonAdaptor` (HTTPS/WSS) or `TcpAdaptor` (TCP 6062) in `rest/drogon/` → `WORKER` queue (lock-free `moodycamel::BlockingConcurrentQueue`) → `RestHandler` (regex-based route dispatch) → handler method → response.
 
 ### Common Library (`src/common/`)
 

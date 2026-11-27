@@ -261,7 +261,7 @@ pub fn plain_transport(mut self, plain : bool) -> Self
 }
 
 /// REST listener port of the same daemon for the SSE streaming side channel
-/// (default 6058; pass it when the framed transport runs on shifted ports).
+/// (default 6063; pass it when the framed transport runs on shifted ports).
 pub fn rest_port(mut self, port : u16) -> Self
 {
 	self.rest_port = Some(port);
@@ -308,7 +308,7 @@ pub fn build(self)
 }
 
 define_transport_builder!(
-	/// Builder for creating AppMesh TCP clients (default: `127.0.0.1:6059`).
+	/// Builder for creating AppMesh TCP clients (default: `127.0.0.1:6062`).
 	///
 	/// # Examples
 	///
@@ -316,7 +316,7 @@ define_transport_builder!(
 	/// use appmesh::ClientBuilderTCP;
 	///
 	/// let client = ClientBuilderTCP::new()
-	///     .address("appmesh.example.com", 6059)
+	///     .address("appmesh.example.com", 6062)
 	///     .ssl_ca_cert("/path/to/ca.pem")
 	///     .build()?;
 	/// # Ok::<(), appmesh::AppMeshError>(())
@@ -324,7 +324,7 @@ define_transport_builder!(
 	ClientBuilderTCP, DEFAULT_TCP_PORT, AppMeshClientTCP);
 
 define_transport_builder!(
-	/// Builder for creating AppMesh WSS clients (default: `127.0.0.1:6058`).
+	/// Builder for creating AppMesh WSS clients (default: `127.0.0.1:6063`).
 	///
 	/// # Examples
 	///
@@ -332,7 +332,7 @@ define_transport_builder!(
 	/// use appmesh::ClientBuilderWSS;
 	///
 	/// let client = ClientBuilderWSS::new()
-	///     .address("appmesh.example.com", 6058)
+	///     .address("appmesh.example.com", 6063)
 	///     .ssl_ca_cert("/path/to/ca.pem")
 	///     .build()?;
 	/// # Ok::<(), appmesh::AppMeshError>(())

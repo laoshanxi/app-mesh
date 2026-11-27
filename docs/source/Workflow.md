@@ -574,7 +574,7 @@ name: remote-host-demo
 jobs:
   deploy:
     node_label:
-      host: "prod-server-1:6059"
+      host: "prod-server-1:6062"
     steps:
       - name: deploy
         command: "echo deploying on $HOSTNAME"

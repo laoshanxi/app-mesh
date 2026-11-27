@@ -5,7 +5,7 @@ continuously. App Mesh serves those workloads with three streaming
 primitives, so any HTTP client — `curl`, a browser `fetch`, an
 OpenAI-style consumer — receives tokens as they are produced. The engine
 serves the two SSE routes on its native HTTPS listener (the WSS/CLI port,
-default 6058). The agent REST listener (6060) relays them for local
+default 6063). The agent REST listener (6060) relays them for local
 requests, and the web UI's 443 reverse proxy passes them with response
 buffering off:
 
@@ -15,7 +15,7 @@ buffering off:
 | Streaming task RPC | `POST /appmesh/app/{name}/task/stream` | Worker partials + final result over one call |
 | stdin injection | `POST /appmesh/app/{name}/input` | Drive a running process turn by turn |
 
-The SSE routes are native to the engine's HTTPS listener (default 6058)
+The SSE routes are native to the engine's HTTPS listener (default 6063)
 and the agent REST listener (6060) relays them for local requests; stdin
 injection is a plain POST that both listeners accept. All three use the
 standard bearer authentication and the application permission model. The
@@ -69,7 +69,7 @@ the live frames.
 
 ```
 $ curl -N -H "Authorization: Bearer $TOKEN" \
-    "https://127.0.0.1:6058/appmesh/app/inference/output/stream?follow=true"
+    "https://127.0.0.1:6063/appmesh/app/inference/output/stream?follow=true"
 event: stdout
 data: {"position":0,"output":"token1 token2 "}
 
@@ -100,7 +100,7 @@ flushes one `partial` per assistant message, not per model token.
 Permission: `app-run-task` plus write access to the application. Framed
 transports cannot carry a chunked event stream (SDKs redirect these calls
 to a direct HTTPS side channel). The engine serves this route natively
-(6058); the agent REST listener (6060) relays it for local requests, but
+(6063); the agent REST listener (6060) relays it for local requests, but
 a request forwarded to another node (`X-Target-Host`) does not stream.
 
 ### Worker side
@@ -165,11 +165,11 @@ generator's return value is an `SseEnd` marker:
 from appmesh import AppMeshClient
 
 # Streaming routes are native to the engine listener (default wss/https
-# 6058) and relayed by the agent REST listener (the SDK's default
+# 6063) and relayed by the agent REST listener (the SDK's default
 # base_url, port 6060) for local requests. Streams do not traverse
 # X-Target-Host forwarding, so point the client at the target engine
 # listener for a forwarded target.
-client = AppMeshClient("https://127.0.0.1:6058", bearer_token=TOKEN)
+client = AppMeshClient("https://127.0.0.1:6063", bearer_token=TOKEN)
 
 # 1) stream a one-shot run
 for chunk in client.stream_run("python3 infer.py --prompt '...'"):
@@ -200,7 +200,7 @@ wait/subscribe APIs for now.
 
 - The agent REST listener (6060) relays streams for local requests only;
   streams do not traverse node forwarding (`X-Target-Host`), so connect to
-  the target node's engine listener directly (wss/https, default 6058) for
+  the target node's engine listener directly (wss/https, default 6063) for
   a forwarded target. The web UI's 443 reverse proxy passes streaming
   responses with response buffering off.
 - Browser `EventSource` cannot set an `Authorization` header; use `fetch`

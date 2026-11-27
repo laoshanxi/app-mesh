@@ -19,7 +19,7 @@ owner/follower design.
 | Set the password when a container starts | Mount a secret file and set `APPMESH_ADMIN_PASSWORD_FILE` | [Container first start](#container-first-start) |
 | Replace a leaked or lost password | `rotate-initial-password`, then restart | [Rotating and forgetting](#rotating-recovering-and-forgetting) |
 | Get a token for CI or an SDK | `automation-token` (machine), `user-token` (user), or `user-token --with-refresh` (token set for a built-in SDK refresh provider) | [Getting a token](#getting-a-token-for-sdk-and-ci) |
-| Manage users, clients, and sessions | Open the administration UI on `http://127.0.0.1:6064` | [Administration UI](#administration-ui) |
+| Manage users, clients, and sessions | Open the administration UI on `http://127.0.0.1:6068` | [Administration UI](#administration-ui) |
 | Add another user | `add-user` with the password on standard input | [Adding a user](#adding-a-user) |
 | Delete a user | `delete-user` with the address | [Deleting a user](#deleting-a-user) |
 | Use a password from the Python SDK | Built-in `PasswordGrantProvider`, a custom `TokenProvider`, or exchange the token first | [Python SDK password sign-in](#using-a-password-from-the-python-sdk) |
@@ -166,12 +166,12 @@ the authentication-service objects: users, OAuth clients, and sessions.
 It does not manage App Mesh authorization records. Set those through
 `add-user` or the REST API.
 
-The UI listens on loopback only (`http://127.0.0.1:6064`), because it has **no
+The UI listens on loopback only (`http://127.0.0.1:6068`), because it has **no
 authentication of its own** — the same posture as the administrative gRPC API
 it drives. Open it through SSH port forwarding:
 
 ```shell
-ssh -L 6064:127.0.0.1:6064 <host>
+ssh -L 6068:127.0.0.1:6068 <host>
 ```
 
 Key facts:
@@ -186,7 +186,7 @@ Key facts:
 - The UI's demonstration pages (Flows, Token tools) use an unregistered
   `example-app` OAuth client; only the administration pages are supported.
 - `APPMESH_AUTH_ADMIN_LISTEN` changes the UI listener; the underlying gRPC API
-  listens on `127.0.0.1:5557` (`APPMESH_AUTH_GRPC_LISTEN`). Keep both on
+  listens on `127.0.0.1:6067` (`APPMESH_AUTH_GRPC_LISTEN`). Keep both on
   loopback: the UI has no authentication (see
   [Security](Security.md#administration-interfaces)).
 
@@ -362,7 +362,7 @@ export APPMESH_BEARER_TOKEN=$(curl -s -u "appmesh-cli:" -X POST \
   | python3 -c 'import sys,json;print(json.load(sys.stdin)["access_token"])')
 ```
 
-- Port 6062 is the loopback authentication service; remote clients use the
+- Port 6065 is the loopback authentication service; remote clients use the
   agent port 6060 instead.
 - The audience scope is colon-separated: `audience:server:client_id:appmesh-api`.
   Writing `...client_id=appmesh-api` returns
@@ -583,13 +583,13 @@ The full permission list lives in `src/daemon/security/authorization.yaml`.
 
 ### Ports
 
+[Ports.md](Ports.md) is the port specification. The identity listeners are:
+
 | Port | Owner | Purpose |
 | --- | --- | --- |
-| 6060 | agent | HTTPS entry; proxies REST/WSS and the issuer path (main client endpoint) |
-| 6059 | daemon | TCP API (msgpack) |
-| 6058 | daemon | HTTPS REST + WSS |
-| 5557 | authentication service | Administrative gRPC API, mutual TLS, loopback only (drives the administration UI) |
-| 6062 | authentication service | Issuer and token endpoint |
-| 6063 | authentication service | Telemetry (`/healthz`) |
-| 6064 | administration UI | `dexuser` System App web UI, loopback only |
-| 6061 | agent | Prometheus exporter (off by default); the metrics endpoints need `config-view` unless `REST.MetricsRequireAuth: false` opts out for a trusted network |
+| 6065 | authentication service | Issuer and token endpoint |
+| 6066 | authentication service | Telemetry (`/healthz`) |
+| 6067 | authentication service | Administrative gRPC API, mutual TLS, loopback only (drives the administration UI) |
+| 6068 | administration UI | `dexuser` System App web UI, loopback only |
+
+Clients reach the issuer through the agent on 6060, which proxies the issuer path.

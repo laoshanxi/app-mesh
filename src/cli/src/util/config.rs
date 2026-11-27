@@ -5,7 +5,7 @@ use sha2::{Digest, Sha256};
 use std::io::Write;
 use std::path::{Path, PathBuf};
 
-pub const DEFAULT_WSS_PORT: u16 = 6058;
+pub const DEFAULT_WSS_PORT: u16 = 6063;
 
 /// Same override the daemon applies on config.yaml (it also creates the leaf
 /// when the file lacks it), so the CLI's local transport inference must honor
@@ -811,7 +811,7 @@ mod tests {
             &CliConfig {
                 version: CONFIG_VERSION,
                 last_host: Some("10.0.0.5".into()),
-                last_port: Some(6058),
+                last_port: Some(6063),
                 last_ca_cert: Some(ca.clone()),
                 last_plain: false,
                 last_verify_server: false,
@@ -834,7 +834,7 @@ mod tests {
             &CliConfig {
                 version: CONFIG_VERSION,
                 last_host: Some("gateway.example".into()),
-                last_port: Some(6058),
+                last_port: Some(6063),
                 last_ca_cert: None,
                 last_plain: true,
                 last_verify_server: true,
@@ -855,7 +855,7 @@ mod tests {
         write_config(
             &path,
             &format!(
-                r#"{{"version":2,"last_host":"10.0.0.5","last_port":6058,"last_ca_cert":{},"last_verify_server":false}}"#,
+                r#"{{"version":2,"last_host":"10.0.0.5","last_port":6063,"last_ca_cert":{},"last_verify_server":false}}"#,
                 serde_json::to_string(&missing).expect("serialize path")
             ),
         );
@@ -872,7 +872,7 @@ mod tests {
         let path = dir.path().join("config.json");
         let missing = dir.path().join("gone.pem");
         let content = format!(
-            r#"{{"version":99,"last_host":"10.0.0.5","last_port":6058,"last_ca_cert":{},"future_field":true}}"#,
+            r#"{{"version":99,"last_host":"10.0.0.5","last_port":6063,"last_ca_cert":{},"future_field":true}}"#,
             serde_json::to_string(&missing).expect("serialize path")
         );
         write_config(&path, &content);
@@ -936,8 +936,8 @@ mod tests {
     #[test]
     fn load_session_skips_broken_candidate_files() {
         let dir = tempfile::tempdir().expect("create session directory");
-        let other = test_session("wss://other:6058");
-        let wanted = test_session("wss://engine:6058");
+        let other = test_session("wss://other:6063");
+        let wanted = test_session("wss://engine:6063");
         write_session(&dir.path().join("other.json"), &other);
         write_session(&dir.path().join("wanted.json"), &wanted);
         // Corrupt JSON must not abort the scan for the remaining candidates.
@@ -949,19 +949,19 @@ mod tests {
             std::fs::set_permissions(&broken, std::fs::Permissions::from_mode(0o600)).expect("restrict broken session");
         }
 
-        let loaded = load_session_from(dir.path(), "wss://engine:6058").expect("broken candidate must not fail the load");
-        assert_eq!(loaded.as_ref().map(|session| session.engine_endpoint.as_str()), Some("wss://engine:6058"));
-        assert!(load_session_from(dir.path(), "wss://missing:6058").expect("scan succeeds").is_none());
+        let loaded = load_session_from(dir.path(), "wss://engine:6063").expect("broken candidate must not fail the load");
+        assert_eq!(loaded.as_ref().map(|session| session.engine_endpoint.as_str()), Some("wss://engine:6063"));
+        assert!(load_session_from(dir.path(), "wss://missing:6063").expect("scan succeeds").is_none());
     }
 
     #[cfg(unix)]
     #[test]
     fn load_session_never_uses_loose_permission_files() {
         let dir = tempfile::tempdir().expect("create session directory");
-        let wanted = test_session("wss://engine:6058");
+        let wanted = test_session("wss://engine:6063");
         write_session(&dir.path().join("wanted.json"), &wanted);
         let leaky = dir.path().join("leaky.json");
-        let leaky_session = test_session("wss://engine:6058");
+        let leaky_session = test_session("wss://engine:6063");
         let bytes = serde_json::to_vec_pretty(&leaky_session).expect("serialize leaky session");
         std::fs::write(&leaky, bytes).expect("write leaky session");
         {
@@ -970,18 +970,18 @@ mod tests {
         }
 
         // The loose file is skipped, not fatal, and never returned.
-        let loaded = load_session_from(dir.path(), "wss://engine:6058").expect("one safe candidate keeps the load usable");
+        let loaded = load_session_from(dir.path(), "wss://engine:6063").expect("one safe candidate keeps the load usable");
         assert!(loaded.is_some(), "safe candidate must still be found");
 
         std::fs::remove_file(dir.path().join("wanted.json")).expect("drop safe candidate");
-        let result = load_session_from(dir.path(), "wss://engine:6058");
+        let result = load_session_from(dir.path(), "wss://engine:6063");
         assert!(result.is_err(), "a session file with group/other bits must never be used");
     }
 
     #[test]
     fn load_session_errors_only_when_every_candidate_fails() {
         let dir = tempfile::tempdir().expect("create session directory");
-        assert!(load_session_from(dir.path(), "wss://engine:6058").expect("empty directory is not an error").is_none());
+        assert!(load_session_from(dir.path(), "wss://engine:6063").expect("empty directory is not an error").is_none());
 
         let broken = dir.path().join("broken.json");
         std::fs::write(&broken, "not json at all").expect("write broken session");
@@ -990,7 +990,7 @@ mod tests {
             use std::os::unix::fs::PermissionsExt;
             std::fs::set_permissions(&broken, std::fs::Permissions::from_mode(0o600)).expect("restrict broken session");
         }
-        assert!(load_session_from(dir.path(), "wss://engine:6058").is_err());
+        assert!(load_session_from(dir.path(), "wss://engine:6063").is_err());
     }
 
     #[test]
@@ -1018,16 +1018,16 @@ mod tests {
     #[test]
     fn save_supersedes_the_endpoint_and_secures_the_files() {
         let dir = tempfile::tempdir().expect("create session directory");
-        let mut first = principal_session("wss://engine:6058", "admin@appmesh.local");
+        let mut first = principal_session("wss://engine:6063", "admin@appmesh.local");
         // A different issuer hashes to a different file at the same endpoint.
         first.oauth = OAuthConfig::new("https://other-auth", "https://other-auth", "appmesh-cli");
         save_session_in(dir.path(), &first).expect("save first profile");
 
-        let second = principal_session("wss://engine:6058", "admin@appmesh.local");
+        let second = principal_session("wss://engine:6063", "admin@appmesh.local");
         save_session_in(dir.path(), &second).expect("save second profile");
 
         // Exactly one session remains for the endpoint, and the private modes hold.
-        let loaded = load_session_from(dir.path(), "wss://engine:6058").expect("load surviving session");
+        let loaded = load_session_from(dir.path(), "wss://engine:6063").expect("load surviving session");
         let loaded = loaded.expect("one session survives the supersede");
         assert_eq!(loaded.principal.as_deref(), Some("admin@appmesh.local"));
         use std::os::unix::fs::PermissionsExt;
@@ -1048,7 +1048,7 @@ mod tests {
     fn replacement_notice_names_only_other_principals() {
         let notice_for = |displaced: &[&str], current: Option<&str>| {
             replacement_notice(
-                "wss://engine:6058",
+                "wss://engine:6063",
                 &displaced.iter().map(|name| name.to_string()).collect::<Vec<_>>(),
                 current,
             )
@@ -1056,7 +1056,7 @@ mod tests {
         // Displacing another principal is exactly the silent swap to surface.
         let notice = notice_for(&["admin@appmesh.local"], Some("guest@appmesh.local")).expect("must notice the swap");
         assert!(notice.contains("admin@appmesh.local"), "the replaced principal must be named: {}", notice);
-        assert!(notice.contains("wss://engine:6058"));
+        assert!(notice.contains("wss://engine:6063"));
         // Re-logging on as the same principal replaces nothing worth reporting.
         assert!(notice_for(&["guest@appmesh.local"], Some("guest@appmesh.local")).is_none());
         assert!(notice_for(&[], Some("guest@appmesh.local")).is_none());
@@ -1076,7 +1076,7 @@ mod tests {
 
     #[test]
     fn token_update_writes_only_while_the_disk_grant_is_ours() {
-        let mut session = test_session("wss://engine:6058");
+        let mut session = test_session("wss://engine:6063");
         session.tokens.refresh_token = Some("r1".into());
 
         // The disk still holds the grant this refresh consumed: safe to write.

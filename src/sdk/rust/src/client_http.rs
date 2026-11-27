@@ -1729,7 +1729,7 @@ async fn check_sse_response(resp: reqwest::Response) -> Result<reqwest::Response
 
 /// Build the REST side channel (client + base URL) shared by the TCP and WSS
 /// transports: same host as the framed transport, daemon REST port (default
-/// 6058), no total request timeout (a follow runs until its end event).
+/// 6063), no total request timeout (a follow runs until its end event).
 pub(crate) fn build_sse_side_channel(
     host: &str,
     rest_port: Option<u16>,

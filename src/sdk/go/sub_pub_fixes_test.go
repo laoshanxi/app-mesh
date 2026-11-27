@@ -197,7 +197,7 @@ func TestTCPRequester401RefreshRetry(t *testing.T) {
 	conn.conn = client
 	conn.muConn.Unlock()
 
-	req := &TCPRequester{TCPConnection: conn, baseURL: url.URL{Scheme: "https", Host: "pipe.local:6059"}}
+	req := &TCPRequester{TCPConnection: conn, baseURL: url.URL{Scheme: "https", Host: "pipe.local:6062"}}
 	provider := &fakeRefreshProvider{token: "stale-token"}
 	req.setTokenProvider(provider)
 

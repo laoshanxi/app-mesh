@@ -14,14 +14,14 @@ enabled / disabled / removed at any time, independently of the daemon.
 
 Transport: Streamable HTTP. Run with::
 
-    APPMESH_MCP_PORT=6071 python3 appmesh_server.py
+    APPMESH_MCP_PORT=6070 python3 appmesh_server.py
 
 Environment:
     APPMESH_URL        App Mesh REST base URL the server talks to (default https://127.0.0.1:6060)
     APPMESH_CA         CA file/dir for verifying the daemon (optional)
     APPMESH_SSL_VERIFY set "false" to disable daemon TLS verification (dev only)
     APPMESH_MCP_HOST   bind host (default 0.0.0.0)
-    APPMESH_MCP_PORT   bind port (default 6071)
+    APPMESH_MCP_PORT   bind port (default 6070)
     APPMESH_MCP_PUBLIC_URL  public base URL used in OAuth metadata (default https://<host>:<port>)
     APPMESH_MCP_TLS_CERT / APPMESH_MCP_TLS_KEY  enable HTTPS for the MCP endpoint
     APPMESH_AUTH_ISSUER      canonical issuer embedded in tokens (required)
@@ -60,7 +60,7 @@ def _public_url() -> str:
     host = os.environ.get("APPMESH_MCP_HOST", "0.0.0.0")
     if host == "0.0.0.0":
         host = "127.0.0.1"
-    port = os.environ.get("APPMESH_MCP_PORT", "6071")
+    port = os.environ.get("APPMESH_MCP_PORT", "6070")
     scheme = "https" if os.environ.get("APPMESH_MCP_TLS_CERT") else "http"
     return f"{scheme}://{host}:{port}"
 
@@ -322,7 +322,7 @@ def delete_role(role_name: str, token: AccessToken = CurrentAccessToken()) -> di
 # --------------------------------------------------------------------------- #
 if __name__ == "__main__":
     host = os.environ.get("APPMESH_MCP_HOST", "0.0.0.0")
-    port = int(os.environ.get("APPMESH_MCP_PORT", "6071"))
+    port = int(os.environ.get("APPMESH_MCP_PORT", "6070"))
 
     run_kwargs = {"transport": "http", "host": host, "port": port}
 

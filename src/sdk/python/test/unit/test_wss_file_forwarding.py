@@ -28,7 +28,7 @@ class TestWSSFileDataChannelForwarding(unittest.TestCase):
     while reporting success."""
 
     def _client(self, forward_to) -> AppMeshClientWSS:
-        client = AppMeshClientWSS(("gateway.local", 6058), ssl_verify=False, bearer_token="token")
+        client = AppMeshClientWSS(("gateway.local", 6063), ssl_verify=False, bearer_token="token")
         client.forward_to = forward_to
         client._request_http = mock.Mock()  # the upload control-channel precheck answers 200 (download has none)
         return client

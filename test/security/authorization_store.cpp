@@ -61,7 +61,7 @@ namespace
 				m_from = std::getenv("APPMESH_AUTH_REPLICATION_FROM");
 			if (m_hadRole)
 				m_role = std::getenv("APPMESH_AUTH_ROLE");
-			setenv("APPMESH_AUTH_REPLICATION_FROM", "https://appmesh-master:6058", 1);
+			setenv("APPMESH_AUTH_REPLICATION_FROM", "https://appmesh-master:6063", 1);
 			setenv("APPMESH_AUTH_ROLE", "follower", 1);
 			m_cacheFile = Utility::getWorkConfigFilePath("replica-policy.yaml");
 			Utility::createDirectory(fs::path(m_cacheFile).parent_path().string());
@@ -170,7 +170,7 @@ TEST_CASE("a follower boot snapshot hot-applies a newly enrolled principal", "[s
 	// is the follower-local replica-policy.yaml, and the auth role is follower.
 	const char *fromEnv = std::getenv("APPMESH_AUTH_REPLICATION_FROM");
 	const char *roleEnv = std::getenv("APPMESH_AUTH_ROLE");
-	setenv("APPMESH_AUTH_REPLICATION_FROM", "https://appmesh-master:6058", 1);
+	setenv("APPMESH_AUTH_REPLICATION_FROM", "https://appmesh-master:6063", 1);
 	setenv("APPMESH_AUTH_ROLE", "follower", 1);
 	const auto cacheFile = Utility::getWorkConfigFilePath("replica-policy.yaml");
 	const auto adminId = Principal::stableId(ISSUER, SUBJECT);

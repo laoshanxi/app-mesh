@@ -3,8 +3,8 @@
 // Integration tests for TCP and WSS transports.
 //
 // Prerequisites: a live AppMesh server at:
-//   TCP  127.0.0.1:6059
-//   WSS  127.0.0.1:6058
+//   TCP  127.0.0.1:6062
+//   WSS  127.0.0.1:6063
 //
 // Run:
 //   cargo test --test transport_test -- --ignored --test-threads=1

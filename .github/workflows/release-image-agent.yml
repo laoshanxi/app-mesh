@@ -109,7 +109,7 @@ jobs:
           for _ in $(seq 1 10); do
             ADMIN_JWT=$(curl -s -X POST \
               -d "grant_type=password&client_id=appmesh-cli&username=admin@appmesh.local&password=${ADMIN_PW}&scope=openid%20audience:server:client_id:appmesh-api" \
-              http://127.0.0.1:6062/auth/token |
+              http://127.0.0.1:6065/auth/token |
               sed -n 's/.*"access_token"[[:space:]]*:[[:space:]]*"\([A-Za-z0-9._~-]*\)".*/\1/p')
             [ -n "$ADMIN_JWT" ] && break
             sleep 2

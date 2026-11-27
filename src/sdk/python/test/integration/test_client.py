@@ -169,7 +169,7 @@ class TestWSS(
     def test_18_forward_to_api_port(self):
         """The API port documented for TCP targets reaches the WebSocket listener.
 
-        On the WSS-only build an explicit 6059 target would otherwise dial a port
+        On the WSS-only build an explicit 6062 target would otherwise dial a port
         that nothing listens on.
         """
         config.attach_test_bearer(self.client)

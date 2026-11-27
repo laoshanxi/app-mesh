@@ -52,7 +52,7 @@ func main() {
 }
 ```
 
-`AppMeshClientTCP` and `AppMeshClientWSS` speak the TCP (port 6059) and WebSocket (port 6058) transports. `NewHTTPClient` accepts one `Option` struct with the endpoint, TLS material, forwarding target, and token provider.
+`AppMeshClientTCP` and `AppMeshClientWSS` speak the TCP (port 6062) and WebSocket (port 6063) transports. `NewHTTPClient` accepts one `Option` struct with the endpoint, TLS material, forwarding target, and token provider.
 
 ## Test
 

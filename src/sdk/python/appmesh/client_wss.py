@@ -51,7 +51,7 @@ class AppMeshClientWSS(TransportClientMixin, AppMeshClient):
 
     def __init__(
         self,
-        wss_address: Tuple[str, int] = ("127.0.0.1", 6058),
+        wss_address: Tuple[str, int] = ("127.0.0.1", 6063),
         ssl_verify: Union[bool, str, None] = None,
         ssl_client_cert: Optional[Union[str, Tuple[str, str]]] = None,
         *,
@@ -64,7 +64,7 @@ class AppMeshClientWSS(TransportClientMixin, AppMeshClient):
         """Construct a WSS transport client that reuses the standard App Mesh client API.
 
         Args:
-            wss_address: Server address as (host, port) tuple, defaults to ("127.0.0.1", 6058).
+            wss_address: Server address as (host, port) tuple, defaults to ("127.0.0.1", 6063).
             ssl_verify: SSL certificate verification behavior. Can be None, True, False, or a path to CA bundle.
               - None (default): Auto — use the App Mesh CA bundle if installed, otherwise system CAs
               - True: Use system CA certificates (e.g., /etc/ssl/certs/ on Linux)

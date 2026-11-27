@@ -933,7 +933,7 @@ class AppMeshClient:
         Streaming counterpart of run_task(): the worker may push any number of partials
         (``worker.send_task_partial``) before its final reply, each yielded in order.
         The streaming routes are native to the engine listener (default wss/https
-        6058); the agent REST listener (the default ``base_url``, port 6060) relays
+        6063); the agent REST listener (the default ``base_url``, port 6060) relays
         them for local requests. Streams do not traverse node forwarding
         (``X-Target-Host``).
 
@@ -985,7 +985,7 @@ class AppMeshClient:
         Replays from ``stdout_position``, then (with ``follow=True``) yields live output
         until exit/removal/timeout; the server de-duplicates the replay/live boundary,
         so no polling or position bookkeeping is needed here. The engine serves the
-        streaming routes natively (default wss/https 6058); the agent REST listener
+        streaming routes natively (default wss/https 6063); the agent REST listener
         on the default ``base_url`` (port 6060) relays them for local requests
         (see ``run_task_stream``).
 
@@ -1039,7 +1039,7 @@ class AppMeshClient:
         Equivalent to run_app_async() + follow_output() + delete_app(); serves continuous-output
         processes (model inference, log producers) that the fully-buffered run_app_sync()
         cannot show until completion. Like ``follow_output``, this uses the streaming
-        routes (engine-native 6058, relayed by the agent REST listener 6060 for local
+        routes (engine-native 6063, relayed by the agent REST listener 6060 for local
         requests).
 
         Args:

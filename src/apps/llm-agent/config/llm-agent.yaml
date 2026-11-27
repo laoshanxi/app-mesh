@@ -28,7 +28,7 @@ owner_principal_id: system:appmesh
 permission: 10
 description: llm-agent — Claude Agent SDK handler (shared, Scenario A)
 working_dir: /opt/appmesh/lib/llm-agent          # packaged-install location; EDIT for a custom prefix
-command: python3 -m llm_agent --server 127.0.0.1:6059
+command: python3 -m llm_agent --server 127.0.0.1:6062
 behavior:
   exit: restart
 env:

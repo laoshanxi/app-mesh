@@ -373,7 +373,7 @@ public class RequestSignatureTest {
     @Test
     public void framedTransportSignsRequestMessageInputs() throws Exception {
         // Constructors do not connect; only the signing seam is exercised.
-        AppMeshClientTCP tcpClient = new AppMeshClientTCP("127.0.0.1", 6059);
+        AppMeshClientTCP tcpClient = new AppMeshClientTCP("127.0.0.1", 6062);
         tcpClient.setRequestSignature(KEY_ID, SECRET);
         assertTrue(tcpClient.isRequestSignatureEnabled());
 
@@ -408,7 +408,7 @@ public class RequestSignatureTest {
         assertEquals(verifier.sign(fileCanonical), fileReq.headers.get(RequestSigner.SIGNATURE_HEADER));
 
         // WSS uses the same seam; the gateway's bearer handling must not strip the headers.
-        AppMeshClientWSS wssClient = new AppMeshClientWSS("127.0.0.1", 6058);
+        AppMeshClientWSS wssClient = new AppMeshClientWSS("127.0.0.1", 6063);
         wssClient.setRequestSignature(KEY_ID, SECRET);
         Map<String, String> wssHeaders = new HashMap<>();
         wssHeaders.put("Authorization", "Bearer t");

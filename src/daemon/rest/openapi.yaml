@@ -973,8 +973,8 @@ components:
       description: Discover authorization endpoints from the configured OpenID Connect metadata.
       flows:
         authorizationCode:
-          authorizationUrl: http://127.0.0.1:6062/auth/auth
-          tokenUrl: http://127.0.0.1:6062/auth/token
+          authorizationUrl: http://127.0.0.1:6065/auth/auth
+          tokenUrl: http://127.0.0.1:6065/auth/token
           scopes:
             openid: Establish the subject.
             profile: Request display claims.

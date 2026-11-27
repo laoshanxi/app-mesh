@@ -303,7 +303,7 @@ function ConvertTo-YamlSingleQuotedScalar {
 
 function Seed-BuiltinPrincipals {
     Assert-PlainFile $AuthorizationTemplate "authorization template"
-    $issuer = Get-AuthEnvironmentOrYaml "APPMESH_AUTH_ISSUER" $OidcConfig "issuer" "http://127.0.0.1:6062/auth"
+    $issuer = Get-AuthEnvironmentOrYaml "APPMESH_AUTH_ISSUER" $OidcConfig "issuer" "http://127.0.0.1:6065/auth"
     $automationId = Get-StablePrincipalId $issuer $AutomationSubject
     $guestId = Get-StablePrincipalId $issuer $GuestSubject
     $source = if (Test-Path -LiteralPath $AuthorizationRuntime) { $AuthorizationRuntime } else { $AuthorizationTemplate }
@@ -313,8 +313,8 @@ function Seed-BuiltinPrincipals {
     # A policy from an older template can carry the guest bound to the factory
     # default issuer. With a different configured issuer that binding can never
     # authenticate and only duplicates the identity in the principal list.
-    if ($issuer -ne "http://127.0.0.1:6062/auth") {
-        $retiredId = Get-StablePrincipalId "http://127.0.0.1:6062/auth" $GuestSubject
+    if ($issuer -ne "http://127.0.0.1:6065/auth") {
+        $retiredId = Get-StablePrincipalId "http://127.0.0.1:6065/auth" $GuestSubject
         $retiredIndex = $lines.IndexOf("    ${retiredId}:")
         if ($retiredIndex -ge 0) {
             $end = $retiredIndex + 1
@@ -391,9 +391,9 @@ function Render-DexConfig {
     $admin = Read-KeyValueFile $AdminCredentials
     $guest = Read-KeyValueFile $GuestCredentials
     $automation = Read-KeyValueFile $AutomationClientFile
-    $issuer = Get-AuthEnvironmentOrYaml "APPMESH_AUTH_ISSUER" $OidcConfig "issuer" "http://127.0.0.1:6062/auth"
-    $listen = Get-EnvironmentOrYaml "APPMESH_AUTH_LISTEN" $AuthStackConfig "listen" "127.0.0.1:6062"
-    $telemetry = Get-EnvironmentOrYaml "APPMESH_AUTH_TELEMETRY_LISTEN" $AuthStackConfig "telemetry_listen" "127.0.0.1:6063"
+    $issuer = Get-AuthEnvironmentOrYaml "APPMESH_AUTH_ISSUER" $OidcConfig "issuer" "http://127.0.0.1:6065/auth"
+    $listen = Get-EnvironmentOrYaml "APPMESH_AUTH_LISTEN" $AuthStackConfig "listen" "127.0.0.1:6065"
+    $telemetry = Get-EnvironmentOrYaml "APPMESH_AUTH_TELEMETRY_LISTEN" $AuthStackConfig "telemetry_listen" "127.0.0.1:6066"
     $webRedirectUri = Get-WebRedirectUri
 
     $content = [System.IO.File]::ReadAllText($DexConfigTemplate)
@@ -461,7 +461,7 @@ function Render-DexConfig {
     } else {
         $content = $content -replace "(?ms)^# __APPMESH_AUTH_GRPC_BEGIN__\r?\n.*?^# __APPMESH_AUTH_GRPC_END__\r?\n", ""
     }
-    $grpcListen = if ($env:APPMESH_AUTH_GRPC_LISTEN) { $env:APPMESH_AUTH_GRPC_LISTEN } else { "127.0.0.1:5557" }
+    $grpcListen = if ($env:APPMESH_AUTH_GRPC_LISTEN) { $env:APPMESH_AUTH_GRPC_LISTEN } else { "127.0.0.1:6067" }
     $replacements = [ordered]@{
         "__APPMESH_AUTH_ISSUER__" = $issuer
         "__APPMESH_AUTH_LISTEN__" = $listen
@@ -519,7 +519,7 @@ function Assert-BuiltinOwner {
 function Request-AutomationToken {
     Assert-BuiltinOwner
     $credential = Read-KeyValueFile $AutomationClientFile
-    $accessUrl = Get-AuthEnvironmentOrYaml "APPMESH_AUTH_ACCESS_URL" $OidcConfig "access_url" "http://127.0.0.1:6062/auth"
+    $accessUrl = Get-AuthEnvironmentOrYaml "APPMESH_AUTH_ACCESS_URL" $OidcConfig "access_url" "http://127.0.0.1:6065/auth"
     $tlsVerify = Get-AuthEnvironmentOrYaml "APPMESH_AUTH_TLS_VERIFY" $OidcConfig "tls_verify" "true"
     $caPath = Get-AuthEnvironmentOrYaml "APPMESH_AUTH_CA_PATH" $OidcConfig "ca_path" ""
     $curlArguments = @("--fail", "--silent", "--show-error", "--connect-timeout", "2", "--max-time", "8", "--request", "POST")
@@ -569,7 +569,7 @@ function Request-UserToken {
     $password = [Console]::In.ReadLine()
     if ([string]::IsNullOrEmpty($password)) { throw "Provide the password on standard input" }
     if ($null -ne [Console]::In.ReadLine()) { throw "The password must be a single line" }
-    $accessUrl = Get-AuthEnvironmentOrYaml "APPMESH_AUTH_ACCESS_URL" $OidcConfig "access_url" "http://127.0.0.1:6062/auth"
+    $accessUrl = Get-AuthEnvironmentOrYaml "APPMESH_AUTH_ACCESS_URL" $OidcConfig "access_url" "http://127.0.0.1:6065/auth"
     $tlsVerify = Get-AuthEnvironmentOrYaml "APPMESH_AUTH_TLS_VERIFY" $OidcConfig "tls_verify" "true"
     $caPath = Get-AuthEnvironmentOrYaml "APPMESH_AUTH_CA_PATH" $OidcConfig "ca_path" ""
     $curlArguments = @("--fail", "--silent", "--show-error", "--connect-timeout", "2", "--max-time", "8", "--request", "POST")
@@ -695,9 +695,9 @@ function Start-AdminUi {
             throw "The administration UI is unavailable because the TLS material is incomplete in $AuthTlsDir"
         }
     }
-    $listen = if ($env:APPMESH_AUTH_ADMIN_LISTEN) { $env:APPMESH_AUTH_ADMIN_LISTEN } else { "127.0.0.1:6064" }
-    $issuer = Get-AuthEnvironmentOrYaml "APPMESH_AUTH_ISSUER" $OidcConfig "issuer" "http://127.0.0.1:6062/auth"
-    $grpcListen = if ($env:APPMESH_AUTH_GRPC_LISTEN) { $env:APPMESH_AUTH_GRPC_LISTEN } else { "127.0.0.1:5557" }
+    $listen = if ($env:APPMESH_AUTH_ADMIN_LISTEN) { $env:APPMESH_AUTH_ADMIN_LISTEN } else { "127.0.0.1:6068" }
+    $issuer = Get-AuthEnvironmentOrYaml "APPMESH_AUTH_ISSUER" $OidcConfig "issuer" "http://127.0.0.1:6065/auth"
+    $grpcListen = if ($env:APPMESH_AUTH_GRPC_LISTEN) { $env:APPMESH_AUTH_GRPC_LISTEN } else { "127.0.0.1:6067" }
     # dexuser authentication contract: the runtime issuer it must validate
     # sessions against, the same value rendered into dex.yaml above. Audience
     # (appmesh-api) and session TTL keep dexuser defaults unless the operator
@@ -708,7 +708,7 @@ function Start-AdminUi {
 }
 
 function Test-AdminUiHealth {
-    $listen = if ($env:APPMESH_AUTH_ADMIN_LISTEN) { $env:APPMESH_AUTH_ADMIN_LISTEN } else { "127.0.0.1:6064" }
+    $listen = if ($env:APPMESH_AUTH_ADMIN_LISTEN) { $env:APPMESH_AUTH_ADMIN_LISTEN } else { "127.0.0.1:6068" }
     & curl.exe --fail --silent --show-error --max-time 2 "http://$listen/" | Out-Null
     exit $LASTEXITCODE
 }
@@ -808,7 +808,7 @@ function Get-OidcSubjectForUserId {
 # never appears in a process argument list.
 function Invoke-AdminUiPost {
     param([string]$Path, [string]$Body, [string]$PasswordFile = "")
-    $listen = if ($env:APPMESH_AUTH_ADMIN_LISTEN) { $env:APPMESH_AUTH_ADMIN_LISTEN } else { "127.0.0.1:6064" }
+    $listen = if ($env:APPMESH_AUTH_ADMIN_LISTEN) { $env:APPMESH_AUTH_ADMIN_LISTEN } else { "127.0.0.1:6068" }
     $curlArguments = @("--silent", "--show-error", "--max-time", "10", "--request", "POST",
         "--output", "NUL", "--dump-header", "-", "--data-raw", $Body)
     if ($PasswordFile) { $curlArguments += @("--data-urlencode", "password@$PasswordFile") }
@@ -876,7 +876,7 @@ function Add-User {
         if (Test-Path -LiteralPath $passwordFile) { Remove-Item -LiteralPath $passwordFile -Force }
     }
 
-    $issuer = Get-AuthEnvironmentOrYaml "APPMESH_AUTH_ISSUER" $OidcConfig "issuer" "http://127.0.0.1:6062/auth"
+    $issuer = Get-AuthEnvironmentOrYaml "APPMESH_AUTH_ISSUER" $OidcConfig "issuer" "http://127.0.0.1:6065/auth"
     $subject = Get-OidcSubjectForUserId $userId
     $principalId = Get-StablePrincipalId $issuer $subject
     Add-PrincipalBinding $principalId $issuer $subject $RoleName
@@ -907,7 +907,7 @@ function Remove-User {
     # The Principal binding keys on the OIDC subject, which embeds the user_id.
     # Recover it from the UI password list before the entry disappears; the
     # column layout mirrors the fork's admin.html passwords table.
-    $listen = if ($env:APPMESH_AUTH_ADMIN_LISTEN) { $env:APPMESH_AUTH_ADMIN_LISTEN } else { "127.0.0.1:6064" }
+    $listen = if ($env:APPMESH_AUTH_ADMIN_LISTEN) { $env:APPMESH_AUTH_ADMIN_LISTEN } else { "127.0.0.1:6068" }
     $page = (& curl.exe --fail --silent --show-error --max-time 10 "http://$listen/admin?section=passwords") -join "`n"
     if ($LASTEXITCODE -ne 0) {
         throw "The administration UI is not reachable at http://${listen}; the dexuser System App must be running (see APPMESH_AUTH_ADMIN_UI)"
@@ -919,7 +919,7 @@ function Remove-User {
 
     $principalId = ""
     if ($userId) {
-        $issuer = Get-AuthEnvironmentOrYaml "APPMESH_AUTH_ISSUER" $OidcConfig "issuer" "http://127.0.0.1:6062/auth"
+        $issuer = Get-AuthEnvironmentOrYaml "APPMESH_AUTH_ISSUER" $OidcConfig "issuer" "http://127.0.0.1:6065/auth"
         $principalId = Get-StablePrincipalId $issuer (Get-OidcSubjectForUserId $userId)
     }
 
@@ -965,7 +965,7 @@ try {
         }
         { $_ -in @("service-health", "dex-health") } {
             if ((Get-AuthMode) -ne "builtin" -or -not (Test-AuthOwner)) { exit 0 }
-            $listen = Get-EnvironmentOrYaml "APPMESH_AUTH_TELEMETRY_LISTEN" $AuthStackConfig "telemetry_listen" "127.0.0.1:6063"
+            $listen = Get-EnvironmentOrYaml "APPMESH_AUTH_TELEMETRY_LISTEN" $AuthStackConfig "telemetry_listen" "127.0.0.1:6066"
             & curl.exe --fail --silent --show-error --max-time 2 "http://$listen/healthz" | Out-Null
             exit $LASTEXITCODE
         }

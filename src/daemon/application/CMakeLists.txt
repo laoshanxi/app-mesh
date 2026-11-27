@@ -7,3 +7,5 @@ add_library(${PROJECT_NAME}::application ALIAS application)
 
 # spdlog: keep the inline registry out of these objects (see rest/CMakeLists.txt).
 target_link_libraries(application PRIVATE spdlog::spdlog)
+# Application.h exposes rest types; declare it so consumers link rest after application.
+target_link_libraries(application PUBLIC rest)

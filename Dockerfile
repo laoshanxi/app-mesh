@@ -82,7 +82,7 @@ RUN pip3 install --break-system-packages --no-cache-dir -r /opt/appmesh/lib/llm-
     grep -q '^enabled: true$' /opt/appmesh/apps/llm-agent.yaml
 USER ${APPMESH_ID}:${APPMESH_ID}
 
-# MCP server runtime (src/integrations/mcp-server): Streamable HTTP on 6071,
+# MCP server runtime (src/integrations/mcp-server): Streamable HTTP on 6070,
 # an OAuth resource server fronting the engine. Configuration is
 # environment-driven (see src/integrations/mcp-server/README.md).
 FROM runtime_base AS mcp_server
@@ -92,7 +92,7 @@ RUN pip3 install --break-system-packages --no-cache-dir -r /opt/appmesh/integrat
     python3 -c "import fastmcp, appmesh"
 USER ${APPMESH_ID}:${APPMESH_ID}
 WORKDIR /opt/appmesh/integrations/mcp-server
-EXPOSE 6071
+EXPOSE 6070
 ENTRYPOINT ["tini", "--", "python3", "appmesh_server.py"]
 
 FROM runtime_base AS appmesh

@@ -176,7 +176,7 @@ jobs:
           $metadata = Get-EngineJson "/.well-known/oauth-protected-resource"
           $status = (& "C:\local\appmesh\bin\nssm.exe" status AppMeshService) -join ""
           if ($status -notmatch "SERVICE_RUNNING") { throw "AppMeshService is not running: $status" }
-          if ($metadata.authorization_servers[0] -ne "http://127.0.0.1:6062/auth") {
+          if ($metadata.authorization_servers[0] -ne "http://127.0.0.1:6065/auth") {
             throw "unexpected default issuer: $($metadata.authorization_servers[0])"
           }
 
@@ -206,11 +206,11 @@ jobs:
           # fast when the external issuer is unreachable (by design), so verify
           # the persisted switch instead of a live engine. setup.ps1's reachability
           # gate is satisfied by the still-running local dex JWKS route.
-          & "C:\local\appmesh\script\setup.ps1" -Issuer "https://auth.ci.example.internal/oidc" -AccessUrl "http://10.99.0.1:6062/auth" -BrowserEntry "http://127.0.0.1:6062/auth/keys" -TlsVerify false
+          & "C:\local\appmesh\script\setup.ps1" -Issuer "https://auth.ci.example.internal/oidc" -AccessUrl "http://10.99.0.1:6065/auth" -BrowserEntry "http://127.0.0.1:6065/auth/keys" -TlsVerify false
           if ($LASTEXITCODE -ne 0) { throw "setup.ps1 failed" }
           $override = Get-Content "C:\local\appmesh\work\config\oidc.yaml" -Raw
           if ($override -notmatch "issuer:\s*https://auth\.ci\.example\.internal/oidc") { throw "setup.ps1 did not persist the issuer override" }
-          if ($override -notmatch "access_url:\s*http://10\.99\.0\.1:6062/auth") { throw "setup.ps1 did not persist the access URL override" }
+          if ($override -notmatch "access_url:\s*http://10\.99\.0\.1:6065/auth") { throw "setup.ps1 did not persist the access URL override" }
           if ($override -notmatch "tls_verify:\s*false") { throw "setup.ps1 did not persist the TLS override" }
           $envExtra = (& "C:\local\appmesh\bin\nssm.exe" get AppMeshService AppEnvironmentExtra) -join ""
           if ($envExtra -notmatch "APPMESH_AUTH_MODE=external") { throw "setup.ps1 did not set external auth mode on the service" }

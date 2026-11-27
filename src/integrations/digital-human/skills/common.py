@@ -13,7 +13,7 @@ from appmesh import AppMeshWorkerTCP
 
 
 def _tcp_address():
-	raw = os.getenv("APPMESH_TCP", "127.0.0.1:6059")
+	raw = os.getenv("APPMESH_TCP", "127.0.0.1:6062")
 	host, _, port = raw.rpartition(":")
 	return (host or "127.0.0.1", int(port))
 

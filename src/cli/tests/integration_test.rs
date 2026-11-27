@@ -59,7 +59,7 @@ fn test_global_flags_in_help() {
 #[test]
 fn test_global_short_flags_accepted() {
     // All short global flags before subcommand + --help
-    let out = appm().args(["-H", "localhost:6058", "-F", "worker-1", "-v", "logon", "--help"]).output().unwrap();
+    let out = appm().args(["-H", "localhost:6063", "-F", "worker-1", "-v", "logon", "--help"]).output().unwrap();
     assert!(out.status.success());
 }
 
@@ -127,7 +127,7 @@ fn test_logon_password_stdin_conflicts_with_other_flows() {
     // must be rejected next to --device/--browser rather than silently ignored.
     for conflict in [["--password-stdin", "--device"], ["--password-stdin", "--browser"]] {
         let out =
-            appm().args(["-H", "localhost:6058", "logon", "-u", "nobody@example.com"]).args(conflict).output().unwrap();
+            appm().args(["-H", "localhost:6063", "logon", "-u", "nobody@example.com"]).args(conflict).output().unwrap();
         assert!(!out.status.success(), "logon accepted {:?}", conflict);
     }
 }
@@ -137,7 +137,7 @@ fn test_logon_password_conflicts_with_other_flows() {
     // --password is the explicit built-in password selector; it must not
     // combine with the other flows or with --password-stdin.
     for conflict in [["--password", "--device"], ["--password", "--browser"], ["--password", "--password-stdin"]] {
-        let out = appm().args(["-H", "localhost:6058", "logon"]).args(conflict).output().unwrap();
+        let out = appm().args(["-H", "localhost:6063", "logon"]).args(conflict).output().unwrap();
         // Assert the usage error, not just a failed command: an unreachable
         // Engine also exits non-zero, which would pass without the conflict.
         assert_eq!(out.status.code(), Some(2), "logon accepted {:?}", conflict);

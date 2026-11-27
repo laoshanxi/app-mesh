@@ -32,13 +32,13 @@ REST:
   RestListenPort: 6060
 
   # TCP port for the TCP API; 0 disables the TCP listener.
-  TcpApiPort: 6059
+  TcpApiPort: 6062
 
   # WebSocket port for the WSS API; 0 disables the WebSocket listener.
-  WebSocketPort: 6058
+  WebSocketPort: 6063
 
   # Port for Prometheus metrics export.
-  # To enable metrics collection, set to a specific port (e.g., 9091).
+  # To enable metrics collection, set to a specific port (e.g., 6061).
   PrometheusExporterListenPort: 0
 
   # Require bearer authentication (and the config-view permission) on the

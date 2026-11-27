@@ -18,7 +18,7 @@ def get_version():
     # signing key/secret pair atomically, and reads APPMESH_AUTH_ALLOW_HTTP.
     # 3.0.23 points streaming callers at the engine's native listener: the
     # streaming docstrings and a new 404/405 SSE error hint say streaming lives
-    # on wss/https 6058, never the agent REST port 6060.
+    # on wss/https 6063, never the agent REST port 6060.
     # 3.0.24 adds the upload_file overwrite flag on every transport: it sends
     # X-File-Overwrite so the engine replaces an existing file instead of
     # answering 409. The default stays no-overwrite.

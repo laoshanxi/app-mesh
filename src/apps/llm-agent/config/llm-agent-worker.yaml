@@ -17,7 +17,7 @@ permission: 11                                   # access gate: the daemon's own
 #                                                  1=deny 2=read 3=write. 11 = owner(+admin) only; 0/unset = no
 #                                                  owner-scoping (anyone the RBAC role allows).
 working_dir: /opt/appmesh/lib/llm-agent          # REQUIRED edit: dir containing the llm_agent package
-command: python3 -m llm_agent --session-worker --session-id=S1 --server=127.0.0.1:6059
+command: python3 -m llm_agent --session-worker --session-id=S1 --server=127.0.0.1:6062
 description: llm-agent interactive session worker (session=S1)
 stdout_backup_count: 1000                        # let a late STDOUT subscriber still see recent tokens
 behavior:

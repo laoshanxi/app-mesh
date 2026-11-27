@@ -10,7 +10,7 @@ fn wss_host() -> String {
     std::env::var("APPMESH_HOST").unwrap_or_else(|_| "127.0.0.1".to_string())
 }
 fn wss_port() -> u16 {
-    std::env::var("APPMESH_WSS_PORT").ok().and_then(|p| p.parse().ok()).unwrap_or(6058)
+    std::env::var("APPMESH_WSS_PORT").ok().and_then(|p| p.parse().ok()).unwrap_or(6063)
 }
 fn access_token() -> String {
     std::env::var("APPMESH_TEST_ACCESS_TOKEN").expect("APPMESH_TEST_ACCESS_TOKEN must contain a Dex access token")

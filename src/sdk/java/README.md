@@ -92,4 +92,4 @@ Pair<Integer, String> result = client.runAppSync(app, 60);
 System.out.println(result.getValue());
 ```
 
-`AppMeshClientTCP` and `AppMeshClientWSS` speak the TCP (port 6059) and WebSocket (port 6058) transports. See the `appmesh` package javadoc for the full API.
+`AppMeshClientTCP` and `AppMeshClientWSS` speak the TCP (port 6062) and WebSocket (port 6063) transports. See the `appmesh` package javadoc for the full API.

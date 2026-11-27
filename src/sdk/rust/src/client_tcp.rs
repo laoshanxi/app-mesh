@@ -290,8 +290,8 @@ pub struct AppMeshClientTCP {
 }
 
 impl AppMeshClientTCP {
-    /// Create a TCP transport client. Defaults to `127.0.0.1:6059` with the
-    /// SSE side channel on the standard REST port 6058.
+    /// Create a TCP transport client. Defaults to `127.0.0.1:6062` with the
+    /// SSE side channel on the standard REST port 6063.
     /// An empty `ssl_verify` path is the legacy verification-disable form; prefer
     /// [`crate::ClientBuilderTCP`]'s explicit `danger_accept_invalid_certs(true)`.
     pub fn new(
@@ -306,7 +306,7 @@ impl AppMeshClientTCP {
     /// Create a TCP transport client with an explicit `SslVerify` mode (used by the
     /// builder so insecure mode is an explicit flag, never an empty-string sentinel).
     /// `plain` selects the TLS-at-gateway shape: a plaintext TCP connection.
-    /// `rest_port` overrides the SSE side channel's REST port (default 6058) for shifted-port daemons.
+    /// `rest_port` overrides the SSE side channel's REST port (default 6063) for shifted-port daemons.
     pub(crate) fn new_with_verify(
         tcp_address: Option<(String, u16)>,
         verify: crate::tls_config::SslVerify,

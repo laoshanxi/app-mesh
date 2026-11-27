@@ -16,8 +16,8 @@ import (
 // Client-facing defaults.
 const (
 	DefaultHTTPURI            = "https://127.0.0.1:6060"
-	DefaultTCPURI             = "127.0.0.1:6059"
-	DefaultWSSURI             = "https://127.0.0.1:6058"
+	DefaultTCPURI             = "127.0.0.1:6062"
+	DefaultWSSURI             = "https://127.0.0.1:6063"
 	DefaultTokenExpireSeconds = 7 * (60 * 60 * 24) // default 7 day(s)
 )
 

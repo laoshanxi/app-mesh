@@ -24,7 +24,7 @@ public class AppMeshClientWSSTest {
                 "APPMESH_BEARER_TOKEN is required for live integration tests");
         client = new AppMeshClientWSS.Builder()
                 .host("127.0.0.1")
-                .port(6058)
+                .port(6063)
                 .disableSSLVerify()
                 .jwtToken(bearer)
                 .build();

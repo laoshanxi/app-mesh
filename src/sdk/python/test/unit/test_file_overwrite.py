@@ -74,7 +74,7 @@ class TestWssUploadOverwrite(_UploadHeaderCase):
     """WSS transport: both the precheck and the data channel carry the flag."""
 
     def test_overwrite_sends_header_on_both_hops(self):
-        client = AppMeshClientWSS(("gateway.local", 6058), ssl_verify=False, bearer_token="token")
+        client = AppMeshClientWSS(("gateway.local", 6063), ssl_verify=False, bearer_token="token")
         client.forward_to = None
         client._request_http = mock.Mock()  # control-channel precheck answers 200
         with tempfile.TemporaryDirectory() as tmp, mock.patch.object(
@@ -85,7 +85,7 @@ class TestWssUploadOverwrite(_UploadHeaderCase):
         self.assertEqual(post.call_args.kwargs["headers"][OVERWRITE_HEADER], "true")
 
     def test_default_sends_no_header(self):
-        client = AppMeshClientWSS(("gateway.local", 6058), ssl_verify=False, bearer_token="token")
+        client = AppMeshClientWSS(("gateway.local", 6063), ssl_verify=False, bearer_token="token")
         client.forward_to = None
         client._request_http = mock.Mock()
         with tempfile.TemporaryDirectory() as tmp, mock.patch.object(
@@ -100,7 +100,7 @@ class TestTcpUploadOverwrite(_UploadHeaderCase):
     """TCP transport: the upload precheck request carries the flag."""
 
     def test_overwrite_sends_header(self):
-        client = AppMeshClientTCP(("127.0.0.1", 6059), ssl_verify=False, bearer_token="token")
+        client = AppMeshClientTCP(("127.0.0.1", 6062), ssl_verify=False, bearer_token="token")
         with tempfile.TemporaryDirectory() as tmp, mock.patch.object(
             client, "_request_http", return_value=_precheck_response()
         ) as req, mock.patch.object(client.tcp_transport, "send_message"):
@@ -109,7 +109,7 @@ class TestTcpUploadOverwrite(_UploadHeaderCase):
         self.assertEqual(header[OVERWRITE_HEADER], "true")
 
     def test_default_sends_no_header(self):
-        client = AppMeshClientTCP(("127.0.0.1", 6059), ssl_verify=False, bearer_token="token")
+        client = AppMeshClientTCP(("127.0.0.1", 6062), ssl_verify=False, bearer_token="token")
         with tempfile.TemporaryDirectory() as tmp, mock.patch.object(
             client, "_request_http", return_value=_precheck_response()
         ) as req, mock.patch.object(client.tcp_transport, "send_message"):

@@ -46,7 +46,7 @@
   <text x="547" y="180" font-size="17" font-weight="bold" text-anchor="middle" fill="#22331a">App Mesh</text>
   <text x="547" y="202" font-size="17" font-weight="bold" text-anchor="middle" fill="#22331a">Daemon</text>
   <text x="547" y="230" font-size="11.5" text-anchor="middle" fill="#3c5230">REST :6060</text>
-  <text x="547" y="247" font-size="11.5" text-anchor="middle" fill="#3c5230">WSS :6058</text>
+  <text x="547" y="247" font-size="11.5" text-anchor="middle" fill="#3c5230">WSS :6063</text>
   <text x="547" y="264" font-size="11.5" text-anchor="middle" fill="#3c5230">Metrics :6061</text>
   <text x="547" y="292" font-size="11.5" font-style="italic" text-anchor="middle" fill="#3c5230">OIDC security</text>
 

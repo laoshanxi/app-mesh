@@ -51,7 +51,7 @@ readonly DEX_INITIAL_GUEST_USERNAME="guest"
 readonly DEX_INITIAL_GUEST_USER_ID="93ad39b4-eb6f-4945-97a1-3366451867fb"
 readonly DEX_INITIAL_GUEST_SUBJECT="CiQ5M2FkMzliNC1lYjZmLTQ5NDUtOTdhMS0zMzY2NDUxODY3ZmISBWxvY2Fs"
 # Issuer the packaged template historically hardcoded for the guest binding.
-readonly DEX_FACTORY_DEFAULT_ISSUER="http://127.0.0.1:6062/auth"
+readonly DEX_FACTORY_DEFAULT_ISSUER="http://127.0.0.1:6065/auth"
 
 AUTH_MODE=${APPMESH_AUTH_MODE:-builtin}
 case "${AUTH_MODE}" in
@@ -266,7 +266,7 @@ seed_builtin_principals() {
     local issuer issuer_yaml automation_id guest_id guest_name_yaml guest_email_yaml source temporary
     local retired_id="" stripped=""
     local add_automation=1 add_guest=1 add_role=1
-    issuer=${APPMESH_AUTH_ISSUER:-$(oidc_value issuer http://127.0.0.1:6062/auth)}
+    issuer=${APPMESH_AUTH_ISSUER:-$(oidc_value issuer http://127.0.0.1:6065/auth)}
     issuer_yaml=$(yaml_quote "${issuer}") || return 1
     guest_name_yaml=$(yaml_quote "${DEX_INITIAL_GUEST_USERNAME}") || return 1
     guest_email_yaml=$(yaml_quote "${DEX_INITIAL_GUEST_EMAIL}") || return 1
@@ -426,7 +426,7 @@ request_automation_token() {
     validate_automation_client
 
     local access_url tls_verify ca_path client_secret response token
-    access_url=${APPMESH_AUTH_ACCESS_URL:-$(oidc_auth_value access_url http://127.0.0.1:6062/auth)}
+    access_url=${APPMESH_AUTH_ACCESS_URL:-$(oidc_auth_value access_url http://127.0.0.1:6065/auth)}
     tls_verify=${APPMESH_AUTH_TLS_VERIFY:-$(oidc_auth_value tls_verify true)}
     ca_path=${APPMESH_AUTH_CA_PATH:-$(oidc_auth_value ca_path '')}
     client_secret=$(automation_client_value secret)
@@ -502,7 +502,7 @@ request_user_token() {
     }
 
     local access_url tls_verify ca_path response token
-    access_url=${APPMESH_AUTH_ACCESS_URL:-$(oidc_auth_value access_url http://127.0.0.1:6062/auth)}
+    access_url=${APPMESH_AUTH_ACCESS_URL:-$(oidc_auth_value access_url http://127.0.0.1:6065/auth)}
     tls_verify=${APPMESH_AUTH_TLS_VERIFY:-$(oidc_auth_value tls_verify true)}
     ca_path=${APPMESH_AUTH_CA_PATH:-$(oidc_auth_value ca_path '')}
 
@@ -807,9 +807,9 @@ admin_ui() {
         return 1
     fi
     local listen issuer grpc_listen
-    listen=${APPMESH_AUTH_ADMIN_LISTEN:-127.0.0.1:6064}
-    issuer=${APPMESH_AUTH_ISSUER:-$(oidc_value issuer http://127.0.0.1:6062/auth)}
-    grpc_listen=${APPMESH_AUTH_GRPC_LISTEN:-127.0.0.1:5557}
+    listen=${APPMESH_AUTH_ADMIN_LISTEN:-127.0.0.1:6068}
+    issuer=${APPMESH_AUTH_ISSUER:-$(oidc_value issuer http://127.0.0.1:6065/auth)}
+    grpc_listen=${APPMESH_AUTH_GRPC_LISTEN:-127.0.0.1:6067}
     # dexuser authentication contract: the runtime issuer it must validate
     # sessions against, the same value rendered into dex.yaml above. Audience
     # (appmesh-api) and session TTL keep dexuser defaults unless the operator
@@ -836,7 +836,7 @@ admin_ui_disabled() {
 
 admin_ui_health() {
     local listen
-    listen=${APPMESH_AUTH_ADMIN_LISTEN:-127.0.0.1:6064}
+    listen=${APPMESH_AUTH_ADMIN_LISTEN:-127.0.0.1:6068}
     exec curl --fail --silent --show-error --max-time 2 "http://${listen}/"
 }
 
@@ -985,7 +985,7 @@ admin_ui_post() {
     local path=$1
     shift
     local listen headers location detail
-    listen=${APPMESH_AUTH_ADMIN_LISTEN:-127.0.0.1:6064}
+    listen=${APPMESH_AUTH_ADMIN_LISTEN:-127.0.0.1:6068}
     if ! headers=$(curl --silent --show-error --max-time 10 --request POST \
         --output /dev/null --dump-header - \
         "http://${listen}${path}" "$@"); then
@@ -1097,7 +1097,7 @@ add_user() {
     rm -f "${password_file}"
 
     local issuer subject principal_id
-    issuer=${APPMESH_AUTH_ISSUER:-$(oidc_value issuer http://127.0.0.1:6062/auth)}
+    issuer=${APPMESH_AUTH_ISSUER:-$(oidc_value issuer http://127.0.0.1:6065/auth)}
     subject=$(oidc_subject_for_user_id "${user_id}")
     principal_id=$(stable_principal_id "${issuer}" "${subject}") || {
         echo "failed to derive the Principal ID" >&2
@@ -1149,7 +1149,7 @@ delete_user() {
     # Recover it from the UI password list before the entry disappears; the
     # column layout mirrors the fork's admin.html passwords table.
     local listen list_page user_id=""
-    listen=${APPMESH_AUTH_ADMIN_LISTEN:-127.0.0.1:6064}
+    listen=${APPMESH_AUTH_ADMIN_LISTEN:-127.0.0.1:6068}
     if ! list_page=$(curl --fail --silent --show-error --max-time 10 \
         "http://${listen}/admin?section=passwords"); then
         echo "The administration UI is not reachable at http://${listen}; the dexuser System App must be running (see APPMESH_AUTH_ADMIN_UI)" >&2
@@ -1162,7 +1162,7 @@ delete_user() {
 
     local issuer subject principal_id=""
     if [[ -n "${user_id}" ]]; then
-        issuer=${APPMESH_AUTH_ISSUER:-$(oidc_value issuer http://127.0.0.1:6062/auth)}
+        issuer=${APPMESH_AUTH_ISSUER:-$(oidc_value issuer http://127.0.0.1:6065/auth)}
         subject=$(oidc_subject_for_user_id "${user_id}")
         principal_id=$(stable_principal_id "${issuer}" "${subject}") || principal_id=""
     fi
@@ -1244,9 +1244,9 @@ render_dex_config() {
         return 1
     }
 
-    local issuer=${APPMESH_AUTH_ISSUER:-$(oidc_value issuer http://127.0.0.1:6062/auth)}
-    local listen=${APPMESH_AUTH_LISTEN:-$(config_value listen 127.0.0.1:6062)}
-    local telemetry_listen=${APPMESH_AUTH_TELEMETRY_LISTEN:-$(config_value telemetry_listen 127.0.0.1:6063)}
+    local issuer=${APPMESH_AUTH_ISSUER:-$(oidc_value issuer http://127.0.0.1:6065/auth)}
+    local listen=${APPMESH_AUTH_LISTEN:-$(config_value listen 127.0.0.1:6065)}
+    local telemetry_listen=${APPMESH_AUTH_TELEMETRY_LISTEN:-$(config_value telemetry_listen 127.0.0.1:6066)}
     local web_redirect_uri
     web_redirect_uri=$(derive_web_redirect_uri) || return 1
     validate_admin_credentials
@@ -1261,7 +1261,7 @@ render_dex_config() {
     # configured certificate file is missing and the authentication service
     # gates every sign-in.
     local grpc_enabled=0 grpc_skip=0 grpc_listen
-    grpc_listen=${APPMESH_AUTH_GRPC_LISTEN:-127.0.0.1:5557}
+    grpc_listen=${APPMESH_AUTH_GRPC_LISTEN:-127.0.0.1:6067}
     if [[ -f "${AUTH_GRPC_TLS_CERT}" && -f "${AUTH_GRPC_TLS_KEY}" && \
         -f "${AUTH_GRPC_TLS_CLIENT_CA}" ]]; then
         grpc_enabled=1
@@ -2087,7 +2087,7 @@ case "${action}" in
         if ! is_builtin_auth || ! is_auth_owner; then
             exit 0
         fi
-        telemetry_listen=${APPMESH_AUTH_TELEMETRY_LISTEN:-$(config_value telemetry_listen 127.0.0.1:6063)}
+        telemetry_listen=${APPMESH_AUTH_TELEMETRY_LISTEN:-$(config_value telemetry_listen 127.0.0.1:6066)}
         exec curl --fail --silent --show-error --max-time 2 "http://${telemetry_listen}/healthz"
         ;;
     automation-token)

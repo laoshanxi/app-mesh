@@ -361,7 +361,7 @@ func TestClientCancellationDoesNotEvictPooledLocalConnection(t *testing.T) {
 func TestRefreshLocalConnectionDoesNotEvictReplacement(t *testing.T) {
 	resetConnectionState(t)
 
-	key := "tcp://127.0.0.1:6059"
+	key := "tcp://127.0.0.1:6062"
 	stale := &Connection{key: key, messageConnection: appmesh.NewTCPConnection(),
 		pending: make(map[string]chan *Response), closed: make(chan struct{})}
 	replacement := &Connection{key: key, messageConnection: appmesh.NewTCPConnection(),

@@ -26,15 +26,15 @@ Override a key with `APPMESH_REST_SSL_<Key>`, for example
 boolean: a quoted `"false"` is a string, and the daemon rejects the
 configuration at startup instead of guessing the listener mode.
 
-Listeners: `6058` serves HTTPS REST and WSS, `6059` the TCP frame API over TLS,
-and `6060` the Go agent entry (same `REST.SSL` settings; the daemon does not
-bind this port). A missing or unreadable certificate stops a TLS listener; App
-Mesh never degrades it to plaintext.
+Listeners: `6060` is the Go agent entry (same `REST.SSL` settings; the daemon
+does not bind this port), `6062` serves the TCP frame API over TLS, and `6063`
+serves HTTPS REST and WSS. A missing or unreadable certificate stops a TLS
+listener; App Mesh never degrades it to plaintext.
 
 The authentication service is outside `REST.SSL`: the issuer listens over plain
-HTTP on `6062`, health on `6063`, the `dexuser` administration UI on `6064` on
-loopback, and the Dex gRPC administration listener on `5557` on loopback with
-mutual TLS when the administration UI is enabled. See
+HTTP on `6065`, health on `6066`, the Dex gRPC administration listener on `6067`
+on loopback with mutual TLS when the administration UI is enabled, and the
+`dexuser` administration UI on `6068` on loopback. See
 [Authentication](Authentication.md).
 
 ## Certificates
@@ -96,7 +96,7 @@ disable verification, or to select plaintext.
 
 | Interface | Verify peer | Pin a CA | Client certificate (mTLS) | Plaintext |
 | --- | --- | --- | --- | --- |
-| CLI | Local Engine configuration; `--no-verify` for any endpoint | `--ca-cert PATH` | Local Engine configuration only | `-H ws://host:6058` or `-H http://host:6058` |
+| CLI | Local Engine configuration; `--no-verify` for any endpoint | `--ca-cert PATH` | Local Engine configuration only | `-H ws://host:6063` or `-H http://host:6063` |
 | Python SDK | `ssl_verify=None` (auto), `True`, `False` | `ssl_verify="<path>"` | `ssl_client_cert` | `plain_transport=True` (framed); a REST base URL can use `http://` |
 | Rust SDK | Default; `danger_accept_invalid_certs(true)` | `ssl_ca_cert(path)` | `ssl_client_auth(cert, key)` | `plain_transport(true)` |
 | Go SDK | Default; `Option{InsecureSkipVerify: true}` | `Option{SSLTrustedCA: &path}` | `Option{SSLClientCertificateFile, SSLClientCertificateKeyFile}` | `TCPConnection.ConnectPlain`, `ws://` URL |
