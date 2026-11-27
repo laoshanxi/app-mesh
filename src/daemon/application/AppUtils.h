@@ -1,6 +1,7 @@
 // src/daemon/application/AppUtils.h
 #pragma once
 
+#include <algorithm>
 #include <chrono>
 #include <memory>
 #include <mutex>
@@ -8,93 +9,6 @@
 #include <vector>
 
 std::string normalizeAppName(const std::string &name);
-
-/// <summary>
-/// Shell mode application manage (create/clean) shell script
-/// </summary>
-struct ShellAppFileGen
-{
-	explicit ShellAppFileGen(const std::string &name, const std::string &cmd, const std::string &execUser, bool sessionLogin,
-							 const std::string &workingDir);
-	virtual ~ShellAppFileGen();
-	const std::string &getShellStartCmd() const { return m_shellCmd; };
-	const std::string &getShellFileName() const { return m_fileName; };
-	// The directory the generated script changes into.
-	const std::string &workingDir() const { return m_workingDir; };
-	const bool isUsingSudo() const { return m_usingSudo; };
-	// Target user of the sudo login wrapper, empty when sudo is not used. The
-	// caller composes the wrapper at spawn time so per-run environment values
-	// can be injected after the login shell's environment reset.
-	const std::string &sudoUser() const { return m_sudoUser; };
-
-private:
-	std::string m_cmd;
-	std::string m_shellCmd;
-	std::string m_fileName;
-	std::string m_sudoUser;
-	std::string m_workingDir;
-	bool m_usingSudo{false};
-};
-
-/// <summary>
-/// One application log file
-/// </summary>
-struct AppLogFile
-{
-public:
-	explicit AppLogFile(const std::string &appName, int index = 0);
-	virtual ~AppLogFile();
-	void increaseIndex();
-	int index();
-	const std::string getFileName() const;
-	/// A same-name successor instance owns the file; stop deleting it on destruction.
-	void detachFile();
-
-private:
-	std::string m_fileName;
-	int m_index;
-	bool m_ownsFile = true;
-};
-
-/// <summary>
-/// Manage stdout log files for an application
-/// </summary>
-class LogFileQueue
-{
-public:
-	explicit LogFileQueue(const std::string &baseFileName, int queueSize);
-	virtual ~LogFileQueue();
-	void enqueue();
-	int size();
-	const std::string getFileName(int index);
-	/// Stop deleting the name-derived files; a same-name successor instance owns them.
-	void detachFiles();
-
-private:
-	// enqueue() (spawn, under the app's process lock) races with size()/getFileName()
-	// (AsJson/getOutput, REST threads). Guard the vector so the queue is self-thread-safe.
-	mutable std::mutex m_mutex;
-	std::vector<std::shared_ptr<AppLogFile>> m_fileQueue;
-	const std::string m_baseFileName;
-	const int m_queueSize;
-	bool m_sweepFiles = true;
-};
-
-/// <summary>
-/// Crash-loop restart backoff (k8s CrashLoopBackOff style): the delay before the next
-/// start grows exponentially (base, 2x, 4x ... capped) across consecutive short-lived runs,
-/// and resets to zero once a run survives the "stable" threshold. Not thread-safe; the
-/// caller serializes (Application invokes it under its runtime lifecycle lock).
-/// </summary>
-class RestartBackoff
-{
-public:
-	// Record a finished run by how long it lasted; returns the delay before the next start.
-	std::chrono::seconds onExit(std::chrono::seconds ranFor);
-
-private:
-	int m_failures = 0; // consecutive short-lived runs
-};
 
 /// <summary>
 /// Application status
@@ -117,4 +31,36 @@ enum class PERMISSION : int
 	OTHER_DENY = 10,
 	OTHER_READ = 20,
 	OTHER_WRITE = 30
+};
+
+/// <summary>
+/// Crash-loop restart backoff (k8s CrashLoopBackOff style): the delay before the next
+/// start grows exponentially (base, 2x, 4x ... capped) across consecutive short-lived runs,
+/// and resets to zero once a run survives the "stable" threshold. Not thread-safe; the
+/// caller serializes (Application invokes it under its runtime lifecycle lock).
+/// </summary>
+class RestartBackoff
+{
+public:
+	// Record a finished run by how long it lasted; returns the delay before the next start.
+	std::chrono::seconds onExit(std::chrono::seconds ranFor)
+	{
+		constexpr long BASE_SECONDS = 1;    // first backoff step
+		constexpr long MAX_SECONDS = 300;   // cap (5 min), as in k8s CrashLoopBackOff
+		constexpr long STABLE_SECONDS = 60; // a run lasting this long is healthy -> reset
+		constexpr int MAX_SHIFT = 9;        // 1<<9 already exceeds the cap; avoids overflow
+
+		if (ranFor.count() >= STABLE_SECONDS)
+		{
+			m_failures = 0; // healthy run: next restart is immediate
+			return std::chrono::seconds(0);
+		}
+
+		const long secs = BASE_SECONDS << std::min(m_failures, MAX_SHIFT);
+		++m_failures;
+		return std::chrono::seconds(std::min(secs, MAX_SECONDS));
+	}
+
+private:
+	int m_failures = 0; // consecutive short-lived runs
 };

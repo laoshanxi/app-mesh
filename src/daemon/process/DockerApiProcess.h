@@ -26,13 +26,6 @@ constexpr const char *const DOCKER_LABEL_NODE = "appmesh.node";
 // daemon and the embedded agent derive the same value on the same host).
 std::string dockerNodeIdentity();
 
-// Shell mode runs a generated script by bind-mounting it from the daemon's own
-// filesystem, which fails whenever dockerd does not share that filesystem
-// (docker.sock and sibling-container deployments). A create body whose command
-// is `bash <script>` plus that same-path bind gets the script content inlined
-// as `bash -c` and the bind dropped; other create bodies pass through untouched.
-void inlineShellScriptCmd(Json::Value &createBody);
-
 // High-risk host-facing settings the Docker.HostSecurityPolicy gate looks for
 // in a container definition.
 std::vector<std::string> dockerHostSecurityFindings(const Json::Value &createBody);

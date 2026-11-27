@@ -10,3 +10,10 @@ __pycache__
 *.pyc
 *.core
 core.*
+.claude
+.codegraph
+.agents
+.zcode
+.vscode
+.pytest_cache
+docs

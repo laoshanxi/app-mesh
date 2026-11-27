@@ -1,7 +1,7 @@
 # src/daemon/application/CMakeLists.txt
 
 # --- Define application library ---
-aux_source_directory(. SRC_LIST)
+file(GLOB SRC_LIST CONFIGURE_DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/*.cpp)
 add_library(application STATIC ${SRC_LIST})
 add_library(${PROJECT_NAME}::application ALIAS application)
 

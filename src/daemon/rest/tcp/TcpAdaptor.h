@@ -1,4 +1,4 @@
-// src/daemon/rest/drogon/TcpAdaptor.h
+// src/daemon/rest/tcp/TcpAdaptor.h
 #ifndef DROGON_TCP_ADAPTOR_H
 #define DROGON_TCP_ADAPTOR_H
 
@@ -8,6 +8,8 @@
 #include <mutex>
 #include <string>
 #include <unordered_map>
+#include <utility>
+#include <vector>
 
 #include <trantor/net/TcpServer.h>
 
@@ -71,4 +73,24 @@ private:
 	std::mutex m_connMutex;
 	std::unordered_map<uint64_t, trantor::TcpConnectionPtr> m_connections;
 };
+
+namespace dgn
+{
+	// TLS hardening pairs shared by every listener: protocol floor, cipher
+	// allow-list, and client-certificate verification when a CA is configured.
+	// "require" also rejects a client without a certificate.
+	inline std::vector<std::pair<std::string, std::string>> tlsHardeningConf(const std::string &caFile)
+	{
+		std::vector<std::pair<std::string, std::string>> sslConf{
+			{"MinProtocol", "TLSv1.2"},
+			{"CipherString", "HIGH:!aNULL:!eNULL:!EXPORT:!DES:!RC4:!MD5"},
+			{"Ciphersuites", "TLS_AES_256_GCM_SHA384:TLS_CHACHA20_POLY1305_SHA256:TLS_AES_128_GCM_SHA256"}};
+		if (!caFile.empty())
+		{
+			sslConf.emplace_back("VerifyCAFile", caFile);
+			sslConf.emplace_back("VerifyMode", "require");
+		}
+		return sslConf;
+	}
+}
 #endif

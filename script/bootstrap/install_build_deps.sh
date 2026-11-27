@@ -228,9 +228,6 @@ fi
 # -----------------------------------------------------------------------------
 # Header-only libraries copied to /usr/local/include
 # -----------------------------------------------------------------------------
-git clone --depth=1 https://github.com/schoentoon/hashidsxx.git
-cp -rf hashidsxx /usr/local/include/
-
 git clone --depth=1 https://github.com/mariusbancila/croncpp.git
 cp croncpp/include/croncpp.h /usr/local/include/
 

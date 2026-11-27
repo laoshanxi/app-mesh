@@ -1,6 +1,6 @@
 # src/daemon/process/CMakeLists.txt
 
-file(GLOB SRC_LIST *.cpp)
+file(GLOB SRC_LIST CONFIGURE_DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/*.cpp)
 if (WIN32)
     list(REMOVE_ITEM SRC_LIST ${CMAKE_CURRENT_SOURCE_DIR}/DockerApiProcess.cpp)
 endif()

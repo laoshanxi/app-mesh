@@ -115,6 +115,8 @@ public:
 	static void instance(std::shared_ptr<Configuration> config);
 	static std::string readConfiguration();
 	static void handleSignal();
+	/// Reload the configuration if SIGHUP asked for it; call from the main loop.
+	static void reloadOnSignal();
 
 	/// `previous` (hot reload) seeds invalid-value fallbacks in the nested
 	/// FromJson parsers, so a bad reload keeps the running setting.

@@ -125,12 +125,6 @@ sudo cmake --install .
 brew unlink spdlog 2>/dev/null || true
 cd ${TMP_DIR}
 
-echo "Installing hashidsxx..."
-cd ${TMP_DIR}
-sudo mkdir -p /usr/local/include/hashidsxx
-git clone --depth=1 https://github.com/schoentoon/hashidsxx.git
-sudo cp -rf hashidsxx/* /usr/local/include/hashidsxx/
-
 echo "Installing croncpp..."
 cd ${TMP_DIR}
 git clone --depth=1 https://github.com/mariusbancila/croncpp.git

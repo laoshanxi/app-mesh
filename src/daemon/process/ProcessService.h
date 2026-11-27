@@ -52,7 +52,7 @@ public:
 	/// engine owns only the locks of the process it is working on.
 	bool dispatchSync(const std::function<void()> &task);
 
-	/// Stop the service and join both threads. Best effort, idempotent;
+	/// Stop the service and join its threads. Best effort, idempotent;
 	/// pending handlers are dropped, exactly like the timer service.
 	void shutdown();
 

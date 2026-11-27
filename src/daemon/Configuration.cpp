@@ -161,28 +161,40 @@ std::string Configuration::readConfiguration()
 	return Utility::readFileCpp(Utility::getConfigFilePath(APPMESH_CONFIG_YAML_FILE));
 }
 
-void SigHupHandler(int signo)
+namespace
 {
-	const static char fname[] = "SigHupHandler() ";
+	// Written by the signal handler only; the main loop acts on it.
+	volatile sig_atomic_t g_reloadRequested = 0;
+}
 
-	LOG_INF << fname << "Received signal <" << signo << ">, reloading configuration";
-	auto config = Configuration::instance();
-	if (config != nullptr)
+void SigHupHandler(int /*signo*/)
+{
+	// Async-signal-safe: the reload itself locks and spawns, so it runs on the main loop.
+	g_reloadRequested = 1;
+}
+
+void Configuration::reloadOnSignal()
+{
+	if (g_reloadRequested == 0)
+		return;
+	g_reloadRequested = 0;
+
+	const static char fname[] = "Configuration::reloadOnSignal() ";
+
+	LOG_INF << fname << "Reloading configuration on SIGHUP";
+	try
 	{
-		try
-		{
-			auto configJson = Utility::yamlToJson(YAML::Load(Configuration::readConfiguration()));
-			Configuration::overrideConfigWithEnv(configJson); // same precedence as at boot
-			config->hotUpdate(configJson);
-		}
-		catch (const std::exception &e)
-		{
-			LOG_ERR << fname << "Failed to reload configuration: " << e.what();
-		}
-		catch (...)
-		{
-			LOG_ERR << fname << "Failed to reload configuration with unknown exception";
-		}
+		auto configJson = Utility::yamlToJson(YAML::Load(Configuration::readConfiguration()));
+		Configuration::overrideConfigWithEnv(configJson); // same precedence as at boot
+		instance()->hotUpdate(configJson);
+	}
+	catch (const std::exception &e)
+	{
+		LOG_ERR << fname << "Failed to reload configuration: " << e.what();
+	}
+	catch (...)
+	{
+		LOG_ERR << fname << "Failed to reload configuration with unknown exception";
 	}
 }
 

@@ -1,4 +1,4 @@
-// src/daemon/rest/drogon/FileTransferHandler.cpp
+// src/daemon/rest/tcp/FileTransferHandler.cpp
 #include "FileTransferHandler.h"
 
 #include "../../../common/StreamLogger.h"

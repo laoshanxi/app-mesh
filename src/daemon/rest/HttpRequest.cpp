@@ -55,7 +55,7 @@ HttpRequest::HttpRequest(Request &&request)
 	  m_connection_id(std::move(request.connection_id)),
 	  m_body(std::make_shared<std::vector<std::uint8_t>>(
 		  std::move(request.body))), // When HttpRequest is copied, m_body only copies the shared_ptr
-	  m_query(std::move(request.query)), m_headers(std::move(request.headers)), m_lwsRef{}, m_wsReplyContext(nullptr)
+	  m_query(std::move(request.query)), m_headers(std::move(request.headers)), m_wsReplyContext(nullptr)
 {
 }
 
@@ -113,8 +113,7 @@ bool HttpRequest::reply(web::http::status_code status, const std::string &body_d
 	return reply(m_relative_uri, m_uuid, bodyBytes, headers, status, content_type);
 }
 
-std::shared_ptr<HttpRequest> HttpRequest::deserialize(const std::string &input, LwsSessionRef lwsRef,
-													  std::shared_ptr<WSS::ReplyContext> ctx)
+std::shared_ptr<HttpRequest> HttpRequest::deserialize(const std::string &input, std::shared_ptr<WSS::ReplyContext> ctx)
 {
 	const static char fname[] = "HttpRequest::deserialize() ";
 
@@ -122,7 +121,6 @@ std::shared_ptr<HttpRequest> HttpRequest::deserialize(const std::string &input, 
 	if (req.deserialize(input))
 	{
 		auto request = std::make_shared<HttpRequest>(std::move(req));
-		request->m_lwsRef = lwsRef;
 		request->m_wsReplyContext = std::move(ctx);
 		if (request->m_wsReplyContext &&
 			request->m_wsReplyContext->getProtocolType() == WSS::ReplyContext::ProtocolType::Framed)

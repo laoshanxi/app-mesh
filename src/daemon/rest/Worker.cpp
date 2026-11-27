@@ -152,7 +152,6 @@ namespace
 struct HttpRequestContext
 {
 	std::string m_data;
-	LwsSessionRef m_lwsRef{};
 	std::shared_ptr<WSS::ReplyContext> m_wsReplyContext;
 	// Explicit shutdown marker (an empty m_data must never mean shutdown: a zero-length
 	// frame would then let any client kill a worker).
@@ -243,7 +242,7 @@ void Worker::svc()
 		m_pendingCount.fetch_sub(1, std::memory_order_relaxed); // matched to enqueueRequest reservation
 
 		auto request =
-			HttpRequest::deserialize(requestContext->m_data, requestContext->m_lwsRef, requestContext->m_wsReplyContext);
+			HttpRequest::deserialize(requestContext->m_data, requestContext->m_wsReplyContext);
 
 		if (!request || !process(request))
 		{

@@ -9,23 +9,6 @@
 
 #include "../../common/HttpHeaderMap.h"
 
-// Bundles all lws-related fields into a single per-protocol reference.
-// Used by HttpRequest and HttpRequestContext to maintain "one reference per protocol".
-struct LwsSessionRef
-{
-	LwsSessionRef() = default;
-	LwsSessionRef(const void *w, uint64_t r, uint64_t s) : wsi(w), reqId(r), sessionId(s) {}
-
-	const void *wsi = nullptr;
-	uint64_t reqId = 0;     // ABA protection for HTTP responses
-	uint64_t sessionId = 0; // ABA protection for WS sessions
-	// Server-side transport identity, captured from the accepted socket. Empty
-	// when the transport cannot vouch for it; never client-supplied.
-	std::string peerAddress;
-	std::string principalId;
-	explicit operator bool() const { return wsi != nullptr; }
-};
-
 class Response
 {
 public:

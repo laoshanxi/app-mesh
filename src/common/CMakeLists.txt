@@ -4,7 +4,7 @@
 add_subdirectory(os)
 
 # --- Define library ---
-aux_source_directory(. SRC_LIST)
+file(GLOB SRC_LIST CONFIGURE_DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/*.cpp)
 add_library(common STATIC ${SRC_LIST})
 add_library(${PROJECT_NAME}::common ALIAS common)
 
@@ -35,7 +35,7 @@ target_link_libraries(common PRIVATE Drogon::Drogon)
 # jsoncpp types appear in public headers (Utility.h, json.h)
 target_link_libraries(common PUBLIC jsoncpp_lib)
 
-# macOS libiconv is not re-exported by libSystem; Utility.cpp uses iconv for
+# macOS libiconv is not re-exported by libSystem; UtilityEncoding.cpp uses iconv for
 # output encoding detection (glibc/musl provide it inside libc).
 if(APPLE)
   target_link_libraries(common PRIVATE iconv)

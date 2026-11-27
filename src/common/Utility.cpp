@@ -41,31 +41,20 @@
 #include <windows.h>
 #endif
 
-#include <boost/algorithm/hex.hpp>
 #include <boost/algorithm/string.hpp>
 #include <boost/program_options/parsers.hpp>
+#include <boost/tokenizer.hpp>
 #include <drogon/utils/Utilities.h>
-#include <filesystem>
-#include <hashidsxx/hashids.cpp>
-#include <hashidsxx/hashids.h>
 #include <json/json.h>
+#include "DateTime.h"
+#include <boost/algorithm/hex.hpp>
 #include <openssl/crypto.h>
 #include <openssl/evp.h>
+#include "os/proc.h"
 #include <spdlog/sinks/rotating_file_sink.h>
 #include <spdlog/sinks/stdout_color_sinks.h>
 
-#include "DateTime.h"
 #include "Utility.h"
-#include "os/chown.h"
-#include "os/linux.h"
-#include "os/proc.h"
-
-const char *GET_STATUS_STR(unsigned int status)
-{
-	static const char *STATUS_STR[] = {"disabled", "enabled", "N/A"};
-	assert(status < ARRAY_LEN(STATUS_STR));
-	return STATUS_STR[status];
-};
 
 bool Utility::isNumber(const std::string &str)
 {
@@ -81,38 +70,6 @@ bool Utility::isNumber(const std::string &str)
 }
 
 std::string Utility::stdStringTrim(const std::string &str) { return boost::trim_copy(str, std::locale::classic()); }
-
-// The credential after a case-insensitive "Bearer" scheme; empty when absent.
-std::string Utility::bearerCredential(const std::string &authorization)
-{
-	const auto value = stdStringTrim(authorization);
-	const auto separator = value.find(' ');
-	if (separator == std::string::npos)
-		return {};
-	auto scheme = value.substr(0, separator);
-	std::transform(scheme.begin(), scheme.end(), scheme.begin(),
-				   [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
-	if (scheme != "bearer")
-		return {};
-	return stdStringTrim(value.substr(separator + 1));
-}
-
-// jsoncpp coerces wrong-typed scalars (int -> "5"); these keep the reads strict
-std::string Utility::jsonStringField(const Json::Value &value, const std::string &key)
-{
-	const Json::Value &field = value[key];
-	if (!field.isString())
-		throw std::invalid_argument("JSON field '" + key + "' expects a string");
-	return field.asString();
-}
-
-bool Utility::jsonBoolField(const Json::Value &value, const std::string &key)
-{
-	const Json::Value &field = value[key];
-	if (!field.isBool())
-		throw std::invalid_argument("JSON field '" + key + "' expects a boolean");
-	return field.asBool();
-}
 
 std::string Utility::stdStringTrim(const std::string &str, char trimChar, bool leftTrim, bool rightTrim)
 {
@@ -140,1192 +97,6 @@ std::string Utility::stdStringTrim(const std::string &str, const std::string &tr
 		result.erase(result.length() - trimChars.length(), trimChars.length());
 	}
 	return result;
-}
-
-const std::string Utility::getExecutablePath()
-{
-	const static char fname[] = "Utility::getExecutablePath() ";
-#if defined(_WIN32)
-	char buf[MAX_PATH] = {0};
-	DWORD len = ::GetModuleFileNameA(NULL, buf, MAX_PATH);
-	if (len == 0 || len >= MAX_PATH)
-	{
-		LOG_ERR << fname << "Failed to retrieve executable path: " << ::GetLastError();
-		return "";
-	}
-
-	return fs::path(buf).string();
-
-#elif defined(__linux__)
-	char buf[PATH_MAX] = {0};
-	auto count = ::readlink("/proc/self/exe", buf, PATH_MAX);
-	if (count < 0 || count >= PATH_MAX)
-	{
-		LOG_ERR << fname << "Failed to read /proc/self/exe: " << last_error_msg();
-		return "";
-	}
-	buf[count] = '\0';
-	return buf;
-
-#elif defined(__APPLE__)
-	std::vector<char> buf(PATH_MAX);
-	uint32_t size = buf.size();
-	if (_NSGetExecutablePath(buf.data(), &size) != 0)
-	{
-		LOG_ERR << fname << "Failed to retrieve executable path";
-		return "";
-	}
-
-	// Resolve symlinks to get the real path
-	char realPath[PATH_MAX] = {0};
-	if (realpath(buf.data(), realPath) == nullptr)
-	{
-		LOG_ERR << fname << "Failed to resolve real path: " << last_error_msg();
-		return "";
-	}
-	return realPath;
-
-#else
-	LOG_ERR << fname << "Platform not supported";
-	return "";
-#endif
-}
-
-const std::string &Utility::getBinDir()
-{
-	static const std::string selfBinDir = fs::path(getExecutablePath()).parent_path().string();
-	return selfBinDir;
-}
-
-const std::string &Utility::getHomeDir()
-{
-	static const std::string homeDir = fs::path(getBinDir()).parent_path().string();
-	return homeDir;
-}
-
-const std::string Utility::getWorkConfigFilePath(const std::string &configFile)
-{
-	return (fs::path(Utility::getHomeDir()) / APPMESH_WORK_DIR / APPMESH_WORK_CONFIG_DIR / configFile).string();
-}
-
-const std::string Utility::getConfigFilePath(const std::string &configFile, bool write)
-{
-	const std::string workingConfigFile = getWorkConfigFilePath(configFile);
-	if (write || Utility::isFileExist(workingConfigFile))
-	{
-		createDirectory((fs::path(Utility::getHomeDir()) / APPMESH_WORK_DIR / APPMESH_WORK_CONFIG_DIR).string(),
-						fs::perms::owner_all);
-		return workingConfigFile;
-	}
-	return (fs::path(Utility::getHomeDir()) / APPMESH_WORK_CONFIG_DIR / configFile).string();
-}
-
-bool Utility::isDirExist(const std::string &path)
-{
-	std::error_code ec;
-	return fs::exists(path, ec) && fs::is_directory(path, ec);
-}
-
-bool Utility::isFileExist(const std::string &path)
-{
-	std::error_code ec;
-	return fs::exists(path, ec) && !fs::is_directory(path, ec);
-}
-
-namespace
-{
-	// Case folds on macOS/Windows so a differently-cased alias of the install tree or /proc cannot slip past; byte-exact elsewhere.
-	bool pathPrefixMatch(const std::string &path, const std::string &prefixWithSlash, const std::string &prefixExact)
-	{
-		const auto equalWithin = [&path](size_t length, const std::string &prefix)
-		{
-#if defined(__APPLE__) || defined(_WIN32)
-			for (size_t i = 0; i < length; i++)
-			{
-				if (std::tolower(static_cast<unsigned char>(path[i])) != std::tolower(static_cast<unsigned char>(prefix[i])))
-					return false;
-			}
-			return true;
-#else
-			return path.compare(0, length, prefix) == 0;
-#endif
-		};
-		if (path.size() == prefixExact.size())
-			return equalWithin(path.size(), prefixExact);
-		// The trailing separator keeps "/opt" from matching "/opt2/...".
-		return path.size() > prefixWithSlash.size() && equalWithin(prefixWithSlash.size(), prefixWithSlash);
-	}
-
-	// Reflect an open directory fd to its real path (F_GETPATH / /proc/self/fd); empty when the platform cannot.
-	std::string reflectDirFdPath(int dirFd)
-	{
-#if defined(__APPLE__)
-		char realPath[4096] // F_GETPATH wants a MAXPATHLEN-sized buffer; larger is fine
-		{
-		};
-		if (::fcntl(dirFd, F_GETPATH, realPath) == 0)
-			return realPath;
-#elif !defined(_WIN32)
-		char fdLink[32];
-		char target[PATH_MAX];
-		::snprintf(fdLink, sizeof(fdLink), "/proc/self/fd/%d", dirFd);
-		const auto len = ::readlink(fdLink, target, sizeof(target) - 1);
-		if (len > 0)
-		{
-			target[len] = '\0';
-			return target;
-		}
-#endif
-		return {};
-	}
-} // namespace
-
-
-bool Utility::validateFilePath(const std::string &filePath, const std::string &allowedBaseDir)
-{
-	// Reject null bytes
-	if (filePath.find('\0') != std::string::npos)
-		return false;
-	// Reject ".." path components (component-level check avoids false positives on names like "..hidden")
-	for (const auto &component : fs::path(filePath))
-	{
-		if (component == "..")
-			return false;
-	}
-	// Reject pseudo filesystems (procfs/sysfs/devfs): their files stat as regular size-0 files, so a
-	// download would answer 200 empty; pathPrefixMatch folds case, covering differently-cased aliases.
-	const auto isPseudoFsPath = [](const std::string &path) {
-		for (const char *pseudo : {"/proc", "/sys", "/dev"})
-		{
-			if (pathPrefixMatch(path, std::string(pseudo) + "/", pseudo))
-				return true;
-		}
-		return false;
-	};
-	if (isPseudoFsPath(filePath))
-		return false;
-	// Enforce base-directory jail when configured
-	if (!allowedBaseDir.empty() && !isPathTraversalSafe(allowedBaseDir, filePath))
-		return false;
-	// The daemon's own tree (binaries, TLS keys, bootstrap credentials, registry) is never
-	// transferable, whatever the jail allows; the exchange roots follow the effective jail
-	// (created at startup, so validation stays side-effect free).
-	const auto jailDir = allowedBaseDir.empty() ? (fs::path(getHomeDir()) / APPMESH_WORK_DIR).string() : allowedBaseDir;
-	const auto inExchange = isPathTraversalSafe((fs::path(jailDir) / APPMESH_WORK_SHARE_DIR).string(), filePath) ||
-							isPathTraversalSafe((fs::path(jailDir) / APPMESH_WORKSPACES_DIR).string(), filePath);
-	if (isPathTraversalSafe(getHomeDir(), filePath) && !inExchange)
-		return false;
-	// The pseudo-fs check above is lexical; follow symlinks so a link planted
-	// in an allowed tree cannot reach /proc behind a permissive jail.
-	std::error_code resolveEc;
-	const auto resolvedPath = fs::canonical(filePath, resolveEc);
-	if (!resolveEc && isPseudoFsPath(resolvedPath.string()))
-		return false;
-	return true;
-}
-
-int Utility::openFileWithinJail(const std::string &filePath, bool forWrite, const std::string &allowedBaseDir,
-								std::string &resolvedOut, bool *rejectedOut, int *dirFdOut)
-{
-	const static char fname[] = "Utility::openFileWithinJail() ";
-	resolvedOut.clear();
-	if (rejectedOut)
-		*rejectedOut = false;
-	if (dirFdOut)
-		*dirFdOut = -1;
-	// Cheap lexical precheck keeps the caller's validate-then-403 log semantics.
-	if (!validateFilePath(filePath, allowedBaseDir))
-	{
-		if (rejectedOut)
-			*rejectedOut = true;
-		return -1;
-	}
-
-#if defined(_WIN32)
-	// Windows offers no fd-to-path reflection, so the lexical check above is the
-	// whole gate there (platform limitation; behavior matches the pre-fix code).
-	const int fd = ::_open(filePath.c_str(),
-						   forWrite ? (_O_WRONLY | _O_CREAT | _O_EXCL | _O_BINARY) : (_O_RDONLY | _O_BINARY),
-						   _S_IREAD | _S_IWRITE);
-	if (fd < 0)
-	{
-		LOG_ERR << fname << "Failed to open <" << filePath << ">: " << last_error_msg();
-		return -1;
-	}
-	resolvedOut = filePath;
-	struct _stat st
-	{
-	};
-	if (forWrite || (_fstat(fd, &st) == 0 && (st.st_mode & _S_IFMT) == _S_IFREG))
-		return fd;
-	::_close(fd);
-	return -1;
-#else
-	int fd = -1;
-	int dirFd = -1;
-	std::string exclusiveName; // the O_EXCL name inside the pinned dirFd (cleanup on reject)
-	if (forWrite)
-	{
-		// Create the unique temp name inside its parent directory through a pinned
-		// dirfd: the exclusive name then lives in the directory actually walked, so a
-		// rejected jail check can drop exactly the file this call just created.
-		const fs::path temp(filePath);
-		exclusiveName = temp.filename().string();
-		dirFd = ::open(temp.parent_path().c_str(), O_RDONLY | O_DIRECTORY | O_CLOEXEC);
-		if (dirFd < 0 || exclusiveName.empty() || exclusiveName == "." || exclusiveName == "..")
-		{
-			if (dirFd >= 0)
-				::close(dirFd);
-			return -1;
-		}
-		fd = ::openat(dirFd, exclusiveName.c_str(), O_WRONLY | O_CREAT | O_EXCL | O_CLOEXEC, 0644);
-		if (fd < 0)
-		{
-			::close(dirFd);
-			return -1;
-		}
-	}
-	else
-	{
-		fd = ::open(filePath.c_str(), O_RDONLY | O_CLOEXEC);
-		if (fd < 0)
-		{
-			LOG_ERR << fname << "Failed to open <" << filePath << "> for reading: " << last_error_msg();
-			return -1;
-		}
-		struct stat st
-		{
-		};
-		if (::fstat(fd, &st) != 0)
-		{
-			LOG_ERR << fname << "Failed to stat <" << filePath << ">: " << last_error_msg();
-			::close(fd);
-			return -1;
-		}
-		if (!S_ISREG(st.st_mode))
-		{
-			// Directories (and anything non-regular) are not transferable payloads.
-			LOG_ERR << fname << "Not a regular file, refusing the transfer of <" << filePath << ">";
-			::close(fd);
-			return -1;
-		}
-		// A hardlink passes every path gate but still reads the excluded inode; serve single-link files only.
-		if (st.st_nlink != 1)
-		{
-			if (rejectedOut)
-				*rejectedOut = true;
-			::close(fd);
-			return -1;
-		}
-	}
-
-	// Resolve what the descriptor ACTUALLY landed on and re-run the full jail
-	// rules there: the fd pins the inode, so a component swapped to a symlink
-	// between the check above and the open cannot hide behind the original name.
-	std::string resolved;
-#if defined(__APPLE__)
-	char realPath[4096] // F_GETPATH wants a MAXPATHLEN-sized buffer; larger is fine
-	{
-	};
-	if (::fcntl(fd, F_GETPATH, realPath) == 0)
-		resolved = realPath;
-#else
-	char fdLink[32];
-	char target[PATH_MAX];
-	::snprintf(fdLink, sizeof(fdLink), "/proc/self/fd/%d", fd);
-	const auto len = ::readlink(fdLink, target, sizeof(target) - 1);
-	if (len > 0)
-	{
-		target[len] = '\0';
-		resolved = target;
-	}
-#endif
-	if (resolved.empty() || !validateFilePath(resolved, allowedBaseDir))
-	{
-		LOG_ERR << fname << "Resolved location <" << resolved << "> of <" << filePath
-				<< "> is outside the allowed jail; rejecting the transfer";
-		if (rejectedOut)
-			*rejectedOut = true;
-		// ENOENT: a racing writer already dropped the rejected temp.
-		if (forWrite && !exclusiveName.empty() && ::unlinkat(dirFd, exclusiveName.c_str(), 0) != 0 && errno != ENOENT)
-			LOG_ERR << fname << "Failed to unlink rejected temp file <" << exclusiveName << ">: " << last_error_msg();
-		::close(fd);
-		if (dirFd >= 0)
-			::close(dirFd);
-		return -1;
-	}
-	resolvedOut = resolved;
-	if (dirFd >= 0)
-	{
-		// Hand the pinned parent to an upload commit; otherwise it has no further use.
-		if (dirFdOut != nullptr)
-			*dirFdOut = dirFd;
-		else
-			::close(dirFd);
-	}
-	return fd;
-#endif
-}
-
-Utility::JailUnlinkStatus Utility::unlinkFileWithinJail(const std::string &filePath, const std::string &allowedBaseDir,
-														std::string &resolvedOut)
-{
-	const static char fname[] = "Utility::unlinkFileWithinJail() ";
-	resolvedOut.clear();
-	if (!validateFilePath(filePath, allowedBaseDir))
-		return JailUnlinkStatus::Rejected;
-
-#if defined(_WIN32)
-	// Windows offers no fd-to-path reflection, so the lexical check above is the
-	// whole gate there (same platform limitation openFileWithinJail documents).
-	struct _stat st
-	{
-	};
-	if (::_stat(filePath.c_str(), &st) != 0)
-		return JailUnlinkStatus::NotFound;
-	if ((st.st_mode & _S_IFMT) != _S_IFREG)
-		return JailUnlinkStatus::NotFound;
-	if (::_unlink(filePath.c_str()) != 0)
-	{
-		LOG_ERR << fname << "Failed to unlink <" << filePath << ">: " << last_error_msg();
-		return JailUnlinkStatus::Failed;
-	}
-	resolvedOut = filePath;
-	return JailUnlinkStatus::Removed;
-#else
-	const fs::path target(filePath);
-	const auto leaf = target.filename().string();
-	if (!target.is_absolute() || leaf.empty() || leaf == "." || leaf == "..")
-		return JailUnlinkStatus::Failed;
-
-	// Walk every parent component relative to the pinned dirfd (the walk may traverse legitimate symlinks), but the
-	// final pinned directory is reflected and re-validated below, so a middle swap outside the jail is rejected first.
-	int dirFd = ::open("/", O_RDONLY | O_DIRECTORY | O_CLOEXEC);
-	for (const auto &component : target.parent_path())
-	{
-		if (component == "/" || component.empty())
-			continue;
-		const auto next = ::openat(dirFd, component.c_str(), O_RDONLY | O_DIRECTORY | O_CLOEXEC);
-		::close(dirFd);
-		if (next < 0)
-		{
-			LOG_ERR << fname << "Failed to pin parent directory of <" << filePath << ">: " << last_error_msg();
-			return JailUnlinkStatus::Failed;
-		}
-		dirFd = next;
-	}
-	const auto closeGuard = [&dirFd]()
-	{ ::close(dirFd); };
-
-	// The pinned directory decides: re-run the jail rules on its reflected path, then require a regular non-symlink leaf.
-	const auto resolvedDir = reflectDirFdPath(dirFd);
-	if (resolvedDir.empty())
-	{
-		closeGuard();
-		return JailUnlinkStatus::Failed;
-	}
-	const auto resolvedLeafPath = (fs::path(resolvedDir) / leaf).string();
-	if (!validateFilePath(resolvedLeafPath, allowedBaseDir))
-	{
-		LOG_ERR << fname << "Resolved location <" << resolvedLeafPath << "> of <" << filePath
-				<< "> is outside the allowed jail; rejecting the delete";
-		closeGuard();
-		return JailUnlinkStatus::Rejected;
-	}
-	struct stat st
-	{
-	};
-	if (::fstatat(dirFd, leaf.c_str(), &st, AT_SYMLINK_NOFOLLOW) != 0)
-	{
-		closeGuard();
-		return JailUnlinkStatus::NotFound;
-	}
-	if (!S_ISREG(st.st_mode))
-	{
-		// Directories and symlinks are not deletable payloads (the routes always refuse them; the pin only removes the race).
-		closeGuard();
-		return JailUnlinkStatus::NotFound;
-	}
-	if (::unlinkat(dirFd, leaf.c_str(), 0) != 0)
-	{
-		LOG_ERR << fname << "Failed to unlink <" << resolvedLeafPath << ">: " << last_error_msg();
-		closeGuard();
-		return JailUnlinkStatus::Failed;
-	}
-	closeGuard();
-	resolvedOut = resolvedLeafPath;
-	return JailUnlinkStatus::Removed;
-#endif
-}
-
-bool Utility::createDirectoriesWithinJail(const std::string &dirPath, const std::string &allowedBaseDir)
-{
-	const static char fname[] = "Utility::createDirectoriesWithinJail() ";
-	// The not-yet-existing tail is covered by the ancestor-walk inside the check.
-	if (!validateFilePath(dirPath, allowedBaseDir))
-		return false;
-
-#if defined(_WIN32)
-	// No fd machinery to pin with on Windows; the lexical check above is the gate.
-	std::error_code ec;
-	return fs::create_directories(dirPath, ec) || (!ec && isDirExist(dirPath));
-#else
-	const fs::path target(dirPath);
-	if (!target.is_absolute())
-		return false;
-	int dirFd = ::open("/", O_RDONLY | O_DIRECTORY | O_CLOEXEC);
-	for (const auto &component : target)
-	{
-		if (component == "/" || component.empty())
-			continue;
-		auto next = ::openat(dirFd, component.c_str(), O_RDONLY | O_DIRECTORY | O_CLOEXEC);
-		if (next < 0 && errno == ENOENT)
-		{
-			// Create the missing component only inside a directory that just passed the jail check on its pinned fd,
-			// so a middle directory swapped outside the jail is rejected before any mkdir.
-			const auto pinned = reflectDirFdPath(dirFd);
-			if (pinned.empty() || !validateFilePath(pinned, allowedBaseDir))
-			{
-				LOG_ERR << fname << "Resolved parent <" << pinned << "> of <" << dirPath
-						<< "> is outside the allowed jail; refusing to create directories";
-				::close(dirFd);
-				return false;
-			}
-			if (::mkdirat(dirFd, component.c_str(), 0755) != 0)
-			{
-				LOG_ERR << fname << "Failed to create <" << component << "> inside the jail: " << last_error_msg();
-				::close(dirFd);
-				return false;
-			}
-			next = ::openat(dirFd, component.c_str(), O_RDONLY | O_DIRECTORY | O_CLOEXEC);
-		}
-		::close(dirFd);
-		if (next < 0)
-		{
-			LOG_ERR << fname << "Failed to pin <" << component << "> of <" << dirPath << ">: " << last_error_msg();
-			return false;
-		}
-		dirFd = next;
-	}
-	const auto resolvedDir = reflectDirFdPath(dirFd);
-	::close(dirFd);
-	if (resolvedDir.empty())
-		return false;
-	// The created tree must sit where the jail said it would.
-	return validateFilePath(resolvedDir, allowedBaseDir);
-#endif
-}
-
-bool Utility::createDirectory(const std::string &path, fs::perms perms)
-{
-	const static char fname[] = "Utility::createDirectory() ";
-
-	if (!isDirExist(path))
-	{
-		const fs::path directoryPath = fs::path(path);
-		if (!fs::create_directories(directoryPath))
-		{
-			LOG_ERR << fname << "Failed to create directory <" << path << "> with error: " << last_error_msg();
-			return false;
-		}
-		// os::chown(getuid(), getgid(), path, false);
-		LOG_DBG << fname << "Created directory <" << path << ">";
-		fs::permissions(directoryPath, perms);
-	}
-	return true;
-}
-
-bool Utility::createRecursiveDirectory(const std::string &path, fs::perms perms)
-{
-	const static char fname[] = "Utility::createRecursiveDirectory() ";
-	try
-	{
-		if (fs::exists(path))
-			return true;
-
-		// This is where the crash happens
-		if (fs::create_directories(path))
-		{
-			// Set permissions (ignoring errors if we don't own the file)
-			std::error_code ec;
-			fs::permissions(path, perms, ec);
-			return true;
-		}
-	}
-	catch (const std::exception &e)
-	{
-		// VITAL: Catch the permission error so the app survives
-		LOG_WAR << fname << "Cannot create directory <" << path << ">. Container might be read-only. Error: " << e.what();
-	}
-	return false;
-}
-
-bool Utility::removeDir(const std::string &path)
-{
-	const static char fname[] = "Utility::removeDir() ";
-
-	std::error_code ec;
-	if (fs::exists(path, ec))
-	{
-		auto removed = fs::remove_all(path, ec);
-		if (ec)
-		{
-			LOG_ERR << fname << "Failed to remove <" << path << "> with error: " << ec.message();
-			return false;
-		}
-		else
-		{
-			LOG_INF << fname << "removed <" << removed << "> files/directories from <" << path << ">";
-			return true;
-		}
-	}
-	return true;
-}
-
-void Utility::removeFile(const std::string &path)
-{
-	const static char fname[] = "Utility::removeFile() ";
-
-	if (path.length() && isFileExist(path))
-	{
-		std::error_code ec;
-		fs::remove(path, ec);
-		if (ec)
-			LOG_WAR << fname << "Failed to remove file <" << path << "> with error: " << ec.message();
-		else
-			LOG_DBG << fname << "file <" << path << "> removed";
-	}
-}
-
-bool Utility::runningInContainer()
-{
-	static const bool isInContainer = []()
-	{
-		// Support standard and legacy container markers.
-		if (std::ifstream("/.dockerenv").good() || std::ifstream("/run/.dockerenv").good() ||
-			std::ifstream("/run/.containerenv").good())
-		{
-			return true;
-		}
-		const char *containerRuntime = std::getenv("container");
-		if (containerRuntime != nullptr && containerRuntime[0] != '\0')
-		{
-			return true;
-		}
-
-#if defined(__linux__)
-		// Detect runtimes without marker files.
-		const auto cgroup = Utility::readFileCpp("/proc/self/cgroup");
-		static const std::vector<std::string> containerCgroupMarkers = {"docker", "kubepods", "containerd",
-																		"libpod", "podman",   "lxc"};
-		return std::any_of(containerCgroupMarkers.begin(), containerCgroupMarkers.end(),
-						   [&cgroup](const std::string &marker) { return cgroup.find(marker) != std::string::npos; });
-#else
-		return false;
-#endif
-	}();
-
-	return isInContainer;
-}
-
-namespace
-{
-	// Blocking resolver core; getaddrinfo decides the wait.
-	std::string resolveHostAddressBlocking(const std::string &host, std::string &errorText);
-}
-
-std::string Utility::resolveHostAddress(const std::string &host, std::string &errorText, long timeoutSeconds)
-{
-	// Literals skip the resolver and the bounded path below.
-	struct in_addr v4;
-	struct in6_addr v6;
-	if (host.find(':') != std::string::npos)
-	{
-		if (inet_pton(AF_INET6, host.c_str(), &v6) == 1)
-			return host;
-	}
-	else if (inet_pton(AF_INET, host.c_str(), &v4) == 1)
-	{
-		return host;
-	}
-
-	if (timeoutSeconds <= 0)
-		return resolveHostAddressBlocking(host, errorText);
-
-	// getaddrinfo has no timeout; resolve on a helper thread bounded by the
-	// caller's budget. On timeout the thread is abandoned and exits on its own.
-	auto result = std::make_shared<std::promise<std::pair<std::string, std::string>>>();
-	auto future = result->get_future();
-	std::thread(
-		[host, result = std::move(result)]()
-		{
-			std::string threadError;
-			std::string ip = resolveHostAddressBlocking(host, threadError);
-			result->set_value({std::move(ip), std::move(threadError)});
-		})
-		.detach();
-	if (future.wait_for(std::chrono::seconds(timeoutSeconds)) != std::future_status::ready)
-	{
-		errorText = "cannot resolve " + host + ": timed out after " + std::to_string(timeoutSeconds) + "s";
-		return std::string();
-	}
-	auto resolved = future.get();
-	errorText = std::move(resolved.second);
-	return resolved.first;
-}
-
-namespace
-{
-	// Blocking resolver core; getaddrinfo decides the wait.
-	std::string resolveHostAddressBlocking(const std::string &host, std::string &errorText)
-	{
-		// An address literal passes through; a host name resolves via getaddrinfo.
-		struct in_addr v4;
-		struct in6_addr v6;
-		if (host.find(':') != std::string::npos)
-		{
-			if (inet_pton(AF_INET6, host.c_str(), &v6) == 1)
-				return host;
-		}
-		else if (inet_pton(AF_INET, host.c_str(), &v4) == 1)
-		{
-			return host;
-		}
-
-		struct addrinfo hints;
-		memset(&hints, 0, sizeof(hints));
-		hints.ai_family = AF_UNSPEC; // resolve both families
-		hints.ai_socktype = SOCK_STREAM;
-		hints.ai_flags = AI_ADDRCONFIG; // skip AAAA on v4-only hosts and vice versa
-		struct addrinfo *result = nullptr;
-		const int rc = ::getaddrinfo(host.c_str(), nullptr, &hints, &result);
-		if (rc != 0 || result == nullptr)
-		{
-			errorText = "cannot resolve " + host + ": " + gai_strerror(rc);
-			return std::string();
-		}
-
-		// Prefer IPv4: a dual-stack target keeps its legacy reachability, a v6-only
-		// target still resolves through its AAAA record.
-		const addrinfo *chosen = result;
-		for (const addrinfo *ai = result; ai != nullptr; ai = ai->ai_next)
-		{
-			if (ai->ai_family == AF_INET)
-			{
-				chosen = ai;
-				break;
-			}
-		}
-
-		char numeric[INET6_ADDRSTRLEN] = {0};
-		if (::getnameinfo(chosen->ai_addr, chosen->ai_addrlen, numeric, sizeof(numeric), nullptr, 0, NI_NUMERICHOST) != 0)
-		{
-			::freeaddrinfo(result);
-			errorText = "cannot convert resolved address of " + host;
-			return std::string();
-		}
-		::freeaddrinfo(result);
-		// InetAddress parses with bare inet_pton, so a scope-qualified address
-		// would silently fall back to the wildcard address.
-		if (strchr(numeric, '%') != nullptr)
-		{
-			errorText = "scope-qualified address <" + std::string(numeric) + "> of " + host + " is not supported";
-			return std::string();
-		}
-		return numeric;
-	}
-} // namespace
-
-bool Utility::ensureSystemRoot()
-{
-	// https://github.com/pypa/hatch/issues/1598
-	// https://stackoverflow.com/questions/1554878/why-does-windows-not-allow-winsock-to-be-started-while-impersonating-another-use
-	// https://github.com/golang/go/issues/61452
-	// https://github.com/golang/go/issues/26457
-	// https://go-review.googlesource.com/c/go/+/124858
-#if defined(_WIN32)
-	std::string systemRoot = Utility::getenv("SYSTEMROOT");
-	if (systemRoot.empty())
-	{
-		char sysDir[MAX_PATH] = {0};
-		UINT sysLen = GetSystemWindowsDirectoryA(sysDir, MAX_PATH);
-		if (sysLen == 0 || sysLen >= MAX_PATH)
-		{
-			strcpy_s(sysDir, MAX_PATH, "C:\\Windows"); // fallback
-			std::cerr << "[Warning] GetSystemWindowsDirectoryA failed; using fallback: " << sysDir << std::endl;
-		}
-		systemRoot = sysDir;
-
-		if (_putenv_s("SYSTEMROOT", systemRoot.c_str()) != 0)
-		{
-			std::cerr << "[Error] Failed to set SYSTEMROOT to: " << systemRoot << " (Error " << last_error_msg() << ")"
-					  << std::endl;
-			return false;
-		}
-		std::cout << "[Info] SYSTEMROOT set to: " << systemRoot << std::endl;
-	}
-	else
-	{
-		std::cout << "[Info] SYSTEMROOT already set to: " << systemRoot << std::endl;
-	}
-
-#endif
-	return true;
-}
-
-void Utility::initLogging(const std::string &name)
-{
-	std::vector<spdlog::sink_ptr> sinks;
-
-	// Console sink
-	auto consoleSink = std::make_shared<spdlog::sinks::stdout_color_sink_mt>();
-	sinks.push_back(consoleSink);
-
-	// Rotating file sink
-	if (!name.empty())
-	{
-		auto logPath = (fs::path(Utility::getHomeDir()) / APPMESH_WORK_DIR / name).string() + ".log";
-		constexpr size_t maxFileSize = 50 * 1024 * 1024; // 50MB
-		constexpr size_t maxFiles = 5;
-
-		auto fileSink = std::make_shared<spdlog::sinks::rotating_file_sink_mt>(logPath, maxFileSize, maxFiles, false);
-		sinks.push_back(fileSink);
-	}
-
-	// Create logger
-	auto logger = std::make_shared<spdlog::logger>("appmesh", sinks.begin(), sinks.end());
-	spdlog::set_default_logger(logger);
-	// Flush everything at once: every enabled level reaches the file as it is
-	// emitted, so diagnosis during an incident never reads a stale tail.
-	logger->flush_on(spdlog::level::debug);
-
-	// Pattern
-	// %l = full level name (info/warning/error/debug). %L would print single chars E/D.
-	spdlog::set_pattern("[%Y-%m-%d %H:%M:%S.%e] [%t] %l: %v");
-
-	// Log level from env
-	auto levelEnv = Utility::getenv("LOG_LEVEL");
-	if (!levelEnv.empty())
-		setLogLevel(levelEnv);
-
-	LOG_DBG << "Logging process ID: " << os::getpid();
-}
-
-bool Utility::setLogLevel(const std::string &level)
-{
-	static std::map<std::string, spdlog::level::level_enum> levelMap = {
-		{"NOTSET", spdlog::level::off},     {"DEBUG", spdlog::level::debug},    {"INFO", spdlog::level::info},
-		{"WARN", spdlog::level::warn},      {"ERROR", spdlog::level::err},      {"CRIT", spdlog::level::critical},
-		{"ALERT", spdlog::level::critical}, {"FATAL", spdlog::level::critical}, {"EMERG", spdlog::level::critical}};
-
-	if (auto it = levelMap.find(level); it != levelMap.end())
-	{
-		spdlog::set_level(it->second);
-		LOG_INF << "Set log level to <" << level << ">";
-		return true;
-	}
-	else
-	{
-		LOG_ERR << "Unknown log level <" << level << ">";
-		return false;
-	}
-}
-
-unsigned long long Utility::getThreadId()
-{
-	std::ostringstream oss;
-	oss << std::this_thread::get_id();
-	return std::stoull(oss.str());
-}
-
-void Utility::setThreadName(const std::string &name)
-{
-#if defined(_WIN32)
-	std::wstring wide(name.begin(), name.end());
-	SetThreadDescription(GetCurrentThread(), wide.c_str());
-#else
-	// pthread names are capped at 15 characters plus the terminator.
-	const auto capped = name.substr(0, 15);
-#if defined(__APPLE__)
-	pthread_setname_np(capped.c_str());
-#else
-	pthread_setname_np(pthread_self(), capped.c_str());
-#endif
-#endif
-}
-
-std::string Utility::encode64(const std::string &val) { return drogon::utils::base64Encode(val); }
-
-std::string Utility::decode64(const std::string &val) { return drogon::utils::base64Decode(val); }
-
-std::string Utility::encodeURIComponent(const std::string &str)
-{
-	std::ostringstream escaped;
-	escaped.fill('0');
-	escaped << std::hex;
-
-	for (char c : str)
-	{
-		// JavaScript's encodeURIComponent escapes all characters except:
-		// A-Z a-z 0-9 - _ . ! ~ * ' ( )
-		if (isalnum(c) || c == '-' || c == '_' || c == '.' || c == '!' || c == '~' || c == '*' || c == '\'' || c == '(' ||
-			c == ')')
-		{
-			escaped << c;
-		}
-		else
-		{
-			escaped << std::uppercase;
-			escaped << '%' << std::setw(2) << int((unsigned char)c);
-			escaped << std::nouppercase;
-		}
-	}
-
-	return escaped.str();
-}
-
-std::string Utility::decodeURIComponent(const std::string &encoded)
-{
-	std::string result;
-	size_t i = 0;
-
-	while (i < encoded.size())
-	{
-		if (encoded[i] == '%')
-		{
-			if (i + 2 < encoded.size() && std::isxdigit(static_cast<unsigned char>(encoded[i + 1])) &&
-				std::isxdigit(static_cast<unsigned char>(encoded[i + 2])))
-			{
-				int value = std::stoi(encoded.substr(i + 1, 2), nullptr, 16);
-				result += static_cast<char>(value);
-				i += 3;
-			}
-			else
-			{
-				throw std::invalid_argument("URI malformed");
-			}
-		}
-		else
-		{
-			result += encoded[i];
-			i++;
-		}
-	}
-
-	return result;
-}
-
-std::string Utility::decodeHeaderFilePath(const std::string &val)
-{
-	const static char fname[] = "Utility::decodeHeaderFilePath() ";
-	if (val.find('%') == std::string::npos)
-	{
-		return val;
-	}
-	try
-	{
-		return decodeURIComponent(val);
-	}
-	catch (const std::exception &e)
-	{
-		LOG_WAR << fname << "malformed percent escape in header value, keep raw: " << e.what();
-		return val;
-	}
-}
-
-std::string Utility::readFile(const std::string &path)
-{
-	const static char fname[] = "Utility::readFile() ";
-
-	FILE *file = ::fopen(path.c_str(), "r");
-	if (nullptr == file)
-	{
-		if (!startWith(path, "/proc/"))
-			LOG_WAR << fname << "Failed to open file <" << path << "> with error: " << last_error_msg();
-		return "";
-	}
-
-	// Use a buffer to read the file in BUFSIZ
-	// chunks and append it to the string we return.
-	//
-	// NOTE: We aren't able to use fseek() / ftell() here
-	// to find the file size because these functions don't
-	// work properly for in-memory files like /proc/*/stat.
-	char *buffer = new char[BUFSIZ];
-	std::string result;
-
-	while (true)
-	{
-		std::size_t read = ::fread(buffer, 1, BUFSIZ, file);
-
-		if (::ferror(file))
-		{
-			// NOTE: ferror() will not modify errno if the stream
-			// is valid, which is the case here since it is open.
-			LOG_ERR << fname << "Failed to read file <" << path << "> with error: " << last_error_msg();
-			delete[] buffer;
-			::fclose(file);
-			return "";
-		}
-
-		result.append(buffer, read);
-
-		if (read != BUFSIZ)
-		{
-			assert(feof(file));
-			break;
-		}
-	};
-
-	::fclose(file);
-	delete[] buffer;
-	return result;
-}
-
-std::string Utility::readFileCpp(const std::string &path)
-{
-	const static char fname[] = "Utility::readFileCpp() ";
-
-	std::ifstream file(path.c_str(), std::ios::in | std::ios::binary);
-	if (!file)
-	{
-		LOG_WAR << fname << "Cannot open file <" << path << ">";
-		return std::string();
-	}
-
-	std::string content;
-
-	// Try to reserve size if this is a regular file
-	file.seekg(0, std::ios::end);
-	const std::streamoff size = file.tellg();
-	if (size > 0)
-		content.reserve(static_cast<size_t>(size));
-	file.seekg(0, std::ios::beg);
-
-	content.assign(std::istreambuf_iterator<char>(file), std::istreambuf_iterator<char>());
-
-	return content;
-}
-
-std::string Utility::localEncodingToUtf8(const std::string &ansi)
-{
-#if defined(_WIN32)
-	// Windows: ANSI → UTF-8
-	if (ansi.empty())
-		return {};
-
-	int wideLen = MultiByteToWideChar(CP_ACP, 0, ansi.data(), static_cast<int>(ansi.size()), nullptr, 0);
-	if (wideLen <= 0)
-		return {};
-
-	std::wstring wideStr(wideLen, L'\0');
-	MultiByteToWideChar(CP_ACP, 0, ansi.data(), static_cast<int>(ansi.size()), wideStr.data(), wideLen);
-
-	int utf8Len = WideCharToMultiByte(CP_UTF8, 0, wideStr.data(), wideLen, nullptr, 0, nullptr, nullptr);
-	if (utf8Len <= 0)
-		return {};
-
-	std::string utf8Str(utf8Len, '\0');
-	WideCharToMultiByte(CP_UTF8, 0, wideStr.data(), wideLen, utf8Str.data(), utf8Len, nullptr, nullptr);
-
-	return utf8Str;
-#else
-	// POSIX: already UTF-8
-	return ansi;
-#endif
-}
-
-// TODO: use ICU for detectAndConvertToUTF8
-/*
-#include <unicode/ucsdet.h>
-#include <unicode/ucnv.h>
-
-std::string detectAndConvertToUTF8(const std::string& input) {
-	UErrorCode status = U_ZERO_ERROR;
-	UCharsetDetector* detector = ucsdet_open(&status);
-
-	ucsdet_setText(detector, input.c_str(), input.length(), &status);
-	const UCharsetMatch* match = ucsdet_detect(detector, &status);
-
-	if (match) {
-		const char* encoding = ucsdet_getName(match, &status);
-		// Convert using ICU converter
-		UConverter* conv = ucnv_open(encoding, &status);
-		// ... conversion code
-	}
-
-	ucsdet_close(detector);
-	return result;
-}
-*/
-// Helper function to validate UTF-8
-// Helper function to convert from specific codepage to UTF-8
-std::string Utility::readFileCpp(const std::string &path, long *position, long maxSize, bool readLine)
-{
-	const static char fname[] = "Utility::readFileCpp() ";
-
-	if (!Utility::isFileExist(path))
-	{
-		LOG_WAR << fname << "File <" << path << "> does not exist";
-		return std::string();
-	}
-
-	std::ifstream fileStream(path, std::ios::in | std::ios::binary);
-	if (!fileStream.is_open())
-	{
-		LOG_ERR << fname << "Failed to open file <" << path << ">";
-		return std::string();
-	}
-
-	// Get file size
-	fileStream.seekg(0, std::ios::end);
-	const std::streampos fileSize = fileStream.tellg();
-	if (fileSize == std::streampos(-1))
-	{
-		LOG_ERR << fname << "Failed to get size of file <" << path << ">";
-		return std::string();
-	}
-
-	// Validate position
-	if (position && *position > fileSize)
-	{
-		throw std::invalid_argument(
-			Utility::stringFormat("Invalid position <%ld>, file size: <%ld>", *position, static_cast<long>(fileSize)));
-	}
-
-	fileStream.clear();
-
-	// Set read position
-	if (position && *position >= 0)
-		fileStream.seekg(*position);
-	else
-		fileStream.seekg(0, std::ios::beg);
-	if (!fileStream.good())
-	{
-		LOG_ERR << fname << "Failed to seek to read position in file <" << path << ">";
-		return std::string();
-	}
-
-	std::string result;
-
-	if (maxSize >= 0)
-	{
-		// Forward reading
-		size_t readSize = (maxSize == 0) ? static_cast<size_t>(fileSize)
-										 : std::min(static_cast<size_t>(maxSize), static_cast<size_t>(fileSize));
-
-		if (readLine)
-		{
-			std::string line;
-			if (std::getline(fileStream, line))
-			{
-				result = line.substr(0, readSize);
-			}
-		}
-		else
-		{
-			result.resize(readSize);
-			fileStream.read(&result[0], readSize);
-			result.resize(fileStream.gcount()); // Adjust to actual bytes read
-		}
-	}
-	else
-	{
-		// Reverse reading
-		size_t readSize = std::min(static_cast<size_t>(-maxSize), static_cast<size_t>(fileSize));
-
-		// Adjust position for reverse reading
-		if (position && *position == 0)
-		{
-			if (!fileStream.seekg(0, std::ios::end))
-			{
-				LOG_ERR << fname << "Failed to seek to end of file <" << path << "> for reverse reading";
-				return std::string();
-			}
-		}
-
-		const std::streampos endPos = fileStream.tellg();
-		if (endPos == std::streampos(-1))
-		{
-			LOG_ERR << fname << "Failed to get current position in file <" << path << ">";
-			return std::string();
-		}
-
-		if (readLine)
-		{
-			// Reverse line reading
-			result.reserve(readSize);
-			size_t bytesRead = 0;
-			while (fileStream.tellg() > 0 && bytesRead < readSize)
-			{
-				if (!fileStream.seekg(-1, std::ios::cur))
-				{
-					break;
-				}
-
-				int c = fileStream.get();
-				if (c == EOF || c == '\n')
-				{
-					break;
-				}
-
-				result.push_back(static_cast<char>(c));
-				if (!fileStream.seekg(-1, std::ios::cur))
-				{
-					break;
-				}
-
-				++bytesRead;
-			}
-			std::reverse(result.begin(), result.end());
-		}
-		else
-		{
-			// Reverse block reading
-			if (endPos > static_cast<std::streamoff>(readSize))
-			{
-				if (!fileStream.seekg(-static_cast<std::streamoff>(readSize), std::ios::end))
-				{
-					LOG_ERR << fname << "Failed to seek in file <" << path << "> for reverse reading";
-					return std::string();
-				}
-			}
-			else
-			{
-				if (!fileStream.seekg(0, std::ios::beg))
-				{
-					LOG_ERR << fname << "Failed to seek to beginning of file <" << path << ">";
-					return std::string();
-				}
-				readSize = static_cast<size_t>(endPos);
-			}
-
-			result.resize(readSize);
-			if (!fileStream.read(&result[0], readSize))
-			{
-				LOG_ERR << fname << "Failed to read content of file <" << path << ">";
-				return std::string();
-			}
-			result.resize(fileStream.gcount());
-		}
-	}
-
-	// Update position
-	if (position)
-	{
-		const std::streampos currentPos = fileStream.tellg();
-		if (currentPos == std::streampos(-1))
-		{
-			// If we can't get the position, estimate it
-			*position = *position + static_cast<long>(result.size());
-		}
-		else
-		{
-			*position = static_cast<long>(currentPos);
-		}
-	}
-
-	return fileBytesToUtf8(result);
 }
 
 std::string Utility::shortID()
@@ -1358,120 +129,6 @@ std::string Utility::uuid()
 	result.erase(std::remove(result.begin(), result.end(), '-'), result.end());
 
 	return result.empty() ? shortID() : result;
-}
-
-bool &Utility::pidFileLockOwned()
-{
-	static bool owned = false;
-	return owned;
-}
-
-bool Utility::ownsPidFileLock() { return pidFileLockOwned(); }
-
-bool Utility::createPidFile()
-{
-	const static char fname[] = "Utility::createPidFile() ";
-	// https://stackoverflow.com/questions/5339200/how-to-create-a-single-instance-application-in-c-or-c
-	// https://stackoverflow.com/questions/65738650/c-create-a-pid-file-using-system-call
-	const auto pidFile = (fs::path(Utility::getHomeDir()) / PID_FILE).string();
-
-#if !defined(_WIN32)
-	// No O_TRUNC: the running daemon's PID must survive a failed lock attempt.
-	int fd = open(pidFile.c_str(), O_CREAT | O_RDWR, 0666);
-	if (fd < 0)
-	{
-		LOG_ERR << fname << "Failed to create PID file [" << pidFile << "]: " << last_error_msg();
-		return false;
-	}
-
-	if (flock(fd, LOCK_EX | LOCK_NB) == 0)
-	{
-		LOG_INF << fname << "New process running. PID file locked: " << pidFile;
-		std::string pid = std::to_string(getpid());
-		if (ftruncate(fd, 0) != 0 || lseek(fd, 0, SEEK_SET) != 0 || write(fd, pid.c_str(), pid.length()) <= 0)
-		{
-			LOG_ERR << fname << "Failed to write PID to file [" << pidFile << "]: " << last_error_msg();
-			close(fd);
-			return false;
-		}
-		pidFileLockOwned() = true;
-		return true;
-	}
-	else
-	{
-		if (errno == EWOULDBLOCK)
-		{
-			LOG_ERR << fname << "Process already running. PID file locked: " << pidFile;
-		}
-		else
-		{
-			LOG_ERR << fname << "Failed to lock PID file [" << pidFile << "]: " << last_error_msg();
-		}
-		close(fd);
-		return false;
-	}
-
-#else
-	// Windows implementation using file locking
-	// Read and write stay unshared, which is the single-instance lock itself;
-	// sharing only the delete lets the shutdown path remove the file while this
-	// handle is still open.
-	HANDLE hFile = CreateFileA(pidFile.c_str(), GENERIC_READ | GENERIC_WRITE, FILE_SHARE_DELETE, NULL, CREATE_ALWAYS,
-							   FILE_ATTRIBUTE_NORMAL, NULL);
-
-	if (hFile == INVALID_HANDLE_VALUE)
-	{
-		DWORD error = GetLastError();
-		if (error == ERROR_SHARING_VIOLATION)
-		{
-			LOG_ERR << fname << "Process already running. PID file locked: " << pidFile;
-		}
-		else
-		{
-			LOG_ERR << fname << "Failed to create PID file <" << pidFile << "> with error " << error;
-		}
-		return false;
-	}
-
-	std::string pid = std::to_string(os::getpid());
-	DWORD bytesWritten;
-	if (!WriteFile(hFile, pid.c_str(), static_cast<DWORD>(pid.length()), &bytesWritten, NULL))
-	{
-		LOG_ERR << fname << "Failed to write PID to file <" << pidFile << "> with error " << GetLastError();
-		CloseHandle(hFile);
-		return false;
-	}
-
-	LOG_INF << fname << "New process running. PID file locked: " << pidFile;
-	// Keep handle open to maintain lock
-	pidFileLockOwned() = true;
-	return true;
-#endif
-}
-
-void Utility::addExtraAppTimeReferStr(Json::Value &appJson)
-{
-	// append extra string format for time values
-	Utility::appendStrTimeAttr(appJson, JSON_KEY_APP_register_time);
-	Utility::appendStrTimeAttr(appJson, JSON_KEY_APP_start_time);
-	Utility::appendStrTimeAttr(appJson, JSON_KEY_APP_end_time);
-	Utility::appendStrTimeAttr(appJson, JSON_KEY_APP_last_start);
-	Utility::appendStrTimeAttr(appJson, JSON_KEY_APP_last_exit);
-	Utility::appendStrTimeAttr(appJson, JSON_KEY_APP_next_start_time);
-	if (HAS_JSON_FIELD(appJson, JSON_KEY_APP_daily_limitation))
-	{
-		Utility::appendStrDayTimeAttr(appJson[JSON_KEY_APP_daily_limitation], JSON_KEY_DAILY_LIMITATION_daily_start);
-		Utility::appendStrDayTimeAttr(appJson[JSON_KEY_APP_daily_limitation], JSON_KEY_DAILY_LIMITATION_daily_end);
-	}
-}
-
-void Utility::initDateTimeZone(const std::string &posixTimezone, bool writeLog)
-{
-	const auto &zone = DateTime::initOutputFormatPosixZone(posixTimezone);
-	if (writeLog)
-	{
-		LOG_INF << "Set timezone to: " << zone->to_posix_string();
-	}
 }
 
 std::vector<std::string> Utility::splitString(const std::string &source, const std::string &splitFlag)
@@ -1516,159 +173,6 @@ std::string Utility::stringReplace(const std::string &strBase, const std::string
 	return str;
 }
 
-std::map<std::string, std::string> Utility::fileAttributeHeaders(const std::string &file)
-{
-	std::map<std::string, std::string> headers;
-	if (const auto stat = os::fileStat(file))
-	{
-		const auto &[fileMode, fileUser, fileGroup] = *stat;
-		headers[HTTP_HEADER_KEY_file_mode] = std::to_string(fileMode);
-		headers[HTTP_HEADER_KEY_file_user] = fileUser;
-		headers[HTTP_HEADER_KEY_file_group] = fileGroup;
-	}
-	return headers;
-}
-
-void Utility::applyFilePermission(const std::string &file, HttpHeaderMap headers, int fd)
-{
-	const static char fname[] = "Utility::applyFilePermission() ";
-
-	if (fd < 0 && !Utility::isFileExist(file))
-	{
-		return;
-	}
-
-#if !defined(_WIN32)
-	auto userIt = headers.find(HTTP_HEADER_KEY_file_user);
-	auto groupIt = headers.find(HTTP_HEADER_KEY_file_group);
-	if (userIt != headers.end() && groupIt != headers.end() && !userIt->second.empty() && !groupIt->second.empty())
-	{
-		if (Utility::runningInContainer())
-		{
-			// A container upload is created by the fixed daemon identity. Do not
-			// transfer it to a host/client identity that may be absent or unreadable.
-			LOG_DBG << fname << "Ignoring remote owner <" << userIt->second << ":" << groupIt->second
-					<< "> for container file <" << file << ">";
-		}
-		else
-		{
-			try
-			{
-				// Use the verified fd when there is one: a path swapped after the jail check cannot redirect the change.
-				if (fd >= 0)
-					os::fchown(fd, userIt->second, groupIt->second);
-				else
-					os::chown(file, userIt->second, groupIt->second);
-			}
-			catch (...)
-			{
-				LOG_WAR << fname << "Invalid user/group ID value: " << userIt->second << "/" << groupIt->second;
-			}
-		}
-	}
-#endif
-
-	if (auto modeIt = headers.find(HTTP_HEADER_KEY_file_mode); modeIt != headers.end() && !modeIt->second.empty())
-	{
-		try
-		{
-			int mode = std::stoi(modeIt->second);
-			if (mode < 0 || mode > 0777)
-				throw std::out_of_range("file mode must be between 0 and 0777");
-			if (Utility::runningInContainer())
-				mode |= 0400; // Keep uploads readable by the fixed daemon owner.
-#if !defined(_WIN32)
-			if (fd >= 0)
-				os::fileChmodFd(fd, static_cast<uint16_t>(mode));
-			else
-#endif
-				os::fileChmod(file, static_cast<uint16_t>(mode));
-		}
-		catch (...)
-		{
-			LOG_WAR << fname << "Invalid file mode value: " << modeIt->second;
-		}
-	}
-}
-
-std::string Utility::getenv(const std::string &envName, const std::string &defaultValue)
-{
-	const char *val = std::getenv(envName.data());
-	if (val == nullptr || val[0] == '\0')
-		return defaultValue;
-
-	return val;
-}
-
-std::string Utility::getenvTrimmed(const std::string &envName, const std::string &defaultValue)
-{
-	return stdStringTrim(getenv(envName, defaultValue));
-}
-
-std::map<std::string, std::string> Utility::getenvs()
-{
-	std::map<std::string, std::string> env;
-
-#if defined(_WIN32)
-	LPCH envStrings = GetEnvironmentStringsA();
-	if (!envStrings)
-		return env;
-
-	for (LPCH var = envStrings; *var; var += std::strlen(var) + 1)
-	{
-		std::string entry(var);
-		auto pos = entry.find('=');
-		if (pos != std::string::npos)
-		{
-			env.emplace(entry.substr(0, pos), entry.substr(pos + 1));
-		}
-	}
-	FreeEnvironmentStringsA(envStrings);
-
-#else
-	extern char **environ;
-	for (char **current = environ; *current; ++current)
-	{
-		std::string entry(*current);
-		auto pos = entry.find('=');
-		if (pos != std::string::npos)
-		{
-			env.emplace(entry.substr(0, pos), entry.substr(pos + 1));
-		}
-	}
-#endif
-
-	return env;
-}
-
-bool Utility::secureCompare(const std::string &a, const std::string &b)
-{
-	// Length comparison must happen first to avoid buffer overruns
-	if (a.size() != b.size())
-		return false;
-
-	// Use OpenSSL's constant-time comparison (already linked)
-	return CRYPTO_memcmp(a.data(), b.data(), a.size()) == 0;
-}
-
-std::string Utility::toHex(const unsigned char *data, size_t size)
-{
-	// hex_lower matches the lowercase digests callers persist and compare
-	std::string result;
-	result.reserve(size * 2);
-	boost::algorithm::hex_lower(data, data + size, std::back_inserter(result));
-	return result;
-}
-
-std::string Utility::sha256Hex(const std::string &text)
-{
-	unsigned char digest[EVP_MAX_MD_SIZE];
-	unsigned int length = 0;
-	if (EVP_Digest(text.data(), text.size(), digest, &length, EVP_sha256(), nullptr) != 1)
-		throw std::runtime_error("Failed to compute a SHA-256 digest");
-	return toHex(digest, length);
-}
-
 std::string Utility::stringFormat(const char *fmt_str, ...)
 {
 	// Two-pass vsnprintf: measure with one va_list copy, render with the other.
@@ -1709,6 +213,111 @@ std::vector<std::string> Utility::str2argv(const std::string &commandLine)
 		throw std::invalid_argument(e.what());
 	}
 #endif
+}
+
+std::string Utility::escapeCommandLine(const std::string &input)
+{
+	std::string output;
+	for (char c : input)
+	{
+		switch (c)
+		{
+		case '\'':
+			output += "\\'";
+			break;
+		case '\"':
+			output += "\\\"";
+			break;
+		case '\\':
+			output += "\\\\";
+			break;
+		default:
+			output += c;
+		}
+	}
+	return output;
+}
+
+bool Utility::isDouble(const std::string &str)
+{
+	std::string s = str;
+	if (s.empty())
+		return false;
+
+	// Handle optional leading sign
+	size_t start = (s[0] == '-' || s[0] == '+') ? 1 : 0;
+	if (start == 1 && s.size() == 1)
+		return false; // Only a sign
+
+	bool decimalPointSeen = false;
+	for (size_t i = start; i < s.size(); ++i)
+	{
+		if (s[i] == '.')
+		{
+			if (decimalPointSeen)
+				return false; // Multiple decimal points
+			decimalPointSeen = true;
+		}
+		else if (!std::isdigit(s[i]))
+		{
+			return false;
+		}
+	}
+	return true;
+}
+
+bool Utility::containsSpecialCharacters(const std::string &str)
+{
+	for (const char &c : str)
+	{
+		// Check for common special characters and escape sequences
+		if (c == '\n' || c == '\t' || c == '\\' || c == '\"' || c == '\b' || c == '\f' || c == '\r' || c == ',')
+		{
+			return true;
+		}
+
+		// Check for UTF-8 non-printable characters
+		if ((unsigned char)c < 32 || (unsigned char)c == 127)
+		{
+			return true;
+		}
+	}
+	return false;
+}
+
+std::string Utility::strToupper(std::string s) { return boost::to_upper_copy(s, std::locale::classic()); }
+
+// jsoncpp coerces wrong-typed scalars (int -> "5"); these keep the reads strict
+std::string Utility::jsonStringField(const Json::Value &value, const std::string &key)
+{
+	const Json::Value &field = value[key];
+	if (!field.isString())
+		throw std::invalid_argument("JSON field '" + key + "' expects a string");
+	return field.asString();
+}
+
+bool Utility::jsonBoolField(const Json::Value &value, const std::string &key)
+{
+	const Json::Value &field = value[key];
+	if (!field.isBool())
+		throw std::invalid_argument("JSON field '" + key + "' expects a boolean");
+	return field.asBool();
+}
+
+void Utility::addExtraAppTimeReferStr(Json::Value &appJson)
+{
+	// append extra string format for time values
+	Utility::appendStrTimeAttr(appJson, JSON_KEY_APP_register_time);
+	Utility::appendStrTimeAttr(appJson, JSON_KEY_APP_start_time);
+	Utility::appendStrTimeAttr(appJson, JSON_KEY_APP_end_time);
+	Utility::appendStrTimeAttr(appJson, JSON_KEY_APP_last_start);
+	Utility::appendStrTimeAttr(appJson, JSON_KEY_APP_last_exit);
+	Utility::appendStrTimeAttr(appJson, JSON_KEY_APP_next_start_time);
+	if (HAS_JSON_FIELD(appJson, JSON_KEY_APP_daily_limitation))
+	{
+		Utility::appendStrDayTimeAttr(appJson[JSON_KEY_APP_daily_limitation], JSON_KEY_DAILY_LIMITATION_daily_start);
+		Utility::appendStrDayTimeAttr(appJson[JSON_KEY_APP_daily_limitation], JSON_KEY_DAILY_LIMITATION_daily_end);
+	}
 }
 
 Json::Value Utility::text2json(const std::string &str)
@@ -1887,27 +496,67 @@ Json::Value Utility::yamlToJson(const YAML::Node &node)
 	return result;
 }
 
-std::string Utility::escapeCommandLine(const std::string &input)
+void Utility::appendStrTimeAttr(Json::Value &jsonObj, const std::string &key)
 {
-	std::string output;
-	for (char c : input)
+	if (HAS_JSON_FIELD(jsonObj, key))
 	{
-		switch (c)
-		{
-		case '\'':
-			output += "\\'";
-			break;
-		case '\"':
-			output += "\\\"";
-			break;
-		case '\\':
-			output += "\\\\";
-			break;
-		default:
-			output += c;
-		}
+		jsonObj[key + JSON_KEY_TIME_POSTFIX_STR] = std::string(
+			DateTime::formatLocalTime(std::chrono::system_clock::from_time_t(GET_JSON_INT64_VALUE(jsonObj, key))));
 	}
-	return output;
+}
+
+void Utility::appendStrDayTimeAttr(Json::Value &jsonObj, const std::string &key)
+{
+	if (HAS_JSON_FIELD(jsonObj, key))
+	{
+		jsonObj[key + JSON_KEY_TIME_POSTFIX_STR] = std::string(
+			splitString(
+				DateTime::formatISO8601Time(std::chrono::system_clock::from_time_t(GET_JSON_INT64_VALUE(jsonObj, key))), "T")
+				.back());
+	}
+}
+
+// The credential after a case-insensitive "Bearer" scheme; empty when absent.
+std::string Utility::bearerCredential(const std::string &authorization)
+{
+	const auto value = stdStringTrim(authorization);
+	const auto separator = value.find(' ');
+	if (separator == std::string::npos)
+		return {};
+	auto scheme = value.substr(0, separator);
+	std::transform(scheme.begin(), scheme.end(), scheme.begin(),
+				   [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+	if (scheme != "bearer")
+		return {};
+	return stdStringTrim(value.substr(separator + 1));
+}
+
+bool Utility::secureCompare(const std::string &a, const std::string &b)
+{
+	// Length comparison must happen first to avoid buffer overruns
+	if (a.size() != b.size())
+		return false;
+
+	// Use OpenSSL's constant-time comparison (already linked)
+	return CRYPTO_memcmp(a.data(), b.data(), a.size()) == 0;
+}
+
+std::string Utility::toHex(const unsigned char *data, size_t size)
+{
+	// hex_lower matches the lowercase digests callers persist and compare
+	std::string result;
+	result.reserve(size * 2);
+	boost::algorithm::hex_lower(data, data + size, std::back_inserter(result));
+	return result;
+}
+
+std::string Utility::sha256Hex(const std::string &text)
+{
+	unsigned char digest[EVP_MAX_MD_SIZE];
+	unsigned int length = 0;
+	if (EVP_Digest(text.data(), text.size(), digest, &length, EVP_sha256(), nullptr) != 1)
+		throw std::runtime_error("Failed to compute a SHA-256 digest");
+	return toHex(digest, length);
 }
 
 std::string Utility::maskSecret(const std::string &secret, size_t visibleChars, const std::string &mask)
@@ -1965,6 +614,245 @@ NotFoundException::NotFoundException(const char *what) noexcept : std::logic_err
 
 NotFoundException::NotFoundException(const std::string &what) noexcept : std::logic_error(what) {}
 
+bool Utility::runningInContainer()
+{
+	static const bool isInContainer = []()
+	{
+		// Support standard and legacy container markers.
+		if (std::ifstream("/.dockerenv").good() || std::ifstream("/run/.dockerenv").good() ||
+			std::ifstream("/run/.containerenv").good())
+		{
+			return true;
+		}
+		const char *containerRuntime = std::getenv("container");
+		if (containerRuntime != nullptr && containerRuntime[0] != '\0')
+		{
+			return true;
+		}
+
+#if defined(__linux__)
+		// Detect runtimes without marker files.
+		const auto cgroup = Utility::readFileCpp("/proc/self/cgroup");
+		static const std::vector<std::string> containerCgroupMarkers = {"docker", "kubepods", "containerd",
+																		"libpod", "podman",   "lxc"};
+		return std::any_of(containerCgroupMarkers.begin(), containerCgroupMarkers.end(),
+						   [&cgroup](const std::string &marker) { return cgroup.find(marker) != std::string::npos; });
+#else
+		return false;
+#endif
+	}();
+
+	return isInContainer;
+}
+
+bool Utility::ensureSystemRoot()
+{
+	// https://github.com/pypa/hatch/issues/1598
+	// https://stackoverflow.com/questions/1554878/why-does-windows-not-allow-winsock-to-be-started-while-impersonating-another-use
+	// https://github.com/golang/go/issues/61452
+	// https://github.com/golang/go/issues/26457
+	// https://go-review.googlesource.com/c/go/+/124858
+#if defined(_WIN32)
+	std::string systemRoot = Utility::getenv("SYSTEMROOT");
+	if (systemRoot.empty())
+	{
+		char sysDir[MAX_PATH] = {0};
+		UINT sysLen = GetSystemWindowsDirectoryA(sysDir, MAX_PATH);
+		if (sysLen == 0 || sysLen >= MAX_PATH)
+		{
+			strcpy_s(sysDir, MAX_PATH, "C:\\Windows"); // fallback
+			std::cerr << "[Warning] GetSystemWindowsDirectoryA failed; using fallback: " << sysDir << std::endl;
+		}
+		systemRoot = sysDir;
+
+		if (_putenv_s("SYSTEMROOT", systemRoot.c_str()) != 0)
+		{
+			std::cerr << "[Error] Failed to set SYSTEMROOT to: " << systemRoot << " (Error " << last_error_msg() << ")"
+					  << std::endl;
+			return false;
+		}
+		std::cout << "[Info] SYSTEMROOT set to: " << systemRoot << std::endl;
+	}
+	else
+	{
+		std::cout << "[Info] SYSTEMROOT already set to: " << systemRoot << std::endl;
+	}
+
+#endif
+	return true;
+}
+
+unsigned long long Utility::getThreadId()
+{
+	std::ostringstream oss;
+	oss << std::this_thread::get_id();
+	return std::stoull(oss.str());
+}
+
+void Utility::setThreadName(const std::string &name)
+{
+#if defined(_WIN32)
+	std::wstring wide(name.begin(), name.end());
+	SetThreadDescription(GetCurrentThread(), wide.c_str());
+#else
+	// pthread names are capped at 15 characters plus the terminator.
+	const auto capped = name.substr(0, 15);
+#if defined(__APPLE__)
+	pthread_setname_np(capped.c_str());
+#else
+	pthread_setname_np(pthread_self(), capped.c_str());
+#endif
+#endif
+}
+
+bool &Utility::pidFileLockOwned()
+{
+	static bool owned = false;
+	return owned;
+}
+
+bool Utility::ownsPidFileLock() { return pidFileLockOwned(); }
+
+bool Utility::createPidFile()
+{
+	const static char fname[] = "Utility::createPidFile() ";
+	// https://stackoverflow.com/questions/5339200/how-to-create-a-single-instance-application-in-c-or-c
+	// https://stackoverflow.com/questions/65738650/c-create-a-pid-file-using-system-call
+	const auto pidFile = (fs::path(Utility::getHomeDir()) / PID_FILE).string();
+
+#if !defined(_WIN32)
+	// No O_TRUNC: the running daemon's PID must survive a failed lock attempt.
+	int fd = open(pidFile.c_str(), O_CREAT | O_RDWR, 0666);
+	if (fd < 0)
+	{
+		LOG_ERR << fname << "Failed to create PID file [" << pidFile << "]: " << last_error_msg();
+		return false;
+	}
+
+	if (flock(fd, LOCK_EX | LOCK_NB) == 0)
+	{
+		LOG_INF << fname << "New process running. PID file locked: " << pidFile;
+		std::string pid = std::to_string(getpid());
+		if (ftruncate(fd, 0) != 0 || lseek(fd, 0, SEEK_SET) != 0 || write(fd, pid.c_str(), pid.length()) <= 0)
+		{
+			LOG_ERR << fname << "Failed to write PID to file [" << pidFile << "]: " << last_error_msg();
+			close(fd);
+			return false;
+		}
+		pidFileLockOwned() = true;
+		return true;
+	}
+	else
+	{
+		if (errno == EWOULDBLOCK)
+		{
+			LOG_ERR << fname << "Process already running. PID file locked: " << pidFile;
+		}
+		else
+		{
+			LOG_ERR << fname << "Failed to lock PID file [" << pidFile << "]: " << last_error_msg();
+		}
+		close(fd);
+		return false;
+	}
+
+#else
+	// Windows implementation using file locking
+	// Read and write stay unshared, which is the single-instance lock itself;
+	// sharing only the delete lets the shutdown path remove the file while this
+	// handle is still open.
+	HANDLE hFile = CreateFileA(pidFile.c_str(), GENERIC_READ | GENERIC_WRITE, FILE_SHARE_DELETE, NULL, CREATE_ALWAYS,
+							   FILE_ATTRIBUTE_NORMAL, NULL);
+
+	if (hFile == INVALID_HANDLE_VALUE)
+	{
+		DWORD error = GetLastError();
+		if (error == ERROR_SHARING_VIOLATION)
+		{
+			LOG_ERR << fname << "Process already running. PID file locked: " << pidFile;
+		}
+		else
+		{
+			LOG_ERR << fname << "Failed to create PID file <" << pidFile << "> with error " << error;
+		}
+		return false;
+	}
+
+	std::string pid = std::to_string(os::getpid());
+	DWORD bytesWritten;
+	if (!WriteFile(hFile, pid.c_str(), static_cast<DWORD>(pid.length()), &bytesWritten, NULL))
+	{
+		LOG_ERR << fname << "Failed to write PID to file <" << pidFile << "> with error " << GetLastError();
+		CloseHandle(hFile);
+		return false;
+	}
+
+	LOG_INF << fname << "New process running. PID file locked: " << pidFile;
+	// Keep handle open to maintain lock
+	pidFileLockOwned() = true;
+	return true;
+#endif
+}
+
+void Utility::initDateTimeZone(const std::string &posixTimezone, bool writeLog)
+{
+	const auto &zone = DateTime::initOutputFormatPosixZone(posixTimezone);
+	if (writeLog)
+	{
+		LOG_INF << "Set timezone to: " << zone->to_posix_string();
+	}
+}
+
+std::string Utility::getenv(const std::string &envName, const std::string &defaultValue)
+{
+	const char *val = std::getenv(envName.data());
+	if (val == nullptr || val[0] == '\0')
+		return defaultValue;
+
+	return val;
+}
+
+std::string Utility::getenvTrimmed(const std::string &envName, const std::string &defaultValue)
+{
+	return stdStringTrim(getenv(envName, defaultValue));
+}
+
+std::map<std::string, std::string> Utility::getenvs()
+{
+	std::map<std::string, std::string> env;
+
+#if defined(_WIN32)
+	LPCH envStrings = GetEnvironmentStringsA();
+	if (!envStrings)
+		return env;
+
+	for (LPCH var = envStrings; *var; var += std::strlen(var) + 1)
+	{
+		std::string entry(var);
+		auto pos = entry.find('=');
+		if (pos != std::string::npos)
+		{
+			env.emplace(entry.substr(0, pos), entry.substr(pos + 1));
+		}
+	}
+	FreeEnvironmentStringsA(envStrings);
+
+#else
+	extern char **environ;
+	for (char **current = environ; *current; ++current)
+	{
+		std::string entry(*current);
+		auto pos = entry.find('=');
+		if (pos != std::string::npos)
+		{
+			env.emplace(entry.substr(0, pos), entry.substr(pos + 1));
+		}
+	}
+#endif
+
+	return env;
+}
+
 static thread_local std::string g_errorMessage;
 
 const char *last_error_msg()
@@ -2013,561 +901,169 @@ const char *last_error_msg()
 	return g_errorMessage.c_str();
 }
 
-// Restored functions used internally by other Utility methods
 
-bool Utility::isDouble(const std::string &str)
+namespace
 {
-	std::string s = str;
-	if (s.empty())
-		return false;
-
-	// Handle optional leading sign
-	size_t start = (s[0] == '-' || s[0] == '+') ? 1 : 0;
-	if (start == 1 && s.size() == 1)
-		return false; // Only a sign
-
-	bool decimalPointSeen = false;
-	for (size_t i = start; i < s.size(); ++i)
-	{
-		if (s[i] == '.')
-		{
-			if (decimalPointSeen)
-				return false; // Multiple decimal points
-			decimalPointSeen = true;
-		}
-		else if (!std::isdigit(s[i]))
-		{
-			return false;
-		}
-	}
-	return true;
+	// Blocking resolver core; getaddrinfo decides the wait.
+	std::string resolveHostAddressBlocking(const std::string &host, std::string &errorText);
 }
 
-bool Utility::isPathTraversalSafe(const std::string &baseDir, const std::string &filePath)
+std::string Utility::resolveHostAddress(const std::string &host, std::string &errorText, long timeoutSeconds)
 {
-	std::error_code ec;
-
-	// Resolve the allowed base directory — must exist and be canonical.
-	fs::path canonicalBase = fs::canonical(fs::path(baseDir), ec);
-	if (ec)
+	// Literals skip the resolver and the bounded path below.
+	struct in_addr v4;
+	struct in6_addr v6;
+	if (host.find(':') != std::string::npos)
 	{
-		return false;
+		if (inet_pton(AF_INET6, host.c_str(), &v6) == 1)
+			return host;
+	}
+	else if (inet_pton(AF_INET, host.c_str(), &v4) == 1)
+	{
+		return host;
 	}
 
-	fs::path file(filePath);
+	if (timeoutSeconds <= 0)
+		return resolveHostAddressBlocking(host, errorText);
 
-	// Try to canonicalize the full path directly (works when file already exists).
-	fs::path resolvedPath = fs::canonical(file, ec);
-	if (ec)
-	{
-		// File does not exist yet (e.g. upload target). Walk up to find the nearest
-		// existing ancestor, canonicalize it, then re-append the remaining components.
-		// This allows uploads to new subdirectories within the allowed base.
-		fs::path remaining;
-		fs::path ancestor = std::move(file);
-		while (!ancestor.empty())
+	// getaddrinfo has no timeout; resolve on a helper thread bounded by the
+	// caller's budget. On timeout the thread is abandoned and exits on its own.
+	auto result = std::make_shared<std::promise<std::pair<std::string, std::string>>>();
+	auto future = result->get_future();
+	std::thread(
+		[host, result = std::move(result)]()
 		{
-			fs::path parent = ancestor.parent_path();
-			if (parent == ancestor)
-				break; // reached root
-			remaining = ancestor.filename() / remaining;
-			ancestor = std::move(parent);
-			fs::path canonicalAncestor = fs::canonical(ancestor, ec);
-			if (!ec)
-			{
-				resolvedPath = canonicalAncestor / remaining;
-				break;
-			}
-		}
-		if (ec)
-		{
-			// No existing ancestor found — reject.
-			return false;
-		}
-	}
-
-	// Ensure resolvedPath starts with canonicalBase (prefix check).
-	// Append trailing separator to base so "/opt" does not match "/opt2/…".
-	std::string baseStr = canonicalBase.string();
-	if (baseStr.back() != fs::path::preferred_separator)
+			std::string threadError;
+			std::string ip = resolveHostAddressBlocking(host, threadError);
+			result->set_value({std::move(ip), std::move(threadError)});
+		})
+		.detach();
+	if (future.wait_for(std::chrono::seconds(timeoutSeconds)) != std::future_status::ready)
 	{
-		baseStr += fs::path::preferred_separator;
+		errorText = "cannot resolve " + host + ": timed out after " + std::to_string(timeoutSeconds) + "s";
+		return std::string();
 	}
-	std::string resolvedStr = resolvedPath.string();
-
-	// Allow exact match to base dir itself or any path inside it; the compare folds case on macOS/Windows
-	// (pathPrefixMatch) so a differently-cased alias cannot dodge the exclusion checks built on this.
-	if (!pathPrefixMatch(resolvedStr, baseStr, canonicalBase.string()))
-	{
-		return false;
-	}
-
-	return true;
+	auto resolved = future.get();
+	errorText = std::move(resolved.second);
+	return resolved.first;
 }
 
 namespace
 {
-	// Encoding detection candidates in priority order, shared by all platforms:
-	// Windows converts through the code page, POSIX through the iconv name.
-	// GB18030 catches the 4-byte sequences strict GBK rejects and must precede
-	// EUC-KR because glibc's EUC-KR accepts raw C1 control bytes. CP_ACP
-	// (code page 0) has no portable POSIX equivalent and is skipped there.
-	struct EncodingCandidate
+	// Blocking resolver core; getaddrinfo decides the wait.
+	std::string resolveHostAddressBlocking(const std::string &host, std::string &errorText)
 	{
-		unsigned int codepage;
-		const char *iconvName;
-	};
-
-	const EncodingCandidate ENCODING_CANDIDATES[] = {
-		{936, "GBK"},       // GBK/GB2312 (Simplified Chinese)
-		{950, "BIG5"},      // Big5 (Traditional Chinese)
-		{932, "SHIFT_JIS"}, // Shift-JIS (Japanese)
-		{54936, "GB18030"}, // GB18030 (4-byte extensions GBK rejects)
-		{949, "EUC-KR"},    // EUC-KR (Korean)
-		{1252, "CP1252"},   // Windows-1252 (Western European)
-		{1251, "CP1251"},   // Windows-1251 (Cyrillic)
-		{0, nullptr}        // CP_ACP: system default ANSI code page (Windows only)
-	};
-
-#if !defined(_WIN32)
-	// Outcome of one strict iconv conversion attempt.
-	enum IconvOutcome
-	{
-		ICONV_REJECTED,  // invalid byte sequence: candidate does not match
-		ICONV_ACCEPTED,  // whole buffer converted
-		ICONV_SPLIT_TAIL // valid except an incomplete multi-byte tail (EINVAL)
-	};
-
-	// Convert input from fromCode to UTF-8 strictly (no //TRANSLIT): the first
-	// invalid sequence rejects the candidate. On ICONV_SPLIT_TAIL output holds
-	// the converted prefix and tailBytes the count of unconverted trailing bytes.
-	IconvOutcome iconvToUtf8(const std::string &input, const char *fromCode, std::string &output, size_t &tailBytes)
-	{
-		output.clear();
-		tailBytes = 0;
-
-		iconv_t cd = iconv_open("UTF-8", fromCode);
-		if (cd == reinterpret_cast<iconv_t>(-1))
+		// An address literal passes through; a host name resolves via getaddrinfo.
+		struct in_addr v4;
+		struct in6_addr v6;
+		if (host.find(':') != std::string::npos)
 		{
-			return ICONV_REJECTED; // encoding unavailable on this system
+			if (inet_pton(AF_INET6, host.c_str(), &v6) == 1)
+				return host;
+		}
+		else if (inet_pton(AF_INET, host.c_str(), &v4) == 1)
+		{
+			return host;
 		}
 
-		// Every candidate maps one input byte to at most three UTF-8 bytes.
-		std::string out(input.size() * 3 + 4, '\0');
-// iconv's inbuf parameter is `char **` on glibc and Apple's SDK, but
-// `const char **` on standalone GNU libiconv. Apple defines _LIBICONV_VERSION
-// for compatibility while keeping the POSIX signature, so exclude it.
-#if defined(_LIBICONV_VERSION) && !defined(__APPLE__) && !defined(__GLIBC__)
-		const char *inPtr = input.data();
-#else
-		char *inPtr = const_cast<char *>(input.data());
-#endif
-		size_t inLeft = input.size();
-		char *outPtr = &out[0];
-		size_t outLeft = out.size();
-
-		IconvOutcome outcome = ICONV_ACCEPTED;
-		while (inLeft > 0)
+		struct addrinfo hints;
+		memset(&hints, 0, sizeof(hints));
+		hints.ai_family = AF_UNSPEC; // resolve both families
+		hints.ai_socktype = SOCK_STREAM;
+		hints.ai_flags = AI_ADDRCONFIG; // skip AAAA on v4-only hosts and vice versa
+		struct addrinfo *result = nullptr;
+		const int rc = ::getaddrinfo(host.c_str(), nullptr, &hints, &result);
+		if (rc != 0 || result == nullptr)
 		{
-			if (iconv(cd, &inPtr, &inLeft, &outPtr, &outLeft) != static_cast<size_t>(-1))
+			errorText = "cannot resolve " + host + ": " + gai_strerror(rc);
+			return std::string();
+		}
+
+		// Prefer IPv4: a dual-stack target keeps its legacy reachability, a v6-only
+		// target still resolves through its AAAA record.
+		const addrinfo *chosen = result;
+		for (const addrinfo *ai = result; ai != nullptr; ai = ai->ai_next)
+		{
+			if (ai->ai_family == AF_INET)
 			{
-				break; // all input consumed
-			}
-			if (errno == EINVAL)
-			{
-				outcome = ICONV_SPLIT_TAIL;
+				chosen = ai;
 				break;
 			}
-			if (errno != E2BIG)
-			{
-				outcome = ICONV_REJECTED;
-				break;
-			}
-			// Should not happen with the 3x reserve; grow and continue.
-			const size_t used = static_cast<size_t>(outPtr - &out[0]);
-			out.resize(out.size() * 2);
-			outPtr = &out[0] + used;
-			outLeft = out.size() - used;
 		}
-		iconv_close(cd);
 
-		if (outcome == ICONV_REJECTED)
+		char numeric[INET6_ADDRSTRLEN] = {0};
+		if (::getnameinfo(chosen->ai_addr, chosen->ai_addrlen, numeric, sizeof(numeric), nullptr, 0, NI_NUMERICHOST) != 0)
 		{
-			return ICONV_REJECTED;
+			::freeaddrinfo(result);
+			errorText = "cannot convert resolved address of " + host;
+			return std::string();
 		}
-		tailBytes = inLeft;
-		out.resize(out.size() - outLeft);
-		output.swap(out);
-		return outcome;
-	}
-
-	// Length of the UTF-8 sequence starting at input[i] (0 for a stray byte or
-	// a truncated tail), and whether its continuation bytes are valid.
-	std::pair<size_t, bool> utf8SequenceAt(const std::string &input, size_t i)
-	{
-		const unsigned char lead = static_cast<unsigned char>(input[i]);
-		size_t len = 0;
-		if (lead < 0x80)
-			len = 1;
-		else if ((lead & 0xE0) == 0xC0)
-			len = 2;
-		else if ((lead & 0xF0) == 0xE0)
-			len = 3;
-		else if ((lead & 0xF8) == 0xF0)
-			len = 4;
-		if (len == 0 || i + len > input.size())
-			return {0, false};
-		for (size_t j = 1; j < len; ++j)
+		::freeaddrinfo(result);
+		// InetAddress parses with bare inet_pton, so a scope-qualified address
+		// would silently fall back to the wildcard address.
+		if (strchr(numeric, '%') != nullptr)
 		{
-			if ((static_cast<unsigned char>(input[i + j]) & 0xC0) != 0x80)
-				return {0, false};
+			errorText = "scope-qualified address <" + std::string(numeric) + "> of " + host + " is not supported";
+			return std::string();
 		}
-		return {len, true};
+		return numeric;
 	}
-
-	// Count of valid multi-byte sequences and the bytes they cover: evidence
-	// that a buffer is UTF-8 text with stray binary bytes.
-	std::pair<size_t, size_t> utf8MultibyteEvidence(const std::string &input)
-	{
-		size_t count = 0, covered = 0;
-		for (size_t i = 0; i < input.size();)
-		{
-			const auto [len, valid] = utf8SequenceAt(input, i);
-			if (len > 1 && valid)
-			{
-				++count;
-				covered += len;
-			}
-			i += len > 0 ? len : 1;
-		}
-		return {count, covered};
-	}
-
-	// Keep valid UTF-8 and replace each stray byte with U+FFFD.
-	std::string utf8ReplaceInvalid(const std::string &input)
-	{
-		std::string out;
-		out.reserve(input.size());
-		for (size_t i = 0; i < input.size();)
-		{
-			const auto [len, valid] = utf8SequenceAt(input, i);
-			if (valid)
-			{
-				out.append(input, i, len);
-				i += len;
-			}
-			else
-			{
-				out.append("\xEF\xBF\xBD");
-				++i;
-			}
-		}
-		return out;
-	}
-
-	// GBK and the other CJK code pages accept most high-byte pairs, CP1252
-	// almost any byte string: a strict acceptance alone is weak evidence. When
-	// at least two multi-byte UTF-8 sequences cover half the buffer, treat it
-	// as UTF-8 text with stray bytes and replace only those, instead of
-	// re-encoding everything into mojibake.
-	bool utf8EvidenceBeatsCandidate(const std::string &input)
-	{
-		const auto [count, covered] = utf8MultibyteEvidence(input);
-		return count >= 2 && covered * 2 >= input.size();
-	}
-#endif // !defined(_WIN32)
 } // namespace
 
-std::string Utility::fileBytesToUtf8(const std::string &input)
+void Utility::initLogging(const std::string &name)
 {
-#ifdef _WIN32
-	if (input.empty())
-		return input;
+	std::vector<spdlog::sink_ptr> sinks;
 
-	// Check for UTF-8 BOM
-	if (input.size() >= 3 && static_cast<unsigned char>(input[0]) == 0xEF && static_cast<unsigned char>(input[1]) == 0xBB &&
-		static_cast<unsigned char>(input[2]) == 0xBF)
+	// Console sink
+	auto consoleSink = std::make_shared<spdlog::sinks::stdout_color_sink_mt>();
+	sinks.push_back(consoleSink);
+
+	// Rotating file sink
+	if (!name.empty())
 	{
-		return input.substr(3);
+		auto logPath = (fs::path(Utility::getHomeDir()) / APPMESH_WORK_DIR / name).string() + ".log";
+		constexpr size_t maxFileSize = 50 * 1024 * 1024; // 50MB
+		constexpr size_t maxFiles = 5;
+
+		auto fileSink = std::make_shared<spdlog::sinks::rotating_file_sink_mt>(logPath, maxFileSize, maxFiles, false);
+		sinks.push_back(fileSink);
 	}
 
-	// Check for UTF-16 LE BOM
-	if (input.size() >= 2 && static_cast<unsigned char>(input[0]) == 0xFF && static_cast<unsigned char>(input[1]) == 0xFE)
-	{
-		const wchar_t *wstr = reinterpret_cast<const wchar_t *>(input.data() + 2);
-		int len = (input.size() - 2) / 2;
+	// Create logger
+	auto logger = std::make_shared<spdlog::logger>("appmesh", sinks.begin(), sinks.end());
+	spdlog::set_default_logger(logger);
+	// Flush everything at once: every enabled level reaches the file as it is
+	// emitted, so diagnosis during an incident never reads a stale tail.
+	logger->flush_on(spdlog::level::debug);
 
-		int utf8Len = WideCharToMultiByte(CP_UTF8, 0, wstr, len, nullptr, 0, nullptr, nullptr);
-		if (utf8Len == 0)
-			return input;
+	// Pattern
+	// %l = full level name (info/warning/error/debug). %L would print single chars E/D.
+	spdlog::set_pattern("[%Y-%m-%d %H:%M:%S.%e] [%t] %l: %v");
 
-		std::string result(utf8Len, 0);
-		WideCharToMultiByte(CP_UTF8, 0, wstr, len, &result[0], utf8Len, nullptr, nullptr);
-		return result;
-	}
+	// Log level from env
+	auto levelEnv = Utility::getenv("LOG_LEVEL");
+	if (!levelEnv.empty())
+		setLogLevel(levelEnv);
 
-	// Check for UTF-16 BE BOM
-	if (input.size() >= 2 && static_cast<unsigned char>(input[0]) == 0xFE && static_cast<unsigned char>(input[1]) == 0xFF)
-	{
-		std::wstring wstr;
-		wstr.resize((input.size() - 2) / 2);
-		for (size_t i = 0; i < wstr.size(); ++i)
-		{
-			wstr[i] = static_cast<wchar_t>((static_cast<unsigned char>(input[2 + i * 2]) << 8) |
-										   static_cast<unsigned char>(input[2 + i * 2 + 1]));
-		}
-
-		int utf8Len = WideCharToMultiByte(CP_UTF8, 0, wstr.c_str(), wstr.length(), nullptr, 0, nullptr, nullptr);
-		if (utf8Len == 0)
-			return input;
-
-		std::string result(utf8Len, 0);
-		WideCharToMultiByte(CP_UTF8, 0, wstr.c_str(), wstr.length(), &result[0], utf8Len, nullptr, nullptr);
-		return result;
-	}
-
-	// Try to detect and convert from various encodings
-	// First, try to validate if it's already valid UTF-8
-	if (isValidUTF8(input))
-	{
-		return input;
-	}
-
-	// Try the shared encoding candidates in order of likelihood
-	for (const EncodingCandidate &candidate : ENCODING_CANDIDATES)
-	{
-		std::string result = convertToUTF8(input, candidate.codepage);
-		if (!result.empty())
-		{
-			return result;
-		}
-	}
-
-	// If all else fails, return original
-	return input;
-#else
-	if (input.empty())
-		return input;
-
-	// Check for UTF-8 BOM
-	if (input.size() >= 3 && static_cast<unsigned char>(input[0]) == 0xEF && static_cast<unsigned char>(input[1]) == 0xBB &&
-		static_cast<unsigned char>(input[2]) == 0xBF)
-	{
-		return input.substr(3);
-	}
-
-	// Check for UTF-16 BOM: convert complete 16-bit units (a trailing odd byte
-	// is dropped, mirroring the Windows path); keep the original bytes when the
-	// payload is not decodable.
-	if (input.size() >= 2)
-	{
-		const bool utf16Le = static_cast<unsigned char>(input[0]) == 0xFF && static_cast<unsigned char>(input[1]) == 0xFE;
-		const bool utf16Be = static_cast<unsigned char>(input[0]) == 0xFE && static_cast<unsigned char>(input[1]) == 0xFF;
-		if (utf16Le || utf16Be)
-		{
-			const size_t units = (input.size() - 2) / 2;
-			std::string converted;
-			size_t tailBytes = 0;
-			if (iconvToUtf8(input.substr(2, units * 2), utf16Le ? "UTF-16LE" : "UTF-16BE", converted, tailBytes) ==
-					ICONV_ACCEPTED &&
-				!converted.empty())
-			{
-				return converted;
-			}
-			return input;
-		}
-	}
-
-	// Valid UTF-8 (includes pure ASCII) passes through unchanged: the common case
-	if (isValidUTF8(input))
-	{
-		return input;
-	}
-
-	// A trailing incomplete UTF-8 character (a chunk boundary cut a character)
-	// must not be re-detected as GBK below: the prefix is already correct UTF-8
-	// and the tail bytes continue in the next chunk.
-	const size_t tail = utf8IncompleteTailBytes(input);
-	if (tail > 0 && isValidUTF8(input.substr(0, input.size() - tail)))
-	{
-		return input;
-	}
-
-	// Try the shared encoding candidates in order of likelihood: the first
-	// candidate that converts strictly wins. A trailing incomplete multi-byte
-	// sequence (EINVAL) means the chunk split a character: convert the complete
-	// prefix and pass the tail bytes through unchanged for the next chunk.
-	for (const EncodingCandidate &candidate : ENCODING_CANDIDATES)
-	{
-		if (candidate.iconvName == nullptr)
-		{
-			continue; // CP_ACP has no portable POSIX equivalent
-		}
-		std::string converted;
-		size_t tailBytes = 0;
-		const IconvOutcome outcome = iconvToUtf8(input, candidate.iconvName, converted, tailBytes);
-		if (outcome == ICONV_ACCEPTED)
-		{
-			if (utf8EvidenceBeatsCandidate(input))
-			{
-				return utf8ReplaceInvalid(input);
-			}
-			return converted;
-		}
-		if (outcome == ICONV_SPLIT_TAIL)
-		{
-			return converted + input.substr(input.size() - tailBytes);
-		}
-	}
-
-	// No candidate matched: keep the original bytes, JSON serialization replaces
-	// invalid UTF-8 with U+FFFD.
-	return input;
-#endif
+	LOG_DBG << "Logging process ID: " << os::getpid();
 }
 
-void Utility::appendStrTimeAttr(Json::Value &jsonObj, const std::string &key)
+bool Utility::setLogLevel(const std::string &level)
 {
-	if (HAS_JSON_FIELD(jsonObj, key))
+	static std::map<std::string, spdlog::level::level_enum> levelMap = {
+		{"NOTSET", spdlog::level::off},     {"DEBUG", spdlog::level::debug},    {"INFO", spdlog::level::info},
+		{"WARN", spdlog::level::warn},      {"ERROR", spdlog::level::err},      {"CRIT", spdlog::level::critical},
+		{"ALERT", spdlog::level::critical}, {"FATAL", spdlog::level::critical}, {"EMERG", spdlog::level::critical}};
+
+	if (auto it = levelMap.find(level); it != levelMap.end())
 	{
-		jsonObj[key + JSON_KEY_TIME_POSTFIX_STR] = std::string(
-			DateTime::formatLocalTime(std::chrono::system_clock::from_time_t(GET_JSON_INT64_VALUE(jsonObj, key))));
+		spdlog::set_level(it->second);
+		LOG_INF << "Set log level to <" << level << ">";
+		return true;
 	}
-}
-
-void Utility::appendStrDayTimeAttr(Json::Value &jsonObj, const std::string &key)
-{
-	if (HAS_JSON_FIELD(jsonObj, key))
+	else
 	{
-		jsonObj[key + JSON_KEY_TIME_POSTFIX_STR] = std::string(
-			splitString(
-				DateTime::formatISO8601Time(std::chrono::system_clock::from_time_t(GET_JSON_INT64_VALUE(jsonObj, key))), "T")
-				.back());
+		LOG_ERR << "Unknown log level <" << level << ">";
+		return false;
 	}
-}
-
-bool Utility::containsSpecialCharacters(const std::string &str)
-{
-	for (const char &c : str)
-	{
-		// Check for common special characters and escape sequences
-		if (c == '\n' || c == '\t' || c == '\\' || c == '\"' || c == '\b' || c == '\f' || c == '\r' || c == ',')
-		{
-			return true;
-		}
-
-		// Check for UTF-8 non-printable characters
-		if ((unsigned char)c < 32 || (unsigned char)c == 127)
-		{
-			return true;
-		}
-	}
-	return false;
-}
-
-std::string Utility::strToupper(std::string s) { return boost::to_upper_copy(s, std::locale::classic()); }
-
-bool Utility::isValidUTF8(const std::string &str)
-{
-	const unsigned char *bytes = reinterpret_cast<const unsigned char *>(str.c_str());
-	size_t len = str.length();
-
-	for (size_t i = 0; i < len;)
-	{
-		if (bytes[i] < 0x80)
-		{
-			i++;
-		}
-		else if ((bytes[i] & 0xE0) == 0xC0)
-		{
-			if (i + 1 >= len || (bytes[i + 1] & 0xC0) != 0x80)
-				return false;
-			i += 2;
-		}
-		else if ((bytes[i] & 0xF0) == 0xE0)
-		{
-			if (i + 2 >= len || (bytes[i + 1] & 0xC0) != 0x80 || (bytes[i + 2] & 0xC0) != 0x80)
-				return false;
-			i += 3;
-		}
-		else if ((bytes[i] & 0xF8) == 0xF0)
-		{
-			if (i + 3 >= len || (bytes[i + 1] & 0xC0) != 0x80 || (bytes[i + 2] & 0xC0) != 0x80 ||
-				(bytes[i + 3] & 0xC0) != 0x80)
-				return false;
-			i += 4;
-		}
-		else
-		{
-			return false;
-		}
-	}
-	return true;
-}
-
-size_t Utility::utf8LeadByteLength(unsigned char c)
-{
-	if (c >= 0xC2 && c <= 0xDF)
-		return 2;
-	if (c >= 0xE0 && c <= 0xEF)
-		return 3;
-	if (c >= 0xF0 && c <= 0xF4)
-		return 4;
-	return 0;
-}
-
-size_t Utility::utf8IncompleteTailBytes(const std::string &str)
-{
-	const size_t len = str.size();
-
-	// Count trailing continuation bytes (0x80-0xBF), at most three.
-	size_t run = 0;
-	while (run < 3 && run < len && (static_cast<unsigned char>(str[len - 1 - run]) & 0xC0) == 0x80)
-	{
-		++run;
-	}
-	if (run == len)
-	{
-		return 0; // only continuation bytes: the lead byte is not in this buffer
-	}
-
-	const unsigned char lead = static_cast<unsigned char>(str[len - 1 - run]);
-	// utf8LeadByteLength counts the lead byte too; the tail run needs len-1
-	// continuation bytes to complete the character
-	const size_t leadLength = utf8LeadByteLength(lead);
-	return leadLength > 0 && run < leadLength - 1 ? run + 1 : 0;
-}
-
-std::string Utility::convertToUTF8(const std::string &input, unsigned int codepage)
-{
-#ifdef _WIN32
-	if (input.empty())
-		return "";
-
-	// Convert from codepage to wide string
-	int wideLen = MultiByteToWideChar(codepage, 0, input.c_str(), input.length(), nullptr, 0);
-	if (wideLen == 0)
-		return "";
-
-	std::wstring wideStr(wideLen, 0);
-	if (MultiByteToWideChar(codepage, 0, input.c_str(), input.length(), &wideStr[0], wideLen) == 0)
-	{
-		return "";
-	}
-
-	// Convert from wide string to UTF-8
-	int utf8Len = WideCharToMultiByte(CP_UTF8, 0, wideStr.c_str(), wideStr.length(), nullptr, 0, nullptr, nullptr);
-	if (utf8Len == 0)
-		return "";
-
-	std::string result(utf8Len, 0);
-	if (WideCharToMultiByte(CP_UTF8, 0, wideStr.c_str(), wideStr.length(), &result[0], utf8Len, nullptr, nullptr) == 0)
-	{
-		return "";
-	}
-
-	return result;
-#else
-	return "";
-#endif
 }

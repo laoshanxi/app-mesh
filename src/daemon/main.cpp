@@ -32,7 +32,7 @@
 #include "../common/os/proc.h"
 #include "../common/os/pstree.h"
 #include "Configuration.h"
-#include "HealthCheckTask.h"
+#include "application/HealthCheckTask.h"
 #include "security/AuthorizationStore.h"
 #include "PersistManager.h"
 #include "ResourceCollection.h"
@@ -45,7 +45,7 @@
 #include "rest/RestHandler.h"
 #include "rest/Worker.h"
 #include "rest/drogon/Adaptor.h"
-#include "rest/drogon/TcpAdaptor.h"
+#include "rest/tcp/TcpAdaptor.h"
 #include "security/AuthReplicator.h"
 #include "security/Security.h"
 #if !defined(NDEBUG) && !defined(_WIN32)
@@ -670,6 +670,9 @@ void AppMeshDaemon::runMainLoop()
 			// waiting out the schedule interval.
 			if (QuitHandler::instance()->waitForExit(std::chrono::seconds(config->getScheduleInterval())))
 				break;
+
+			// Deferred from the signal handler: the reload must run off it.
+			Configuration::reloadOnSignal();
 
 			PersistManager::instance()->persistSnapshot();
 			if (authRefreshTick++ % 1800 == 0)

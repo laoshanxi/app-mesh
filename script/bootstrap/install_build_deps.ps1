@@ -222,11 +222,6 @@ function Install-HeaderOnlyLibraries {
     # Additional header-only libraries
     Write-Host "Installing additional header-only libraries..." -ForegroundColor Yellow
     
-    # hashidsxx
-    Remove-Item -Recurse -Force "hashidsxx" -ErrorAction Ignore
-    git clone --depth=1 https://github.com/schoentoon/hashidsxx.git
-    Copy-Item -Recurse "hashidsxx" "C:\local\include\" -Force
-    
     # croncpp
     Remove-Item -Recurse -Force "croncpp" -ErrorAction Ignore
     git clone --depth=1 https://github.com/mariusbancila/croncpp.git

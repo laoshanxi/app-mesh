@@ -117,7 +117,6 @@ constexpr auto TCP_SSL_VERSION_LIST = "tlsv1.2,tlsv1.3";
 #define SNAPSHOT_FILE_NAME ".snapshot"
 #define APPMESH_LOCAL_HOST_URL "https://127.0.0.1:6060"
 
-const char *GET_STATUS_STR(unsigned int status);
 inline const Json::Value EMPTY_STR_JSON; // null value
 
 /// <summary>

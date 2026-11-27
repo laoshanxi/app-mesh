@@ -15,7 +15,7 @@
 #include "Data.h"
 #include "ForwardingStream.h"
 #include "HttpRequest.h"
-#include "drogon/TcpClientStream.h"
+#include "tcp/TcpClientStream.h"
 
 namespace
 {

@@ -34,10 +34,6 @@ namespace dgn
 		std::string principalId;
 	};
 
-	// TLS hardening pairs shared by every listener: protocol floor, cipher
-	// allow-list, and client-certificate verification when a CA is configured.
-	// "require" also rejects a client without a certificate.
-	std::vector<std::pair<std::string, std::string>> tlsHardeningConf(const std::string &caFile);
 }
 
 // Manages the Drogon HTTPS/WSS service: lifecycle, HTTP catch-all bridging

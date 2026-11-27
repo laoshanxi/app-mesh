@@ -35,9 +35,10 @@
 #include "../EventDispatcher.h"
 #include "../HttpRequest.h"
 #include "../SseSink.h"
+#include "../FileUpload.h" // FileUploadInfo: temp file + atomic rename
 #include "../Worker.h"
-#include "FileTransferHandler.h" // FileUploadInfo: temp file + atomic rename
-#include "FrameCodec.h"          // tcpframe::enableKeepAlive
+#include "../tcp/FrameCodec.h" // tcpframe::enableKeepAlive
+#include "../tcp/TcpAdaptor.h"
 #include "SseStream.h"
 #include "WsController.h"
 
@@ -389,23 +390,6 @@ namespace
 	std::string connectionId(const trantor::InetAddress &local, const trantor::InetAddress &peer)
 	{
 		return local.toIpPort() + "->" + peer.toIpPort();
-	}
-}
-
-namespace dgn
-{
-	std::vector<std::pair<std::string, std::string>> tlsHardeningConf(const std::string &caFile)
-	{
-		std::vector<std::pair<std::string, std::string>> sslConf{
-			{"MinProtocol", "TLSv1.2"},
-			{"CipherString", "HIGH:!aNULL:!eNULL:!EXPORT:!DES:!RC4:!MD5"},
-			{"Ciphersuites", "TLS_AES_256_GCM_SHA384:TLS_CHACHA20_POLY1305_SHA256:TLS_AES_128_GCM_SHA256"}};
-		if (!caFile.empty())
-		{
-			sslConf.emplace_back("VerifyCAFile", caFile);
-			sslConf.emplace_back("VerifyMode", "require");
-		}
-		return sslConf;
 	}
 }
 

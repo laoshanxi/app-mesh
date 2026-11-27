@@ -187,7 +187,7 @@ public:
 	std::optional<double> readHostCpuQuotaCores() override;
 	bool isSwapLimitSupported() const override;
 	bool isEnabled() const override;
-	void initializeManagement(int additionalPid = 0);
+	void initializeManagement();
 
 private:
 	/// Discover cgroup v2 mount point

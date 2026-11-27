@@ -21,8 +21,10 @@
 #include "../../common/TimerHandler.h"
 #include "../../common/os/models.h" // pid_t
 #include "../process/LandlockPolicy.h"
+#include "../process/ShellScriptLaunch.h"
 #include "../rest/HttpRequest.h"
 #include "AppBehavior.h"
+#include "AppStdoutLog.h"
 #include "AppUtils.h"
 
 class AppTimer;

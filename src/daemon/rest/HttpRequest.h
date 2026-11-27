@@ -67,8 +67,7 @@ public:
 			   const std::map<std::string, std::string> &headers,
 			   const std::string &content_type = web::http::mime_types::text_plain_utf8) const;
 
-	static std::shared_ptr<HttpRequest> deserialize(const std::string &input, LwsSessionRef lwsRef,
-													std::shared_ptr<WSS::ReplyContext> ctx);
+	static std::shared_ptr<HttpRequest> deserialize(const std::string &input, std::shared_ptr<WSS::ReplyContext> ctx);
 	std::string serialize() const;
 	static const Json::Value emptyJsonMessage();
 	void dump() const;
@@ -90,7 +89,6 @@ public:
 					   const std::map<std::string, std::string> &headers, const web::http::status_code &status,
 					   const std::string &bodyType) const;
 
-	const LwsSessionRef &lwsRef() const { return m_lwsRef; }
 	const std::shared_ptr<WSS::ReplyContext> &wsReplyContext() const { return m_wsReplyContext; }
 	/// Return true when the frontend transport can receive later event frames.
 	bool isPersistentClientTransport() const;
@@ -106,7 +104,6 @@ public:
 private:
 	void notifyReply(int status) const;
 	std::shared_ptr<HttpReplyMetricState> m_replyMetric;
-	LwsSessionRef m_lwsRef;
 	std::shared_ptr<WSS::ReplyContext> m_wsReplyContext;
 	std::string m_transportPrincipalId;
 };

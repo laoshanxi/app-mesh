@@ -1,10 +1,10 @@
-// src/daemon/HealthCheckTask.cpp
+// src/daemon/application/HealthCheckTask.cpp
 #include "HealthCheckTask.h"
-#include "../common/QuitHandler.h"
-#include "../common/Utility.h"
-#include "Configuration.h"
-#include "application/Application.h"
-#include "process/AppProcess.h"
+#include "../../common/QuitHandler.h"
+#include "../../common/Utility.h"
+#include "../Configuration.h"
+#include "Application.h"
+#include "../process/AppProcess.h"
 
 #include <thread>
 

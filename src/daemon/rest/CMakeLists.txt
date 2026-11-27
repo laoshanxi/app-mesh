@@ -4,9 +4,10 @@
 add_subdirectory(prometheus)
 
 # --- Define library ---
-aux_source_directory(. SRC_LIST)
-aux_source_directory(drogon DROGON_SRC_LIST)
-list(APPEND SRC_LIST ${DROGON_SRC_LIST})
+file(GLOB SRC_LIST CONFIGURE_DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/*.cpp)
+file(GLOB DROGON_SRC_LIST CONFIGURE_DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/drogon/*.cpp)
+file(GLOB TCP_SRC_LIST CONFIGURE_DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/tcp/*.cpp)
+list(APPEND SRC_LIST ${DROGON_SRC_LIST} ${TCP_SRC_LIST})
 add_library(rest STATIC ${SRC_LIST})
 add_library(${PROJECT_NAME}::rest ALIAS rest)
 

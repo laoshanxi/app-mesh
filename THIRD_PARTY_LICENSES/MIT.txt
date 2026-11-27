@@ -27,7 +27,6 @@ Used by the following dependencies:
   - yaml-cpp (Copyright (c) Jesse Beder)
   - jwt-cpp (Copyright (c) Dominik Thalhammer)
   - croncpp (Copyright (c) Marius Bancila)
-  - hashidsxx (Copyright (c) Toon Schoenmakers)
   - prometheus-cpp (Copyright (c) Jupp Mueller, Gregor Jasny)
   - c-ares (Copyright (c) Massachusetts Institute of Technology, Daniel Stenberg and contributors)
   - Brotli (Copyright (c) The Brotli Authors)

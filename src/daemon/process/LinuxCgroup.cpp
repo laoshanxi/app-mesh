@@ -973,7 +973,7 @@ bool LinuxCgroupV2::enableControllers(const std::string &cgroupPath)
 	return true;
 }
 
-void LinuxCgroupV2::initializeManagement(int additionalPid)
+void LinuxCgroupV2::initializeManagement()
 {
 	const auto perm = fs::perms::owner_all | fs::perms::group_exec | fs::perms::others_exec;
 	std::lock_guard managementGuard(cgroupV2ManagementMutex);
@@ -984,9 +984,8 @@ void LinuxCgroupV2::initializeManagement(int additionalPid)
 	const auto daemonPid = static_cast<int>(os::getpid());
 	const auto daemonLeaf = (fs::path(s_cgroupRootDir) / "appmesh-daemon").string();
 	const auto applicationsRoot = (fs::path(s_cgroupRootDir) / CGROUP_APPMESH_DIR).string();
-	if (!Utility::createRecursiveDirectory(daemonLeaf, perm) || !addProcessToCgroup(daemonLeaf, daemonPid, "cgroup.procs") ||
-		(additionalPid > 1 && additionalPid != daemonPid && !addProcessToCgroup(daemonLeaf, additionalPid, "cgroup.procs")))
-		throw std::runtime_error("failed to move App Mesh processes into a cgroup v2 leaf");
+	if (!Utility::createRecursiveDirectory(daemonLeaf, perm) || !addProcessToCgroup(daemonLeaf, daemonPid, "cgroup.procs"))
+		throw std::runtime_error("failed to move the daemon into its cgroup v2 leaf");
 	if (!Utility::stdStringTrim(Utility::readFile(s_cgroupRootDir + "/cgroup.procs")).empty())
 		throw std::runtime_error("cgroup v2 resource root contains unmanaged processes");
 	if (!Utility::createRecursiveDirectory(applicationsRoot, perm) || !enableControllers(applicationsRoot))
@@ -1005,7 +1004,7 @@ void LinuxCgroupV2::prepareGroup(const std::string &appName, int index)
 
 	// Move the daemon into its leaf BEFORE the fork: the forked child then
 	// inherits the leaf and joins the application leaf itself at exec time.
-	initializeManagement(0);
+	initializeManagement();
 	std::lock_guard managementGuard(cgroupV2ManagementMutex);
 	const auto perm = fs::perms::owner_all | fs::perms::group_exec | fs::perms::others_exec;
 

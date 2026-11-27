@@ -17,8 +17,6 @@
 
 namespace
 {
-	constexpr const char *INTERNAL_CAPABILITY_PREFIX = "amcap1.";
-
 	bool hasWorkflowStepPrefix(const std::string &appName)
 	{
 		return appName.compare(0, std::char_traits<char>::length(WORKFLOW_STEP_PREFIX), WORKFLOW_STEP_PREFIX) == 0;
@@ -64,7 +62,7 @@ namespace
 	void validateRunCapabilityTarget(const std::shared_ptr<HttpRequest> &message, const InternalCapability::Claims &claims)
 	{
 		auto config = Configuration::instance();
-		if (message->m_method == web::http::methods::POST && message->m_relative_uri == "/appmesh/app/run")
+		if (message->m_method == web::http::methods::POST && message->m_relative_uri == REST_PATH_APP_RUN_ASYNC)
 		{
 			const auto definition = message->extractJson();
 			if (!definition.isObject())
@@ -100,21 +98,21 @@ namespace
 	std::set<std::string> capabilityOperationsForRequest(const HttpRequest &message)
 	{
 		const auto &path = message.m_relative_uri;
-		if (message.m_method == web::http::methods::GET && path == "/appmesh/internal/workflow/registry")
+		if (message.m_method == web::http::methods::GET && path == REST_PATH_INTERNAL_WORKFLOW_REGISTRY)
 			return {PERMISSION_KEY_view_all_app};
 		// Workflow secret broker: the daemon owns the master key.
-		if (message.m_method == web::http::methods::POST && path == "/appmesh/internal/workflow/secret")
+		if (message.m_method == web::http::methods::POST && path == REST_PATH_INTERNAL_WORKFLOW_SECRET)
 			return {PERMISSION_KEY_workflow_secret};
 		// The Engine's control capability checks that a derived app name is free
 		// before it registers a workflow pseudo-App.
-		if (message.m_method == web::http::methods::GET && path == "/appmesh/applications")
+		if (message.m_method == web::http::methods::GET && path == REST_PATH_APP_ALL_VIEW)
 			return {PERMISSION_KEY_view_all_app};
-		if (message.m_method == web::http::methods::POST && path == "/appmesh/app/run")
+		if (message.m_method == web::http::methods::POST && path == REST_PATH_APP_RUN_ASYNC)
 			return {PERMISSION_KEY_run_app_async};
-		if (message.m_method == web::http::methods::GET && path == "/appmesh/labels")
+		if (message.m_method == web::http::methods::GET && path == REST_PATH_LABEL_VIEW_ALL)
 			return {PERMISSION_KEY_label_view};
 		if ((message.m_method == web::http::methods::POST || message.m_method == web::http::methods::DEL) &&
-			path == "/appmesh/subscribe")
+			path == REST_PATH_APP_SUBSCRIBE_ALL)
 		{
 			// Wildcard subscription performs both checks in its handler.
 			return {PERMISSION_KEY_app_subscribe, PERMISSION_KEY_view_all_app};
@@ -349,7 +347,7 @@ std::string RestBase::permissionCheck(const std::shared_ptr<HttpRequest> &messag
 	}
 
 	const auto token = getBearerToken(message);
-	if (token.compare(0, std::char_traits<char>::length(INTERNAL_CAPABILITY_PREFIX), INTERNAL_CAPABILITY_PREFIX) == 0)
+	if (token.compare(0, std::char_traits<char>::length(InternalCapability::PREFIX), InternalCapability::PREFIX) == 0)
 	{
 		return validateInternalCapability(message, token, permission);
 	}

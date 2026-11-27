@@ -6,8 +6,9 @@
 #include "../../src/daemon/Configuration.h"
 #include "../../src/daemon/process/DockerApiProcess.h"
 #include "../../src/daemon/process/ForkExec.h"
+#include "../../src/daemon/process/ShellScriptLaunch.h"
 #include "../../src/daemon/process/StdoutPump.h"
-#include "../../src/daemon/rest/drogon/FileTransferHandler.h"
+#include "../../src/daemon/rest/FileUpload.h"
 #include <catch.hpp>
 
 #include <algorithm>

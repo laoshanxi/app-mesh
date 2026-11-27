@@ -72,11 +72,6 @@ wildcards
   URL: https://github.com/zemasoft/wildcards
   Copyright: Copyright (c) zemasoft
 
-hashidsxx
-  License: MIT
-  URL: https://github.com/schoentoon/hashidsxx
-  Copyright: Copyright (c) Toon Schoenmakers
-
 prometheus-cpp
   License: MIT
   URL: https://github.com/jupp0r/prometheus-cpp

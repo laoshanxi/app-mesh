@@ -64,7 +64,8 @@ void Response::applyCorsHeaders(const std::string &origin)
 
 	headers[web::http::header_names::access_control_allow_origin] = origin;
 	headers[web::http::header_names::access_control_allow_methods] = "GET, POST, PUT, DELETE, OPTIONS";
-	headers[web::http::header_names::access_control_allow_headers] = "Authorization, Content-Type";
+	headers[web::http::header_names::access_control_allow_headers] = "Authorization, Content-Type, X-File-Path";
+	headers[web::http::header_names::vary] = "Origin";
 }
 
 void Response::applySecurityHeaders()

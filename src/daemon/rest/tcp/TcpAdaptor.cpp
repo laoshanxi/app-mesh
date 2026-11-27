@@ -1,4 +1,4 @@
-// src/daemon/rest/drogon/TcpAdaptor.cpp
+// src/daemon/rest/tcp/TcpAdaptor.cpp
 #include "TcpAdaptor.h"
 
 #include <algorithm>
@@ -11,7 +11,6 @@
 #include "../EventDispatcher.h"
 #include "../ReplyContext.h"
 #include "../Worker.h"
-#include "Adaptor.h" // dgn::tlsHardeningConf
 #include "FrameCodec.h"
 
 namespace
