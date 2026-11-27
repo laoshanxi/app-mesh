@@ -212,7 +212,8 @@ const std::string Utility::getConfigFilePath(const std::string &configFile, bool
 	const std::string workingConfigFile = getWorkConfigFilePath(configFile);
 	if (write || Utility::isFileExist(workingConfigFile))
 	{
-		createDirectory((fs::path(Utility::getHomeDir()) / APPMESH_WORK_DIR / APPMESH_WORK_CONFIG_DIR).string());
+		createDirectory((fs::path(Utility::getHomeDir()) / APPMESH_WORK_DIR / APPMESH_WORK_CONFIG_DIR).string(),
+						fs::perms::owner_all);
 		return workingConfigFile;
 	}
 	return (fs::path(Utility::getHomeDir()) / APPMESH_WORK_CONFIG_DIR / configFile).string();
@@ -306,12 +307,12 @@ bool Utility::validateFilePath(const std::string &filePath, const std::string &a
 	if (!allowedBaseDir.empty() && !isPathTraversalSafe(allowedBaseDir, filePath))
 		return false;
 	// The daemon's own tree (binaries, TLS keys, bootstrap credentials, registry) is never
-	// transferable, whatever the jail allows; the scratch area follows the effective jail
+	// transferable, whatever the jail allows; the exchange roots follow the effective jail
 	// (created at startup, so validation stays side-effect free).
-	const auto scratchDir = allowedBaseDir.empty()
-								? (fs::path(getHomeDir()) / APPMESH_WORK_DIR / APPMESH_WORK_TMP_DIR).string()
-								: (fs::path(allowedBaseDir) / APPMESH_WORK_TMP_DIR).string();
-	if (isPathTraversalSafe(getHomeDir(), filePath) && !isPathTraversalSafe(scratchDir, filePath))
+	const auto jailDir = allowedBaseDir.empty() ? (fs::path(getHomeDir()) / APPMESH_WORK_DIR).string() : allowedBaseDir;
+	const auto inExchange = isPathTraversalSafe((fs::path(jailDir) / APPMESH_WORK_SHARE_DIR).string(), filePath) ||
+							isPathTraversalSafe((fs::path(jailDir) / APPMESH_WORKSPACES_DIR).string(), filePath);
+	if (isPathTraversalSafe(getHomeDir(), filePath) && !inExchange)
 		return false;
 	// The pseudo-fs check above is lexical; follow symlinks so a link planted
 	// in an allowed tree cannot reach /proc behind a permissive jail.

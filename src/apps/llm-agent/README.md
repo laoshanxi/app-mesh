@@ -48,7 +48,8 @@ package registers nothing itself):
 Both Apps stream the same way: the caller opens the streaming task channel
 (`run_task_stream`, SDK ≥ 3.0.20) and receives each assistant message as one
 partial result (message-level chunks, not per-token deltas); the
-final envelope (`{"answer", "iterations", "turn_tokens"}`) closes the turn. Scenario B
+final envelope (`{"answer", "iterations", "turn_tokens"}`) closes the turn. Partials need
+no request flag; `"stream": false` opts out. Scenario B
 now isolates context (one private session per App) rather than enabling streaming.
 
 A session is just a stable working directory, `<workspace>/<session_id>`. The SDK keeps
@@ -110,24 +111,35 @@ Restrict with `LLMAGENT_ALLOWED_TOOLS` (comma list) / `LLMAGENT_PERMISSION_MODE`
 
 ```jsonc
 // session_send — an unknown session_id is created on first use; reuse the same id to
-//                continue the conversation. With "stream": true each assistant message
-//                travels as a task-RPC partial (run_task_stream), on the shared App and workers alike.
+//                continue the conversation. stream and max_iterations are optional:
+//                partials are on by default, "stream": false turns them off.
 { "action": "session_send", "session_id": "...", "input": "hello",
-  "stream": false, "max_iterations": 0 }
+  "stream": true, "max_iterations": 0 }
   → { "status":"ok", "data": { "answer", "iterations", "turn_tokens" } }
 
 // session_close — on a worker, also triggers worker exit → daemon removes the App
 { "action": "session_close", "session_id": "..." }
 ```
 
-Errors come back as `{ "status":"error", "message":"..." }`.
+Errors come back as `{ "status":"error", "code": "...", "message":"..." }`. Branch on
+`code` and show `message`:
 
-With `stream: true`, call the streaming variant instead of the blocking one — each
-assistant message arrives as a partial on the same channel (not a per-token
-delta), and the envelope above is the final frame:
+| `code` | Meaning |
+|---|---|
+| `invalid_request` | Malformed payload, unknown action, missing `session_id` or `input`, or a worker asked for another session |
+| `no_credential` | The turn failed and the App has no model credential env — register one ([Models & providers](#models--providers)) |
+| `agent_error` | The turn failed; `message` says why |
+| `internal_error` | The agent hit an unexpected exception |
+
+Transport failures (401/403, a task timeout) never produce this envelope: they are the
+daemon's HTTP status or the stream's `end` event.
+
+Call the streaming variant instead of the blocking one — each assistant message
+arrives as a partial on the same channel (not a per-token delta), and the envelope
+above is the final frame:
 
 ```python
-for chunk in client.run_task_stream("llm-agent", json.dumps({..., "stream": True})):
+for chunk in client.run_task_stream("llm-agent", json.dumps({...})):
     print(chunk, end="", flush=True)
 # StopIteration.value.result carries the final envelope
 ```
@@ -332,7 +344,7 @@ encrypted). It writes exactly the env / secured-env described here.
 | Turns fail with `Not logged in · Please run /login` | Same root cause: no model credential env reached the CLI — for a gateway setup check `ANTHROPIC_BASE_URL` **and** the secured `ANTHROPIC_AUTH_TOKEN`. |
 | Turn errors mentioning the CLI / spawn / config dir | The workspace (and thus `<workspace>/.claude`) isn't writable by the App's user — the App logs a warning about `CLAUDE_CONFIG_DIR` at startup. |
 | `turn_tokens: 0` (with a logged warning) | The SDK returned no usage for the turn — informational; the turn still ran. |
-| `stream:true` shows no live tokens with plain `run_task` | `run_task` returns only the final envelope by design — use `run_task_stream` (SDK ≥ 3.0.20) to receive the partials. |
+| No live output | `run_task` returns only the final envelope by design — call `run_task_stream` (SDK ≥ 3.0.20). Partials are on by default; check the request does not set `"stream": false`. |
 
 ## Layout
 

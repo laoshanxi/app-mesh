@@ -76,24 +76,29 @@ TEST_CASE("Utility Test", "[Utility]")
 	SECTION("file API path gate")
 	{
 		const std::string home = Utility::getHomeDir();
-		// The caller owns the scratch directory's creation; validation has no side effects.
-		const std::string scratch = home + "/work/tmp";
+		// The caller owns the exchange directories' creation; validation has no side effects.
+		const std::string scratch = home + "/work/share";
+		const std::string workspaces = home + "/work/workspaces";
 		REQUIRE(Utility::createDirectory(scratch));
+		REQUIRE(Utility::createDirectory(workspaces));
 		// The daemon's own tree is refused even when no jail is configured...
 		REQUIRE_FALSE(Utility::validateFilePath(selfPath, ""));
 		REQUIRE_FALSE(Utility::validateFilePath(home, ""));
 		REQUIRE_FALSE(Utility::validateFilePath(home + "/ssl/server-key.pem", ""));
 		// ...and even when the jail itself points inside it.
 		REQUIRE_FALSE(Utility::validateFilePath(selfPath, home));
-		// work/tmp is the shared scratch area and stays exchangeable.
-		REQUIRE(Utility::validateFilePath(home + "/work/tmp/file", ""));
-		REQUIRE(Utility::validateFilePath(home + "/work/tmp/uploads/tmp/00/f", ""));
-		// A non-empty jail derives its own <base>/tmp exchange area.
+		// work/share and work/workspaces are the exchange roots.
+		REQUIRE(Utility::validateFilePath(scratch + "/file", ""));
+		REQUIRE(Utility::validateFilePath(workspaces + "/ab12/app1/file", ""));
+		// A non-empty jail derives its own <base>/{share,workspaces} exchange roots.
 		REQUIRE(Utility::validateFilePath(scratch + "/file", home + "/work"));
+		REQUIRE(Utility::validateFilePath(workspaces + "/ab12/file", home + "/work"));
 		REQUIRE_FALSE(Utility::validateFilePath(home + "/work/other/file", home + "/work"));
-		// The rest of work/ (apps, auth, config) is still refused.
+		// The rest of work/ (apps, auth, config, runtime, legacy tmp) is refused.
 		REQUIRE_FALSE(Utility::validateFilePath(home + "/work/apps/app.yaml", ""));
 		REQUIRE_FALSE(Utility::validateFilePath(home + "/work/auth/secrets/x", ""));
+		REQUIRE_FALSE(Utility::validateFilePath(home + "/work/runtime/stdout/appmesh.a.out", ""));
+		REQUIRE_FALSE(Utility::validateFilePath(home + "/work/tmp/file", ""));
 		// A sibling directory sharing the prefix is not the daemon tree.
 		REQUIRE(Utility::validateFilePath(home + "2/file", ""));
 		REQUIRE(Utility::validateFilePath("/tmp", ""));
@@ -173,7 +178,7 @@ TEST_CASE("unlinkFileWithinJail pinned-directory delete", "[Utility][security]")
 {
 	init();
 	const std::string home = Utility::getHomeDir();
-	const std::string scratch = home + "/work/tmp";
+	const std::string scratch = home + "/work/share";
 	const std::string jail = home + "/work"; // mirrors the daemon's unset-FileAllowedBaseDir default
 	REQUIRE(Utility::createDirectory(scratch));
 	std::error_code ec;
@@ -221,7 +226,7 @@ TEST_CASE("createDirectoriesWithinJail component walk", "[Utility][security]")
 {
 	init();
 	const std::string home = Utility::getHomeDir();
-	const std::string scratch = home + "/work/tmp";
+	const std::string scratch = home + "/work/share";
 	const std::string jail = home + "/work";
 	REQUIRE(Utility::createDirectory(scratch));
 	std::error_code ec;
@@ -249,7 +254,7 @@ TEST_CASE("createDirectoriesWithinJail component walk", "[Utility][security]")
 TEST_CASE("openFileWithinJail fd verification", "[Utility][security]"){
 	init();
 	const std::string home = Utility::getHomeDir();
-	const std::string scratch = home + "/work/tmp";
+	const std::string scratch = home + "/work/share";
 	const std::string jail = home + "/work"; // mirrors the daemon's unset-FileAllowedBaseDir default
 	REQUIRE(Utility::createDirectory(scratch));
 	std::error_code ec;

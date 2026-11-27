@@ -110,7 +110,7 @@ func Reload() error {
 // Installation-root layout names; mirrors the daemon's APPMESH_WORK_* macros.
 const (
 	WorkDirName   = "work"
-	TmpDirName    = "tmp"
+	ShareDirName  = "share"
 	ConfigDirName = "config"
 )
 

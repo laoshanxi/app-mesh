@@ -32,7 +32,7 @@ ShellAppFileGen::ShellAppFileGen(const std::string &name, const std::string &cmd
 	const static char fname[] = "ShellAppFileGen::ShellAppFileGen() ";
 #if defined(_WIN32)
 	// Windows Implementation
-	const static std::string shellDir = (fs::path(Configuration::instance()->getWorkDir()) / "shell").string();
+	const static std::string shellDir = (fs::path(Configuration::instance()->getRuntimeDir()) / "shell").string();
 
 	// The script file name carries a per-instance suffix: a re-registered app of the
 	// same name must not collide with the previous instance's script. The old script
@@ -77,8 +77,8 @@ ShellAppFileGen::ShellAppFileGen(const std::string &name, const std::string &cmd
 			<< ">";
 
 #else
-	const static std::string shellDir = (fs::path(Configuration::instance()->getWorkDir()) / "shell").string();
-	const static std::string defaultWorkDir = Configuration::instance()->getWorkTmpDir();
+	const static std::string shellDir = (fs::path(Configuration::instance()->getRuntimeDir()) / "shell").string();
+	const static std::string defaultWorkDir = Configuration::instance()->getWorkShareDir();
 	// Per-instance suffix: see the Windows branch for why same-name script reuse is unsafe.
 	const auto fileName =
 		Utility::stringFormat("%s/appmesh.%s.%s.sh", shellDir.c_str(), name.c_str(), Utility::shortID().c_str());

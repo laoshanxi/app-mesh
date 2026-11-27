@@ -106,7 +106,7 @@ A first-class capability, built on the Claude Agent SDK. **Three enterprise scen
 # one call per turn, assistant messages stream in, final envelope closes it
 for token in client.run_task_stream("llm-agent", json.dumps(
         {"action": "session_send", "session_id": "S1",
-         "input": "Hi! Remember the number 7.", "stream": True}), timeout=180):
+         "input": "Hi! Remember the number 7."}), timeout=180):
     print(token, end="", flush=True)
 ```
 

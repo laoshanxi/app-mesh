@@ -145,7 +145,7 @@ appm workflow detail -w release-pipeline <run_id>         # 每步状态/耗时/
 # 一次调用，assistant 消息逐块流出，最终回执收尾
 for token in client.run_task_stream("llm-agent", json.dumps(
         {"action": "session_send", "session_id": "S1",
-         "input": "记住数字 7", "stream": True}), timeout=180):
+         "input": "记住数字 7"}), timeout=180):
     print(token, end="", flush=True)
 ```
 

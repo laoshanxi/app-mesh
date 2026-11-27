@@ -79,7 +79,7 @@ class WorkerStream:
         self._timeout = task_timeout
 
     def send(self, text):
-        payload = {"action": "session_send", "session_id": self._sid, "input": text, "stream": True}
+        payload = {"action": "session_send", "session_id": self._sid, "input": text}
         answer = []
         gen = self._client.run_task_stream(self._app, json.dumps(payload), timeout=self._timeout)
         while True:

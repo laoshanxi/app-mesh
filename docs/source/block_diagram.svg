@@ -350,7 +350,7 @@
 
   <rect x="640" y="1105" width="240" height="50" rx="17" fill="white" stroke="#111" stroke-width="1.4"/>
   <text x="760" y="1127" font-size="10.5" text-anchor="middle" fill="#111">app logs &amp; stdout files</text>
-  <text x="760" y="1142" font-size="9" text-anchor="middle" fill="#444">work/stdout · per-app rotated output</text>
+  <text x="760" y="1142" font-size="9" text-anchor="middle" fill="#444">work/runtime/stdout · per-app rotated output</text>
 
   <!-- ======================= Channels & accesses ======================= -->
   <g stroke="#111" stroke-width="1.4" fill="none">

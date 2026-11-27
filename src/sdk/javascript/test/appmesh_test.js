@@ -170,7 +170,7 @@ async function test() {
     const localUpload = join(tmpdir(), 'appmesh_js_upload.txt')
     const localDownload = join(tmpdir(), 'appmesh_js_download.txt')
     // Stay inside the default file-transfer jail (/opt/appmesh/work): /tmp is 403.
-    const remotePath = `/opt/appmesh/work/tmp/appmesh_js_test_${Date.now()}.txt`
+    const remotePath = `/opt/appmesh/work/share/appmesh_js_test_${Date.now()}.txt`
 
     writeFileSync(localUpload, content, 'utf8')
     try {

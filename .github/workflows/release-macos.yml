@@ -147,7 +147,8 @@ jobs:
 
           # Test
           tail /opt/appmesh/work/server.log
-          tail /opt/appmesh/work/stdout/appmesh.agent.out
+          # runtime/stdout is 0700 daemon-private; the runner user needs sudo to read it.
+          sudo tail /opt/appmesh/work/runtime/stdout/appmesh.agent.out
           # sudo lldb -p $(cat /opt/appmesh/appmesh.pid) -o "thread backtrace all" -o "quit" || true
 
           TOKEN=""

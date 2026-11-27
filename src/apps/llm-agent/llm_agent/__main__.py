@@ -78,9 +78,9 @@ def main(argv=None):
     except OSError as e:
         log.warning("CLAUDE_CONFIG_DIR %s not writable: %s — session history may fail", cfg_dir, e)
     _setup_logging(args, workspace)
-    _warn_if_no_credential()
     common = dict(workspace=workspace, max_iterations=_env_int("LLMAGENT_MAX_ITERATIONS", 0),
-                  history_root=os.path.join(cfg_dir, "projects"))
+                  history_root=os.path.join(cfg_dir, "projects"),
+                  credential_configured=_warn_if_no_credential())
     if args.session_worker:
         return _run_worker(args, common, args.server)
     return _run_shared(common, args.server)
@@ -101,7 +101,7 @@ def _setup_logging(args, workspace: str):
         logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s")
 
 
-def _warn_if_no_credential():
+def _warn_if_no_credential() -> bool:
     """A missing model credential surfaces only later as a CLI 'Not logged in' error
     that points at the wrong cause. Say it plainly at startup."""
     present = [k for k in ("ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN",
@@ -110,6 +110,7 @@ def _warn_if_no_credential():
         log.warning("no model credential env (ANTHROPIC_API_KEY / ANTHROPIC_AUTH_TOKEN / "
                     "CLAUDE_CODE_USE_BEDROCK / CLAUDE_CODE_USE_VERTEX) — every turn will fail; "
                     "register one as a secured env var (-z)")
+    return bool(present)
 
 
 def _run_shared(common, server):
@@ -183,7 +184,8 @@ def _serve(handler: Handler, server):
             # Always answer: an unhandled exception must not leave the caller
             # waiting out the task timeout.
             try:
-                ctx.send_task_result(json.dumps({"status": "error", "message": f"internal error: {e}"}))
+                ctx.send_task_result(json.dumps({"status": "error", "code": "internal_error",
+                                                 "message": f"internal error: {e}"}))
             except Exception:
                 log.error("failed to deliver internal-error task result")
         finally:

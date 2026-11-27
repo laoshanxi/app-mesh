@@ -79,6 +79,10 @@ File tools return a `curl` command. The MCP server does not read file bytes. The
 
 Set `APPMESH_TOKEN` to an App Mesh access token before you run a returned command.
 
+## Tasks
+
+`run_task` returns the response string of the application. For an llm-agent `session_send` request, it returns the parsed JSON reply, so the model reads `data.answer` or `code` directly. See the [llm-agent README](../../apps/llm-agent/README.md) for the request and reply format.
+
 ## Authorization
 
 The Engine uses the authenticated principal for ownership and RBAC. Register the MCP application with a principal that has only the required permissions.

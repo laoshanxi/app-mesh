@@ -437,7 +437,9 @@ Sends a payload to a running long-lived App via the App Mesh Task API (`POST /ap
 
 > **Note:** llm-agent performs no token check of its own, so **automatic triggers
 > (event/cron) drive it the same as manual runs** — access is gated by the daemon's RBAC
-> on `run_task` (and, for a Scenario B worker, the App's `permission`).
+> on `run_task` (and, for a Scenario B worker, the App's `permission`). Its request and
+> reply envelope, including the `code` on an error, is documented in the
+> [llm-agent README](https://github.com/laoshanxi/app-mesh/blob/main/src/apps/llm-agent/README.md#wire-protocol-run_task-payload).
 
 **Outputs available:**
 - `${{ steps.<name>.response }}` — response body from the App

@@ -915,9 +915,9 @@ pid_t DockerApiProcess::startImpl(std::string cmd, std::string execUser, std::st
 	const auto runResponse = JSON::parse(resp->text, nullptr);
 	// The replaced leftover's final logs precede this run's own output.
 	const auto replacedLogs = GET_JSON_STR_VALUE(runResponse, "replacedLogs");
-	if (!m_stdoutFile.empty() && !replacedLogs.empty())
+	if (!stdoutFile.empty() && !replacedLogs.empty())
 	{
-		std::ofstream out(m_stdoutFile, std::ios::app);
+		std::ofstream out(stdoutFile, std::ios::app);
 		out << replacedLogs;
 	}
 

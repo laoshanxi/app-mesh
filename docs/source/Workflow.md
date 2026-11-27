@@ -666,6 +666,8 @@ Semantics:
 - Periods missed while the engine (or node) was down are skipped, not back-filled.
 - Registration requires `workflow-admin` (same as `app_event`); an invalid cron is
   rejected at `workflow add`.
+- The `llm-agent` payload and its reply envelope are documented in the
+  [llm-agent README](https://github.com/laoshanxi/app-mesh/blob/main/src/apps/llm-agent/README.md#wire-protocol-run_task-payload).
 
 **Alternative — external cron App.** App Mesh's native cron/interval App can still
 drive runs with `appm add -a cron-hello -c "appm workflow run hello-world" -Y "0 2 * * *"`,

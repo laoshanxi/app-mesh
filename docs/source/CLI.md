@@ -179,16 +179,16 @@ appm run --cmd 'uname -a' --shell
 appm exec -- uname -a
 appm shell
 
-appm get --remote /opt/appmesh/work/tmp/server.log --local ./server.log
-appm put --local ./input.txt --remote /opt/appmesh/work/tmp/input.txt
-appm put --local ./input.txt --remote /opt/appmesh/work/tmp/input.txt --overwrite
-appm rmfile --remote /opt/appmesh/work/tmp/input.txt
+appm get --remote /opt/appmesh/work/share/server.log --local ./server.log
+appm put --local ./input.txt --remote /opt/appmesh/work/share/input.txt
+appm put --local ./input.txt --remote /opt/appmesh/work/share/input.txt --overwrite
+appm rmfile --remote /opt/appmesh/work/share/input.txt
 appm resource
 appm metric
 ```
 
 `get` and `put` transfer the file content only. Add `--apply-permissions` to apply the remote POSIX permissions and ownership on download, or to send the local permissions and ownership on upload. `put` refuses an existing remote file with `409`; add `--overwrite` to replace it. `rmfile` removes one remote file.
 
-File transfers work only inside the file jail. With the packaged defaults the exchangeable area is `/opt/appmesh/work/tmp`; every path outside it answers `403 File path is not allowed`. The full jail rules, including how `REST.FileAllowedBaseDir` widens the area, are in [REST API](RESTAPI.md#files-labels-and-configuration).
+File transfers work only inside the file jail. With the packaged defaults the exchangeable area is `/opt/appmesh/work/share` (plus the reserved `work/workspaces`); every path outside it answers `403 File path is not allowed`. The full jail rules, including how `REST.FileAllowedBaseDir` widens the area, are in [REST API](RESTAPI.md#files-labels-and-configuration).
 
 See [Deployment](Install.md) for installation procedures. See [Security](Security.md) for the security model. See [SDK Behavioral Contract](SDKContract.md) for SDK behavior.

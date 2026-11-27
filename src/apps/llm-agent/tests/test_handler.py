@@ -34,11 +34,12 @@ class FakeEngine:
         return Result(answer="stub: " + user_input, turn_tokens=42, iterations=1)
 
 
-def _handler(worker_session_id="", max_iterations=0, raise_first=False):
+def _handler(worker_session_id="", max_iterations=0, raise_first=False, credential_configured=True):
     ws = tempfile.mkdtemp()
     eng = FakeEngine(raise_first=raise_first)
     h = Handler(workspace=ws, max_iterations=max_iterations,
-                worker_session_id=worker_session_id, engine=eng)
+                worker_session_id=worker_session_id, engine=eng,
+                credential_configured=credential_configured)
     return h, eng, ws
 
 
@@ -49,7 +50,9 @@ def _send(h, **fields):
 class HandlerTest(unittest.TestCase):
     def test_session_open_is_gone(self):
         h, _, _ = _handler()
-        self.assertEqual(h.dispatch(json.dumps({"action": "session_open"}))["status"], "error")
+        r = h.dispatch(json.dumps({"action": "session_open"}))
+        self.assertEqual(r["status"], "error")
+        self.assertEqual(r["code"], "invalid_request")
 
     def test_blank_input_is_rejected(self):
         # A missing or blank "input" must fail fast instead of silently burning a
@@ -59,6 +62,7 @@ class HandlerTest(unittest.TestCase):
                        {"session_id": "s1", "input": "   "}):
             r = _send(h, **fields)
             self.assertEqual(r["status"], "error")
+            self.assertEqual(r["code"], "invalid_request")
             self.assertIn("input", r["message"])
         self.assertFalse(eng.calls)  # never reached the engine
 
@@ -109,6 +113,27 @@ class HandlerTest(unittest.TestCase):
         self.assertEqual(chunks, ["hi"])
         self.assertTrue(eng.calls[0]["streamed"])
 
+    def test_streaming_caller_gets_partials_by_default(self):
+        # A streaming caller needs no flag; only an explicit "stream": false opts out.
+        h, eng, _ = _handler()
+        chunks = []
+        payload = {"action": "session_send", "session_id": "s1", "input": "hi"}
+        h.dispatch(json.dumps(payload), partial=chunks.append)
+        self.assertEqual(chunks, ["hi"])
+        self.assertTrue(eng.calls[0]["streamed"])
+        chunks.clear()
+        h.dispatch(json.dumps({**payload, "stream": False}), partial=chunks.append)
+        self.assertEqual(chunks, [])
+        self.assertFalse(eng.calls[1]["streamed"])
+
+    def test_failed_turn_code_names_the_missing_credential(self):
+        # The App has no credential env: the CLI cannot log in, so the failure is
+        # reported as that rather than as a model error.
+        for configured, code in ((True, "agent_error"), (False, "no_credential")):
+            h, _, _ = _handler(raise_first=True, credential_configured=configured)
+            r = _send(h, session_id="s1", input="one")
+            self.assertEqual((r["status"], r["code"], r["message"]), ("error", code, "boom"))
+
     def test_worker_streams_and_scopes_to_its_session(self):
         h, eng, _ = _handler(worker_session_id="W")
         ok = _send(h, session_id="W", input="hi", stream=True)
@@ -116,6 +141,7 @@ class HandlerTest(unittest.TestCase):
         self.assertTrue(eng.calls[0]["streamed"])
         wrong = _send(h, session_id="other", input="hi")
         self.assertEqual(wrong["status"], "error")
+        self.assertEqual(wrong["code"], "invalid_request")
 
     def test_close_on_worker_requests_exit(self):
         h, _, _ = _handler(worker_session_id="W")

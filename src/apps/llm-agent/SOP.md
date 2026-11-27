@@ -125,8 +125,9 @@ proof that one `session_id` carries context across stages.
 ## 5. Interactive mode — streaming turns
 
 Talk turn after turn with live output. Streaming rides the task RPC itself
-(`run_task_stream`, SDK ≥ 3.0.20): each assistant message is a partial on the same call — no
-subscription, no race sleeps, and it works on the shared App too. An admin may still
+(`run_task_stream`, SDK ≥ 3.0.20): each assistant message is a partial on the same
+call, on by default — no subscription, no race sleeps, and it works on the shared App
+too. An admin may still
 provision one worker App per session when the session's context must stay isolated.
 
 ```bash
@@ -143,8 +144,7 @@ client = AppMeshClientTCP(tcp_address=("127.0.0.1", 6062), ssl_verify=False)
 client.set_bearer_token("<token>")
 # llm-agent (shared App) or llm-agent-sess-S1 (isolated worker) — same channel
 for token in client.run_task_stream("llm-agent-sess-S1", json.dumps(
-        {"action": "session_send", "session_id": "S1", "input": "Hi! Remember the number 7.",
-         "stream": True}), timeout=180):
+        {"action": "session_send", "session_id": "S1", "input": "Hi! Remember the number 7."}), timeout=180):
     print(token, end="", flush=True)
 # StopIteration.value.result carries the final {"status","data"} envelope
 ```
@@ -171,8 +171,10 @@ set `LLMAGENT_ALLOWED_TOOLS`, keep the Skill tool in the list.
 
 ## If a turn fails
 
+An error reply from the agent carries a `code`. The README lists all codes. The `403` and `401` answers come from the daemon and have no reply body.
+
 | Message | Do this |
 |---|---|
-| `Not logged in` | No credential on the App. Repeat step 2. |
+| `Not logged in` (`code: no_credential`) | No credential on the App. Repeat step 2. |
 | `403 ... app-run-task` | Your user lacks app-run-task permission. Ask the admin. |
 | `401 token expired` | The token expired. Repeat step 3. |

@@ -95,7 +95,9 @@ arrives as `final` and the stream ends with `end{final}`. A one-shot
 `run_task` caller receives no partials; a streaming caller that never gets
 a worker reply ends with `end{timeout}` or `end{error}`. Partial
 granularity is the worker's choice — App Mesh's llm-agent, for instance,
-flushes one `partial` per assistant message, not per model token.
+flushes one `partial` per assistant message, not per model token. Its request
+and reply envelope are documented in the
+[llm-agent README](https://github.com/laoshanxi/app-mesh/blob/main/src/apps/llm-agent/README.md#wire-protocol-run_task-payload).
 
 Permission: `app-run-task` plus write access to the application. Framed
 transports cannot carry a chunked event stream (SDKs redirect these calls
@@ -178,7 +180,7 @@ for chunk in client.stream_run("python3 infer.py --prompt '...'"):
 # 2) streaming task RPC (LLM agent stream: one partial per assistant message)
 end = None
 for token in client.run_task_stream("llm-agent",
-        '{"action":"session_send","session_id":"s1","input":"hi","stream":true}',
+        '{"action":"session_send","session_id":"s1","input":"hi"}',
         timeout=180):
     print(token, end="")
 # end.result carries the final envelope

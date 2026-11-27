@@ -132,6 +132,11 @@ requests; they do not traverse node forwarding. See
 [Streaming.md](Streaming.md)
 for the event contract, the stdin pipe mode, and the SDK generator APIs.
 
+The built-in LLM agent is driven through these task routes: `POST .../task` with
+a `session_send` / `session_close` JSON payload, `POST .../task/stream` for its
+live partials. The payload and the reply envelope are documented in the
+[llm-agent README](https://github.com/laoshanxi/app-mesh/blob/main/src/apps/llm-agent/README.md#wire-protocol-run_task-payload).
+
 ### Client disconnect during `syncrun`
 
 `syncrun` replies when the command finishes. The engine stops the on-demand run
@@ -167,9 +172,10 @@ there. The run then continues until it finishes or reaches its timeout.
 - `X-File-Path` must be absolute; `X-File-Mode` is the **decimal** file mode (for example `493` for `0755`), matching the `st_mode` convention used by the SDKs. A value outside `0..511` (for example the octal digits `"755"`) is ignored on every transport — the file keeps its default mode; it is never masked.
 - Uploads never overwrite by default: an existing destination returns `409`. Send `X-File-Overwrite: true` to replace it (the new content is published atomically).
 - `DELETE /appmesh/file/delete` removes one regular file named by `X-File-Path` under its own `file-delete` permission (independent of `file-upload`); a missing file returns `404`, a directory or anything else is refused.
-- The daemon's own installation tree (the directory that holds `bin/`, `ssl/`, `config/`, `script/` and `work/`, for example `/opt/appmesh`) is refused on both directions regardless of `REST.FileAllowedBaseDir`; symbolic links into it are resolved before the check. The `work/tmp` scratch subtree inside it is the one exchangeable exception.
-- An unset `REST.FileAllowedBaseDir` (the packaged default) jails transfers to the daemon's work directory tree (`BaseConfig.WorkingDirectory`, `/opt/appmesh/work` by default). Combined with the installation-tree exclusion above, the exchangeable default is the `work/tmp` scratch area. Set the option to an absolute path to allow transfers in another tree; every absolute path outside the jail is refused for download, upload, and delete.
+- The daemon's own installation tree (the directory that holds `bin/`, `ssl/`, `config/`, `script/` and `work/`, for example `/opt/appmesh`) is refused on both directions regardless of `REST.FileAllowedBaseDir`; symbolic links into it are resolved before the check. The `work/share` and `work/workspaces` subtrees inside it are the only exchangeable exception.
+- An unset `REST.FileAllowedBaseDir` (the packaged default) jails transfers to the daemon's work directory tree (`BaseConfig.WorkingDirectory`, `/opt/appmesh/work` by default). Combined with the installation-tree exclusion above, the exchangeable default is the `work/share` and `work/workspaces` area. Set the option to an absolute path to allow transfers in another tree; every absolute path outside the jail is refused for download, upload, and delete.
 - Pseudo filesystems (`/proc`, `/sys`, `/dev`) are refused on every transfer: their files stat as regular size-0 files and would otherwise download as empty `200` bodies.
+- The work directory layout behind these rules is specified in [WorkDir.md](WorkDir.md).
 
 ## Resources and metrics
 

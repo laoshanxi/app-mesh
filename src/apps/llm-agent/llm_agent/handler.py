@@ -26,8 +26,8 @@ def _ok(data: Optional[dict] = None) -> dict:
     return {"status": "ok", "data": data} if data is not None else {"status": "ok"}
 
 
-def _err(message: str) -> dict:
-    return {"status": "error", "message": message}
+def _err(message: str, code: str = "invalid_request") -> dict:
+    return {"status": "error", "code": code, "message": message}
 
 
 def _as_int(v) -> int:
@@ -41,10 +41,11 @@ def _as_int(v) -> int:
 
 class Handler:
     def __init__(self, *, workspace: str, max_iterations: int = 0, worker_session_id: str = "", engine=None,
-                 history_root: str = ""):
+                 history_root: str = "", credential_configured: bool = True):
         self.workspace = workspace
         self.max_iterations = max_iterations  # 0 = no ceiling (SDK default)
         self.worker_session_id = worker_session_id
+        self.credential_configured = credential_configured  # selects the no_credential error code
         self.history_root = history_root  # CLI projects dir; session_close also drops the transcript
         self._engine = engine or claude_sdk.run_turn  # seam: tests inject a fake
         # worker lifecycle
@@ -91,11 +92,11 @@ class Handler:
                 log.warning("session workdir %s: %s (running without a fixed cwd)", cwd, e)
                 cwd, resume = "", False
 
-        # Streaming rides the task RPC itself (run_task_stream partials), on shared App
-        # and workers alike; a one-shot worker caller keeps the legacy stdout echo
-        # for STDOUT-subscribing clients.
+        # Partials ride the task RPC itself (run_task_stream) by default — "stream": false
+        # opts out — on the shared App and workers alike; a one-shot worker caller keeps
+        # the legacy stdout echo for STDOUT-subscribing clients.
         stream = None
-        if req.get("stream"):
+        if req.get("stream", True):
             if partial is not None and self.worker_session_id:
                 def stream(chunk, _push=partial):  # noqa: E731
                     if not _push(chunk):
@@ -110,7 +111,7 @@ class Handler:
                                max_iterations=self._effective_max_iterations(req), stream=stream)
         except Exception as e:
             session.discard_empty_workdir(cwd)  # don't strand the dir a failed first turn just created
-            return _err(str(e))
+            return _err(str(e), "agent_error" if self.credential_configured else "no_credential")
         session.mark_started(cwd)  # only after a successful turn, so a failed first turn won't poison resume
         return _ok({"answer": res.answer, "iterations": res.iterations, "turn_tokens": res.turn_tokens})
 
