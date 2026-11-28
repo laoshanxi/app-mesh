@@ -40,7 +40,7 @@ rustls = { version = "0.23", default-features = false, features = ["ring", "logg
 webpki-roots = "1"
 
 [target.'cfg(unix)'.dependencies]
-nix = { version = "0.31", features = ["user", "fs"] }
+nix = { version = "0.32", features = ["user", "fs"] }
 
 [dev-dependencies]
 mockito = "1"
