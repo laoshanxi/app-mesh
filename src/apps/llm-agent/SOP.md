@@ -10,7 +10,7 @@ How to run and use the AI agent on App Mesh. Two modes:
 References: [README.md](README.md) (design, wire protocol, providers) ·
 [examples/user_scenarios.py](examples/user_scenarios.py) (runnable code for both modes) ·
 [config/llm-agent-worker.yaml](config/llm-agent-worker.yaml) (worker template) ·
-[docs/source/CLI.md](../../../docs/source/CLI.md) (appm CLI)
+[docs/source/interfaces/CLI.md](../../../docs/source/interfaces/CLI.md) (appm CLI)
 
 ## 1. Start the daemon
 

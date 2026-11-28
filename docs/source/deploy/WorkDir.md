@@ -8,7 +8,7 @@ This document is the single specification for the App Mesh work directory layout
 - Directories are split by responsibility: daemon-private state, shared exchange, per-Principal workspaces.
 - `runtime/` holds daemon-private state only. Applications reach their stdout, stdin and shell scripts through file descriptors, never by path.
 - `share/` is the only cross-application data area and the default application working directory.
-- `workspaces/` holds the private workspaces of sandboxed applications. [Sandbox.md](Sandbox.md) specifies the policy; this document specifies the layout.
+- `workspaces/` holds the private workspaces of sandboxed applications. [Sandbox.md](../engine/Sandbox.md) specifies the policy; this document specifies the layout.
 - Execution users must be able to traverse the work directory and `runtime/`. The daemon re-applies the traverse bits at startup.
 
 ## 2. Directories
@@ -51,7 +51,7 @@ Every directory is owned by the daemon user, except the application workspace, w
 | Output | `runtime/stdout/appmesh.<application>.out`, with `.1` … `.N` and `.bak` | Every start | When the application is deleted |
 | Shell script | `runtime/shell/appmesh.<application>.<id>.sh` | Start of a `shell` or `session_login` application | When the application stops using the script, or at daemon start |
 | Launch stdin | `runtime/stdin/appmesh.<run>.stdin` | Start of an application with `metadata` | When the run ends, or at daemon start |
-| Workspace | `workspaces/<principal>/<application>/` | First sandboxed start | See [Sandbox.md](Sandbox.md#3-workspace) |
+| Workspace | `workspaces/<principal>/<application>/` | First sandboxed start | See [Sandbox.md](../engine/Sandbox.md#3-workspace) |
 
 - On-demand run applications are not persistent. Their files follow the same rules and are removed when the run application is removed.
 - Output files survive a daemon restart. `stdout_backup_count` sets how many earlier outputs are kept.
@@ -68,7 +68,7 @@ Every directory is owned by the daemon user, except the application workspace, w
 | `runtime/uploads/` | Holds a file only for the duration of one upload request. The HTTP framework keeps an empty `tmp/` directory tree below it. |
 | `runtime/.snapshot` | Rewritten by the daemon on every scheduler pass. |
 | `share/` | Holds user data. The daemon removes nothing. |
-| `workspaces/` | Follows the workspace rules in [Sandbox.md](Sandbox.md#3-workspace). |
+| `workspaces/` | Follows the workspace rules in [Sandbox.md](../engine/Sandbox.md#3-workspace). |
 | `workflow/` | Run history of the workflow engine. Removed when the workflow is deleted through the workflow API. |
 | `server.log` | The daemon log. |
 

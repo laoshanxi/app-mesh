@@ -1,5 +1,7 @@
 # Workflow
 
+This is the workflow user guide: concepts, quick start, and worked examples. The normative YAML field reference, expression contexts, and execution semantics live in [Workflow YAML Schema](WorkflowSchema.md).
+
 App Mesh Workflow provides GitHub Actions-style CI/CD pipelines that run directly on App Mesh. Define your pipeline as a YAML file, register it, and trigger runs via CLI or events.
 
 Every example below is **copy-paste runnable** against a local App Mesh daemon — commands use `echo`/`sleep`/`true`/`false` so they work without any extra setup.
@@ -80,6 +82,27 @@ Workflow
         ├── Step 1 (command)
         └── Step 2 (message)
 ```
+
+### Terms
+
+| Term | Meaning |
+| --- | --- |
+| **Workflow** | A YAML-defined pipeline of jobs, stored at `work/workflow/{name}/workflow.yaml` and registered as a special application (`type=workflow`, name `workflow-{name}`) for CRUD and RBAC |
+| **Job** | A parallel execution unit. Jobs declare dependencies with `needs`; independent jobs run concurrently |
+| **Step** | A serial execution unit: `command`, `app`, `message`, or `workflow` |
+| **Workflow Run** | One execution instance: `pending` → `running` → `success` / `failure` / `cancelled` |
+| **Checkpoint** | The run's JSON record of per-job completion for crash recovery; completed jobs are skipped on restart |
+| **Flow log / Step log** | Per-run progress log (`flow.log`) and per-step stdout archive (`{job}.{step}.log`) |
+| **Run retention** | Automatic cleanup of old run directories; the 10 most recent runs per workflow are kept by default |
+| **Concurrency group** | A named mutual-exclusion scope for runs, with queue/cancel policies |
+
+### Disambiguation
+
+| Ambiguous term | In App Mesh core | In the workflow layer |
+| --- | --- | --- |
+| Task | Request-response message API into a running application | Not used; say "step" or "message step" |
+| Run | `POST /appmesh/app/run` executes an application | `appm workflow run` creates a workflow run; each step internally creates an application run |
+| Owner | The immutable Principal that owns an application | The resource owner who registered the workflow; the actor of a run is tracked separately |
 
 ## Step Types
 
@@ -748,23 +771,6 @@ appm workflow add -f secrets-demo.yaml
 appm workflow run secrets-demo -f
 appm workflow rm secrets-demo
 ```
-
-## CLI Reference
-
-| Command | Description |
-|---------|-------------|
-| `appm workflow add -f <file>` | Register a workflow from YAML (must contain `name:` and `jobs:`) |
-| `appm workflow list` | List all registered workflows |
-| `appm workflow get <name>` | Print a workflow's YAML |
-| `appm workflow rm <name>` | Remove a workflow |
-| `appm workflow run <name> [-e key=val] [-f]` | Trigger a run; `-f` follows output until terminal |
-| `appm workflow runs <name>` | List run history |
-| `appm workflow logs -w <name> <run_id>` | View the run's flow log |
-| `appm workflow output -w <name> <run_id> -j <job> -s <step>` | View a step's stdout |
-| `appm workflow detail -w <name> <run_id>` | Show run detail (per-job status, steps) |
-| `appm workflow cancel -w <name> <run_id>` | Cancel a running workflow |
-| `appm workflow rerun -w <name> <run_id>` | Re-run with the same inputs |
-| `appm workflow inputs <name>` | Show input parameters defined by the workflow |
 
 ## Complete Example
 

@@ -5,7 +5,7 @@ For application deployment, application startup behavior can be managed by App M
 
 ## Solution
 
-App Mesh support monitor both long-running and short-running applications, for more details, refer to [Command Line](https://app-mesh.readthedocs.io/en/latest/CLI.html)
+App Mesh support monitor both long-running and short-running applications, for more details, refer to [Command Line](https://app-mesh.readthedocs.io/en/latest/interfaces/CLI.html)
 
 ## Register an existing application to App Mesh
 

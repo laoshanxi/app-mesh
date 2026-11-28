@@ -131,7 +131,7 @@ is verified. A later command reuses those settings.
 
 Cluster trust patterns — one CA per target client, a shared CA directory, or a
 Vault-issued cluster — and their tested procedures are in
-[Cluster authentication design](cluster/ClusterAuthDesign.md#cluster-tls-trust).
+[Cluster](../engine/Cluster.md#cluster-tls-trust).
 
 ## Plaintext deployments
 

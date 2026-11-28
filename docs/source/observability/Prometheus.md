@@ -97,3 +97,7 @@ their startup state until App Mesh is restarted.
 
 ![Prometheus Configuration](https://raw.githubusercontent.com/laoshanxi/picture/master/prometheus/Prometheus-Configuration.png)
 ![Prometheus Targets](https://raw.githubusercontent.com/laoshanxi/picture/master/prometheus/Prometheus-Targets.png)
+
+## Related
+
+- [Build a monitoring system with Grafana, Prometheus, and Loki](../success/build_powerful_monitor_system_with_Grafana_Prometheus_Loki.md) — the composed stack as one recipe

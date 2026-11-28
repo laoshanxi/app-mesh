@@ -109,7 +109,7 @@ running as root. Windows does not perform Unix user switching.
 
 ## Sandbox and Execution User
 
-The [application sandbox](Sandbox.md) confines a native process to its workspace with Linux Landlock. It complements the execution user; it does not replace it. [Sandbox.md](Sandbox.md) specifies the policy, the requirements, and the limits. This section lists what the sandbox changes for the execution user.
+The [application sandbox](../engine/Sandbox.md) confines a native process to its workspace with Linux Landlock. It complements the execution user; it does not replace it. [Sandbox.md](../engine/Sandbox.md) specifies the policy, the requirements, and the limits. This section lists what the sandbox changes for the execution user.
 
 - The sandbox requires a non-root process user. A root daemon must map the Principal to a non-root `execution_user` or set `BaseConfig.DefaultExecUser`. Otherwise the application does not start.
 - The sandbox always sets `no_new_privs`. Setuid binaries and file capabilities gain no privilege inside the sandbox.

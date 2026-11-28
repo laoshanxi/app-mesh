@@ -43,9 +43,9 @@ A new built-in installation has no active administrator role. Complete one sign-
 appm logon --username admin@appmesh.local
 ```
 
-This command assigns the first administrator role when all security checks pass. The assignment is automatic and can occur only once. It does not need a browser, `sudo`, or a second enrollment token.
+This command assigns the first administrator role when all security checks pass. The assignment is automatic and can occur only once.
 
-Do not use `--forward-to` for this one-time assignment. A direct remote connection also cannot complete the assignment. After the local assignment succeeds, normal remote and forwarded sign-in work.
+Do not use `--forward-to` for this one-time assignment. A direct remote connection also cannot complete the assignment. After the local assignment succeeds, normal remote and forwarded sign-in work. The enrollment conditions and the credential files are specified in [Authentication](../security/Authentication.md#first-sign-in).
 
 ## Remote sign-in
 
@@ -65,7 +65,7 @@ settings from its `config.yaml`. For a remote Engine, trust its CA with
 `--ca-cert` or skip verification with `--no-verify` (insecure); use a `ws://` or
 `http://` `-H` URL for a plaintext Engine. Remote transport settings are
 remembered at logon, so later commands need no flags. See
-[TLS and certificates](TLS.md) for the full configuration and client matrix.
+[TLS and certificates](../security/TLS.md) for the full configuration and client matrix.
 
 ## Forwarded sign-in
 
@@ -191,4 +191,4 @@ appm metric
 
 File transfers work only inside the file jail. With the packaged defaults the exchangeable area is `/opt/appmesh/work/share` (plus the reserved `work/workspaces`); every path outside it answers `403 File path is not allowed`. The full jail rules, including how `REST.FileAllowedBaseDir` widens the area, are in [REST API](RESTAPI.md#files-labels-and-configuration).
 
-See [Deployment](Install.md) for installation procedures. See [Security](Security.md) for the security model. See [SDK Behavioral Contract](SDKContract.md) for SDK behavior.
+See [Deployment](../deploy/Install.md) for installation procedures. See [Security](../security/Security.md) for the security model. See [SDK Behavioral Contract](SDKContract.md) for SDK behavior.

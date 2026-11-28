@@ -87,4 +87,4 @@ Set `APPMESH_TOKEN` to an App Mesh access token before you run a returned comman
 
 The Engine uses the authenticated principal for ownership and RBAC. Register the MCP application with a principal that has only the required permissions.
 
-See [SDK Behavioral Contract](../../../docs/source/SDKContract.md) for bearer behavior. See [Security](../../../docs/source/Security.md) for trust boundaries.
+See [SDK Behavioral Contract](../../../docs/source/interfaces/SDKContract.md) for bearer behavior. See [Security](../../../docs/source/security/Security.md) for trust boundaries.

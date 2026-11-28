@@ -445,4 +445,4 @@ await server.sendTaskResult(JSON.stringify(result));
 
 ## Behavioral contract
 
-Cross-SDK client guarantees (event demuxer ordering, `__disconnected__` event, buffering caps, timeout/cleanup policy, and bearer authentication) are defined in [SDKContract.md](https://github.com/laoshanxi/app-mesh/blob/main/docs/source/SDKContract.md).
+Cross-SDK client guarantees (event demuxer ordering, `__disconnected__` event, buffering caps, timeout/cleanup policy, and bearer authentication) are defined in [SDKContract.md](https://github.com/laoshanxi/app-mesh/blob/main/docs/source/interfaces/SDKContract.md).

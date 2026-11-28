@@ -55,7 +55,7 @@ Environment variables `APPMESH_Sandbox_Enable` and `APPMESH_Sandbox_Mode` overri
 
 ## 3. Workspace
 
-Each sandboxed application gets one private workspace. [WorkDir.md](WorkDir.md) specifies the layout.
+Each sandboxed application gets one private workspace. [WorkDir.md](../deploy/WorkDir.md) specifies the layout.
 
 | Path | Mode | Owner | Content |
 |---|---|---|---|

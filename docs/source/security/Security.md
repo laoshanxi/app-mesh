@@ -2,7 +2,7 @@
 
 App Mesh is an OAuth 2.0 protected resource. It trusts one OpenID Connect issuer. It keeps authentication separate from App Mesh authorization.
 
-This document defines security behavior. Use [CLI](CLI.md) for sign-in commands. Use [Deployment](Install.md) for installation procedures. Use [Authentication](Authentication.md) for password and token operations in the built-in mode. Use [Cluster Authentication](cluster/ClusterAuthDesign.md) for the multi-node owner/follower design. Use [ADR 0009](https://github.com/laoshanxi/app-mesh/blob/main/docs/adr/0009-authentication-service.md) for the authentication-service implementation decision.
+This document defines security behavior. Use [CLI](../interfaces/CLI.md) for sign-in commands. Use [Deployment](../deploy/Install.md) for installation procedures. Use [Authentication](Authentication.md) for password and token operations in the built-in mode. Use [Cluster Authentication](../engine/Cluster.md) for the multi-node owner/follower design. Use [ADR 0009](https://github.com/laoshanxi/app-mesh/blob/main/docs/adr/0009-authentication-service.md) for the authentication-service implementation decision.
 
 ## Trust boundaries
 
@@ -138,7 +138,7 @@ The Engine refuses to delete a principal that owns an application. A deleted pri
 
 ## Application file system sandbox
 
-The [application sandbox](Sandbox.md) confines the file access of native application processes with Linux Landlock. The sandbox is disabled by default. An application definition has no sandbox field: the node (`Sandbox.Enable`, `Sandbox.Mode`) and the Principal (`sandbox.mode`) define the mode, and an application cannot weaken it. [Sandbox.md](Sandbox.md) is the single specification of the modes, the workspace, the requirements, and the limits.
+The [application sandbox](../engine/Sandbox.md) confines the file access of native application processes with Linux Landlock. The sandbox is disabled by default. An application definition has no sandbox field: the node (`Sandbox.Enable`, `Sandbox.Mode`) and the Principal (`sandbox.mode`) define the mode, and an application cannot weaken it. [Sandbox.md](../engine/Sandbox.md) is the single specification of the modes, the workspace, the requirements, and the limits.
 
 ## First administrator
 
@@ -195,9 +195,9 @@ A cluster uses one logical issuer. Each Engine validates tokens locally. Each En
 
 A follower does not create built-in credentials. It does not run a second authentication-service writer. It trusts the same issuer as the owner.
 
-Set up the owner and join followers with the `setup.sh --auth-role owner|follower` actions described in [Deployment](Install.md#cluster-authentication-service); the role also applies at package installation time through `APPMESH_AUTH_ROLE`. The packaged `identity` App stays enabled on a follower. It runs inert: it stays healthy, it starts no Dex process, and it writes no authentication state.
+Set up the owner and join followers with the `setup.sh --auth-role owner|follower` actions described in [Deployment](../deploy/Install.md#cluster-authentication-service); the role also applies at package installation time through `APPMESH_AUTH_ROLE`. The packaged `identity` App stays enabled on a follower. It runs inert: it stays healthy, it starts no Dex process, and it writes no authentication state.
 
-Authorization data is node-local. The principal and role APIs write the node that serves the request. A forwarded change therefore affects only the target node. Keep nodes consistent in one of two ways: apply the same changes on every node, or copy the owner's `work/config/authorization.yaml` to the followers. A copied file needs no restart: a follower adopts an entry from disk when it first resolves that principal, and a later save keeps the entry. A fresh follower has no `work/config` directory; create it before the first copy. A follower without a principal entry authenticates a user. It grants nothing beyond the configured provisioning policy.
+Authorization data is node-local: the principal and role APIs write the node that serves the request, and a forwarded change affects only the target node. [Cluster](../engine/Cluster.md#authorization-data-consistency) specifies the two ways to keep nodes consistent — engine replication with the owner as single writer, or manual distribution.
 
 The built-in database supports one active authentication owner. Use this failover sequence:
 

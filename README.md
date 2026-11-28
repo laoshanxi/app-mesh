@@ -84,7 +84,7 @@ $ appm ls -a myapp -o
 # appm -h for more usage
 ```
 
-Send a task message to a running app through the SDK. Mint an admin token first (see the [authentication guide](https://app-mesh.readthedocs.io/en/latest/Authentication.html)):
+Send a task message to a running app through the SDK. Mint an admin token first (see the [authentication guide](https://app-mesh.readthedocs.io/en/latest/security/Authentication.html)):
 
 ```shell
 $ export APPMESH_BEARER_TOKEN=$(/opt/appmesh/script/appmesh-auth.sh print-initial-password \
@@ -103,7 +103,7 @@ for i in range(10):
     print(result_from_server)
 ```
 
-For native packages (`.deb`/`.rpm`), systemd setup, and cluster initialization, see the [Installation Guide](https://app-mesh.readthedocs.io/en/latest/Install.html) and the [Dockerfile](Dockerfile).
+For native packages (`.deb`/`.rpm`), systemd setup, and cluster initialization, see the [Installation Guide](https://app-mesh.readthedocs.io/en/latest/deploy/Install.html) and the [Dockerfile](Dockerfile).
 
 ## 🚀 Core Capabilities
 
@@ -111,17 +111,17 @@ For native packages (`.deb`/`.rpm`), systemd setup, and cluster initialization, 
 | --------- | ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Hosting   | Application management | Full remote CRUD and control — cgroup limits, OS user, environment variables, Docker apps, stdin/stdout — with monitoring of start counts, exit codes, errors, and [health checks](https://app-mesh.readthedocs.io/)                                                                  |
 | Hosting   | Scheduling             | Long- and short-running apps, periodic jobs, cron expressions, custom timings, and policy-driven [start/exit behaviors](https://app-mesh.readthedocs.io/en/latest/success/customize_app_startup_behavior.html)                                                                        |
-| Computing | Remote execution       | Run commands and scripts on any node; send [in-memory tasks](https://app-mesh.readthedocs.io/en/latest/RemoteTask.html) to running applications for high-performance computing                                                                                                        |
-| Computing | Workflow engine        | GitHub-Actions-style [YAML pipelines](https://app-mesh.readthedocs.io/en/latest/Workflow.html) with DAG scheduling, running natively on App Mesh                                                                                                                                      |
-| Platform  | Security               | OAuth/OIDC bearer authentication (RFC 6750) with Principal-based RBAC and multi-tenant isolation; [file system sandbox](https://app-mesh.readthedocs.io/en/latest/Sandbox.html) for native apps; SSL/TLS on TCP/HTTP/WebSocket; HMAC-PSK internal verification                                                                                                                       |
-| Platform  | Observability          | Built-in [Prometheus exporter](https://app-mesh.readthedocs.io/en/latest/PROMETHEUS.html), [Grafana datasource](https://app-mesh.readthedocs.io/en/latest/GrafanaDataSource.html), [Loki](https://app-mesh.readthedocs.io/en/latest/Loki.html) integration, host/app resource metrics |
+| Computing | Remote execution       | Run commands and scripts on any node; send [in-memory tasks](https://app-mesh.readthedocs.io/en/latest/engine/TaskRun.html) to running applications for high-performance computing                                                                                                        |
+| Computing | Workflow engine        | GitHub-Actions-style [YAML pipelines](https://app-mesh.readthedocs.io/en/latest/engine/workflow/Workflow.html) with DAG scheduling, running natively on App Mesh                                                                                                                                      |
+| Platform  | Security               | OAuth/OIDC bearer authentication (RFC 6750) with Principal-based RBAC and multi-tenant isolation; [file system sandbox](https://app-mesh.readthedocs.io/en/latest/engine/Sandbox.html) for native apps; SSL/TLS on TCP/HTTP/WebSocket; HMAC-PSK internal verification                                                                                                                       |
+| Platform  | Observability          | Built-in [Prometheus exporter](https://app-mesh.readthedocs.io/en/latest/observability/Prometheus.html), [Grafana datasource](https://app-mesh.readthedocs.io/en/latest/observability/Grafana.html), [Loki](https://app-mesh.readthedocs.io/en/latest/observability/Loki.html) integration, host/app resource metrics |
 | Platform  | Extras                 | File upload/download API, remote shell execution, hot config reload, bash completion                                                                                                                                                                                                  |
 
 Runs on Linux, macOS, and Windows (x86 and ARM).
 
 ## 🔄 Workflow Pipeline
 
-Define CI/CD pipelines as YAML — similar to GitHub Actions, but running natively on App Mesh with the built-in [Workflow Engine](https://app-mesh.readthedocs.io/en/latest/Workflow.html):
+Define CI/CD pipelines as YAML — similar to GitHub Actions, but running natively on App Mesh with the built-in [Workflow Engine](https://app-mesh.readthedocs.io/en/latest/engine/workflow/Workflow.html):
 
 - **DAG scheduling** — jobs run in dependency order, independent jobs in parallel
 - **4 step types** — shell commands, existing Apps, Task API messages, sub-workflows
@@ -151,7 +151,7 @@ Agents are just managed Apps: the same RBAC, scheduling, secrets, health checks,
 
 **LLM as a workflow step**
 
-- The engine's [`message` step](docs/source/workflow/WorkflowSchema.md#step-type-message) puts the model into the DAG: `session_send` / `session_close` payloads, per-run session ids (`${{ workflow.run_id }}`), timeouts, failure propagation, and step-level resume — schedule it with cron, fan it out across nodes, or gate later steps on its answer.
+- The engine's [`message` step](docs/source/engine/workflow/WorkflowSchema.md#step-type-message) puts the model into the DAG: `session_send` / `session_close` payloads, per-run session ids (`${{ workflow.run_id }}`), timeouts, failure propagation, and step-level resume — schedule it with cron, fan it out across nodes, or gate later steps on its answer.
 
 **Cluster-native LLM nodes**
 
@@ -159,7 +159,7 @@ Agents are just managed Apps: the same RBAC, scheduling, secrets, health checks,
 
 **AI tooling around the mesh**
 
-- **[Remote sandbox for AI coding assistants](https://app-mesh.readthedocs.io/en/latest/REMOTE_SANDBOX.html)** — give agents an isolated build-and-run environment instead of your local shell.
+- **[Remote sandbox for AI coding assistants](https://app-mesh.readthedocs.io/en/latest/engine/RemoteSandbox.html)** — give agents an isolated build-and-run environment instead of your local shell.
 - **[MCP server](src/integrations/mcp-server)** — manage App Mesh from AI clients over Model Context Protocol (Streamable HTTP with OAuth 2.1, RBAC enforced by the daemon).
 - **[Remote execution skill](.agents/skills/appmesh-remote)** for Codex and Claude Code, **[MCP bridge](src/integrations/mcp-bridge)** for relaying stdio MCP servers over WebSocket, and **[MQTT bridge](src/integrations/mqtt)** for IoT scenarios.
 
@@ -167,8 +167,8 @@ Agents are just managed Apps: the same RBAC, scheduling, secrets, health checks,
 
 | Interface | Details                                                                                                                                                                                                                                                                                                  |
 | --------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| CLI       | [`appm` command reference](https://app-mesh.readthedocs.io/en/latest/CLI.html)                                                                                                                                                                                                                           |
-| REST      | [REST APIs](https://app-mesh.readthedocs.io/en/latest/RESTAPI.html) · [OpenAPI spec](https://petstore.swagger.io/?url=https://raw.githubusercontent.com/laoshanxi/app-mesh/main/src/daemon/rest/openapi.yaml)                                                                              |
+| CLI       | [`appm` command reference](https://app-mesh.readthedocs.io/en/latest/interfaces/CLI.html)                                                                                                                                                                                                                           |
+| REST      | [REST APIs](https://app-mesh.readthedocs.io/en/latest/interfaces/RESTAPI.html) · [OpenAPI spec](https://petstore.swagger.io/?url=https://raw.githubusercontent.com/laoshanxi/app-mesh/main/src/daemon/rest/openapi.yaml)                                                                              |
 | Web GUI   | [app-mesh-ui](https://github.com/laoshanxi/app-mesh-ui)                                                                                                                                                                                                                                                  |
 | SDKs      | [Python](https://app-mesh.readthedocs.io/en/latest/api/appmesh.html#module-appmesh.client_http) · [Golang](src/sdk/go/README.md) · [Rust](src/sdk/rust) · [Java](src/sdk/java/README.md) · [JavaScript](https://www.npmjs.com/package/appmesh) |
 
@@ -176,13 +176,13 @@ Agents are just managed Apps: the same RBAC, scheduling, secrets, health checks,
 
 **AI & automation**
 
-- [Remote build-and-run sandbox for AI coding assistants](https://app-mesh.readthedocs.io/en/latest/REMOTE_SANDBOX.html)
+- [Remote build-and-run sandbox for AI coding assistants](https://app-mesh.readthedocs.io/en/latest/engine/RemoteSandbox.html)
 - [LLM agent runtime hosted as an App Mesh app](src/apps/llm-agent) · [architecture and workflow design](src/apps/llm-agent/README.md) ([SOP](src/apps/llm-agent/SOP.md))
 - [Manage App Mesh from AI clients via MCP (HTTP + OAuth)](src/integrations/mcp-server)
 
 **Computing**
 
-- [In-memory remote task execution](https://app-mesh.readthedocs.io/en/latest/RemoteTask.html)
+- [In-memory remote task execution](https://app-mesh.readthedocs.io/en/latest/engine/TaskRun.html)
 - [Remote command and Python script execution](https://app-mesh.readthedocs.io/en/latest/success/remote_run_cli_and_python.html)
 - [Parallel task execution with the Python SDK](https://app-mesh.readthedocs.io/en/latest/success/python_parallel_run.html)
 
@@ -195,7 +195,7 @@ Agents are just managed Apps: the same RBAC, scheduling, secrets, health checks,
 
 **Platform & Kubernetes**
 
-- [Run non-container applications on Kubernetes](https://app-mesh.readthedocs.io/en/latest/success/kubernetes_run_native_application.html)
+- [Run non-container applications on Kubernetes](https://app-mesh.readthedocs.io/en/latest/observability/Kubernetes.html)
 - [Kubernetes local-PV provisioning via Open Service Broker](https://app-mesh.readthedocs.io/en/latest/success/open_service_broker_support_local_pv_for_K8S.html)
 
 ## 🆚 Comparison
@@ -223,12 +223,11 @@ Agents are just managed Apps: the same RBAC, scheduling, secrets, health checks,
 ## 📚 Documentation
 
 - [Read the Docs](https://app-mesh.readthedocs.io/) — full documentation
-- [Product Guide (中文)](docs/source/PRODUCT-GUIDE.md) / [Product Guide (EN)](docs/source/PRODUCT-GUIDE-EN.md) — features, business scenarios, and AI agent patterns, with runnable examples
-- [Feature Overview](docs/source/FeatureOverview.md) — the full capability map behind Hosting and Computing
-- [Installation Guide](https://app-mesh.readthedocs.io/en/latest/Install.html)
-- [Security](https://app-mesh.readthedocs.io/en/latest/Security.html)
-- [Application Sandbox](https://app-mesh.readthedocs.io/en/latest/Sandbox.html) — confine native applications to their workspace with Landlock
-- [Workflow Guide](https://app-mesh.readthedocs.io/en/latest/Workflow.html)
+- [Feature Overview](docs/source/FeatureOverview.md) — the full capability map behind Hosting and Computing, including the AI and LLM group
+- [Installation Guide](https://app-mesh.readthedocs.io/en/latest/deploy/Install.html)
+- [Security](https://app-mesh.readthedocs.io/en/latest/security/Security.html)
+- [Application Sandbox](https://app-mesh.readthedocs.io/en/latest/engine/Sandbox.html) — confine native applications to their workspace with Landlock
+- [Workflow Guide](https://app-mesh.readthedocs.io/en/latest/engine/workflow/Workflow.html)
 
 <details>
 <summary>🔗 Library dependencies</summary>

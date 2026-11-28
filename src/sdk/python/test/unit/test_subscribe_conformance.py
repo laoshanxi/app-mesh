@@ -1,4 +1,4 @@
-"""SDKContract subscribe conformance scenarios (docs/source/SDKContract.md).
+"""SDKContract subscribe conformance scenarios (docs/source/interfaces/SDKContract.md).
 
 Pure unit tests: they stub the transport and never touch a daemon.
 """
@@ -14,7 +14,7 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..",
 
 
 class TestSubscribeConformance(TestCase):
-    """SDKContract conformance scenarios (docs/source/SDKContract.md) — no daemon needed."""
+    """SDKContract conformance scenarios (docs/source/interfaces/SDKContract.md) — no daemon needed."""
 
     class _FakeWaitClient:
         """Stubs the REST half of wait_for_async_run; the event injected via

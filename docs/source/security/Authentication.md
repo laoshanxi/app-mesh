@@ -5,9 +5,9 @@ the built-in authentication mode (`APPMESH_AUTH_MODE=builtin`, see
 [ADR 0009](https://github.com/laoshanxi/app-mesh/blob/main/docs/adr/0009-authentication-service.md)). In `external` mode passwords
 belong to the external identity provider and this document does not apply.
 
-See [Security](Security.md) for the trust model, [CLI](CLI.md) for sign-in
-commands, [Install](Install.md) for deployment procedures, and
-[Cluster Authentication](cluster/ClusterAuthDesign.md) for the multi-node
+See [Security](Security.md) for the trust model, [CLI](../interfaces/CLI.md) for sign-in
+commands, [Install](../deploy/Install.md) for deployment procedures, and
+[Cluster Authentication](../engine/Cluster.md) for the multi-node
 owner/follower design.
 
 ## Questions at a glance
@@ -581,7 +581,7 @@ The full permission list lives in `src/daemon/security/authorization.yaml`.
 
 ### Ports
 
-[Ports.md](Ports.md) is the port specification. The identity listeners are:
+[Ports.md](../deploy/Ports.md) is the port specification. The identity listeners are:
 
 | Port | Owner | Purpose |
 | --- | --- | --- |

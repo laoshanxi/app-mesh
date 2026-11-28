@@ -895,7 +895,7 @@ class SubscribeMixin:
     def test_66_add_app_with_subscribe_events(self):
         """Atomic add_app + subscribe_events, verify events fire.
 
-        Conformance: S4 (partial) — see docs/source/SDKContract.md.
+        Conformance: S4 (partial) — see docs/source/interfaces/SDKContract.md.
         """
         config.attach_test_bearer(self.client)
         self._ensure_subscribe_permission()

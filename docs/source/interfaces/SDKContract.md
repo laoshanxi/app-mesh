@@ -301,6 +301,47 @@ iteration, so worst-case cancel latency is one attempt plus the 100 ms floor.
 | Java | `stop()` or thread interrupt | returns `null` |
 | JavaScript | `stop()` (per-iteration flag) | resolves `null` |
 
+## Workflow Task RPC
+
+CLI, GUI, and any external system drive the workflow engine through the App Mesh task API: `run_task("workflow", json_payload, timeout)` on any SDK, which reaches `POST /appmesh/app/workflow/task`. The `workflow` application runs the standard fetch/send loop above and dispatches on the `action` field.
+
+Twelve actions cover workflow CRUD, run management, and observability:
+
+| Action | Category | Description |
+|---|---|---|
+| `workflow_add` | CRUD | Register a workflow (validates YAML, creates the pseudo application) |
+| `workflow_get` | CRUD | Retrieve workflow YAML |
+| `workflow_list` | CRUD | List all registered workflows |
+| `workflow_rm` | CRUD | Remove a workflow and its workdir |
+| `workflow_inputs` | CRUD | Get input parameter definitions for a workflow |
+| `run` | Run | Trigger a new workflow run |
+| `cancel` | Run | Cancel a running workflow by run ID |
+| `rerun` | Run | Re-trigger a previous run with the same inputs |
+| `runs` | Observe | List run history for a workflow |
+| `run_detail` | Observe | Get detailed run state |
+| `log` | Observe | Get the flow log for a run |
+| `step_log` | Observe | Get step stdout for a specific job/step |
+
+Request and response are JSON:
+
+```json
+{"action": "run", "workflow": "data-pipeline", "inputs": {"environment": "prod"}}
+```
+
+```json
+{"status": "ok", "message": "running", "data": {"run_id": "cq1abc2def3g"}}
+```
+
+A queued run (concurrency group full) returns `"message": "pending"` instead. `step_log` additionally takes `"job"` and `"step"`. Errors use one format: `{"status": "error", "message": "<reason>"}`.
+
+Contract properties:
+
+- **Auth:** inherits daemon RBAC — the caller needs permission to call `run_task` on the `workflow` application.
+- **Timeout:** the `run_task` timeout parameter controls how long the client waits.
+- **Idempotent reads:** `runs`, `run_detail`, `log`, `step_log`, `workflow_get`, `workflow_list`, `workflow_inputs`.
+- **Non-idempotent writes:** `run` creates a new run each time; `cancel` is idempotent.
+- **Concurrency:** the per-application FIFO queue (max 512 pending) applies; handlers are non-blocking, so queue depth stays near zero under normal use. Event-triggered runs (`on.app_event`) bypass the task API entirely.
+
 ## Conformance Scenarios
 
 Each SDK's test suite should cover these named scenarios; when fixing a bug in

@@ -40,7 +40,7 @@ endpoints, requests use an OAuth access token in the
 
 A principal policy accepts `sandbox: {"mode": "off" | "write" | "strict"}`: the
 file system sandbox of the applications that Principal owns. An empty mode removes
-the override. See [Application sandbox](Sandbox.md).
+the override. See [Application sandbox](../engine/Sandbox.md).
 
 ## Applications
 
@@ -103,19 +103,7 @@ fields (`Cmd`, `Image`, `Env`, `WorkingDir`, resource limits, the first-class
 wiring above) > `metadata`. The container `User` follows the principal-bound
 `execution_user` unless `metadata.User` overrides it.
 
-Lifecycle semantics:
-
-- A missing image is pulled by the agent through the Docker Engine API — the daemon needs no docker CLI and no docker socket of its own. Container exits arrive through the agent's Docker-events subscription (polling stays armed as a fallback). Registry credentials for private registries come from `secret_env` as `APP_DOCKER_REGISTRY_SERVER`, `APP_DOCKER_REGISTRY_USER` and `APP_DOCKER_REGISTRY_PASSWORD`; they never reach the container environment or the logs. `APP_DOCKER_IMG_PULL_TIMEOUT` (default 300 s) bounds the pull.
-- Stopping sends SIGTERM first (`stop_grace_period`, default 10 s like `docker stop`) and SIGKILL only after the grace; the container is then removed deterministically.
-- `health_check_cmd` runs **inside the container** (via the exec API); a channel failure marks the application unhealthy rather than probing the host. When the image defines a HEALTHCHECK, App Mesh reads the verdict Docker already maintains instead and bypasses `health_check_cmd` — the probe is never executed twice.
-- Output is fetched from the container log; the `X-Output-Position` cursor is a nanosecond timestamp of the newest delivered line, so incremental reads never duplicate lines.
-- Restart means a fresh container: the previous container is removed and re-created (no state carry-over).
-- `Docker.Enable` (daemon config, hot-reloaded, default true; `APPMESH_DOCKER_Enable` overrides): false keeps the container service, the events push and image pulls off the node, and the daemon refuses container applications with a clear error.
-- `Docker.HostSecurityPolicy` (daemon config, hot-reloaded): `off` (default) / `audit` (log) / `enforce` (reject) for high-risk container settings (privileged, pid=host, binds of `/` or the Docker socket, CapAdd SYS_ADMIN/SYS_PTRACE).
-- `resource_limit.cpu` (fractional cores) maps to container `NanoCPUs` alongside `memory_mb`/`memory_virt_mb`/`cpu_shares`.
-- On-demand runs (`/appmesh/app/run`, `syncrun`) support Docker applications: the run starts the container, streams its output and reports the container exit code. The image must exist locally — an on-demand run never pulls (register the application to pull first). Windows hosts reject Docker applications.
-- On daemon start, labeled containers whose application no longer exists are logged as orphans; set `APPMESH_DOCKER_ORPHAN_SWEEP=delete` in the daemon environment to remove them.
-- `Sandbox.Enable` and `Sandbox.Mode` (daemon config, hot-reloaded): the file system sandbox of native applications and its node default mode (`off` / `write` / `strict`). `APPMESH_Sandbox_Enable` and `APPMESH_Sandbox_Mode` override them.
+Lifecycle semantics — pulls, graceful stop, exit codes, health, output cursors, on-demand runs, and the node-level Docker toggles — are specified in [Docker Applications](../engine/Docker.md) and [Application Management](../engine/AppManagement.md).
 
 ## Run and tasks
 
@@ -143,28 +131,10 @@ a `session_send` / `session_close` JSON payload, `POST .../task/stream` for its
 live partials. The payload and the reply envelope are documented in the
 [llm-agent README](https://github.com/laoshanxi/app-mesh/blob/main/src/apps/llm-agent/README.md#wire-protocol-run_task-payload).
 
-### Client disconnect during `syncrun`
-
-`syncrun` replies when the command finishes. The engine stops the on-demand run
-if the waiting client disconnects. This cleanup needs a direct connection to the
-REST listener. The agent port and the CLI/WebSocket transports multiplex
-requests over one connection. The engine cannot observe the client disconnect
-there. The run then continues until it finishes or reaches its timeout.
-
-### Output size in `syncrun`
-
-`syncrun` returns at most 5 MiB of output in one response. When the page is
-full, more output may follow:
-
-- `X-Output-Truncated: 1` marks the response as incomplete.
-- `X-Output-Position` gives the position that follows the returned output.
-- `X-App-Name` names the run.
-
-The run stays registered for 10 minutes after the reply. Read the rest with
-`GET /appmesh/app/{X-App-Name}/output?stdout_position={X-Output-Position}`
-and repeat until a response is shorter than 5 MiB, then delete the run or let
-the retention end remove it. A run whose output fits one page is removed when
-the reply is sent, as before.
+The run semantics — `process_uuid` tracking, the 5 MiB sync output page with
+`X-Output-Truncated` / `X-Output-Position` / `X-App-Name`, the 10-minute
+retention, and client-disconnect cleanup — are specified in
+[Task Run](../engine/TaskRun.md).
 
 ## Event subscription
 
@@ -196,7 +166,7 @@ the reply is sent, as before.
 - The daemon's own installation tree (the directory that holds `bin/`, `ssl/`, `config/`, `script/` and `work/`, for example `/opt/appmesh`) is refused on both directions regardless of `REST.FileAllowedBaseDir`; symbolic links into it are resolved before the check. The `work/share` and `work/workspaces` subtrees inside it are the only exchangeable exception.
 - An unset `REST.FileAllowedBaseDir` (the packaged default) jails transfers to the daemon's work directory tree (`BaseConfig.WorkingDirectory`, `/opt/appmesh/work` by default). Combined with the installation-tree exclusion above, the exchangeable default is the `work/share` and `work/workspaces` area. Set the option to an absolute path to allow transfers in another tree; every absolute path outside the jail is refused for download, upload, and delete.
 - Pseudo filesystems (`/proc`, `/sys`, `/dev`) are refused on every transfer: their files stat as regular size-0 files and would otherwise download as empty `200` bodies.
-- The work directory layout behind these rules is specified in [WorkDir.md](WorkDir.md).
+- The work directory layout behind these rules is specified in [WorkDir.md](../deploy/WorkDir.md).
 
 ## Resources and metrics
 
@@ -222,6 +192,6 @@ authentication service or its operator-managed upstream identity provider.
 
 ## Related
 
-- [Authentication](Authentication.md) — OAuth flows and a worked Python SDK example
+- [Authentication](../security/Authentication.md) — OAuth flows and a worked Python SDK example
 - [Event subscription](EventSubscription.md)
-- [Build App Mesh](Build.md) — build guidance and integrations
+- [Build App Mesh](../development/Build.md) — build guidance and integrations

@@ -3,36 +3,46 @@
    You can adapt this file completely to your liking, but it should at least
    contain the root `toctree` directive.
 
-Welcome to AppMesh's documentation!
+Welcome to App Mesh's documentation!
 ====================================
 
 .. toctree::
    :maxdepth: 2
-   :caption: Features:
+   :caption: Overview:
    :numbered:
 
    README.md
    FeatureOverview.md
-   PRODUCT-GUIDE.md
-   PRODUCT-GUIDE-EN.md
-   Build.md
-   CLI.md
-   RESTAPI.md
-   SDKContract.md
-   Install.md
-   WorkDir.md
-   Sandbox.md
-   Ports.md
-   Docker.md
-   Loki.md
-   PROMETHEUS.md
-   Coverity.md
-   GrafanaDataSource.md
-   RemoteTask.md
-   EventSubscription.md
-   Streaming.md
-   Workflow.md
-   spec-pipeline.md
+
+
+.. toctree::
+   :maxdepth: 2
+   :caption: Engine:
+   :numbered:
+
+   engine/AppManagement.md
+   engine/TaskRun.md
+   engine/Docker.md
+   engine/Sandbox.md
+   engine/Files.md
+   engine/Cluster.md
+   engine/LLM.md
+   engine/RemoteSandbox.md
+   engine/workflow/Workflow.md
+   engine/workflow/WorkflowSchema.md
+
+
+.. toctree::
+   :maxdepth: 2
+   :caption: Interfaces:
+   :numbered:
+
+   interfaces/CLI.md
+   interfaces/RESTAPI.md
+   interfaces/SDKContract.md
+   interfaces/EventSubscription.md
+   interfaces/Streaming.md
+   interfaces/api/appmesh
 
 
 .. toctree::
@@ -40,31 +50,61 @@ Welcome to AppMesh's documentation!
    :caption: Security:
    :numbered:
 
-   Security.md
-   TLS.md
-   Authentication.md
-   cluster/ClusterAuthDesign.md
+   security/Security.md
+   security/Authentication.md
+   security/TLS.md
+   security/OSUser.md
+
+
+.. toctree::
+   :maxdepth: 2
+   :caption: Cloud Native:
+   :numbered:
+
+   observability/Prometheus.md
+   observability/Grafana.md
+   observability/Loki.md
+   observability/Kubernetes.md
+
+
+.. toctree::
+   :maxdepth: 2
+   :caption: Deployment:
+   :numbered:
+
+   deploy/Install.md
+   deploy/Ports.md
+   deploy/WorkDir.md
+
+
+.. toctree::
+   :maxdepth: 2
+   :caption: Development:
+   :numbered:
+
+   development/Build.md
+   development/Release.md
+   development/Coverity.md
+   development/MemoryTool.md
+
+
+.. toctree::
+   :maxdepth: 2
+   :caption: Technical Notes:
+   :numbered:
+
+   technical/Protocols.md
+   technical/Conventions.md
 
 
 .. toctree::
    :maxdepth: 1
-   :caption: Success:
+   :caption: Success Stories:
    :numbered:
 
-   RemoteTask.md
-   REMOTE_SANDBOX.md
    success/remote_run_cli_and_python.md
    success/build_powerful_monitor_system_with_Grafana_Prometheus_Loki.md
    success/customize_app_startup_behavior.md
-   success/open_service_broker_support_local_pv_for_K8S.md
    success/promote_native_app_to_microservice_app.md
    success/secure_REST_file_server.md
-   success/kubernetes_run_native_application.md
    success/python_parallel_run.md
-
-
-.. toctree::
-   :maxdepth: 3
-   :caption: Python SDK:
-
-   api/appmesh

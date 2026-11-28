@@ -2,7 +2,7 @@
 
 App Mesh supports native packages and containers. The default package includes an authentication service. You do not need an external identity system for the first start.
 
-Use [CLI](CLI.md) for all sign-in methods and forwarding commands. Use [Security](Security.md) for the security model.
+Use [CLI](../interfaces/CLI.md) for all sign-in methods and forwarding commands. Use [Security](../security/Security.md) for the security model.
 
 ## Container installation
 
@@ -26,7 +26,7 @@ docker run -d -p 6060:6060 --restart=always --name appmesh \
   laoshanxi/appmesh:latest
 ```
 
-The file applies only on the first boot. See [Authentication](Authentication.md) for password and token operations.
+The file applies only on the first boot. See [Authentication](../security/Authentication.md) for password and token operations.
 
 Persist `/opt/appmesh/work`. Back up this directory as one unit. It contains authentication state, authorization data, application definitions, and the master key for secured environment values. The directory layout is specified in [WorkDir.md](WorkDir.md).
 
@@ -97,7 +97,7 @@ The first start creates two built-in identities.
 | Packaged administrator | `admin@appmesh.local` | `work/auth/secrets/initial-admin-credentials` |
 | Read-only viewer | `guest@appmesh.local` | `work/auth/secrets/initial-viewer-credentials` |
 
-The credential file is owner-only. Read its `password=` value on the authentication owner host, or print it with `sudo /opt/appmesh/script/appmesh-auth.sh print-initial-password`. Enter the value at the terminal prompt. The CLI does not echo the password.
+The credential file is owner-only. Read its `password=` value on the authentication owner host, or print it with `sudo /opt/appmesh/script/appmesh-auth.sh print-initial-password`.
 
 Run this command on the authentication owner host:
 
@@ -105,31 +105,9 @@ Run this command on the authentication owner host:
 appm logon --username admin@appmesh.local
 ```
 
-The command uses the built-in password method. It does not open a browser. The CLI assigns the first administrator role when the one-time checks pass.
+The command uses the built-in password method. The CLI assigns the first administrator role when the one-time checks pass. After the assignment, remote and forwarded sign-in work.
 
-After the assignment, remote and forwarded sign-in work. See [CLI](CLI.md#remote-sign-in) for the command forms.
-
-You can remove the recoverable plaintext after you confirm sign-in:
-
-```shell
-sudo /opt/appmesh/script/appmesh-auth.sh forget-initial-password
-```
-
-This action does not remove the password hash. Use this command to create a replacement password:
-
-```shell
-sudo /opt/appmesh/script/appmesh-auth.sh rotate-initial-password
-sudo systemctl restart appmesh
-```
-
-To choose your own password instead of a generated one, pipe it to the helper and restart:
-
-```shell
-echo 'your-password' | sudo /opt/appmesh/script/appmesh-auth.sh set-initial-password
-sudo systemctl restart appmesh
-```
-
-See [Authentication](Authentication.md) for container examples, token procedures, and troubleshooting.
+Choosing your own password, rotating, and removing the recoverable plaintext are specified in [Authentication](../security/Authentication.md#choosing-your-own-administrator-password), together with container examples, token procedures, and troubleshooting.
 
 ## Cluster authentication service
 
@@ -175,7 +153,7 @@ sudo APPMESH_AUTH_ROLE=follower \
      dpkg -i appmesh_*.deb
 ```
 
-See [Security](Security.md) for the forwarding authentication model and the
+See [Security](../security/Security.md) for the forwarding authentication model and the
 authorization-data consistency rule. A worked multi-node example is
 `script/docker/docker-compose.yaml`.
 
@@ -183,7 +161,7 @@ The compose cluster runs the issuer over plain HTTP on its protected
 network. Do the first sign-in inside the master container over the loopback
 WSS listener. Then copy the authorization data of the owner to every
 follower. The `appmesh_ui` service serves the web UI on port 443. See
-[ClusterAuthDesign](cluster/ClusterAuthDesign.md) for the exact commands
+[Cluster](../engine/Cluster.md) for the exact commands
 and the UI entry.
 
 ## External authentication service
@@ -218,7 +196,7 @@ The Windows script also accepts `-AccessUrl`, `-BrowserEntry`, `-TlsVerify`, `-C
 
 The package installs read-only defaults in `/opt/appmesh/config`. Put operator overrides in `/opt/appmesh/work/config`.
 
-See [TLS and certificates](TLS.md) for the `REST.SSL` listener settings, the
+See [TLS and certificates](../security/TLS.md) for the `REST.SSL` listener settings, the
 certificate sources, and the client matrix.
 
 The main files are:
@@ -229,7 +207,7 @@ The main files are:
 - `auth-stack.yaml` for built-in service ownership and ports.
 
 The application file system sandbox is disabled by default. It needs a Linux kernel
-with Landlock (5.13 or later). See [Application sandbox](Sandbox.md).
+with Landlock (5.13 or later). See [Application sandbox](../engine/Sandbox.md).
 
 Use these environment variables for non-interactive authentication setup:
 

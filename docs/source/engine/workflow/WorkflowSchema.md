@@ -2,14 +2,6 @@
 
 Complete schema definition for App Mesh Workflow pipelines.
 
-## Design Status
-
-The YAML shape below is shared by the current prototype and the ADR 0004 target
-model. The execution architecture is still being converged: `runs.json` and
-`checkpoint.json` describe the v1 prototype path. Trigger sources are engine-dispatched
-(`on.app_event`, `on.schedule` — see ADR 0004 "Schedule triggers"); in the target
-design each Run Record is the single lifecycle/logging/checkpoint source of truth.
-
 ## Minimal Example
 
 ```yaml

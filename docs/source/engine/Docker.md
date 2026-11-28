@@ -194,5 +194,10 @@ with `docker_image` runs its command in a container of that image.
   `DOCKER_HOST`.
 - `stdout_backup_count` is ignored for Docker applications (output is read
   from the container, not rotated files).
-- `resource_limit` maps to `Memory` / `MemorySwap` / `CpuShares`; for other
-  knobs use `metadata.HostConfig`.
+- `resource_limit` maps to `Memory` / `MemorySwap` / `CpuShares` / `NanoCPUs`
+  (`resource_limit.cpu`, fractional cores); for other knobs use
+  `metadata.HostConfig`.
+- `Docker.HostSecurityPolicy` (daemon config, hot-reloaded): `off`
+  (default) / `audit` (log) / `enforce` (reject) for high-risk container
+  settings — privileged, `pid=host`, binds of `/` or the Docker socket,
+  `CapAdd SYS_ADMIN`/`SYS_PTRACE`.

@@ -52,3 +52,7 @@ Use URL `https://appmesh:6060/appmesh/app/ping/output`, add Query Parameter `htm
 
 This plugin also support JSON format for application output
 Use URL `https://appmesh:6060/appmesh/app/ping/output`, add Query Parameter `json=true`
+
+## Related
+
+- [Build a monitoring system with Grafana, Prometheus, and Loki](../success/build_powerful_monitor_system_with_Grafana_Prometheus_Loki.md) — the composed stack as one recipe

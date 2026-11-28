@@ -34,7 +34,7 @@
 #   host MCP clients: http://127.0.0.1:6070/mcp with a password-flow token
 # Only the first sign-in (administrator enrollment) must run inside the master
 # container: enrollment accepts a loopback client only (see "First sign-in in
-# the compose cluster" in docs/source/cluster/ClusterAuthDesign.md).
+# the compose cluster" in docs/source/engine/Cluster.md).
 name: appmesh_cluster
 services:
   appmesh_master:

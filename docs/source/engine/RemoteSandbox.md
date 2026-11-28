@@ -244,8 +244,6 @@ ln -s ../../.agents/skills/appmesh-remote .claude/skills/appmesh-remote
 | 7   | Ctrl+C       | Interrupt during exec          | App disabled + deleted                         |
 | 8   | Cross-repo   | Install the skill in another repo | Set env → works                              |
 
-All tests 1-6 verified against live Docker container (2026-03-07).
-
 ## 9. Known Limitations
 
 1. **Full sync each time** — tar sends entire repo (minus excludes), not incremental like rsync. Mitigated by gzip compression.
