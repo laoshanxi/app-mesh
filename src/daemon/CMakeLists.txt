@@ -5,7 +5,7 @@ add_subdirectory(rest)
 add_subdirectory(security)
 
 # --- Define Executable ---
-aux_source_directory(. SRC_LIST)
+file(GLOB SRC_LIST CONFIGURE_DEPENDS *.cpp)
 add_executable(appmesh ${SRC_LIST})
 add_executable(${PROJECT_NAME}::appmesh ALIAS appmesh)
 

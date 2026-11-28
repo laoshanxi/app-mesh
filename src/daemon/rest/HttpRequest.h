@@ -97,6 +97,9 @@ public:
 	void markManagedWorkerTransport() { m_managedWorkerTransport = true; }
 	bool isManagedWorkerTransport() const { return m_managedWorkerTransport; }
 	bool isManagedPrivateTransport() const;
+	/// Keep the on-demand run of a sync reply readable for a client that must page
+	/// the rest of its output. No-op for requests that own no run.
+	virtual void setRunRetention(int seconds) {}
 
 private:
 	void notifyReply(int status) const;
@@ -117,8 +120,11 @@ public:
 	explicit HttpRequestAutoCleanup(const std::shared_ptr<HttpRequest> &message, const std::shared_ptr<Application> &appObj);
 	virtual ~HttpRequestAutoCleanup();
 
+	void setRunRetention(int seconds) override;
+
 private:
 	std::weak_ptr<Application> m_app;
+	std::atomic<int> m_runRetentionSeconds{0};
 };
 
 // HttpRequest with timeout support

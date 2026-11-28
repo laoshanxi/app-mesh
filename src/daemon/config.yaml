@@ -98,8 +98,8 @@ REST:
   # Allowed base directory for file upload/download operations.
   # The daemon's own installation tree is always refused, even inside this directory.
   # Empty (the default) jails transfers to the daemon's work directory tree
-  # (WorkingDirectory, /opt/appmesh/work by default; inside it only the work/tmp
-  # scratch area is exchangeable). Set an absolute path to widen the jail.
+  # (WorkingDirectory, /opt/appmesh/work by default; inside it only the work/share
+  # area is exchangeable). Set an absolute path to widen the jail.
   FileAllowedBaseDir:
 
   SSL:

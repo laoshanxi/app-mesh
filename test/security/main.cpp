@@ -1,7 +1,10 @@
 // test/security/main.cpp
 #define CATCH_CONFIG_MAIN // This tells Catch to provide a main() - only do this in one cpp file
+#include "../../src/daemon/Configuration.h"
 #include "../../src/daemon/security/SecretProtector.h"
 #include <catch.hpp>
+#include <memory>
+#include <stdexcept>
 #include <string>
 
 // The decoder silently skips invalid characters; corrupt key material must
@@ -32,4 +35,25 @@ TEST_CASE("SecretProtector::decodeBase64 strict alphabet", "[security]")
 		REQUIRE_THROWS_AS(SecretProtector::decodeBase64("QUJ"), std::invalid_argument);
 		REQUIRE_THROWS_AS(SecretProtector::decodeBase64(""), std::invalid_argument);
 	}
+}
+
+// Workflow slots use a prefix that no App name can contain, so the namespaces
+// cannot collide even if an App key contains a NUL.
+TEST_CASE("SecretProtector workflow secret context is namespaced", "[security]")
+{
+	const auto context = SecretProtector::workflowSecretContext("wf", "TOKEN");
+	REQUIRE(context == std::string("workflow:\0wf\0TOKEN", 18));
+	REQUIRE(context != std::string("wf") + '\0' + "TOKEN");
+}
+
+TEST_CASE("SecretProtector workflow secret round trip", "[security]")
+{
+	Configuration::instance(std::make_shared<Configuration>());
+	const auto context = SecretProtector::workflowSecretContext("wf", "TOKEN");
+	auto &protector = SecretProtector::instance();
+	const auto ciphertext = protector.protect("value", context);
+	REQUIRE(protector.unprotect(ciphertext, context) == "value");
+	REQUIRE_THROWS_AS(protector.unprotect(ciphertext, SecretProtector::workflowSecretContext("other", "TOKEN")),
+					  std::domain_error);
+	REQUIRE_THROWS_AS(protector.unprotect(ciphertext, std::string("wf") + '\0' + "TOKEN"), std::domain_error);
 }

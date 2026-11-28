@@ -102,7 +102,7 @@ void OidcTokenVerifier::loadConfig()
 {
 	const auto configFile = Utility::getConfigFilePath(APPMESH_OIDC_CONFIG_FILE);
 	auto root = Utility::yamlToJson(YAML::LoadFile(configFile));
-	Configuration::overrideConfigWithEnv(root);
+	Configuration::overrideConfigWithEnv(root, false);
 	if (!root.contains("OIDC") || !root.at("OIDC").is_object())
 		throw std::invalid_argument("oidc.yaml must contain an OIDC object");
 

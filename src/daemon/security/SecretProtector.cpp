@@ -100,6 +100,18 @@ std::string SecretProtector::secretsFilePath(const std::string &fileName)
 		"auth" / "secrets" / fileName).string();
 }
 
+std::string SecretProtector::workflowSecretContext(const std::string &workflow, const std::string &key)
+{
+	// ':' is not valid in an App name, so this first segment can never match the
+	// first segment of an application context (name + NUL + key).
+	std::string context = "workflow:";
+	context.push_back('\0');
+	context.append(workflow);
+	context.push_back('\0');
+	context.append(key);
+	return context;
+}
+
 std::string SecretProtector::readSecureKeyFile(const std::string &path)
 {
 	const int fd = ::open(path.c_str(), O_RDONLY | O_CLOEXEC | O_NOFOLLOW);

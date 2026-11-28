@@ -105,6 +105,8 @@ public:
 	static void instance(std::shared_ptr<Configuration> config);
 	static std::string readConfiguration();
 	static void handleSignal();
+	/// Reload the configuration if SIGHUP asked for it; call from the main loop.
+	static void reloadOnSignal();
 
 	/// `previous` (hot reload) seeds invalid-value fallbacks in the nested
 	/// FromJson parsers, so a bad reload keeps the running setting.
@@ -115,7 +117,8 @@ public:
 	void saveConfigToDisk();
 	void hotUpdateAndSave(nlohmann::json &config);
 	void hotUpdate(nlohmann::json &config);
-	static bool overrideConfigWithEnv(nlohmann::json &jsonConfig);
+	/// `reportIgnored` is false for a side document: its variables belong to the main configuration.
+	static bool overrideConfigWithEnv(nlohmann::json &jsonConfig, bool reportIgnored = true);
 	static bool applyEnvConfig(nlohmann::json &jsonValue, std::string envValue);
 	void registerPrometheus();
 	bool prometheusEnabled() const;
@@ -175,8 +178,10 @@ public:
 	const std::string getDefaultExecUser() const;
 	bool getDisableExecUser() const;
 	const std::string getWorkDir() const;
-	/// work/tmp under the working directory (uploads, snapshots, scratch).
-	const std::string getWorkTmpDir() const;
+	/// work/share under the working directory: shared exchange area, default app workdir.
+	const std::string getWorkShareDir() const;
+	/// work/runtime under the working directory: daemon-private state root (stdio, shell, snapshot).
+	const std::string getRuntimeDir() const;
 	bool getSslVerifyClient() const;
 	bool getSslVerifyServer() const;
 	bool getSslEnabled() const;

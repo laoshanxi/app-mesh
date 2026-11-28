@@ -1,5 +1,6 @@
 // src/daemon/Configuration.cpp
 #include <chrono>
+#include <csignal>
 #include <exception>
 #include <functional>
 #include <set>
@@ -156,17 +157,34 @@ std::string Configuration::readConfiguration()
 	return Utility::readFileCpp(Utility::getConfigFilePath(APPMESH_CONFIG_YAML_FILE));
 }
 
-void SigHupHandler(int signo)
+namespace
 {
-	const static char fname[] = "SigHupHandler() ";
+	// Written by the signal handler only; the main loop acts on it.
+	volatile sig_atomic_t g_reloadRequested = 0;
+}
 
-	LOG_INF << fname << "Received signal <" << signo << ">, reloading configuration";
+void SigHupHandler(int /*signo*/)
+{
+	// Async-signal-safe: the reload itself locks and spawns, so it runs on the main loop.
+	g_reloadRequested = 1;
+}
+
+void Configuration::reloadOnSignal()
+{
+	if (g_reloadRequested == 0)
+		return;
+	g_reloadRequested = 0;
+
+	const static char fname[] = "Configuration::reloadOnSignal() ";
+
+	LOG_INF << fname << "Reloading configuration on SIGHUP";
 	auto config = Configuration::instance();
 	if (config != nullptr)
 	{
 		try
 		{
 			auto configJson = Utility::yamlToJson(YAML::Load(Configuration::readConfiguration()));
+			Configuration::overrideConfigWithEnv(configJson); // same precedence as at boot
 			config->hotUpdate(configJson);
 		}
 		catch (const std::exception &e)
@@ -516,9 +534,14 @@ const std::string Configuration::getWorkDir() const
 		return (fs::path(Utility::getHomeDir()) / APPMESH_WORK_DIR).string();
 }
 
-const std::string Configuration::getWorkTmpDir() const
+const std::string Configuration::getWorkShareDir() const
 {
-	return (fs::path(getWorkDir()) / APPMESH_WORK_TMP_DIR).string();
+	return (fs::path(getWorkDir()) / APPMESH_WORK_SHARE_DIR).string();
+}
+
+const std::string Configuration::getRuntimeDir() const
+{
+	return (fs::path(getWorkDir()) / APPMESH_RUNTIME_DIR).string();
 }
 
 bool Configuration::getSslVerifyClient() const
@@ -617,7 +640,7 @@ std::string Configuration::getFileAllowedBaseDir() const
 	std::lock_guard<std::recursive_mutex> guard(m_hotupdateMutex);
 	// Unset means the daemon's work directory tree, not the whole filesystem:
 	// the file API defaults closed (inside it the own-installation exclusion
-	// still applies, leaving work/tmp as the exchangeable scratch area).
+	// still applies, leaving work/share as the exchangeable area).
 	if (m_rest->m_fileAllowedBaseDir.empty())
 		return getWorkDir();
 	return m_rest->m_fileAllowedBaseDir;
@@ -858,7 +881,11 @@ bool Configuration::removeApp(const std::string &appName, const Application *exp
 			m_apps.rebind(appName, empty, app);
 			m_apps.unbind(appName);
 		}
-		m_appNameIndexMap.unbind(appName);
+		if (app)
+		{
+			// generateRunAppName() indexes a run instance under its base name, not its own.
+			m_appNameIndexMap.unbind(app->runBaseApp().empty() ? appName : app->runBaseApp());
+		}
 	}
 	// Side effects run outside the mutation lock: destroy() may block for a
 	// slow Docker backend, and no other application management may depend on it.
@@ -886,7 +913,7 @@ void Configuration::saveConfigToDisk()
 	// Atomic replacement also supports readable root-owned files in a writable directory.
 	const auto yamlContent = Utility::jsonToYaml(content);
 	const auto configFilePath = Utility::getConfigFilePath(APPMESH_CONFIG_YAML_FILE, true);
-	uint16_t mode = 0644;
+	uint16_t mode = 0600;
 	if (Utility::isFileExist(configFilePath))
 	{
 		const int existingMode = std::get<0>(os::fileStat(configFilePath));
@@ -1089,7 +1116,7 @@ void Configuration::hotUpdate(nlohmann::json &jsonValue)
 	this->dump();
 }
 
-bool Configuration::overrideConfigWithEnv(nlohmann::json &jsonConfig)
+bool Configuration::overrideConfigWithEnv(nlohmann::json &jsonConfig, bool reportIgnored)
 {
 	const static char fname[] = "Configuration::overrideConfigWithEnv() ";
 	LOG_INF << fname << "Applying environment variable overrides to configuration";
@@ -1142,8 +1169,9 @@ bool Configuration::overrideConfigWithEnv(nlohmann::json &jsonConfig)
 					if (!json->contains(jsonKey))
 					{
 						(*json)[jsonKey] = envLeafValue();
-						LOG_WAR << fname << "Configuration key <" << dottedPath(i) << "> created from environment <"
-								<< envKey << ">";
+						LOG_STREAM(reportIgnored ? spdlog::level::warn : spdlog::level::debug)
+							<< fname << "Configuration key <" << dottedPath(i) << "> created from environment <"
+							<< envKey << ">";
 					}
 					// override json value
 					if (applyEnvConfig(json->at(jsonKey), envVal))
@@ -1163,6 +1191,11 @@ bool Configuration::overrideConfigWithEnv(nlohmann::json &jsonConfig)
 				}
 				else
 				{
+					// A side document shares the environment with the main configuration;
+					// only the main pass reports an ignored variable.
+					LOG_STREAM(reportIgnored ? spdlog::level::warn : spdlog::level::debug)
+						<< fname << "Configuration key <" << dottedPath(i) << "> from environment <" << envKey
+						<< "> is ignored: <" << jsonKey << "> is not a section of the configuration";
 					break;
 				}
 			}

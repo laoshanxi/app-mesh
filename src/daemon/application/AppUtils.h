@@ -41,7 +41,6 @@ public:
 	explicit AppLogFile(const std::string &appName, int index = 0);
 	virtual ~AppLogFile();
 	void increaseIndex();
-	int index();
 	const std::string getFileName() const;
 	/// A same-name successor instance owns the file; stop deleting it on destruction.
 	void detachFile();

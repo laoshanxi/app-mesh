@@ -4,7 +4,7 @@
 add_subdirectory(prometheus)
 
 # --- Define library ---
-aux_source_directory(. SRC_LIST)
+file(GLOB SRC_LIST CONFIGURE_DEPENDS *.cpp)
 add_library(rest STATIC ${SRC_LIST})
 add_library(${PROJECT_NAME}::rest ALIAS rest)
 

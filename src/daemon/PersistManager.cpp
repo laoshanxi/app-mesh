@@ -158,7 +158,7 @@ std::shared_ptr<Snapshot> Snapshot::FromJson(const nlohmann::json &obj)
 
 const std::string &Snapshot::filePath()
 {
-	static const std::string path = (fs::path(Configuration::instance()->getWorkTmpDir()) / SNAPSHOT_FILE_NAME).string();
+	static const std::string path = (fs::path(Configuration::instance()->getRuntimeDir()) / SNAPSHOT_FILE_NAME).string();
 	return path;
 }
 
@@ -173,6 +173,10 @@ void Snapshot::persist()
 	{
 		ofs << this->AsJson().dump();
 		ofs.close();
+		// The temp sits in a traversable directory; keep it owner-only even
+		// when the rename below never happens.
+		boost::system::error_code permsError;
+		fs::permissions(tmpFile, fs::perms::owner_read | fs::perms::owner_write, permsError);
 		if (ACE_OS::rename(tmpFile.c_str(), target.c_str()) == 0)
 		{
 			LOG_DBG << fname << "Snapshot written to <" << target << ">";

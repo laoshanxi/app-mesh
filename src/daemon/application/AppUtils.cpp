@@ -28,8 +28,8 @@ ShellAppFileGen::ShellAppFileGen(const std::string &name, const std::string &cmd
 	: m_usingSudo(false)
 {
 	const static char fname[] = "ShellAppFileGen::ShellAppFileGen() ";
-	const static std::string shellDir = (fs::path(Configuration::instance()->getWorkDir()) / "shell").string();
-	const static std::string defaultWorkDir = Configuration::instance()->getWorkTmpDir();
+	const static std::string shellDir = (fs::path(Configuration::instance()->getRuntimeDir()) / "shell").string();
+	const static std::string defaultWorkDir = Configuration::instance()->getWorkShareDir();
 	// Per-instance suffix: a re-registered app of the same name must not collide
 	// with the previous instance's still-open script.
 	const auto fileName = Utility::stringFormat("%s/appmesh.%s.%s.sh", shellDir.c_str(), name.c_str(), Utility::shortID().c_str());
@@ -135,10 +135,6 @@ void AppLogFile::increaseIndex()
 	}
 }
 
-int AppLogFile::index()
-{
-	return m_index;
-}
 
 const std::string AppLogFile::getFileName() const
 {

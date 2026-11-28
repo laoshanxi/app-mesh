@@ -221,7 +221,7 @@ AppProcess::AppProcess(std::weak_ptr<Application> owner)
 	const static char fname[] = "AppProcess::AppProcess() ";
 	LOG_DBG << fname << "Entered, ID: " << m_uuid;
 
-	const auto inputDir = (fs::path(Configuration::instance()->getWorkDir()) / "stdin");
+	const auto inputDir = (fs::path(Configuration::instance()->getRuntimeDir()) / "stdin");
 	m_stdinFileName = (inputDir / Utility::stringFormat("appmesh.%s.stdin", m_uuid.c_str())).string();
 }
 
@@ -859,7 +859,7 @@ pid_t AppProcess::startImpl(std::string cmd, std::string user, std::string workD
 	option.handle_inheritance(0);
 
 	if (workDir.empty())
-		workDir = Configuration::instance()->getWorkTmpDir();
+		workDir = Configuration::instance()->getWorkShareDir();
 
 	if (Utility::isDirExist(workDir))
 		option.working_directory(workDir.c_str());

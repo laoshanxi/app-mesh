@@ -5,7 +5,7 @@ add_subdirectory(os)
 add_subdirectory(lwsservice)
 
 # --- Define library ---
-aux_source_directory(. SRC_LIST)
+file(GLOB SRC_LIST CONFIGURE_DEPENDS *.cpp)
 add_library(common STATIC ${SRC_LIST})
 add_library(${PROJECT_NAME}::common ALIAS common)
 

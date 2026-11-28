@@ -123,6 +123,92 @@ namespace
 			addOwnerDisplayName(application);
 	}
 
+	// Workflow identifiers and secret_env keys share the schema's safe patterns.
+	bool validWorkflowSecretIdentifier(const std::string &value)
+	{
+		return !value.empty() && value.size() <= 128 &&
+			   std::all_of(value.begin(), value.end(),
+						   [](unsigned char c) { return std::isalnum(c) || c == '-' || c == '_'; });
+	}
+
+	bool validWorkflowSecretKey(const std::string &value)
+	{
+		if (value.empty() || value.size() > 255)
+			return false;
+		if (!(std::isalpha(static_cast<unsigned char>(value[0])) || value[0] == '_'))
+			return false;
+		return std::all_of(value.begin(), value.end(),
+						   [](unsigned char c) { return std::isalnum(c) || c == '_'; });
+	}
+
+	// Broker call bounds.
+	constexpr std::size_t MAX_WORKFLOW_SECRET_ENTRIES = 128;
+	constexpr std::size_t MAX_WORKFLOW_SECRET_VALUE_SIZE = 1024 * 1024;
+	constexpr std::size_t MAX_WORKFLOW_SECRET_TOTAL_SIZE = 4 * 1024 * 1024;
+
+	// Sync-run held request: HttpRequestAutoCleanup's post-reply app cleanup,
+	// plus the task RPC's explicit 408 at the requested timeout. The run's own
+	// completion reply must not beat the timeout past it: a container teardown
+	// (stop/kill/delete/log archive) trails the timeout kill by seconds, and
+	// today's completion then answers a success-shaped 200-empty long after the
+	// caller asked to wait.
+	// TimerHandler must stay public: the timer registry binds this object through
+	// its enable_shared_from_this base, which private inheritance would break.
+	class HttpRequestSyncRun final : public HttpRequestAutoCleanup, public TimerHandler
+	{
+	public:
+		HttpRequestSyncRun(const std::shared_ptr<HttpRequest> &message, const std::shared_ptr<Application> &appObj)
+			: HttpRequestAutoCleanup(message, appObj), m_timerResponseId(INVALID_TIMER_ID), m_httpRequestReplyFlag(false)
+		{
+		}
+
+		~HttpRequestSyncRun() override
+		{
+			// Same leak guard as HttpRequestWithTimeout: the gate makes this a no-op once any reply went out.
+			HttpRequest::reply(web::http::status_codes::ServiceUnavailable);
+		}
+
+		void initTimeout(int timeoutSeconds)
+		{
+			if (timeoutSeconds <= 0)
+				return;
+			registerTimer(m_timerResponseId, 1000L * timeoutSeconds, 0, "HttpRequestSyncRun",
+						  std::bind(&HttpRequestSyncRun::onTimerResponse, this));
+		}
+
+		// A rejected start owns no run: cancel the timeout and suppress the
+		// destructor's bare 503, so handleRest answers the rethrown failure once
+		// with its real status and reason.
+		void abandonFailedStart()
+		{
+			cancelTimer(m_timerResponseId);
+			m_httpRequestReplyFlag.store(true);
+		}
+
+	private:
+		bool onTimerResponse()
+		{
+			HttpRequest::reply(web::http::status_codes::RequestTimeout,
+							   Utility::text2json("run timed out: the application did not finish within the requested timeout"));
+			return false;
+		}
+
+		bool reply(const std::string &requestUri, const std::string &uuid, const std::vector<std::uint8_t> &body,
+				   const std::map<std::string, std::string> &headers, const web::http::status_code &status,
+				   const std::string &bodyType) const override
+		{
+			// Same pattern as HttpRequestWithTimeout: cancel the timeout from the reply path (mutable
+			// member keeps the id non-const; the const_cast covers the non-const cancelTimer method).
+			const_cast<HttpRequestSyncRun *>(this)->cancelTimer(m_timerResponseId);
+			if (!m_httpRequestReplyFlag.exchange(true))
+				return HttpRequest::reply(requestUri, uuid, body, headers, status, bodyType);
+			return false;
+		}
+
+		mutable std::atomic_long m_timerResponseId;
+		mutable std::atomic<bool> m_httpRequestReplyFlag;
+	};
+
 	// Shared X-File-Path prologue of the file endpoints: replies (400/403) and
 	// returns false when the header is missing or the path fails the jail.
 	bool requiredFilePath(const std::shared_ptr<HttpRequest> &message, std::string &file)
@@ -182,6 +268,7 @@ constexpr auto REST_PATH_PROTECTED_RESOURCE_METADATA = "/.well-known/oauth-prote
 constexpr auto REST_PATH_INTERNAL_WORKFLOW_CAPABILITY = "/appmesh/internal/workflow/capability";
 constexpr auto REST_PATH_INTERNAL_WORKFLOW_CLEANUP_ORPHANS = "/appmesh/internal/workflow/cleanup-orphans";
 constexpr auto REST_PATH_INTERNAL_WORKFLOW_REGISTRY = "/appmesh/internal/workflow/registry";
+constexpr auto REST_PATH_INTERNAL_WORKFLOW_SECRET = "/appmesh/internal/workflow/secret";
 constexpr auto REST_PATH_INTERNAL_AGENT_CONTAINER_EVENT = "/appmesh/internal/container-event";
 constexpr auto REST_PATH_ENROLL_FIRST_ADMIN = "/appmesh/auth/enroll-first-admin";
 
@@ -264,6 +351,8 @@ RestHandler::RestHandler() : m_metrics(std::make_shared<PrometheusRest>())
 	bindRestMethod(web::http::methods::POST, REST_PATH_INTERNAL_AGENT_CONTAINER_EVENT, std::bind(&RestHandler::apiAgentContainerEvent, this, std::placeholders::_1));
 	bindRestMethod(web::http::methods::POST, REST_PATH_INTERNAL_WORKFLOW_CLEANUP_ORPHANS, std::bind(&RestHandler::apiWorkflowCleanupOrphans, this, std::placeholders::_1));
 	bindRestMethod(web::http::methods::GET, REST_PATH_INTERNAL_WORKFLOW_REGISTRY, std::bind(&RestHandler::apiWorkflowRegistry, this, std::placeholders::_1));
+	bindRestMethod(web::http::methods::POST, REST_PATH_INTERNAL_WORKFLOW_SECRET,
+				   std::bind(&RestHandler::apiWorkflowSecret, this, std::placeholders::_1));
 	bindRestMethod(web::http::methods::POST, REST_PATH_ENROLL_FIRST_ADMIN, std::bind(&RestHandler::apiEnrollFirstAdmin, this, std::placeholders::_1));
 
 	// 2. View Application
@@ -725,38 +814,6 @@ std::string RestHandler::regexSearch(const std::string &value, const char *expr,
 	throw std::invalid_argument(clientError);
 }
 
-std::tuple<std::string, std::string> RestHandler::regexSearch2(const std::string &value, const char *expr,
-															   const char *clientError)
-{
-	const static char fname[] = "RestHandler::regexSearch2() ";
-
-	std::string first, second;
-	boost::regex expression(expr);
-	boost::smatch what;
-	if (boost::regex_search(value, what, expression) && what.size() > 1)
-	{
-		// NOTE: start from position 1, skip the REST patch prefix
-		for (size_t i = 1; i < what.size(); ++i)
-		{
-			if (what[i].matched)
-			{
-				if (first.empty())
-				{
-					first = Utility::stdStringTrim(what[i].str());
-				}
-				else if (second.empty())
-				{
-					second = Utility::stdStringTrim(what[i].str());
-					return std::make_tuple(first, second);
-				}
-			}
-		}
-	}
-	// The regex details stay in the log; the client sees a neutral message.
-	LOG_WAR << fname << "Failed to parse data pair from path <" << value << "> for regex expression: <" << expr << ">";
-	throw std::invalid_argument(clientError);
-}
-
 void RestHandler::apiAppEnable(const std::shared_ptr<HttpRequest> &message)
 {
 	permissionCheck(message, PERMISSION_KEY_app_control);
@@ -810,6 +867,9 @@ void RestHandler::apiAppDelete(const std::shared_ptr<HttpRequest> &message)
 	const auto path = (curlpp::unescape(message->m_relative_uri));
 	auto appName = regexSearch(path, REST_PATH_APP_DELETE);
 
+	// Authenticate before the existence lookup so an anonymous caller cannot tell 404 from 401.
+	const auto tokenUser = permissionCheck(message, "");
+
 	auto config = Configuration::instance();
 	auto app = config->getApp(appName, false);
 	if (!app)
@@ -818,8 +878,6 @@ void RestHandler::apiAppDelete(const std::shared_ptr<HttpRequest> &message)
 	}
 	else
 	{
-		// Establish a verified Dex principal before applying the owner shortcut.
-		const auto tokenUser = permissionCheck(message, "");
 		if (app->getOwnerPrincipalId() != tokenUser)
 		{
 			// only check delete permission for none-self app
@@ -937,7 +995,9 @@ void RestHandler::apiFileDownload(const std::shared_ptr<HttpRequest> &message)
 	}
 	std::vector<std::uint8_t> content;
 	{
-		FdFileStream input(fd); // owns the descriptor
+		// attach(), not the fd ctor, whose good()==false the read check below would misread as failure.
+		FdFileStream input;
+		input.attach(fd); // owns the descriptor
 		char buf[64 * 1024];
 		for (;;)
 		{
@@ -1230,7 +1290,7 @@ void RestHandler::apiWorkflowCapability(const std::shared_ptr<HttpRequest> &mess
 		workflowId = "__control__";
 		runId = processUuid;
 		ownerPrincipalId = WORKFLOW_CONTROLLER_PRINCIPAL_PREFIX + processUuid;
-		allowedOperations = {PERMISSION_KEY_view_all_app, PERMISSION_KEY_app_subscribe};
+		allowedOperations = {PERMISSION_KEY_view_all_app, PERMISSION_KEY_app_subscribe, PERMISSION_KEY_workflow_secret};
 	}
 	else if (audience == InternalCapability::audienceName(InternalCapability::Audience::WorkflowRun))
 	{
@@ -1384,6 +1444,79 @@ void RestHandler::apiWorkflowRegistry(const std::shared_ptr<HttpRequest> &messag
 		result.push_back(definition);
 	}
 	message->reply(web::http::status_codes::OK, result);
+}
+
+void RestHandler::apiWorkflowSecret(const std::shared_ptr<HttpRequest> &message)
+{
+	// Only the Workflow controller may call this broker; it never starts an application.
+	const auto principalId = permissionCheck(message, PERMISSION_KEY_workflow_secret);
+	if (!Utility::startWith(principalId, WORKFLOW_CONTROLLER_PRINCIPAL_PREFIX))
+		throw AuthorizationException("workflow secret broker is available only to the managed Workflow controller");
+
+	const auto request = message->extractJson();
+	if (!request.is_object())
+		throw std::invalid_argument("workflow secret request must be an object");
+	const auto op = GET_JSON_STR_VALUE(request, "op");
+	if (op != "protect" && op != "unprotect")
+		throw std::invalid_argument("workflow secret op must be protect or unprotect");
+	const auto workflow = GET_JSON_STR_VALUE(request, "workflow");
+	if (!validWorkflowSecretIdentifier(workflow))
+		throw std::invalid_argument("workflow must be a safe identifier");
+	if (!request.contains("secrets") || !request["secrets"].is_array())
+		throw std::invalid_argument("workflow secret request must carry a secrets array");
+	const auto &entries = request["secrets"];
+	if (entries.empty() || entries.size() > MAX_WORKFLOW_SECRET_ENTRIES)
+		throw std::invalid_argument("workflow secret request must carry between 1 and 128 values");
+
+	nlohmann::json response;
+	response["secrets"] = nlohmann::json::array();
+	std::size_t totalSize = 0;
+	for (const auto &entry : entries)
+	{
+		if (!entry.is_object() || !entry.contains("key") || !entry.contains("value") || !entry["key"].is_string() ||
+			!entry["value"].is_string())
+			throw std::invalid_argument("workflow secret entries must be {key, value} strings");
+		const auto key = entry["key"].get<std::string>();
+		if (!validWorkflowSecretKey(key))
+			throw std::invalid_argument(
+				Utility::stringFormat("workflow secret key <%s> is not a valid environment name", key.c_str()));
+		const auto value = entry["value"].get<std::string>();
+		totalSize += value.size();
+		if (value.size() > MAX_WORKFLOW_SECRET_VALUE_SIZE || totalSize > MAX_WORKFLOW_SECRET_TOTAL_SIZE)
+			throw std::invalid_argument("workflow secret value is too large");
+
+		const auto context = SecretProtector::workflowSecretContext(workflow, key);
+		std::string result;
+		if (op == "protect")
+		{
+			result = SecretProtector::instance().protect(value, context);
+		}
+		else
+		{
+			try
+			{
+				result = SecretProtector::instance().unprotect(value, context);
+			}
+			catch (const std::invalid_argument &)
+			{
+				throw std::invalid_argument(Utility::stringFormat(
+					"workflow secret <%s> is not valid protected ciphertext for workflow <%s>", key.c_str(),
+					workflow.c_str()));
+			}
+			catch (const std::domain_error &)
+			{
+				throw std::invalid_argument(Utility::stringFormat(
+					"workflow secret <%s> cannot be decrypted for workflow <%s>; it belongs to another workflow "
+					"name or the master key changed",
+					key.c_str(), workflow.c_str()));
+			}
+		}
+		nlohmann::json output;
+		output["key"] = key;
+		output["value"] = result;
+		response["secrets"].push_back(output);
+	}
+	message->reply(web::http::status_codes::OK, response, {{"Cache-Control", "no-store"}});
 }
 
 void RestHandler::apiEnrollFirstAdmin(const std::shared_ptr<HttpRequest> &message)
@@ -1738,8 +1871,17 @@ void RestHandler::apiRunSync(const std::shared_ptr<HttpRequest> &message)
 	auto appObj = parseAndRegRunApp(message);
 
 	// Use async reply here
-	auto asyncRequest = std::make_shared<HttpRequestAutoCleanup>(message, appObj);
-	appObj->runSync(timeout, asyncRequest);
+	auto asyncRequest = std::make_shared<HttpRequestSyncRun>(message, appObj);
+	asyncRequest->initTimeout(timeout);
+	try
+	{
+		appObj->runSync(timeout, asyncRequest);
+	}
+	catch (...)
+	{
+		asyncRequest->abandonFailedStart();
+		throw;
+	}
 }
 
 void RestHandler::apiSendMessage(const std::shared_ptr<HttpRequest> &message)

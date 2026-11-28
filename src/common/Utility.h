@@ -108,7 +108,8 @@ namespace std
 #define APPMESH_AUTHORIZATION_CONFIG_FILE "authorization.yaml"
 #define APPMESH_APPLICATION_DIR "apps"
 #define APPMESH_WORK_DIR "work"
-#define APPMESH_WORK_TMP_DIR "tmp"
+#define APPMESH_WORK_SHARE_DIR "share" // shared exchange area, default app workdir
+#define APPMESH_RUNTIME_DIR "runtime"  // daemon-private state root (stdio, shell, snapshot)
 #define APPMESH_WORK_CONFIG_DIR "config"
 // Synthetic principal the daemon issues to the workflow engine's control calls.
 #define WORKFLOW_CONTROLLER_PRINCIPAL_PREFIX "internal:workflow-controller:"
@@ -143,7 +144,6 @@ constexpr auto TCP_SSL_VERSION_LIST = "tlsv1.2,tlsv1.3";
 #define SNAPSHOT_FILE_NAME ".snapshot"
 #define APPMESH_LOCAL_HOST_URL "https://127.0.0.1:6060"
 
-const char *GET_STATUS_STR(unsigned int status);
 const nlohmann::json EMPTY_STR_JSON(nullptr);
 
 /// <summary>
@@ -299,13 +299,16 @@ public:
 // output readers (SDK exit backfill) still reach the registration, but the
 // entry no longer lingers for the whole run lifecycle.
 #define RUN_INSTANCE_EXIT_GRACE_SECONDS int(60)
+// A sync run whose output filled the reply page stays readable this long, so the
+// client can fetch the rest through the output endpoint.
+#define SYNC_RUN_TRUNCATED_RETENTION_SECONDS int(600)
 #define MAX_OUTPUT_VIEW_TIMEOUT_SECONDS int(300) // output long-poll max wait; a dropped client is held this long
 #define DEFAULT_SSE_STREAM_TIMEOUT_SECONDS int(60 * 60)  // SSE output stream default lifetime
 #define MAX_SSE_STREAM_TIMEOUT_SECONDS int(24 * 60 * 60) // SSE output stream lifetime cap
 #define SSE_HEARTBEAT_MILLISECONDS long(15 * 1000)       // SSE keep-alive cadence; also bounds disconnect detection
 #define CONSUL_SESSION_DEFAULT_TTL 30
 #define APP_STD_OUT_MAX_FILE_SIZE 1024 * 1024 * 100	  // 100M
-#define APP_STD_OUT_VIEW_DEFAULT_SIZE 1024 * 1024 * 3 // 3M
+#define APP_STD_OUT_VIEW_DEFAULT_SIZE 1024 * 1024 * 5 // 5M
 #define SEPARATE_AGENT_APP_NAME "agent"
 #define WORKFLOW_APP_NAME "workflow"
 #define WORKFLOW_DEFINITION_PREFIX "workflow-"
@@ -448,6 +451,7 @@ public:
 #define HTTP_HEADER_JWT_BearerSpace "Bearer "
 #define HTTP_HEADER_KEY_exit_code "X-Exit-Code"
 #define HTTP_HEADER_KEY_output_pos "X-Output-Position"
+#define HTTP_HEADER_KEY_output_truncated "X-Output-Truncated"
 #define HTTP_HEADER_KEY_file_path "X-File-Path"
 #define HTTP_HEADER_KEY_file_mode "X-File-Mode"
 #define HTTP_HEADER_KEY_file_user "X-File-User"
@@ -526,6 +530,8 @@ public:
 #define PERMISSION_KEY_role_view "role-view"
 #define PERMISSION_KEY_permission_list "permission-list"
 #define PERMISSION_KEY_app_subscribe "app-subscribe"
+// Internal Workflow-controller operation; not a role permission.
+#define PERMISSION_KEY_workflow_secret "workflow-secret"
 
 namespace web
 {

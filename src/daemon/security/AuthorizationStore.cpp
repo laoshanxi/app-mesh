@@ -214,7 +214,7 @@ void AuthorizationStore::init()
 {
 	const auto file = Utility::getConfigFilePath(APPMESH_AUTHORIZATION_CONFIG_FILE);
 	auto root = Utility::yamlToJson(YAML::LoadFile(file));
-	Configuration::overrideConfigWithEnv(root);
+	Configuration::overrideConfigWithEnv(root, false);
 	load(root);
 	initializeFirstAdminEnrollment();
 }

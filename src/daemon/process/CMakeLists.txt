@@ -1,6 +1,6 @@
 # src/daemon/process/CMakeLists.txt
 
-file(GLOB SRC_LIST *.cpp)
+file(GLOB SRC_LIST CONFIGURE_DEPENDS *.cpp)
 
 add_library(process STATIC ${SRC_LIST})
 add_library(${PROJECT_NAME}::process ALIAS process)

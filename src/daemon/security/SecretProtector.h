@@ -24,6 +24,10 @@ public:
 	/// Absolute path of a named secret file under <home>/work/auth/secrets.
 	static std::string secretsFilePath(const std::string &fileName);
 
+	/// AAD for one workflow secret slot; the ':' prefix and extra NUL keep it
+	/// disjoint from application contexts (name + NUL + key).
+	static std::string workflowSecretContext(const std::string &workflow, const std::string &key);
+
 private:
 	SecretProtector() = default;
 	void ensureKey();

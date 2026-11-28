@@ -300,39 +300,96 @@ void AppMeshDaemon::initializeSecurity()
 	LOG_INF << fname << "Security initialized";
 }
 
+// One-shot upgrade from the pre-split layout (work/{tmp,stdout,stdin,shell}).
+// The throwing renames abort startup: dropping user data silently is worse.
+static void migrateLegacyDirectories(const std::string &workDir, const std::string &runtimeDir,
+									 const std::string &stdoutDir, const std::string &shareDir)
+{
+	const static char fname[] = "migrateLegacyDirectories() ";
+	const auto moveEntry = [](const fs::path &from, const fs::path &to) {
+		boost::system::error_code ec;
+		if (!fs::exists(from, ec))
+			return;
+		// Win32 rename cannot replace a directory; drop the freshly created
+		// empty target so both platforms take the same path.
+		if (fs::is_directory(to, ec) && fs::is_empty(to, ec))
+			fs::remove_all(to, ec);
+		fs::rename(from, to);
+		LOG_INF << fname << "Migrated <" << from.string() << "> to <" << to.string() << ">";
+	};
+
+	const fs::path legacyTmp = fs::path(workDir) / "tmp";
+	if (fs::exists(legacyTmp))
+	{
+		// Daemon-private residue moves under runtime/; the rest is app data for share/.
+		moveEntry(legacyTmp / SNAPSHOT_FILE_NAME, fs::path(runtimeDir) / SNAPSHOT_FILE_NAME);
+		// rename keeps the legacy modes; re-pin the daemon-private one.
+		boost::system::error_code permsEc;
+		fs::permissions(fs::path(runtimeDir) / SNAPSHOT_FILE_NAME,
+						fs::perms::owner_read | fs::perms::owner_write, permsEc);
+		for (const auto &entry : fs::directory_iterator(legacyTmp))
+			moveEntry(entry.path(), fs::path(shareDir) / entry.path().filename());
+		fs::remove(legacyTmp); // fails loudly on anything left behind
+	}
+
+	// Stdout history is kept; a same-named file (only possible on a re-run) keeps both.
+	const fs::path legacyStdout = fs::path(workDir) / "stdout";
+	boost::system::error_code ec;
+	if (fs::exists(legacyStdout, ec))
+	{
+		for (const auto &entry : fs::directory_iterator(legacyStdout))
+		{
+			auto target = fs::path(stdoutDir) / entry.path().filename();
+			if (fs::exists(target, ec))
+				target = fs::path(stdoutDir) / (entry.path().filename().string() + ".legacy");
+			fs::rename(entry.path(), target);
+			LOG_INF << fname << "Migrated <" << entry.path().string() << "> to <" << target.string() << ">";
+		}
+		fs::remove(legacyStdout);
+	}
+
+	// Transient residue: stdin temp files, scripts rebuilt every startup.
+	Utility::removeDir((fs::path(workDir) / "stdin").string());
+	Utility::removeDir((fs::path(workDir) / "shell").string());
+}
+
 void AppMeshDaemon::initializeDirectories()
 {
 	const static char fname[] = "AppMeshDaemon::initializeDirectories() ";
 
 	auto config = Configuration::instance();
 
-	// Create working directories
+	// Create working directories. runtime/ holds daemon-private state, share/
+	// is a sticky world-writable exchange area.
 	Utility::createDirectory(config->getWorkDir());
 
-	const auto tmpDir = config->getWorkTmpDir();
-	const auto outputDir = (fs::path(config->getWorkDir()) / "stdout").string();
-	const auto inputDir = (fs::path(config->getWorkDir()) / "stdin").string();
-	const auto shellDir = (fs::path(config->getWorkDir()) / "shell").string();
+	const auto runtimeDir = config->getRuntimeDir();
+	const auto stdoutDir = (fs::path(runtimeDir) / "stdout").string();
+	const auto stdinDir = (fs::path(runtimeDir) / "stdin").string();
+	const auto shellDir = (fs::path(runtimeDir) / "shell").string();
+	const auto shareDir = config->getWorkShareDir();
 
-	// Remove old shell directory and recreate
+	// Stale scripts from an unclean shutdown must not block script names.
 	Utility::removeDir(shellDir);
 
-	// Create directories
-	std::vector<std::string> dirs = {tmpDir, outputDir, inputDir, shellDir};
-	for (const auto &dir : dirs)
-	{
-		Utility::createDirectory(dir);
-	}
+	// No chown to the default exec user: runtime/ stays daemon-private and
+	// share/'s sticky-bit owner must stay the daemon user.
+	const fs::perms traverseOnly = fs::perms::owner_all | fs::perms::group_exe | fs::perms::others_exe;
+	Utility::createDirectory(runtimeDir, traverseOnly);
+	Utility::createDirectory(stdoutDir, fs::perms::owner_all);
+	Utility::createDirectory(stdinDir, fs::perms::owner_all);
+	// The exec user only reads the generated scripts through the traverse bit.
+	Utility::createDirectory(shellDir, traverseOnly);
+	Utility::createDirectory(shareDir,
+							 fs::perms::owner_all | fs::perms::group_all | fs::perms::others_all | fs::perms::sticky_bit);
+	// createDirectory only chmods on first create; re-apply in case the agent
+	// pre-created share/ with a private mode before the daemon ever ran.
+	boost::system::error_code sharePermsEc;
+	fs::permissions(fs::path(shareDir),
+					fs::perms::owner_all | fs::perms::group_all | fs::perms::others_all | fs::perms::sticky_bit,
+					sharePermsEc);
 
-	// Set ownership only when execution-user switching is active.
-	if (!config->getDisableExecUser() && !config->getDefaultExecUser().empty())
-	{
-		LOG_INF << fname << "Setting directory ownership to user <" << config->getDefaultExecUser() << ">";
-		for (const auto &dir : dirs)
-		{
-			os::chown(dir, config->getDefaultExecUser());
-		}
-	}
+	migrateLegacyDirectories(config->getWorkDir(), runtimeDir, stdoutDir, shareDir);
 
 	LOG_INF << fname << "Directories initialized";
 }
@@ -633,10 +690,9 @@ void AppMeshDaemon::runMainLoop()
 {
 	const static char fname[] = "AppMeshDaemon::runMainLoop() ";
 
-	// Change to temp directory
+	// The runtime directory is the daemon's working directory.
 	auto config = Configuration::instance();
-	const auto tmpDir = config->getWorkTmpDir();
-	fs::current_path(tmpDir);
+	fs::current_path(config->getRuntimeDir());
 	LOG_INF << fname << "Entered working directory: " << fs::current_path().string();
 
 	int tcpErrorCounter = 0;
@@ -656,6 +712,9 @@ void AppMeshDaemon::runMainLoop()
 			// Exit if TCP connection fails too many times
 			if (config->getRestEnabled() && !checkTcpConnection(tcpErrorCounter))
 				break;
+
+			// Deferred from the signal handler: the reload must run off it.
+			Configuration::reloadOnSignal();
 
 			PersistManager::instance()->persistSnapshot();
 
@@ -707,11 +766,9 @@ void AppMeshDaemon::startStartupApplications()
 	const auto retryInterval = std::chrono::seconds(1);
 
 	auto config = Configuration::instance();
-	// Managed app commands are authored relative to work/tmp (for example,
-	// ../../script/appmesh-auth.sh). Enter the same directory used by the main
-	// scheduler before launching any readiness phase.
-	const auto tmpDir = config->getWorkTmpDir();
-	fs::current_path(tmpDir);
+	// Managed app commands use ../../script-style paths; runtime/ sits two
+	// levels below the install root. Match the main scheduler's cwd.
+	fs::current_path(config->getRuntimeDir());
 	LOG_INF << fname << "Entered working directory: " << fs::current_path().string();
 
 	auto apps = config->getApps();

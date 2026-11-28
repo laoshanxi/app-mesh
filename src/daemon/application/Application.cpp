@@ -358,10 +358,19 @@ void Application::FromJson(const std::shared_ptr<Application> &app, const nlohma
 	app->m_description = Utility::stdStringTrim(GET_JSON_STR_VALUE(jsonObj, JSON_KEY_APP_description));
 
 	// TODO: consider i18n and legal file name
-	const static auto outputDir = (fs::path(Configuration::instance()->getWorkDir()) / "stdout");
+	const static auto outputDir = (fs::path(Configuration::instance()->getRuntimeDir()) / "stdout");
 	const auto fileName = Utility::stringFormat("appmesh.%s.out", app->m_name.c_str());
 	app->m_stdoutFile = (outputDir / fileName).string();
 	app->m_stdoutCacheNum = GET_JSON_INT_VALUE(jsonObj, JSON_KEY_APP_stdout_backup_count);
+	if (app->m_stdoutCacheNum < 0)
+	{
+		// Legacy releases persisted negative backup counts: clamp on recovery, reject on registration.
+		if (!HAS_JSON_FIELD(jsonObj, JSON_KEY_APP_from_recover))
+			throw std::invalid_argument("stdout_backup_count must not be negative");
+		LOG_WAR << fname << "Negative stdout_backup_count <" << app->m_stdoutCacheNum << "> for application <" << app->m_name
+				<< ">, clamped to 0";
+		app->m_stdoutCacheNum = 0;
+	}
 	// A containerized app's cold image pull is its own run (starts=2): two slots keep the pull progress readable at stdout[1].
 	if (!GET_JSON_STR_VALUE(jsonObj, JSON_KEY_APP_docker_image).empty() && app->m_stdoutCacheNum < 2)
 		app->m_stdoutCacheNum = 2;
@@ -379,6 +388,22 @@ void Application::FromJson(const std::shared_ptr<Application> &app, const nlohma
 	}
 
 	app->m_workdir = Utility::stdStringTrim(GET_JSON_STR_VALUE(jsonObj, JSON_KEY_APP_working_dir));
+
+	// A missing directory would otherwise start the process in the default share directory.
+	if (!HAS_JSON_FIELD(jsonObj, JSON_KEY_APP_from_recover) && !app->m_workdir.empty() && GET_JSON_STR_VALUE(jsonObj, JSON_KEY_APP_docker_image).empty())
+	{
+		boost::system::error_code directoryError;
+		const auto isDirectory = fs::is_directory(app->m_workdir, directoryError);
+		// A path the daemon cannot inspect may belong to another execution user.
+		const auto knownMissing = !directoryError ||
+								  directoryError == boost::system::errc::no_such_file_or_directory ||
+								  directoryError == boost::system::errc::not_a_directory;
+		if (!isDirectory && knownMissing)
+			throw std::invalid_argument("working_dir is not an existing directory: " + app->m_workdir);
+	}
+	// A non-shell command is tokenized only at start; reject an unparsable one before it is persisted.
+	if (!HAS_JSON_FIELD(jsonObj, JSON_KEY_APP_from_recover) && !app->m_shellApp)
+		Utility::str2argv(app->m_commandLine);
 
 	if (HAS_JSON_FIELD(jsonObj, JSON_KEY_APP_depends_on))
 	{
@@ -1074,7 +1099,7 @@ std::string Application::startRun(bool onDemand, int timeoutSeconds, const std::
 	if (completionRequest)
 	{
 		auto weakProcess = std::weak_ptr<AppProcess>(process);
-		completionSubscription = subscribeRunCompletion(runId, [weakProcess, completionRequest]()
+		completionSubscription = subscribeRunCompletion(runId, [weakProcess, completionRequest, name = m_name]()
 														{
 			if (auto completed = weakProcess.lock())
 			{
@@ -1083,6 +1108,13 @@ std::string Application::startRun(bool onDemand, int timeoutSeconds, const std::
 				headers[HTTP_HEADER_KEY_exit_code] = std::to_string(completed->returnValue());
 				const auto body = completed->getOutputMsg(&position);
 				headers[HTTP_HEADER_KEY_output_pos] = std::to_string(position);
+				// A full page may have more output: name the run and keep it readable for paging.
+				if (body.size() >= APP_STD_OUT_VIEW_DEFAULT_SIZE)
+				{
+					headers[HTTP_HEADER_KEY_output_truncated] = "1";
+					headers[HTTP_HEADER_KEY_X_App_Name] = name;
+					completionRequest->setRunRetention(SYNC_RUN_TRUNCATED_RETENTION_SECONDS);
+				}
 				completionRequest->reply(web::http::status_codes::OK, body, headers);
 			} });
 	}

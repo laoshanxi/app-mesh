@@ -75,9 +75,14 @@ public:
 	// Get process exit code from the inspect projection
 	int returnValue() const override;
 
-	// Get stdout content from the agent's demultiplexed log projection
+	// Get stdout content from the agent's demultiplexed log projection; once the
+	// container is gone, from this run's stdout slot (the terminate-time archive).
 	const std::string getOutputMsg(long *position = nullptr, int maxSize = APP_STD_OUT_VIEW_DEFAULT_SIZE,
 								   bool readLine = false) override;
+
+	// Mutex-guarded read of m_stdoutFile: the terminate-time archive writes it
+	// from another thread than the one that set it at start.
+	std::string stdoutArchiveFile() const;
 
 	// An image pull is a detached activity without a PID; the run stays
 	// alive until the pull thread reports its exit.

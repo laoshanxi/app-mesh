@@ -480,28 +480,29 @@ TEST_CASE("validateFilePath jail gates", "[Utility][security]")
 	init();
 	const std::string home = Utility::getHomeDir();
 	const std::string selfPath = Utility::getExecutablePath();
-	// The caller owns the scratch directory's creation; validation has no side effects.
-	const std::string scratch = home + "/work/tmp";
-	REQUIRE(Utility::createDirectory(scratch));
+	// The caller owns the exchange directory's creation; validation has no side effects.
+	const std::string share = home + "/work/share";
+	REQUIRE(Utility::createDirectory(share));
 	// The daemon's own tree is refused even when no jail is configured...
 	REQUIRE_FALSE(Utility::validateFilePath(selfPath, ""));
 	REQUIRE_FALSE(Utility::validateFilePath(home, ""));
-	// ...but the exchangeable scratch area is allowed.
-	REQUIRE(Utility::validateFilePath(home + "/work/tmp/file", ""));
-	REQUIRE(Utility::validateFilePath(home + "/work/tmp/uploads/tmp/00/f", ""));
-	// A non-empty jail derives its own <base>/tmp exchange area.
-	REQUIRE(Utility::validateFilePath(scratch + "/file", home + "/work"));
+	// ...but the exchangeable share area is allowed.
+	REQUIRE(Utility::validateFilePath(share + "/file", ""));
+	// A non-empty jail derives its own <base>/share exchange area.
+	REQUIRE(Utility::validateFilePath(share + "/file", home + "/work"));
 	REQUIRE_FALSE(Utility::validateFilePath(home + "/work/other/file", home + "/work"));
-	// The rest of work/ (apps, auth, config) is still refused.
+	// The rest of work/ (apps, auth, config, runtime, legacy tmp) is still refused.
 	REQUIRE_FALSE(Utility::validateFilePath(home + "/work/apps/app.yaml", ""));
 	REQUIRE_FALSE(Utility::validateFilePath(home + "/work/auth/secrets/x", ""));
+	REQUIRE_FALSE(Utility::validateFilePath(home + "/work/runtime/stdout/appmesh.a.out", ""));
+	REQUIRE_FALSE(Utility::validateFilePath(home + "/work/tmp/file", ""));
 }
 
 TEST_CASE("unlinkFileWithinJail pinned-directory delete", "[Utility][security]")
 {
 	init();
 	const std::string home = Utility::getHomeDir();
-	const std::string scratch = home + "/work/tmp";
+	const std::string scratch = home + "/work/share";
 	const std::string jail = home + "/work";
 	REQUIRE(Utility::createDirectory(scratch));
 	boost::system::error_code ec;
@@ -549,7 +550,7 @@ TEST_CASE("createDirectoriesWithinJail component walk", "[Utility][security]")
 {
 	init();
 	const std::string home = Utility::getHomeDir();
-	const std::string scratch = home + "/work/tmp";
+	const std::string scratch = home + "/work/share";
 	const std::string jail = home + "/work";
 	REQUIRE(Utility::createDirectory(scratch));
 	boost::system::error_code ec;
@@ -578,7 +579,7 @@ TEST_CASE("openFileWithinJail hardlink gate", "[Utility][security]")
 {
 	init();
 	const std::string home = Utility::getHomeDir();
-	const std::string scratch = home + "/work/tmp";
+	const std::string scratch = home + "/work/share";
 	const std::string jail = home + "/work"; // mirrors the daemon's unset-FileAllowedBaseDir default
 	REQUIRE(Utility::createDirectory(scratch));
 	boost::system::error_code ec;
