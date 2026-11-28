@@ -1068,7 +1068,8 @@ const std::string DockerApiProcess::getOutputMsg(long *position, int maxSize, bo
 	// never created one): the output lives in this run's stdout slot, written by
 	// the terminate-time log archive. The base fallback reads the path attach()
 	// left behind, which is empty for container runs, and drops the archive.
-	if (const auto archiveFile = this->stdoutArchiveFile(); !archiveFile.empty())
+	const auto archiveFile = this->stdoutArchiveFile();
+	if (!archiveFile.empty())
 	{
 		try
 		{
