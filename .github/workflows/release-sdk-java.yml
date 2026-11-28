@@ -64,9 +64,8 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
   publish-central:
-    # Publishing to Maven Central is irreversible, so it must never happen on
-    # a push to main (which also fires for README-only edits).
-    if: github.event_name == 'workflow_dispatch'
+    # Central rejects a duplicate version, so an accidental re-publish fails
+    # here without affecting the other jobs.
     runs-on: ubuntu-latest
     permissions:
       contents: read
