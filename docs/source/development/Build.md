@@ -95,3 +95,18 @@ cmake --build build --config Release --target pack   # NSIS installer in build\
 Windows packages include `dex.exe`, `passhash.exe`, the protected
 `identity` App, and the native `appmesh-auth.ps1` launcher; see [Install](../deploy/Install.md)
 for the deployment flow and the real-machine verification checklist.
+
+## Library dependencies
+
+The daemon links these libraries:
+
+- [MessagePack](https://github.com/msgpack/msgpack-c)
+- [boostorg/boost](https://github.com/boostorg/boost)
+- [yaml-cpp](https://github.com/jbeder/yaml-cpp)
+- [jupp0r/prometheus-cpp](https://github.com/jupp0r/prometheus-cpp)
+- [zemasoft/wildcards](https://github.com/zemasoft/wildcards)
+- [mariusbancila/croncpp](https://github.com/mariusbancila/croncpp)
+- [spdlog](https://github.com/gabime/spdlog)
+- [concurrentqueue](https://github.com/cameron314/concurrentqueue)
+- [drogon](https://github.com/drogonframework/drogon)
+- [jsoncpp](https://github.com/open-source-parsers/jsoncpp)
