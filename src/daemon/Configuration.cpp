@@ -953,7 +953,9 @@ bool Configuration::removeApp(const std::string &appName, const Application *exp
 							app = entry.second;
 							return true;
 						});
-		m_appNameIndexMap.erase(appName);
+		// generateRunAppName() indexes a run instance under its base name, not its own.
+		if (app)
+			m_appNameIndexMap.erase(app->runBaseApp().empty() ? appName : app->runBaseApp());
 		// Delete the YAML under the lock: addApp() persists a same-name re-registration
 		// under it too, so an unlocked delete could remove the new file.
 		if (app)
@@ -1182,7 +1184,7 @@ void Configuration::hotUpdate(Json::Value &jsonValue)
 	this->dump();
 }
 
-bool Configuration::overrideConfigWithEnv(Json::Value &jsonConfig)
+bool Configuration::overrideConfigWithEnv(Json::Value &jsonConfig, bool reportIgnored)
 {
 	const static char fname[] = "Configuration::overrideConfigWithEnv() ";
 	LOG_INF << fname << "Applying environment variable overrides to configuration";
@@ -1257,8 +1259,11 @@ bool Configuration::overrideConfigWithEnv(Json::Value &jsonConfig)
 				}
 				else
 				{
-					LOG_WAR << fname << "Configuration key <" << dottedPath(i) << "> from environment <" << envKey
-							<< "> is ignored: <" << jsonKey << "> is not a section of the configuration";
+					// A side document shares the environment with the main configuration;
+					// only the main pass reports an ignored variable.
+					LOG_STREAM(reportIgnored ? spdlog::level::warn : spdlog::level::debug)
+						<< fname << "Configuration key <" << dottedPath(i) << "> from environment <" << envKey
+						<< "> is ignored: <" << jsonKey << "> is not a section of the configuration";
 					break;
 				}
 			}

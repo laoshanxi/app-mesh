@@ -1,5 +1,5 @@
 use anyhow::{bail, Context, Result};
-use appmesh::{AppMeshClient, Application, ExitAction};
+use appmesh::{AppMeshClient, AppMeshClientWSS, AppMeshError, AppRun, Application, ExitAction};
 use std::sync::Arc;
 use uuid::Uuid;
 
@@ -120,14 +120,11 @@ pub async fn run(cli: &Cli, args: &RunArgs) -> Result<i32> {
     }
 
     // Async mode: subscribe + run + wait
-    let (app_run, exit_code) = client
-        .run_and_wait(&app, timeout, lifecycle, appmesh::print_output_handler(), timeout)
-        .await
-        .context("Run failed")?;
+    let (app_run, exit_code) = wait_for_run(&client, &app, timeout, lifecycle).await.context("Run failed")?;
 
     // Best-effort delete if run_and_wait didn't already clean up; terminal failures
-    // (app removed / transport disconnect) surface as typed errors and propagate above.
-    if exit_code.is_none() {
+    // (transport disconnect) surface as typed errors and propagate above.
+    if let (None, Some(app_run)) = (&exit_code, app_run) {
         let _ = client.delete_app(&app_run.app_name).await;
     }
 
@@ -156,10 +153,7 @@ pub async fn exec(cli: &Cli, args: &ExecArgs) -> Result<i32> {
     loop {
         let app = build_exec_app(&app_name, &command, args.session_login, &args.env, cli.forward_to.is_some());
 
-        let (_app_run, exit_code) = client
-            .run_and_wait(&app, timeout, lifecycle, appmesh::print_output_handler(), timeout)
-            .await
-            .context("Exec failed")?;
+        let (_app_run, exit_code) = wait_for_run(&client, &app, timeout, lifecycle).await.context("Exec failed")?;
 
         let return_code = parse::normalize_exit_code(exit_code);
         if !args.retry || return_code == 0 {
@@ -241,6 +235,21 @@ pub async fn shell(cli: &Cli, args: &ShellArgs) -> Result<i32> {
     Ok(return_code)
 }
 
+/// Run and wait for the exit, within `timeout` seconds.
+async fn wait_for_run(client: &AppMeshClientWSS, app: &Application, timeout: i32, lifecycle: i32) -> Result<(Option<AppRun>, Option<i32>), AppMeshError> {
+    // The daemon drops a `lifecycle` shorter than the runtime bound `timeout`, so the
+    // shorter of the two is the runtime bound sent; the wait keeps the caller's timeout.
+    let result = client
+        .run_and_wait(app, timeout.min(lifecycle), lifecycle, appmesh::print_output_handler(), timeout)
+        .await;
+    // A run removed at its lifecycle end reports no exit code; that is the timeout
+    // the synchronous run returns for the same kill.
+    match result {
+        Err(AppMeshError::AppRemoved) => Ok((None, Some(124))),
+        result => result.map(|(app_run, exit_code)| (Some(app_run), exit_code)),
+    }
+}
+
 async fn execute_shell_command(
     client: &Arc<appmesh::AppMeshClientWSS>,
     app_name: &str,
@@ -267,7 +276,7 @@ async fn execute_shell_command(
         })
     };
 
-    let result = client.run_and_wait(&app, timeout, lifecycle, appmesh::print_output_handler(), timeout).await;
+    let result = wait_for_run(&client, &app, timeout, lifecycle).await;
     watcher.abort();
 
     let (_app_run, exit_code) = result.context("Shell command failed")?;

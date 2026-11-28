@@ -85,7 +85,7 @@ namespace
 constexpr int FORWARD_CONNECT_TIMEOUT_SECONDS = 3;
 
 // A silent peer keeps its pooled connection open forever; drop it on reuse once
-// a request waited this long without a single inbound byte.
+// its oldest request waited this long without a single inbound byte.
 constexpr int64_t FORWARD_STALE_RESPONSE_MS = 30 * 1000;
 
 // A rotated-away bearer leaves its connection behind, so drop silent, unused ones.
@@ -95,6 +95,8 @@ bool ForwardingConnection::addRequest(const std::string &uuid, std::shared_ptr<H
 {
 	if (closed.load(std::memory_order_acquire))
 		return false;
+	if (pending_requests.empty())
+		oldestPendingTime.store(steadyNowMs(), std::memory_order_relaxed);
 	if (!pending_requests.emplace(uuid, std::move(request)))
 		return false;
 	// failAll() may have swept between insert and this check. Whoever erases
@@ -107,10 +109,11 @@ bool ForwardingConnection::addRequest(const std::string &uuid, std::shared_ptr<H
 
 bool ForwardingConnection::hasStaleRequests()
 {
-	const auto lastResponse = lastResponseTime.load(std::memory_order_relaxed);
-	if (lastResponse == 0 || steadyNowMs() - lastResponse <= FORWARD_STALE_RESPONSE_MS)
+	// Measured per request, not from the last response: the first request sent
+	// after an idle period must not look stale to the next one on the same hop.
+	if (pending_requests.empty())
 		return false;
-	return !pending_requests.empty();
+	return steadyNowMs() - oldestPendingTime.load(std::memory_order_relaxed) > FORWARD_STALE_RESPONSE_MS;
 }
 
 bool ForwardingConnection::idleReapable()

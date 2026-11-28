@@ -127,7 +127,8 @@ public:
 	void saveConfigToDisk();
 	void hotUpdateAndSave(Json::Value &config);
 	void hotUpdate(Json::Value &config);
-	static bool overrideConfigWithEnv(Json::Value &jsonConfig);
+	/// `reportIgnored` is false for a side document: its variables belong to the main configuration.
+	static bool overrideConfigWithEnv(Json::Value &jsonConfig, bool reportIgnored = true);
 	static bool applyEnvConfig(Json::Value &jsonValue, std::string envValue);
 	void registerPrometheus();
 	bool prometheusEnabled() const;

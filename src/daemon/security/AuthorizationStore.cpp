@@ -278,7 +278,7 @@ void AuthorizationStore::init()
 			root = Utility::yamlToJson(YAML::LoadFile(packaged));
 		}
 	}
-	Configuration::overrideConfigWithEnv(root);
+	Configuration::overrideConfigWithEnv(root, false);
 	load(root);
 	initializeFirstAdminEnrollment();
 }

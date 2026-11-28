@@ -958,8 +958,11 @@ void AppMeshDaemon::cleanupResources()
 	try
 	{
 		// Only the lock owner may remove the PID file; a failed second instance shares the path.
+		// A refused unlink (root-owned install directory) is harmless: the lock, not the
+		// file, decides whether a daemon runs.
+		std::error_code ignored;
 		if (Utility::ownsPidFileLock())
-			Utility::removeFile((fs::path(Utility::getHomeDir()) / PID_FILE).string());
+			fs::remove(fs::path(Utility::getHomeDir()) / PID_FILE, ignored);
 		LOG_INF << fname << "Resources cleaned up";
 	}
 	catch (const std::exception &ex)

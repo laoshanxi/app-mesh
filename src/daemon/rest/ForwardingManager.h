@@ -25,6 +25,8 @@ struct ForwardingConnection
 	std::atomic<bool> closed{false};
 	// Time of the last accepted connect or received response.
 	std::atomic<int64_t> lastResponseTime{0};
+	// Time the oldest pending request was added; staleness is measured from it.
+	std::atomic<int64_t> oldestPendingTime{0};
 
 	// Identity of the hop, so the pool key never has to be parsed apart.
 	std::string host;
@@ -43,7 +45,7 @@ struct ForwardingConnection
 	void handleResponse(Response &response);
 	void failAll(const std::string &msg);
 
-	/// True when requests wait while the peer stayed silent past the stale bound.
+	/// True when the oldest pending request waited past the stale bound.
 	bool hasStaleRequests();
 
 	/// True when the hop carries no work and stayed silent past the idle bound.
