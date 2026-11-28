@@ -1237,8 +1237,9 @@ bool Configuration::overrideConfigWithEnv(Json::Value &jsonConfig, bool reportIg
 					if (!json->isMember(jsonKey))
 					{
 						(*json)[jsonKey] = envLeafValue();
-						LOG_WAR << fname << "Configuration key <" << dottedPath(i) << "> created from environment <"
-								<< envKey << ">";
+						LOG_STREAM(reportIgnored ? spdlog::level::warn : spdlog::level::debug)
+							<< fname << "Configuration key <" << dottedPath(i) << "> created from environment <" << envKey
+							<< ">";
 					}
 					// override json value
 					if (applyEnvConfig((*json)[jsonKey], envVal))

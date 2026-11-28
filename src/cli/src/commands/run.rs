@@ -242,8 +242,8 @@ async fn wait_for_run(client: &AppMeshClientWSS, app: &Application, timeout: i32
     let result = client
         .run_and_wait(app, timeout.min(lifecycle), lifecycle, appmesh::print_output_handler(), timeout)
         .await;
-    // A run removed at its lifecycle end reports no exit code; that is the timeout
-    // the synchronous run returns for the same kill.
+    // A run app removed before its exit is seen (its lifecycle end, or a delete by
+    // another client) is reported as a timeout, as the synchronous run is.
     match result {
         Err(AppMeshError::AppRemoved) => Ok((None, Some(124))),
         result => result.map(|(app_run, exit_code)| (Some(app_run), exit_code)),
