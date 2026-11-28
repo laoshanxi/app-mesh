@@ -125,6 +125,8 @@ jobs:
           echo "$GPG_PRIVATE_KEY" | gpg --batch --import
           KEY_ID=$(gpg --list-secret-keys --with-colons | awk -F: '/^sec:/ {print $5; exit}')
           [ -n "$KEY_ID" ] || { echo "failed to read the GPG key id"; exit 1; }
+          # Central validates signatures against the public key on a PGP server.
+          gpg --keyserver keyserver.ubuntu.com --send-keys "$KEY_ID"
           echo "GPG_KEYID=$KEY_ID" >> "$GITHUB_ENV"
 
       - name: Setup Maven settings.xml
