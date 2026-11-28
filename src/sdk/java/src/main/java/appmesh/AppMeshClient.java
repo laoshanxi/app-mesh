@@ -448,6 +448,17 @@ public class AppMeshClient implements Closeable {
         return this.baseURL;
     }
 
+    /** Base URL the SSE side channel dials; framed transports switch to the agent
+     * REST listener for a forwarded stream (the engine listener refuses it). */
+    protected String sseRequestBaseURL() {
+        return directRequestBaseURL();
+    }
+
+    /** The client-wide forward target (X-Target-Host), or null when forwarding is off. */
+    protected String getForwardTo() {
+        return this.forwardTo;
+    }
+
     /**
      * Transport hook: open an SSE stream and return the connected HttpURLConnection
      * (HTTP 200, InputStream still streaming). Plain HTTP by design: SSE frames cannot
@@ -473,15 +484,35 @@ public class AppMeshClient implements Closeable {
         if (status != HttpURLConnection.HTTP_OK) {
             String error = Utils.readErrorResponse(connection);
             connection.disconnect();
-            throw new IOException("stream request failed with status " + status + ": " + error);
+            throw new IOException(streamErrorMessage(status, error));
         }
         return connection;
+    }
+
+    /** Name the forwarding cause of a failed stream: 400 = the engine listener refuses
+     * X-Target-Host on stream routes; 404/405 = the target names a port without them. */
+    private String streamErrorMessage(int status, String error) {
+        String detail = "stream request failed with status " + status + ": " + error;
+        String target = this.forwardTo;
+        if (target == null || target.isEmpty()) {
+            return detail;
+        }
+        if (status == HttpURLConnection.HTTP_BAD_REQUEST) {
+            return detail + "; streaming through node forwarding (forwardTo=" + target
+                    + ") needs the agent REST listener (default port 6060) as the base URL: "
+                    + sseRequestBaseURL() + " does not relay forwarded streams";
+        }
+        if (status == HttpURLConnection.HTTP_NOT_FOUND || status == 405 /* HTTP_METHOD_NOT_ALLOWED, Java 20+ */) {
+            return detail + "; the forward target '" + target + "' names a listener without stream routes:"
+                    + " use a bare host (the target's agent resolves its REST port) or the target's agent REST port 6060";
+        }
+        return detail;
     }
 
     /** Open one direct HTTPS SSE connection attempt with the given bearer token (null for none). */
     private HttpURLConnection openSseConnection(String method, String path, Object body, Map<String, String> params,
             String token) throws IOException {
-        StringBuilder urlBuilder = new StringBuilder(directRequestBaseURL()).append(path);
+        StringBuilder urlBuilder = new StringBuilder(sseRequestBaseURL()).append(path);
         String encodedQuery = encodeQuery(params);
         if (encodedQuery != null) {
             urlBuilder.append('?').append(encodedQuery);
@@ -493,12 +524,9 @@ public class AppMeshClient implements Closeable {
         connection.setReadTimeout(readTimeoutMs);
         applySSL(connection);
 
-        // Streams bypass node forwarding (X-Target-Host) and the agent proxy: bearer only, no commonHeaders().
-        Map<String, String> headers = new HashMap<>();
-        headers.put(HTTP_USER_AGENT_HEADER_NAME, HTTP_USER_AGENT);
-        if (token != null && !token.isEmpty()) {
-            headers.put(AUTHORIZATION_HEADER, BEARER_PREFIX + token);
-        }
+        // commonHeaders() carries the client-wide forward target: a forwarded stream runs
+        // on the target node when the base URL is the agent REST listener (default 6060).
+        Map<String, String> headers = commonHeaders(token);
 
         byte[] bodyBytes = null;
         if (body instanceof byte[]) {

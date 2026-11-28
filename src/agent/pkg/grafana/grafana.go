@@ -58,7 +58,7 @@ func (AppmeshGrafanaJSON) GrafanaQueryTable(ctx context.Context, target string,
 		regTimes = append(regTimes, optTime(meshApp.RegisterTime))
 		appNames = append(appNames, meshApp.Name)
 		appOwner = append(appOwner, optString(meshApp.OwnerPrincipalID))
-		appEnabled = append(appEnabled, optNumberFlag(meshApp.Enabled))
+		appEnabled = append(appEnabled, optNumberFlag(meshApp.Enabled != nil && *meshApp.Enabled))
 		appHealth = append(appHealth, optNumber(meshApp.Health))
 		appPid = append(appPid, optNumber(meshApp.Pid))
 		appMemory = append(appMemory, optNumber(meshApp.Memory))

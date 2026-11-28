@@ -5,7 +5,7 @@
 
     <groupId>io.github.laoshanxi</groupId>
     <artifactId>appmesh</artifactId>
-    <version>3.0.25</version>
+    <version>3.0.26</version>
     <packaging>jar</packaging>
 
     <name>appmesh</name>

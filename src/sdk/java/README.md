@@ -10,7 +10,7 @@ Maven Central is the standard channel. No repository or credential setup is need
 <dependency>
     <groupId>io.github.laoshanxi</groupId>
     <artifactId>appmesh</artifactId>
-    <version>3.0.25</version>
+    <version>3.0.26</version>
 </dependency>
 ```
 
@@ -63,7 +63,7 @@ The repository `id` and the server `id` must both be `github`. Maven matches the
 <dependency>
     <groupId>io.github.laoshanxi</groupId>
     <artifactId>appmesh</artifactId>
-    <version>3.0.25</version>
+    <version>3.0.26</version>
 </dependency>
 ```
 

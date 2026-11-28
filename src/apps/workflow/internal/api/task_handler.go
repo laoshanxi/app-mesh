@@ -489,10 +489,11 @@ func (h *TaskHandler) handleWorkflowAdd(req Request, callerToken, caller string,
 	// Ownership is derived from the authenticated registrant, never from the YAML
 	// (trusting YAML owner was spoofable). The owner is what per-workflow authz checks.
 	owner := caller
+	disabled := false
 	app := appmesh.Application{
 		Name:     appName,
 		Command:  &trueCmd,
-		Enabled:  false, // disabled
+		Enabled:  &disabled,
 		Metadata: &metadata,
 	}
 	if wf.Permission != 0 {

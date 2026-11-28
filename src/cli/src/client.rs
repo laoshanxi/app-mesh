@@ -124,6 +124,15 @@ pub async fn build_client_with_auth(cli: &Cli) -> Result<Arc<AppMeshClientWSS>> 
             return Ok(client);
         }
     }
+    // A near-miss name falls through to the stored session, silently acting as another principal.
+    if let Ok(token) = std::env::var("APPMESH_AUTH_TOKEN") {
+        if !token.trim().is_empty() {
+            eprintln!(
+                "Warning: APPMESH_AUTH_TOKEN is not read by this CLI and was ignored; use {}.",
+                ENV_BEARER_TOKEN
+            );
+        }
+    }
 
     let endpoint = get_current_endpoint(cli)?;
     let session = config::load_session(&endpoint)?

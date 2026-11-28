@@ -87,17 +87,21 @@ pub async fn run(cli: &Cli, args: &RunArgs) -> Result<i32> {
     let lifecycle = AppMeshClient::parse_duration(&args.lifetime).map_err(|e| anyhow::anyhow!("{}", e))?;
 
     if let Some(ref name) = args.app {
-        // `run` copies an existing app and starts it on demand; a keepalive task
-        // app would silently do nothing — point at the task command instead.
+        // `run` copies an existing app; a keepalive task app silently does nothing,
+        // and a restart app's run copy restarts forever — only its timeout ends it.
         if let Ok(existing) = client.get_app(name).await {
-            let is_keepalive = existing
-                .behavior
-                .as_ref()
-                .and_then(|behavior| behavior.exit.as_ref())
-                .is_some_and(|exit| *exit == ExitAction::Keepalive);
-            if is_keepalive {
+            let exit = existing.behavior.as_ref().and_then(|behavior| behavior.exit.as_ref());
+            if exit.is_some_and(|exit| *exit == ExitAction::Keepalive) {
                 bail!(
                     "'{}' is a keepalive task application; nothing was run. Send it a task instead: appm task {} '<payload>'",
+                    name,
+                    name
+                );
+            }
+            if exit.is_some_and(|exit| *exit == ExitAction::Restart) {
+                bail!(
+                    "'{}' restarts whenever it exits, so an on-demand run of it never completes — only its timeout ends it. \
+                     Enable the application, or send it a task if it serves one: appm task {} '<payload>'",
                     name,
                     name
                 );

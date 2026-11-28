@@ -2,6 +2,7 @@ package appmesh
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"io"
 	"net/http"
@@ -225,6 +226,41 @@ func TestJSONBodyContentType(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, fake.sent, 1)
 	assert.Equal(t, "", fake.sent[0].header["Content-Type"])
+}
+
+// An unset Enabled must stay off the wire: the daemon defaults an omitted field
+// to enabled, so a zero-value false would register every app as disabled.
+func TestAddAppOmitsUnsetEnabled(t *testing.T) {
+	cmd := "echo hi"
+	wire, err := json.Marshal(Application{Name: "app1", Command: &cmd})
+	require.NoError(t, err)
+	assert.NotContains(t, string(wire), "enabled", "an unset Enabled must stay off the wire: %s", wire)
+
+	decodeEnabled := func(wire []byte) *bool {
+		var fields map[string]interface{}
+		require.NoError(t, json.Unmarshal(wire, &fields))
+		value, present := fields["enabled"]
+		if !present {
+			return nil
+		}
+		require.IsType(t, false, value)
+		enabled := value.(bool)
+		return &enabled
+	}
+
+	disabled := false
+	wire, err = json.Marshal(Application{Name: "app1", Command: &cmd, Enabled: &disabled})
+	require.NoError(t, err)
+	if value := decodeEnabled(wire); value == nil || *value {
+		t.Fatal("an explicit Enabled=false must serialize as false")
+	}
+
+	enabled := true
+	wire, err = json.Marshal(Application{Name: "app1", Command: &cmd, Enabled: &enabled})
+	require.NoError(t, err)
+	if value := decodeEnabled(wire); value == nil || !*value {
+		t.Fatal("an explicit Enabled=true must serialize as true")
+	}
 }
 
 // fakeRefreshProvider is a refresh-capable TokenProvider that records every

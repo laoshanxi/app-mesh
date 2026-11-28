@@ -363,6 +363,17 @@ paths:
     get:
       tags: [Applications]
       summary: Read application output
+      description: >-
+        Continuation of a truncated sync run: pass the previous reply's
+        X-Output-Position as the stdout_position query parameter (a request
+        header does not work) and repeat until a response is shorter than
+        5 MiB.
+      parameters:
+        - name: stdout_position
+          in: query
+          required: false
+          schema: { type: integer, minimum: 0 }
+          description: Byte offset the response starts at (the X-Output-Position of the previous page).
       responses:
         "200": { description: Output bytes or text. }
         "401": { $ref: "#/components/responses/Unauthorized" }

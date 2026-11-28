@@ -123,6 +123,7 @@ jobs:
           - Cluster: owner-to-follower authorization replication; optional Vault for tokens and TLS.
           - CLI: remembers endpoint transport, verification, and CA path.
           - Files: jailed transfers; separate overwrite and delete permissions.
+          - Sandbox: optional Landlock file system confinement for native applications (write/strict modes), off by default; the mode comes from the node and the principal.
           CHANGELOG
           ls -R
 
