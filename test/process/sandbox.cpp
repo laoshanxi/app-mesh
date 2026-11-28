@@ -215,7 +215,26 @@ TEST_CASE("A sandboxed application refuses working_dir at registration only", "[
 	REQUIRE_NOTHROW(define(recovered));
 
 	configure(dir.path, "off");
-	REQUIRE_NOTHROW(define(withDir));
+	REQUIRE_NOTHROW(define(object({"working_dir", dir.path})));
+}
+
+// The daemon would otherwise start the process in the share directory; recovery keeps the definition.
+TEST_CASE("Registration refuses a working_dir that is not a directory", "[process]")
+{
+	const auto &dir = g_workTree;
+	configure(dir.path, "off");
+
+	const auto missing = object({"working_dir", "/srv/data"});
+	REQUIRE_THROWS_AS(define(missing), std::invalid_argument);
+
+	const auto existingFile = (fs::path(dir.path) / "working_dir_file").string();
+	{ std::ofstream(existingFile) << "not a directory"; }
+	REQUIRE_THROWS_AS(define(object({"working_dir", existingFile})), std::invalid_argument);
+	fs::remove(existingFile);
+
+	auto recovered = missing;
+	recovered["from_recover"] = true;
+	REQUIRE_NOTHROW(define(recovered));
 }
 
 // A sandboxed on-demand run starts inside its private workspace with TMPDIR and

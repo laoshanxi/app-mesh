@@ -688,7 +688,11 @@ void Application::FromJson(const std::shared_ptr<Application> &app, const Json::
 		GET_JSON_STR_VALUE(jsonObj, JSON_KEY_APP_docker_image).empty())
 	{
 		std::error_code directoryError;
-		if (!fs::is_directory(app->m_workdir, directoryError))
+		const auto isDirectory = fs::is_directory(app->m_workdir, directoryError);
+		// A path the daemon cannot inspect may belong to another execution user.
+		const auto knownMissing = !directoryError || directoryError == std::errc::no_such_file_or_directory ||
+								  directoryError == std::errc::not_a_directory;
+		if (!isDirectory && knownMissing)
 			throw std::invalid_argument("working_dir is not an existing directory: " + app->m_workdir);
 	}
 	// A non-shell command is tokenized only at start; reject an unparsable one before it is persisted.
