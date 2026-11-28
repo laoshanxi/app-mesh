@@ -25,7 +25,11 @@ public class AppMeshClientWSS extends AppMeshClient {
     private static final int WSS_BLOCK_SIZE = 64 * 1024;
     private static final String HTTP_USER_AGENT_WSS = "appmesh/java/wss";
     private static final int FILE_TRANSFER_TIMEOUT = 120000; // 120 seconds
+    /** Agent REST listener port; a forwarded SSE side channel relays through it. */
+    private static final int DEFAULT_AGENT_PORT = 6060;
 
+    private final String host;
+    private final int agentPort;
     private final WSSTransport wssTransport;
     private volatile MessageDemuxer demuxer;
 
@@ -52,8 +56,18 @@ public class AppMeshClientWSS extends AppMeshClient {
      * settings are reused for the WSS transport (library default trust when none configured).
      */
     protected AppMeshClientWSS(AppMeshClient.Builder builder, String host, int port) {
+        this(builder, host, port, DEFAULT_AGENT_PORT);
+    }
+
+    /**
+     * Create a WSS transport client with an explicit agent REST listener port
+     * ({@code agentPort}) for the SSE side channel of forwarded streams.
+     */
+    protected AppMeshClientWSS(AppMeshClient.Builder builder, String host, int port, int agentPort) {
         super(builder);
         Objects.requireNonNull(host, "host cannot be null");
+        this.host = host;
+        this.agentPort = agentPort;
         this.wssTransport = new WSSTransport(host, port, getSSLSocketFactory());
     }
 
@@ -64,6 +78,7 @@ public class AppMeshClientWSS extends AppMeshClient {
         private final AppMeshClient.Builder base = new AppMeshClient.Builder();
         private String host = "127.0.0.1";
         private int port = 6063;
+        private int agentPort = DEFAULT_AGENT_PORT;
         private int connectTimeout = WSSTransport.WSS_CONNECT_TIMEOUT;
         private Integer connectionLostTimeout;
 
@@ -77,6 +92,15 @@ public class AppMeshClientWSS extends AppMeshClient {
 
         public Builder port(int port) {
             this.port = port;
+            return this;
+        }
+
+        /**
+         * Agent REST listener port a forwarded SSE side channel dials instead of the
+         * engine listener (which refuses X-Target-Host on stream routes). Defaults to 6060.
+         */
+        public Builder agentPort(int agentPort) {
+            this.agentPort = agentPort;
             return this;
         }
 
@@ -147,13 +171,24 @@ public class AppMeshClientWSS extends AppMeshClient {
         public AppMeshClientWSS build() {
             Objects.requireNonNull(host, "host cannot be null");
             base.baseURL("https://" + host + ":" + port);
-            AppMeshClientWSS client = new AppMeshClientWSS(base, host, port);
+            AppMeshClientWSS client = new AppMeshClientWSS(base, host, port, agentPort);
             client.wssTransport.setConnectTimeout(connectTimeout);
             if (connectionLostTimeout != null) {
                 client.wssTransport.setConnectionLostTimeout(connectionLostTimeout);
             }
             return client;
         }
+    }
+
+    /** A forwarded side channel dials the agent REST listener ({@code Builder.agentPort});
+     * the engine listener behind the WSS port refuses those streams. */
+    @Override
+    protected String sseRequestBaseURL() {
+        String target = getForwardTo();
+        if (target != null && !target.isEmpty()) {
+            return "https://" + host + ":" + agentPort;
+        }
+        return directRequestBaseURL();
     }
 
     /** Send a request over WSS transport and expose it as an {@link HttpURLConnection}-like object. */

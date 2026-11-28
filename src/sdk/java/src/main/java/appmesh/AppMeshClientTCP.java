@@ -25,8 +25,11 @@ public class AppMeshClientTCP extends AppMeshClient {
     private static final int TCP_BLOCK_SIZE = 16 * 1024 - 128; // TLS-optimized chunk size
     /** Standard daemon REST listener port; the SSE streaming side channel dials it directly. */
     private static final int DEFAULT_REST_PORT = 6063;
+    /** Agent REST listener port; a forwarded SSE side channel relays through it. */
+    private static final int DEFAULT_AGENT_PORT = 6060;
     private final String host;
     private final int restPort;
+    private final int agentPort;
     private final TCPTransport tcpTransport;
     private volatile MessageDemuxer demuxer;
 
@@ -61,10 +64,20 @@ public class AppMeshClientTCP extends AppMeshClient {
      * REST listener port for the SSE streaming side channel ({@code restPort}).
      */
     protected AppMeshClientTCP(AppMeshClient.Builder builder, String host, int port, int restPort) {
+        this(builder, host, port, restPort, DEFAULT_AGENT_PORT);
+    }
+
+    /**
+     * Create a TCP transport client from a fully configured base builder with explicit
+     * listener ports for the SSE streaming side channel: {@code restPort} for local
+     * streams, {@code agentPort} (the agent REST listener) for forwarded streams.
+     */
+    protected AppMeshClientTCP(AppMeshClient.Builder builder, String host, int port, int restPort, int agentPort) {
         super(builder);
         Objects.requireNonNull(host, "host");
         this.host = host;
         this.restPort = restPort;
+        this.agentPort = agentPort;
         this.tcpTransport = new TCPTransport(host, port, getSSLSocketFactory());
     }
 
@@ -74,6 +87,7 @@ public class AppMeshClientTCP extends AppMeshClient {
         private String host = "127.0.0.1";
         private int port = 6062;
         private int restPort = DEFAULT_REST_PORT;
+        private int agentPort = DEFAULT_AGENT_PORT;
 
         public Builder() {
         }
@@ -94,6 +108,15 @@ public class AppMeshClientTCP extends AppMeshClient {
          */
         public Builder restPort(int restPort) {
             this.restPort = restPort;
+            return this;
+        }
+
+        /**
+         * Agent REST listener port a forwarded SSE side channel dials instead of the
+         * engine listener (which refuses X-Target-Host on stream routes). Defaults to 6060.
+         */
+        public Builder agentPort(int agentPort) {
+            this.agentPort = agentPort;
             return this;
         }
 
@@ -152,7 +175,7 @@ public class AppMeshClientTCP extends AppMeshClient {
         public AppMeshClientTCP build() {
             Objects.requireNonNull(host, "host");
             base.baseURL("https://" + host + ":" + port);
-            return new AppMeshClientTCP(base, host, port, restPort);
+            return new AppMeshClientTCP(base, host, port, restPort, agentPort);
         }
     }
 
@@ -164,6 +187,17 @@ public class AppMeshClientTCP extends AppMeshClient {
     @Override
     protected String directRequestBaseURL() {
         return "https://" + host + ":" + restPort;
+    }
+
+    /** A forwarded side channel dials the agent REST listener ({@code Builder.agentPort});
+     * the engine listener behind {@code restPort} refuses those streams. */
+    @Override
+    protected String sseRequestBaseURL() {
+        String target = getForwardTo();
+        if (target != null && !target.isEmpty()) {
+            return "https://" + host + ":" + agentPort;
+        }
+        return directRequestBaseURL();
     }
 
     /** Send a request over TCP transport and expose it as an {@link HttpURLConnection}-like object. */

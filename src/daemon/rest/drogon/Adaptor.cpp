@@ -114,11 +114,14 @@ namespace
 	// after replying.
 	bool enforceRouteHardening(const drogon::HttpRequestPtr &req, const drogon::AdviceCallback &callback, bool fileRoute);
 
+	// Same {"message": ...} error shape the worker face replies with
+	// (HttpRequest::reply + Utility::text2json), so clients parse one form.
 	drogon::HttpResponsePtr plainResponse(drogon::HttpStatusCode code, const std::string &body)
 	{
 		auto resp = drogon::HttpResponse::newHttpResponse();
 		resp->setStatusCode(code);
-		resp->setBody(body);
+		resp->setContentTypeString("application/json");
+		resp->setBody(JSON::dump(Utility::text2json(body)));
 		return resp;
 	}
 

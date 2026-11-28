@@ -87,7 +87,9 @@ func TestAppmeshWSSOperations(t *testing.T) {
 	require.NoError(t, err, "WSS AddApp should succeed")
 	require.NotNil(t, addedApp, "WSS AddApp should return the created app")
 	require.Equal(t, testAppName, addedApp.Name, "WSS AddApp returned app should have correct name")
-	t.Logf("WSS AddApp: %s enabled=%t", addedApp.Name, addedApp.Enabled)
+	// The daemon defaults an omitted enabled to true; the test app omits it.
+	require.NotNil(t, addedApp.Enabled, "WSS AddApp response should report the enabled state")
+	require.True(t, *addedApp.Enabled, "WSS AddApp without Enabled should register the app enabled")
 
 	disabled, err := client.DisableApp(testAppName)
 	require.NoError(t, err, "WSS DisableApp should succeed")

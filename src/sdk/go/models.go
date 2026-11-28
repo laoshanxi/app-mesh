@@ -80,8 +80,10 @@ type Application struct {
 	HealthCheckCMD   *string `json:"health_check_cmd"`
 	// DependsOn lists app names that must be running and healthy before this
 	// app starts (continuously scheduled apps only).
-	DependsOn         []string         `json:"depends_on,omitempty"`
-	Enabled           bool             `json:"enabled"`
+	DependsOn []string `json:"depends_on,omitempty"`
+	// Enabled is nil-able so an unset value is omitted: the daemon then keeps its
+	// default (a registered application starts enabled), like the other SDKs.
+	Enabled           *bool            `json:"enabled,omitempty"`
 	StdoutBackupCount *int             `json:"stdout_backup_count"`
 	Metadata          *json.RawMessage `json:"metadata,omitempty"`
 	// Stdin selects the stdin wiring: empty (default) /dev/null or metadata

@@ -12,4 +12,7 @@ package appmesh
 // RunAppSyncChecked page the rest of a truncated run. RunAppSyncWithContext
 // and RunAppSyncCheckedContext add a context and SyncRunOptions.MaxOutputBytes
 // (error instead of a truncated result). Existing signatures are unchanged.
-const SDKVersion = "3.0.25"
+// 3.0.26 makes Application.Enabled a *bool: an unset value is omitted from the
+// registration body, so the daemon keeps its enabled default like the other
+// SDKs (a zero-value false registered every app as disabled).
+const SDKVersion = "3.0.26"
