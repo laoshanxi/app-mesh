@@ -12,13 +12,13 @@
   <rect x="0" y="0" width="1330" height="1290" fill="white"/>
 
   <!-- ======================= Regions ======================= -->
-  <rect x="20" y="10" width="1290" height="120" fill="#fbfbe8" stroke="#9aa15e" stroke-width="1.5"/>
-  <text x="33" y="32" font-size="13" font-weight="bold" fill="#222">Users</text>
+  <rect x="370" y="10" width="940" height="120" fill="#fbfbe8" stroke="#9aa15e" stroke-width="1.5"/>
+  <text x="383" y="32" font-size="13" font-weight="bold" fill="#222">Users</text>
 
-  <rect x="20" y="150" width="240" height="230" fill="white" stroke="#111" stroke-width="1.5"/>
-  <text x="33" y="172" font-size="12.5" font-weight="bold" fill="#111">Legend</text>
+  <rect x="20" y="10" width="300" height="370" fill="white" stroke="#111" stroke-width="1.5"/>
+  <text x="33" y="36" font-size="12.5" font-weight="bold" fill="#111">Legend</text>
 
-  <rect x="20" y="410" width="240" height="856" fill="#e9f3f7" stroke="#7a9aab" stroke-width="1.5"/>
+  <rect x="20" y="410" width="300" height="856" fill="#e9f3f7" stroke="#7a9aab" stroke-width="1.5"/>
   <text x="33" y="432" font-size="12.5" font-weight="bold" fill="#222">Third party / Observability</text>
 
   <rect x="370" y="150" width="940" height="230" fill="#f4f9ec" stroke="#8a9a5b" stroke-width="1.5"/>
@@ -43,130 +43,130 @@
   <text x="383" y="1028" font-size="13" font-weight="bold" fill="#222">Linux managed</text>
 
   <!-- ======================= Legend ======================= -->
-  <g stroke="#111" fill="none" stroke-width="1.2">
-    <path d="M34,204 H52" marker-end="url(#arrowSmall)"/>
-    <rect x="34" y="243" width="24" height="14" stroke-dasharray="4,2.5"/>
-    <rect x="34" y="289" width="24" height="14"/>
-    <path d="M176,250 H196"/>
-    <path d="M176,296 H192" marker-end="url(#arrowSmall)"/>
+  <g stroke="#111" fill="none" stroke-width="1.3">
+    <path d="M93,76 H115" marker-end="url(#arrow)"/>
+    <rect x="93" y="108" width="30" height="16" stroke-dasharray="4,2.5"/>
+    <rect x="93" y="148" width="30" height="16"/>
+    <circle cx="108" cy="187" r="4.5"/>
+    <path d="M108,191.5 V204 M100,196 H116 M108,204 L101,216 M108,204 L115,216"/>
+    <path d="M93,276 H123"/>
+    <path d="M93,316 H115" marker-end="url(#arrow)"/>
   </g>
-  <circle cx="58" cy="204" r="4" fill="white" stroke="#111" stroke-width="1.2"/>
-  <text x="64" y="207.5" font-size="8" font-style="italic" fill="#333">R</text>
-  <text x="78" y="208" font-size="9.5" fill="#111">Channel (R)</text>
-  <text x="78" y="254" font-size="9.5" fill="#111">Separate deployment</text>
-  <text x="78" y="300" font-size="9.5" fill="#111">Process / service</text>
-  <rect x="166" y="196" width="22" height="13" fill="#e4eee0" stroke="#111" stroke-width="1"/>
-  <rect x="163" y="199" width="22" height="13" fill="white" stroke="#111" stroke-width="1.1"/>
-  <text x="194" y="208" font-size="9.5" fill="#111">multi-instance</text>
-  <circle cx="202" cy="250" r="4" fill="white" stroke="#111" stroke-width="1.2"/>
-  <text x="210" y="254" font-size="9.5" fill="#111">Read-only</text>
-  <text x="210" y="300" font-size="9.5" fill="#111">Modifying</text>
-  <g stroke="#111" stroke-width="1.3" fill="none">
-    <circle cx="46" cy="335" r="3"/>
-    <path d="M46,338 V344 M42,340 H50 M46,344 L42,348 M46,344 L50,348"/>
+  <rect x="111" y="227" width="28" height="17" fill="#e4eee0" stroke="#111" stroke-width="1"/>
+  <rect x="107" y="231" width="28" height="17" fill="white" stroke="#111" stroke-width="1.1"/>
+  <circle cx="123" cy="76" r="4.5" fill="white" stroke="#111" stroke-width="1.3"/>
+  <circle cx="129" cy="276" r="4.5" fill="white" stroke="#111" stroke-width="1.3"/>
+  <rect x="93" y="348" width="30" height="16" rx="8" fill="white" stroke="#111" stroke-width="1.3"/>
+  <text x="130" y="80" font-size="9.5" font-style="italic" fill="#333">R</text>
+  <g font-size="10.5" fill="#111">
+    <text x="147" y="80">Channel (R)</text>
+    <text x="147" y="120">Separate deployment</text>
+    <text x="147" y="160">Process / service</text>
+    <text x="147" y="200">Human user</text>
+    <text x="147" y="240">multi-instance</text>
+    <text x="147" y="280">Read-only</text>
+    <text x="147" y="320">Modifying</text>
+    <text x="147" y="360">Data store</text>
   </g>
-  <text x="78" y="346" font-size="9.5" fill="#111">Human user</text>
-  <rect x="176" y="339" width="24" height="13" rx="6.5" fill="white" stroke="#111" stroke-width="1.2"/>
-  <text x="210" y="346" font-size="9.5" fill="#111">Data store</text>
 
   <!-- ======================= Users ======================= -->
-  <text x="470" y="53" font-size="11.5" font-weight="bold" fill="#222">Tenant users</text>
+  <text x="508" y="53" font-size="11.5" font-weight="bold" fill="#222">Tenant users</text>
   <g stroke="#111" stroke-width="1.8" fill="white">
-    <rect x="470" y="64" width="45" height="64"/>
-    <rect x="525" y="64" width="45" height="64"/>
+    <rect x="508" y="64" width="45" height="64"/>
+    <rect x="563" y="64" width="45" height="64"/>
   </g>
   <g stroke="#111" stroke-width="2" fill="none">
-    <circle cx="492.5" cy="78" r="6" fill="white"/>
-    <path d="M492.5,84 V104 M481.5,91 H503.5 M492.5,104 L482.5,124 M492.5,104 L502.5,124"/>
-    <circle cx="547.5" cy="78" r="6" fill="white"/>
-    <path d="M547.5,84 V104 M536.5,91 H558.5 M547.5,104 L537.5,124 M547.5,104 L557.5,124"/>
+    <circle cx="530.5" cy="78" r="6" fill="white"/>
+    <path d="M530.5,84 V104 M519.5,91 H541.5 M530.5,104 L520.5,124 M530.5,104 L540.5,124"/>
+    <circle cx="585.5" cy="78" r="6" fill="white"/>
+    <path d="M585.5,84 V104 M574.5,91 H596.5 M585.5,104 L575.5,124 M585.5,104 L595.5,124"/>
   </g>
-  <text x="580" y="104" font-size="18" fill="#222">…</text>
+  <text x="618" y="104" font-size="18" fill="#222">…</text>
 
-  <text x="800" y="53" font-size="11.5" font-weight="bold" fill="#222">AI agents (MCP clients)</text>
+  <text x="774" y="53" font-size="11.5" font-weight="bold" fill="#222">AI agents (MCP clients)</text>
   <g stroke="#111" stroke-width="1.8" fill="white">
-    <rect x="800" y="70" width="45" height="58" rx="7"/>
-    <rect x="855" y="70" width="45" height="58" rx="7"/>
+    <rect x="774" y="70" width="45" height="58" rx="7"/>
+    <rect x="829" y="70" width="45" height="58" rx="7"/>
   </g>
   <g stroke="#111" stroke-width="2" fill="none">
-    <path d="M822.5,70 V61 M877.5,70 V61" stroke-linecap="round"/>
-    <circle cx="815.5" cy="84" r="3" fill="#111" stroke="none"/>
-    <circle cx="829.5" cy="84" r="3" fill="#111" stroke="none"/>
-    <path d="M813.5,98 H831.5 M817.5,105 H827.5" stroke-linecap="round"/>
-    <circle cx="870.5" cy="84" r="3" fill="#111" stroke="none"/>
-    <circle cx="884.5" cy="84" r="3" fill="#111" stroke="none"/>
-    <path d="M868.5,98 H886.5 M872.5,105 H882.5" stroke-linecap="round"/>
+    <path d="M796.5,70 V61 M851.5,70 V61" stroke-linecap="round"/>
+    <circle cx="789.5" cy="84" r="3" fill="#111" stroke="none"/>
+    <circle cx="803.5" cy="84" r="3" fill="#111" stroke="none"/>
+    <path d="M787.5,98 H805.5 M791.5,105 H801.5" stroke-linecap="round"/>
+    <circle cx="844.5" cy="84" r="3" fill="#111" stroke="none"/>
+    <circle cx="858.5" cy="84" r="3" fill="#111" stroke="none"/>
+    <path d="M842.5,98 H860.5 M846.5,105 H856.5" stroke-linecap="round"/>
   </g>
-  <circle cx="822.5" cy="58.5" r="2" fill="#111"/>
-  <circle cx="877.5" cy="58.5" r="2" fill="#111"/>
-  <text x="910" y="104" font-size="18" fill="#222">…</text>
+  <circle cx="796.5" cy="58.5" r="2" fill="#111"/>
+  <circle cx="851.5" cy="58.5" r="2" fill="#111"/>
+  <text x="884" y="104" font-size="18" fill="#222">…</text>
 
-  <text x="1050" y="53" font-size="11.5" font-weight="bold" fill="#222">Administrators</text>
+  <text x="1044" y="53" font-size="11.5" font-weight="bold" fill="#222">Administrators</text>
   <g stroke="#111" stroke-width="1.8" fill="white">
-    <rect x="1050" y="64" width="45" height="64"/>
-    <rect x="1105" y="64" width="45" height="64"/>
+    <rect x="1044" y="64" width="45" height="64"/>
+    <rect x="1099" y="64" width="45" height="64"/>
   </g>
   <g stroke="#111" stroke-width="2" fill="none">
-    <circle cx="1072.5" cy="78" r="6" fill="white"/>
-    <path d="M1072.5,84 V104 M1061.5,91 H1083.5 M1072.5,104 L1062.5,124 M1072.5,104 L1082.5,124"/>
-    <circle cx="1127.5" cy="78" r="6" fill="white"/>
-    <path d="M1127.5,84 V104 M1116.5,91 H1138.5 M1127.5,104 L1117.5,124 M1127.5,104 L1137.5,124"/>
+    <circle cx="1066.5" cy="78" r="6" fill="white"/>
+    <path d="M1066.5,84 V104 M1055.5,91 H1077.5 M1066.5,104 L1056.5,124 M1066.5,104 L1076.5,124"/>
+    <circle cx="1121.5" cy="78" r="6" fill="white"/>
+    <path d="M1121.5,84 V104 M1110.5,91 H1132.5 M1121.5,104 L1111.5,124 M1121.5,104 L1131.5,124"/>
   </g>
-  <text x="1160" y="104" font-size="18" fill="#222">…</text>
+  <text x="1154" y="104" font-size="18" fill="#222">…</text>
 
   <!-- ======================= Third party / Observability ======================= -->
-  <rect x="34" y="479" width="212" height="58" fill="white" stroke="#111" stroke-width="1.4"/>
+  <rect x="34" y="479" width="272" height="58" fill="white" stroke="#111" stroke-width="1.4"/>
   <g transform="translate(52,496)">
     <circle cx="12" cy="12" r="11" fill="none" stroke="#333" stroke-width="1.8"/>
     <path d="M12 7v8.5" stroke="#333" stroke-width="2.2" stroke-linecap="round"/>
     <path d="M7.5 19.5h9" stroke="#333" stroke-width="2.4" stroke-linecap="round"/>
   </g>
-  <text x="158" y="500" font-size="11.5" text-anchor="middle" fill="#111">Prometheus</text>
-  <text x="158" y="516" font-size="10" text-anchor="middle" fill="#444">scrapes :6061/metrics</text>
-  <text x="158" y="531" font-size="10" text-anchor="middle" fill="#444">bearer + config-view by default</text>
+  <text x="191" y="500" font-size="11.5" text-anchor="middle" fill="#111">Prometheus</text>
+  <text x="191" y="516" font-size="10" text-anchor="middle" fill="#444">scrapes :6061/metrics</text>
+  <text x="191" y="531" font-size="10" text-anchor="middle" fill="#444">bearer + config-view by default</text>
 
-  <rect x="34" y="559" width="212" height="58" fill="white" stroke="#111" stroke-width="1.4"/>
+  <rect x="34" y="559" width="272" height="58" fill="white" stroke="#111" stroke-width="1.4"/>
   <g transform="translate(52,576)" fill="none" stroke="#333" stroke-width="1.8" stroke-linecap="round">
     <path d="M12 2.5a9.5 9.5 0 1 1-9.5 9.5"/>
     <path d="M12 6.5a5.5 5.5 0 1 1-5.5 5.5"/>
     <circle cx="12" cy="12" r="1.4" fill="#333" stroke="none"/>
   </g>
-  <text x="158" y="580" font-size="11.5" text-anchor="middle" fill="#111">Grafana</text>
-  <text x="158" y="596" font-size="10" text-anchor="middle" fill="#444">dashboards · alerting</text>
-  <text x="158" y="611" font-size="10" text-anchor="middle" fill="#444">Prometheus · Loki · SimpleJSON</text>
+  <text x="191" y="580" font-size="11.5" text-anchor="middle" fill="#111">Grafana</text>
+  <text x="191" y="596" font-size="10" text-anchor="middle" fill="#444">dashboards · alerting</text>
+  <text x="191" y="611" font-size="10" text-anchor="middle" fill="#444">Prometheus · Loki · SimpleJSON</text>
 
-  <rect x="34" y="650" width="212" height="50" fill="white" stroke="#111" stroke-width="1.4"/>
+  <rect x="34" y="650" width="272" height="50" fill="white" stroke="#111" stroke-width="1.4"/>
   <path d="M56 670 h16 M56 677 h22 M56 684 h14" stroke="#333" stroke-width="1.8" stroke-linecap="round"/>
-  <text x="158" y="670" font-size="11.5" text-anchor="middle" fill="#111">Loki</text>
-  <text x="158" y="688" font-size="10" text-anchor="middle" fill="#444">log aggregation</text>
+  <text x="191" y="670" font-size="11.5" text-anchor="middle" fill="#111">Loki</text>
+  <text x="191" y="688" font-size="10" text-anchor="middle" fill="#444">log aggregation</text>
 
-  <rect x="34" y="782" width="212" height="58" fill="#fdf1f1" stroke="#111" stroke-width="1.4"/>
+  <rect x="34" y="782" width="272" height="58" fill="#fdf1f1" stroke="#111" stroke-width="1.4"/>
   <g transform="translate(50,797)" fill="none" stroke="#333" stroke-width="2">
     <circle cx="10" cy="5" r="4"/>
     <path d="M2 20c0-4.8 3.6-8 8-8s8 3.2 8 8"/>
   </g>
-  <text x="158" y="803" font-size="11.5" text-anchor="middle" fill="#111">External IdP</text>
-  <text x="158" y="819" font-size="10" text-anchor="middle" fill="#444">external authentication mode</text>
-  <text x="158" y="834" font-size="10" text-anchor="middle" fill="#444">or upstream of the identity service</text>
+  <text x="191" y="803" font-size="11.5" text-anchor="middle" fill="#111">External IdP</text>
+  <text x="191" y="819" font-size="10" text-anchor="middle" fill="#444">external authentication mode</text>
+  <text x="191" y="834" font-size="10" text-anchor="middle" fill="#444">or upstream of the identity service</text>
 
-  <rect x="34" y="854" width="212" height="58" fill="#fdf1f1" stroke="#111" stroke-width="1.4"/>
+  <rect x="34" y="854" width="272" height="58" fill="#fdf1f1" stroke="#111" stroke-width="1.4"/>
   <g transform="translate(50,869)" fill="none" stroke="#333" stroke-linejoin="round">
     <path d="M12 2 L14.2 8.2 L20.5 10 L14.2 11.8 L12 18 L9.8 11.8 L3.5 10 L9.8 8.2 Z" stroke-width="1.8"/>
     <path d="M20 15 L20.9 17.1 L23 18 L20.9 18.9 L20 21 L19.1 18.9 L17 18 L19.1 17.1 Z" stroke-width="1.4"/>
   </g>
-  <text x="158" y="875" font-size="11.5" text-anchor="middle" fill="#111">Model provider</text>
-  <text x="158" y="891" font-size="10" text-anchor="middle" fill="#444">Anthropic API · Bedrock · Vertex</text>
-  <text x="158" y="906" font-size="10" text-anchor="middle" fill="#444">or Anthropic-compatible gateway</text>
+  <text x="191" y="875" font-size="11.5" text-anchor="middle" fill="#111">Model provider</text>
+  <text x="191" y="891" font-size="10" text-anchor="middle" fill="#444">Anthropic API · Bedrock · Vertex</text>
+  <text x="191" y="906" font-size="10" text-anchor="middle" fill="#444">or Anthropic-compatible gateway</text>
 
-  <rect x="34" y="962" width="212" height="50" fill="white" stroke="#111" stroke-width="1.4"/>
+  <rect x="34" y="962" width="272" height="50" fill="white" stroke="#111" stroke-width="1.4"/>
   <path d="M52 977 h16 M52 984 h22 M52 991 h14" stroke="#333" stroke-width="1.8" stroke-linecap="round" fill="none"/>
   <path d="M71 983 l5 4 -5 4" stroke="#333" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
-  <text x="158" y="982" font-size="11.5" text-anchor="middle" fill="#111">Promtail</text>
-  <text x="158" y="1000" font-size="10" text-anchor="middle" fill="#444">ships app logs to Loki</text>
+  <text x="191" y="982" font-size="11.5" text-anchor="middle" fill="#111">Promtail</text>
+  <text x="191" y="1000" font-size="10" text-anchor="middle" fill="#444">reads app log files · ships to Loki</text>
 
-  <rect x="34" y="1096" width="212" height="50" fill="white" stroke="#111" stroke-width="1.4"/>
-  <text x="140" y="1116" font-size="11.5" text-anchor="middle" fill="#111">node-exporter · alertmanager</text>
-  <text x="140" y="1134" font-size="10" text-anchor="middle" fill="#444">host metrics · alert routing</text>
+  <rect x="34" y="1096" width="272" height="50" fill="white" stroke="#111" stroke-width="1.4"/>
+  <text x="170" y="1116" font-size="11.5" text-anchor="middle" fill="#111">node-exporter · alertmanager</text>
+  <text x="170" y="1134" font-size="10" text-anchor="middle" fill="#444">host metrics · alert routing</text>
 
   <text x="34" y="1192" font-size="9.5" font-style="italic" fill="#555">(monitoring stack: all-in-one compose)</text>
 
@@ -302,9 +302,9 @@
   <!-- ======================= Channels & accesses ======================= -->
   <g stroke="#111" stroke-width="1.4" fill="none">
     <!-- users -> clients -->
-    <path d="M562,128 V194" marker-end="url(#arrow)"/>
-    <path d="M892,128 V194" marker-end="url(#arrow)"/>
-    <path d="M1142,128 V194" marker-end="url(#arrow)"/>
+    <path d="M600,128 V194" marker-end="url(#arrow)"/>
+    <path d="M866,128 V194" marker-end="url(#arrow)"/>
+    <path d="M1136,128 V194" marker-end="url(#arrow)"/>
     <!-- clients -> agent -->
     <path d="M560,286 V492" marker-end="url(#arrow)"/>
     <path d="M725,286 V492" marker-end="url(#arrow)"/>
@@ -313,15 +313,15 @@
     <path d="M1150,286 V314" marker-end="url(#arrow)"/>
     <path d="M1050,241 H1022 V640 H950 V656" marker-end="url(#arrow)"/>
     <!-- Prometheus / Grafana -> agent -->
-    <path d="M246,508 H393" marker-end="url(#arrow)"/>
-    <path d="M246,588 H393" marker-end="url(#arrow)"/>
+    <path d="M306,508 H393" marker-end="url(#arrow)"/>
+    <path d="M306,588 H393" marker-end="url(#arrow)"/>
     <!-- Grafana / Promtail -> Prometheus / Loki -->
-    <path d="M140,559 V539" marker-end="url(#arrow)"/>
-    <path d="M140,617 V648" marker-end="url(#arrow)"/>
+    <path d="M165,559 V539" marker-end="url(#arrow)"/>
+    <path d="M165,617 V648" marker-end="url(#arrow)"/>
     <path d="M34,992 H27 V690 H32" marker-end="url(#arrow)"/>
     <!-- Dex <-> External IdP, llm-agent -> Model provider -->
-    <path d="M407,811 H248" marker-end="url(#arrow)"/>
-    <path d="M407,883 H248" marker-end="url(#arrow)"/>
+    <path d="M407,811 H308" marker-end="url(#arrow)"/>
+    <path d="M407,883 H308" marker-end="url(#arrow)"/>
     <!-- Workflow Engine -> Engine API (task RPC), -> workflow data -->
     <path d="M618,687 H710" marker-end="url(#arrow)"/>
     <path d="M512,716 V728" marker-end="url(#arrow)"/>
@@ -341,7 +341,7 @@
     <path d="M840,1104 V1152" marker-end="url(#arrow)"/>
     <path d="M1010,1078 H985 V1179 H962" marker-end="url(#arrow)"/>
     <!-- Promtail -> app logs (read-only) -->
-    <path d="M246,992 H340 V1179 H710"/>
+    <path d="M306,992 H340 V1179 H710"/>
   </g>
   <circle cx="716" cy="1179" r="4" fill="white" stroke="#111" stroke-width="1.3"/>
 
@@ -356,8 +356,8 @@
     <circle cx="348" cy="579" r="4.5"/>
     <circle cx="684" cy="678" r="4.5"/>
     <circle cx="684" cy="750" r="4.5"/>
-    <circle cx="268" cy="802" r="4.5"/>
-    <circle cx="268" cy="874" r="4.5"/>
+    <circle cx="328" cy="802" r="4.5"/>
+    <circle cx="328" cy="874" r="4.5"/>
     <circle cx="1040" cy="540" r="4.5"/>
     <circle cx="1012" cy="750" r="4.5"/>
   </g>
@@ -371,22 +371,17 @@
     <text x="355.5" y="583">R</text>
     <text x="691.5" y="682">R</text>
     <text x="691.5" y="754">R</text>
-    <text x="275.5" y="806">R</text>
-    <text x="275.5" y="878">R</text>
+    <text x="335.5" y="806">R</text>
+    <text x="335.5" y="878">R</text>
     <text x="1047.5" y="544">R</text>
     <text x="1019.5" y="754">R</text>
   </g>
 
   <!-- ======================= Labels ======================= -->
   <g font-size="10" font-style="italic" fill="#333">
-    <text x="272" y="501">scrape :6061</text>
-    <text x="272" y="581">SimpleJSON</text>
-    <text x="148" y="553">query</text>
-    <text x="148" y="636">query</text>
+    <text x="173" y="553">query</text>
+    <text x="173" y="636">query</text>
     <text x="38" y="946">push</text>
-    <text x="288" y="806">external IdP</text>
-    <text x="288" y="878">egress</text>
-    <text x="272" y="985">app logs (ro)</text>
     <text x="898" y="400">bearer forwarded</text>
     <text x="1014" y="330" text-anchor="end">WSS :6063 (direct)</text>
     <text x="634" y="680">task RPC</text>
