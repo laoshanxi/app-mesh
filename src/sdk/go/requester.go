@@ -268,15 +268,13 @@ func (h *HTTPRequester) sseRequest(ctx context.Context, method string, apiPath s
 			return 0, nil, nil, err
 		}
 	}
-	// Streams never traverse node forwarding: an empty X-Target-Host override
-	// cancels the client-wide target (empty values are not sent).
+	// buildRequest applies the client-wide forward target like any other request;
+	// only the engine's own listener refuses a stream (400), reported below.
+	forwarded := false
 	if _, set := headers[headerTargetHost]; !set {
-		noForward := make(map[string]string, len(headers)+1)
-		for k, v := range headers {
-			noForward[k] = v
-		}
-		noForward[headerTargetHost] = ""
-		headers = noForward
+		forwarded = h.forwardingHost.Load() != ""
+	} else if headers[headerTargetHost] != "" {
+		forwarded = true
 	}
 	req, err := h.buildRequest(ctx, method, apiPath, queries, headers, bytes.NewReader(body), token)
 	if err != nil {
@@ -289,7 +287,24 @@ func (h *HTTPRequester) sseRequest(ctx context.Context, method string, apiPath s
 	if err != nil {
 		return 0, nil, nil, fmt.Errorf("request failed: %w", err)
 	}
+	if resp.StatusCode == http.StatusBadRequest && forwarded {
+		raw, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
+		resp.Body.Close()
+		return 0, nil, nil, newAPIErrorText(opForPath(apiPath), resp.StatusCode, string(raw),
+			fmt.Sprintf("%s failed with status %d: %s; the endpoint %s does not stream through node forwarding"+
+				" (X-Target-Host): use the agent REST listener (default port 6060) as AppMeshURI",
+				opForPath(apiPath), resp.StatusCode, strings.TrimSpace(string(raw)), h.baseURL.Redacted()))
+	}
 	return resp.StatusCode, resp.Body, resp.Header, nil
+}
+
+// opForPath names a streaming route in error messages the way the streaming
+// callers do ("run task stream", "follow output").
+func opForPath(apiPath string) string {
+	if strings.HasSuffix(apiPath, "/task/stream") {
+		return "run task stream"
+	}
+	return "follow output"
 }
 
 // doContext builds and executes the HTTP request, returning the response with
@@ -435,8 +450,12 @@ type TCPRequester struct {
 	sslClientCertKey string
 	sslCAFile        string
 
-	// restBase is the REST listener the SSE side channel dials; from Option.RestPort.
+	// restBase is the REST listener the SSE side channel dials for local streams;
+	// from Option.RestPort.
 	restBase url.URL
+	// agentBase is the agent REST listener (Option.AgentPort) a forwarded SSE side
+	// channel dials: the engine listener does not relay X-Target-Host on streams.
+	agentBase url.URL
 }
 
 // Send performs a REST-like request over TCP.
@@ -766,6 +785,10 @@ type WSSRequester struct {
 	sslClientCert  string
 	sslClientKey   string
 	sslCAFile      string
+
+	// agentBase is the agent REST listener (Option.AgentPort) a forwarded SSE side
+	// channel dials instead of the engine listener behind the WebSocket.
+	agentBase url.URL
 }
 
 // ensureConnected (re)establishes the WebSocket before a request is sent.

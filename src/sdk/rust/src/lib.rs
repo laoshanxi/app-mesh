@@ -37,7 +37,7 @@ pub use oauth::{
     StaticAccessTokenProvider, TokenProvider, TokenSet, TokenSetProviderOptions, DEFAULT_OAUTH_SCOPE, DEFAULT_OAUTH_SCOPES,
 };
 // Canonical cross-SDK worker names (match the Python/Go SDKs).
-pub use constants::EVENT_TYPE_DISCONNECTED;
+pub use constants::{EVENT_TYPE_DISCONNECTED, SYNC_RUN_OUTPUT_PAGE_BYTES, SYNC_RUN_TRUNCATED_RETENTION_SECONDS};
 pub use subscribe::EventCallback;
 pub use worker_http::AppMeshWorker;
 pub use worker_tcp::AppMeshWorkerTCP;

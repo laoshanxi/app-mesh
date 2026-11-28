@@ -4,10 +4,12 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/url"
 	"os"
 	"path/filepath"
+	"strconv"
 )
 
 // AppMeshClientWSS interacts with the server over WSS transport.
@@ -30,10 +32,21 @@ func NewWSSClient(options Option) (*AppMeshClientWSS, error) {
 	// ensure scheme is wss/ws
 	ensureWScheme(parsed)
 
+	// A forwarded SSE side channel dials the agent REST listener on the same host
+	// (the engine listener behind the WebSocket does not relay X-Target-Host on streams).
+	agentPort := options.AgentPort
+	if agentPort <= 0 {
+		agentPort = defaultAgentPort
+	}
+	agentScheme := "https"
+	if parsed.Scheme == "ws" {
+		agentScheme = "http"
+	}
 	wssRequester := &WSSRequester{
 		WSSConnection: NewWSSConnection(),
 		baseURL:       *parsed,
 		psk:           options.PSK,
+		agentBase:     url.URL{Scheme: agentScheme, Host: net.JoinHostPort(parsed.Hostname(), strconv.Itoa(agentPort))},
 	}
 
 	httpClient, err := newHTTPClientWithRequester(options, wssRequester)
@@ -79,7 +92,8 @@ func (c *AppMeshClientWSS) forwardTarget() string {
 
 // sseRequest opens an SSE stream over a direct HTTPS connection to the same
 // REST listener the WSS control channel runs on: the framed transport cannot
-// carry a chunked stream, so streams bypass it like the file data channel.
+// carry a chunked stream, so streams bypass it like the file data channel. A
+// forwarded stream dials the agent REST listener with X-Target-Host instead.
 func (w *WSSRequester) sseRequest(ctx context.Context, method string, apiPath string, queries url.Values,
 	headers map[string]string, body []byte) (int, io.ReadCloser, http.Header, error) {
 	base := w.baseURL
@@ -89,7 +103,8 @@ func (w *WSSRequester) sseRequest(ctx context.Context, method string, apiPath st
 	case "ws":
 		base.Scheme = "http"
 	}
-	return sseSideChannel{base: base, token: w.getAccessToken(), agent: userAgentWSS, signer: w.getRequestSigner(),
+	return sseSideChannel{base: base, agentBase: w.agentBase, forwardTarget: w.getForwardTo(),
+		token: w.getAccessToken(), agent: userAgentWSS, signer: w.getRequestSigner(),
 		clientCert: w.sslClientCert, clientKey: w.sslClientKey, caFile: w.sslCAFile}.open(ctx, method, apiPath,
 		queries, headers, body)
 }

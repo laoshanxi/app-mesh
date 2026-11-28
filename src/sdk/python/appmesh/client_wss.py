@@ -56,6 +56,7 @@ class AppMeshClientWSS(TransportClientMixin, AppMeshClient):
         ssl_client_cert: Optional[Union[str, Tuple[str, str]]] = None,
         *,
         plain_transport: bool = False,
+        agent_port: int = 6060,
         bearer_token: Optional[str] = None,
         token_provider: Optional[TokenProvider] = None,
         api_key: Optional[str] = None,
@@ -73,6 +74,10 @@ class AppMeshClientWSS(TransportClientMixin, AppMeshClient):
             ssl_client_cert: SSL client certificate:
               - str: Path to single PEM with cert+key
               - tuple: (cert_path, key_path)
+            agent_port: Port of the agent REST listener on the same host, used by the
+              streaming side channel (follow_output / run_task_stream / stream_run) when
+              ``forward_to`` is set: the engine listener does not stream through node
+              forwarding, the agent relays it; default 6060.
             bearer_token: Caller-owned access token.
             token_provider: Provider that supplies and refreshes access tokens.
             api_key: API key id for opt-in HMAC request signing (see
@@ -94,6 +99,9 @@ class AppMeshClientWSS(TransportClientMixin, AppMeshClient):
         # Rust SDK's WSS client).
         host, port = wss_address
         scheme = "http" if plain_transport else "https"
+        # A forwarded stream (_sse_request) dials the agent REST listener: it relays
+        # X-Target-Host, which the engine listener behind the WebSocket rejects on streams.
+        self._agent_base_url = f"{scheme}://{host}:{agent_port}"
         super().__init__(
             base_url=f"{scheme}://{host}:{port}",
             ssl_verify=ssl_verify,

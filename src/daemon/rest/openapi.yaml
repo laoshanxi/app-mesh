@@ -398,6 +398,22 @@ paths:
     post:
       tags: [Applications]
       summary: Run a command synchronously
+      description: >-
+        Returns at most 5 MiB of output. A full page carries X-Output-Truncated: 1,
+        X-Output-Position (where the rest starts) and X-App-Name (the run); the run
+        stays registered for 10 minutes so the rest can be read from the output
+        endpoint.
+      parameters:
+        - name: timeout
+          in: query
+          required: false
+          schema: { type: integer, minimum: 0 }
+          description: Seconds the daemon waits before it kills the run.
+        - name: lifecycle
+          in: query
+          required: false
+          schema: { type: integer, minimum: 0 }
+          description: Retention of the run after exit, in seconds. Raised to timeout when smaller.
       requestBody:
         required: true
         content:
@@ -911,7 +927,12 @@ paths:
         schema: { type: string }
     put:
       tags: [Labels]
-      summary: Set a host label
+      summary: Set a host label. The value travels in the required query parameter `value`.
+      parameters:
+        - name: value
+          in: query
+          required: true
+          schema: { type: string }
       responses:
         "200": { description: Label saved. }
         "401": { $ref: "#/components/responses/Unauthorized" }
@@ -920,7 +941,7 @@ paths:
       tags: [Labels]
       summary: Delete a host label
       responses:
-        "200": { description: Label deleted. }
+        "200": { description: Label deleted. A label that does not exist also returns 200. }
         "401": { $ref: "#/components/responses/Unauthorized" }
         "403": { $ref: "#/components/responses/Forbidden" }
 
@@ -1270,8 +1291,8 @@ components:
         interval:
           type: [integer, string]
           description: >-
-            Fixed-period schedule: seconds, or a duration string such as
-            "1m30s". Mutually exclusive with cron_schedule.
+            Fixed-period schedule: an integer number of seconds, or an ISO 8601
+            duration such as "PT1M30S". Mutually exclusive with cron_schedule.
         cron_schedule:
           type: string
           description: >-
@@ -1282,8 +1303,8 @@ components:
           type: [integer, string]
           description: >-
             Grace before the daemon terminates the previous run of a periodic
-            application, and delay before removal cleanup: seconds, or a
-            duration string such as "1m30s".
+            application, and delay before removal cleanup: an integer number of
+            seconds, or an ISO 8601 duration such as "PT1M30S".
         start_time:
           type: integer
           description: Epoch seconds from which the application may run.

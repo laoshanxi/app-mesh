@@ -107,9 +107,9 @@ def raise_on_error_end(end: SseEnd) -> None:
 def route_hint(status: int) -> str:
     """Pointer appended to SSE 404/405 errors: the engine serves streaming routes
     on its native listener (default wss/https 6063), and the agent REST listener
-    (the client's default port 6060) relays them for local requests."""
+    (the client's default port 6060) relays them for local and forwarded requests."""
     if status in (404, 405):
         return (" Streaming is served by the engine's native listener (default wss/https port"
-                " 6063) and relayed by the agent REST listener (default port 6060) for local"
-                " requests; streams do not traverse node forwarding.")
+                " 6063) and relayed by the agent REST listener (default port 6060), which also"
+                " forwards streams when X-Target-Host is set.")
     return ""

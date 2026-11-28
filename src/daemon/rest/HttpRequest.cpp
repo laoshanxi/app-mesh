@@ -331,6 +331,11 @@ void HttpRequestAutoCleanup::holdForDisconnect(const std::shared_ptr<HttpRequest
 		HeldRunRequests::instance().add(request->m_connection_id, request);
 }
 
+void HttpRequestAutoCleanup::setRunRetention(int seconds)
+{
+	m_runRetentionSeconds.store(seconds);
+}
+
 HttpRequestAutoCleanup::~HttpRequestAutoCleanup()
 {
 	if (!m_connection_id.empty())
@@ -341,7 +346,7 @@ HttpRequestAutoCleanup::~HttpRequestAutoCleanup()
 		// Trigger suicide timer to remove app (avoid using Application lock to access Configuration)
 		if (auto app = m_app.lock())
 		{
-			app->scheduleRemoval(0);
+			app->scheduleRemoval(m_runRetentionSeconds.load());
 		}
 	}
 	catch (...)

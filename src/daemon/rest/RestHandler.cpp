@@ -941,6 +941,9 @@ void RestHandler::apiAppDelete(const std::shared_ptr<HttpRequest> &message)
 	const auto path = (Utility::decodeURIComponent(message->m_relative_uri));
 	auto appName = regexSearch(path, REST_PATH_APP_DELETE);
 
+	// Authenticate before the existence lookup so an anonymous caller cannot tell 404 from 401.
+	const auto tokenUser = permissionCheck(message, "");
+
 	auto config = Configuration::instance();
 	auto app = config->getApp(appName, false);
 	if (!app)
@@ -949,8 +952,6 @@ void RestHandler::apiAppDelete(const std::shared_ptr<HttpRequest> &message)
 	}
 	else
 	{
-		// Establish a verified Dex principal before applying the owner shortcut.
-		const auto tokenUser = permissionCheck(message, "");
 		if (app->getOwnerPrincipalId() != tokenUser)
 		{
 			// only check delete permission for none-self app

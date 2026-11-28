@@ -264,7 +264,7 @@ def set_config(config: dict, token: AccessToken = CurrentAccessToken()) -> dict:
 
 
 @mcp.tool(description="Set the daemon log level (e.g. DEBUG, INFO, WARN, ERROR). Returns the effective level.")
-def set_log_level(level: str = "DEBUG", token: AccessToken = CurrentAccessToken()) -> dict:
+def set_log_level(level: str, token: AccessToken = CurrentAccessToken()) -> dict:
     return {"level": _client(token).set_log_level(level)}
 
 

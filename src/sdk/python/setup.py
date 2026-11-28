@@ -22,7 +22,9 @@ def get_version():
     # 3.0.24 adds the upload_file overwrite flag on every transport: it sends
     # X-File-Overwrite so the engine replaces an existing file instead of
     # answering 409. The default stays no-overwrite.
-    return "3.0.24"
+    # 3.0.25 completes a sync run past the 5 MiB reply page (run_app_sync pages
+    # the rest and removes the run) and raises on 4xx/5xx with the daemon's reason.
+    return "3.0.25"
 
 
 # Dependencies

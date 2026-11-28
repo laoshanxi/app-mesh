@@ -56,6 +56,7 @@ class AppMeshClientTCP(TransportClientMixin, AppMeshClient):
         *,
         plain_transport: bool = False,
         rest_port: Optional[int] = None,
+        agent_port: int = 6060,
         bearer_token: Optional[str] = None,
         token_provider: Optional[TokenProvider] = None,
         api_key: Optional[str] = None,
@@ -76,9 +77,10 @@ class AppMeshClientTCP(TransportClientMixin, AppMeshClient):
             plain_transport: Dial plaintext TCP instead of TLS.
             rest_port: Port of the engine's native HTTPS listener (the WSS port) on the
               same daemon, used by the streaming side channel (follow_output /
-              run_task_stream); default 6063. The local agent REST listener (6060)
-              relays these routes for local requests, but forwarding (X-Target-Host)
-              does not traverse nodes.
+              run_task_stream / stream_run) for local streams; default 6063.
+            agent_port: Port of the agent REST listener on the same host, used by the
+              streaming side channel when ``forward_to`` is set: the engine listener
+              does not stream through node forwarding, the agent relays it; default 6060.
             bearer_token: Caller-owned access token.
             token_provider: Provider that supplies and refreshes access tokens.
             api_key: API key id for opt-in HMAC request signing (see
@@ -96,8 +98,11 @@ class AppMeshClientTCP(TransportClientMixin, AppMeshClient):
         self._transport_client_addr = socket.gethostname()
         self._transport_name = "Socket"
         # The SSE side channel (_sse_request) dials the daemon's native listener (the
-        # WSS port) on the same host; deployments with shifted ports pass rest_port.
+        # WSS port) on the same host; deployments with shifted ports pass rest_port. A
+        # forwarded stream dials the agent REST listener instead (it relays X-Target-Host).
         host = tcp_address[0]
+        scheme = "http" if plain_transport else "https"
+        self._agent_base_url = f"{scheme}://{host}:{agent_port}"
         super().__init__(
             base_url=f"{'http' if plain_transport else 'https'}://{host}:{rest_port or 6063}",
             ssl_verify=ssl_verify,

@@ -100,6 +100,9 @@ public:
 	bool isManagedPrivateTransport() const;
 	/// True for the loopback peer addresses 127.0.0.1, ::1 and ::ffff:127.0.0.1.
 	static bool isLoopbackPeer(const std::string &addr);
+	/// Keep the on-demand run of a sync reply readable for a client that must page
+	/// the rest of its output. No-op for requests that own no run.
+	virtual void setRunRetention(int seconds) {}
 
 private:
 	void notifyReply(int status) const;
@@ -126,10 +129,13 @@ public:
 	/// Call once after construction, while the shared_ptr exists.
 	static void holdForDisconnect(const std::shared_ptr<HttpRequestAutoCleanup> &request);
 
+	void setRunRetention(int seconds) override;
+
 private:
 	void abortDisconnectedRun() const;
 
 	std::weak_ptr<Application> m_app;
+	std::atomic<int> m_runRetentionSeconds{0};
 };
 
 // HttpRequest with timeout support

@@ -301,13 +301,16 @@ public:
 // output readers (SDK exit backfill) still reach the registration, but the
 // entry no longer lingers for the whole run lifecycle.
 #define RUN_INSTANCE_EXIT_GRACE_SECONDS int(60)
+// A sync run whose output filled the reply page stays readable this long, so the
+// client can fetch the rest through the output endpoint.
+#define SYNC_RUN_TRUNCATED_RETENTION_SECONDS int(600)
 #define MAX_OUTPUT_VIEW_TIMEOUT_SECONDS int(300) // output long-poll max wait; a dropped client is held this long
 #define DEFAULT_SSE_STREAM_TIMEOUT_SECONDS int(60 * 60)      // SSE output stream default lifetime
 #define MAX_SSE_STREAM_TIMEOUT_SECONDS int(24 * 60 * 60)     // SSE output stream lifetime cap
 #define SSE_HEARTBEAT_MILLISECONDS long(15 * 1000)           // SSE keep-alive cadence; also bounds disconnect detection
 #define CONSUL_SESSION_DEFAULT_TTL 30
 #define APP_STD_OUT_MAX_FILE_SIZE 1024 * 1024 * 100   // 100M
-#define APP_STD_OUT_VIEW_DEFAULT_SIZE 1024 * 1024 * 3 // 3M
+#define APP_STD_OUT_VIEW_DEFAULT_SIZE 1024 * 1024 * 5 // 5M
 #define SEPARATE_AGENT_APP_NAME "agent"
 #define WORKFLOW_APP_NAME "workflow"
 #define WORKFLOW_DEFINITION_PREFIX "workflow-"
@@ -463,6 +466,7 @@ public:
 #define HTTP_HEADER_VALUE_BEARER_CHALLENGE "Bearer realm=\"appmesh\""
 #define HTTP_HEADER_KEY_exit_code "X-Exit-Code"
 #define HTTP_HEADER_KEY_output_pos "X-Output-Position"
+#define HTTP_HEADER_KEY_output_truncated "X-Output-Truncated"
 #define HTTP_HEADER_KEY_file_path "X-File-Path"
 #define HTTP_HEADER_KEY_file_mode "X-File-Mode"
 #define HTTP_HEADER_KEY_file_user "X-File-User"

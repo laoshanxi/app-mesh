@@ -133,8 +133,8 @@ Lifecycle semantics:
 
 The streaming routes answer `text/event-stream` frames (partials, final
 result, terminal status). The engine serves them natively (default
-wss/https 6063), and the agent REST listener (6060) relays them for local
-requests; they do not traverse node forwarding. See
+wss/https 6063), and the agent REST listener (6060) relays them, including
+through node forwarding (`X-Target-Host`). See
 [Streaming.md](Streaming.md)
 for the event contract, the stdin pipe mode, and the SDK generator APIs.
 
@@ -150,6 +150,21 @@ if the waiting client disconnects. This cleanup needs a direct connection to the
 REST listener. The agent port and the CLI/WebSocket transports multiplex
 requests over one connection. The engine cannot observe the client disconnect
 there. The run then continues until it finishes or reaches its timeout.
+
+### Output size in `syncrun`
+
+`syncrun` returns at most 5 MiB of output in one response. When the page is
+full, more output may follow:
+
+- `X-Output-Truncated: 1` marks the response as incomplete.
+- `X-Output-Position` gives the position that follows the returned output.
+- `X-App-Name` names the run.
+
+The run stays registered for 10 minutes after the reply. Read the rest with
+`GET /appmesh/app/{X-App-Name}/output?stdout_position={X-Output-Position}`
+and repeat until a response is shorter than 5 MiB, then delete the run or let
+the retention end remove it. A run whose output fits one page is removed when
+the reply is sent, as before.
 
 ## Event subscription
 

@@ -8,4 +8,8 @@ package appmesh
 // answering 409. The default stays no-overwrite. It also adds the Workflow
 // secret broker calls (ProtectWorkflowSecretsContext and
 // UnprotectWorkflowSecretsContext) used by the bundled engine.
-const SDKVersion = "3.0.24"
+// 3.0.25 completes a sync run past the first reply page: RunAppSync and
+// RunAppSyncChecked page the rest of a truncated run. RunAppSyncWithContext
+// and RunAppSyncCheckedContext add a context and SyncRunOptions.MaxOutputBytes
+// (error instead of a truncated result). Existing signatures are unchanged.
+const SDKVersion = "3.0.25"

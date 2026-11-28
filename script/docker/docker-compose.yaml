@@ -306,6 +306,9 @@ services:
       - APPMESH_AUTH_AUDIENCE=appmesh-api
       # Advertise the published loopback entry to host AI clients.
       - APPMESH_MCP_PUBLIC_URL=http://127.0.0.1:6070
+      # The file tools return curl commands that run on the host, where the
+      # in-network engine name does not resolve.
+      - APPMESH_DAEMON_PUBLIC_URL=https://127.0.0.1:6060
       # No outbound pypi version probe from the MCP container.
       - FASTMCP_CHECK_FOR_UPDATES=off
     volumes:

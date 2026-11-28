@@ -287,11 +287,15 @@ pub struct AppMeshClientTCP {
     /// (a framed transport cannot carry a chunked event stream).
     rest_client: reqwest::Client,
     rest_base_url: String,
+    /// Agent REST listener on the same host: a forwarded SSE stream dials it with
+    /// `X-Target-Host` (the engine listener answers that with 400 on stream routes).
+    agent_base_url: String,
 }
 
 impl AppMeshClientTCP {
     /// Create a TCP transport client. Defaults to `127.0.0.1:6062` with the
-    /// SSE side channel on the standard REST port 6063.
+    /// SSE side channel on the standard REST port 6063 (the agent REST port 6060 for a
+    /// forwarded stream).
     /// An empty `ssl_verify` path is the legacy verification-disable form; prefer
     /// [`crate::ClientBuilderTCP`]'s explicit `danger_accept_invalid_certs(true)`.
     pub fn new(
@@ -300,19 +304,21 @@ impl AppMeshClientTCP {
         ssl_client_cert: Option<(String, String)>,
     ) -> Result<Arc<Self>> {
         let verify = crate::tls_config::resolve_ssl_verify(ssl_verify)?;
-        Self::new_with_verify(tcp_address, verify, ssl_client_cert, false, None)
+        Self::new_with_verify(tcp_address, verify, ssl_client_cert, false, None, None)
     }
 
     /// Create a TCP transport client with an explicit `SslVerify` mode (used by the
     /// builder so insecure mode is an explicit flag, never an empty-string sentinel).
     /// `plain` selects the TLS-at-gateway shape: a plaintext TCP connection.
-    /// `rest_port` overrides the SSE side channel's REST port (default 6063) for shifted-port daemons.
+    /// `rest_port` overrides the SSE side channel's REST port (default 6063) for shifted-port daemons;
+    /// `agent_port` overrides the agent REST port (default 6060) a forwarded stream dials.
     pub(crate) fn new_with_verify(
         tcp_address: Option<(String, u16)>,
         verify: crate::tls_config::SslVerify,
         ssl_client_cert: Option<(String, String)>,
         plain: bool,
         rest_port: Option<u16>,
+        agent_port: Option<u16>,
     ) -> Result<Arc<Self>> {
         let tcp_address = tcp_address.unwrap_or_else(|| (DEFAULT_TCP_HOST.to_string(), DEFAULT_TCP_PORT));
         let client_cert = ssl_client_cert.clone().map(|(cert, key)| ClientCert::Pair(cert, key));
@@ -323,10 +329,10 @@ impl AppMeshClientTCP {
         let url = format!("tcp://{}:{}", tcp_address.0, tcp_address.1);
         let client = AppMeshClient::with_requester(Box::new(tcp_requester), url);
 
-        let (rest_client, rest_base_url) =
-            build_sse_side_channel(&tcp_address.0, rest_port, &verify, ssl_client_cert, plain)?;
+        let (rest_client, rest_base_url, agent_base_url) =
+            build_sse_side_channel(&tcp_address.0, rest_port, agent_port, &verify, ssl_client_cert, plain)?;
 
-        Ok(Arc::new(Self { client, tcp_transport, rest_client, rest_base_url }))
+        Ok(Arc::new(Self { client, tcp_transport, rest_client, rest_base_url, agent_base_url }))
     }
 
     /// Get the underlying generic client for shared auth/app/task APIs.
@@ -513,6 +519,8 @@ impl AppMeshClientTCP {
 
     /// Stream an application's stdout over the REST side channel (SSE cannot
     /// ride the framed TCP transport); see [`AppMeshClient::follow_output`].
+    /// With a forward target set the stream is served by that node: the side
+    /// channel dials the agent REST listener with `X-Target-Host`.
     pub async fn follow_output(
         &self,
         app_name: &str,
@@ -523,40 +531,46 @@ impl AppMeshClientTCP {
     ) -> Result<SseStream> {
         let path = format!("/appmesh/app/{}/output/stream", encode_path_segment(app_name));
         let query = AppMeshClient::output_stream_query(stdout_position, process_uuid, follow, timeout);
-        let resp = open_sse_side_channel(
-            &self.rest_client,
-            &self.rest_base_url,
-            &self.sse_token().await?,
-            self.client.req.request_signer().as_ref(),
-            HTTP_USER_AGENT_TCP,
-            Method::GET,
-            &path,
-            Some(&query),
-            None,
-        )
-        .await?;
+        let resp = self
+            .open_stream(Method::GET, &path, Some(&query), None)
+            .await?;
         Ok(SseStream::new(SseKind::Output, resp))
     }
 
+    /// Open an SSE request on the side channel, forwarded to the client's target when one is set.
+    async fn open_stream(
+        &self,
+        method: Method,
+        path: &str,
+        query: Option<&HashMap<String, String>>,
+        body: Option<&[u8]>,
+    ) -> Result<reqwest::Response> {
+        open_sse_side_channel(
+            &self.rest_client,
+            &self.rest_base_url,
+            Some(self.agent_base_url.as_str()),
+            self.client.get_forward_to().as_deref(),
+            &self.sse_token().await?,
+            self.client.req.request_signer().as_ref(),
+            HTTP_USER_AGENT_TCP,
+            method,
+            path,
+            query,
+            body,
+        )
+        .await
+    }
+
     /// Streaming task RPC over the REST side channel; see [`AppMeshClient::run_task_stream`].
+    /// With a forward target set the task runs on that node.
     pub async fn run_task_stream(&self, app_name: &str, data: Value, timeout: i32) -> Result<SseStream> {
         let timeout = if timeout <= 0 { 300 } else { timeout };
         let path = format!("/appmesh/app/{}/task/stream", encode_path_segment(app_name));
         let query = AppMeshClient::task_stream_query(timeout);
         let body = task_body_bytes(data)?;
-        let resp = open_sse_side_channel(
-            &self.rest_client,
-            &self.rest_base_url,
-            &self.sse_token().await?,
-            self.client.req.request_signer().as_ref(),
-            HTTP_USER_AGENT_TCP,
-            Method::POST,
-            &path,
-            Some(&query),
-            Some(&body),
-        )
-        .await?;
-        Ok(SseStream::new(SseKind::Task, resp))
+        self.open_stream(Method::POST, &path, Some(&query), Some(&body))
+            .await
+            .map(|resp| SseStream::new(SseKind::Task, resp))
     }
 
     /// One-shot run + stdout stream over the REST side channel; see [`AppMeshClient::stream_run`].

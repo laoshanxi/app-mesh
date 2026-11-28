@@ -6,6 +6,8 @@ pub const HTTP_HEADER_AUTH_BEARER: &str = "Bearer ";
 pub const HTTP_HEADER_KEY_FORWARDING_HOST: &str = "X-Target-Host";
 pub const HTTP_HEADER_KEY_OUTPUT_POS: &str = "X-Output-Position";
 pub const HTTP_HEADER_KEY_EXIT_CODE: &str = "X-Exit-Code";
+pub const HTTP_HEADER_KEY_X_APP_NAME: &str = "X-App-Name";
+pub const HTTP_HEADER_KEY_OUTPUT_TRUNCATED: &str = "X-Output-Truncated";
 pub const HTTP_HEADER_KEY_USER_AGENT: &str = "User-Agent";
 pub const HTTP_HEADER_KEY_X_FILE_PATH: &str = "X-File-Path";
 pub const HTTP_HEADER_KEY_X_FILE_OVERWRITE: &str = "X-File-Overwrite";
@@ -40,6 +42,11 @@ pub const HTTP_QUERY_KEY_LIFECYCLE: &str = "lifecycle";
 pub const HTTP_QUERY_KEY_VALUE: &str = "value";
 pub const HTTP_QUERY_KEY_FOLLOW: &str = "follow";
 
+/// One sync-run reply carries at most one page; a full page continues on the output endpoint.
+pub const SYNC_RUN_OUTPUT_PAGE_BYTES: usize = 5 * 1024 * 1024;
+/// How long the daemon keeps a truncated run instance (and its remaining output).
+pub const SYNC_RUN_TRUNCATED_RETENTION_SECONDS: u64 = 600;
+
 // JSON keys
 pub const JSON_KEY_APP_NAME: &str = "name";
 pub const JSON_KEY_PROCESS_UUID: &str = "process_uuid";
@@ -57,6 +64,9 @@ pub const DEFAULT_TCP_PORT: u16 = 6062;
 pub const DEFAULT_WSS_PORT: u16 = 6063;
 /// REST listener the TCP/WSS clients use for their SSE streaming side channel.
 pub const DEFAULT_REST_PORT: u16 = 6063;
+/// Agent REST listener on the same host that a forwarded SSE side channel dials: the
+/// engine listener answers `X-Target-Host` on a stream route with 400.
+pub const DEFAULT_AGENT_PORT: u16 = 6060;
 
 // Event subscription
 pub const EVENT_URI: &str = "/appmesh/event";

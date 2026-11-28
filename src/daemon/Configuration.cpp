@@ -986,7 +986,7 @@ void Configuration::saveConfigToDisk()
 	// Atomic replacement also supports readable root-owned files in a writable directory.
 	const auto yamlContent = Utility::jsonToYaml(content);
 	const auto configFilePath = Utility::getConfigFilePath(APPMESH_CONFIG_YAML_FILE, true);
-	uint16_t mode = 0644;
+	uint16_t mode = 0600;
 #if !defined(_WIN32)
 	if (Utility::isFileExist(configFilePath))
 	{

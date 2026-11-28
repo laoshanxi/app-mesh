@@ -374,7 +374,7 @@ export APPMESH_BEARER_TOKEN=$(sudo /opt/appmesh/script/appmesh-auth.sh automatio
 
 - Uses the `appmesh-automation` confidential client with the
   `client_credentials` grant; no human password is involved.
-- The principal carries the `appmesh-maintenance` role (4 permissions; see
+- The principal carries the `appmesh-maintenance` role (5 permissions; see
   [Roles](#roles)). Application registration and `run_task` return `403`.
 - Available only on the built-in authentication **owner** node.
 - Access tokens live 30 minutes, so refresh them periodically. The packaged
@@ -548,7 +548,7 @@ OAuth clients defined in `src/apps/identity/dex.yaml`:
 | `appmesh-api` | public | Audience target |
 | `appmesh-cli` | public | CLI and native clients (RFC 8252) |
 | `appmesh-web` | public | Browser authorization code + PKCE |
-| `appmesh-mcp-user` | public | MCP clients (Dex has no dynamic registration); PKCE S256 is mandatory — third-party MCP clients follow the MCP spec's authorization code + PKCE flow |
+| `appmesh-mcp-user` | public | MCP clients (Dex has no dynamic registration); PKCE S256 is mandatory — third-party MCP clients follow the MCP spec's authorization code + PKCE flow; a client that cannot reach the issuer presents a password-flow token instead |
 | `appmesh-automation` | confidential | `client_credentials` for CI and unattended jobs |
 
 ### Lifetimes
@@ -573,7 +573,8 @@ processes must re-authenticate after the access token expires.
 | Role | Permissions |
 | --- | --- |
 | `appmesh-admin` | All 29 permissions, including `app-reg`, `app-run-task`, `file-delete`, `host-forward`, `principal-set`, `role-set`, `workflow-admin` |
-| `appmesh-maintenance` | `app-control`, `app-manage-all`, `app-view-all`, `host-resource-view` |
+| `appmesh-maintenance` | `app-control`, `app-manage-all`, `app-view-all`, `config-view`, `host-resource-view` |
+| `appmesh-workflow-runner` | `app-delete`, `app-output-view`, `app-reg`, `app-run-async`, `app-run-task`, `app-subscribe`, `app-view`, `host-forward`, `label-view`; bound to workflow step applications |
 | `appmesh-viewer` | `app-view-all`, `app-view`, `app-output-view`, `config-view`, `host-resource-view`, `label-view`, `role-view` |
 
 The full permission list lives in `src/daemon/security/authorization.yaml`.

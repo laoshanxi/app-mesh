@@ -21,6 +21,9 @@ const (
 
 	// defaultRESTPort is the SSE side channel's REST port when Option.RestPort is unset.
 	defaultRESTPort = 6063
+	// defaultAgentPort is the agent REST listener a forwarded SSE side channel dials
+	// when Option.AgentPort is unset.
+	defaultAgentPort = 6060
 )
 
 // AppMeshClientTCP interacts with the TCP server using REST API requests via a socket.
@@ -55,6 +58,10 @@ func NewTCPClient(options Option) (*AppMeshClientTCP, error) {
 	if options.PlainTransport {
 		restScheme = "http"
 	}
+	agentPort := options.AgentPort
+	if agentPort <= 0 {
+		agentPort = defaultAgentPort
+	}
 
 	// Set up TCP requester and client.
 	tcpRequester := &TCPRequester{
@@ -64,6 +71,7 @@ func NewTCPClient(options Option) (*AppMeshClientTCP, error) {
 		connectAddr:    connectAddr,
 		plainTransport: options.PlainTransport,
 		restBase:       url.URL{Scheme: restScheme, Host: net.JoinHostPort(parsed.Hostname(), strconv.Itoa(restPort))},
+		agentBase:      url.URL{Scheme: restScheme, Host: net.JoinHostPort(parsed.Hostname(), strconv.Itoa(agentPort))},
 	}
 
 	// Create the AppMeshClientTCP.
@@ -275,7 +283,8 @@ func (c *AppMeshClientTCP) UploadFile(localFile, remoteFile string, applyFileAtt
 
 // sseRequest opens an SSE stream over a direct HTTPS connection to the daemon
 // REST listener: the framed TCP transport cannot carry a chunked stream, so
-// streams bypass it like the WSS file data channel.
+// streams bypass it like the WSS file data channel. A forwarded stream dials the
+// agent REST listener with X-Target-Host instead (see sseSideChannel.open).
 func (t *TCPRequester) sseRequest(ctx context.Context, method string, apiPath string, queries url.Values,
 	headers map[string]string, body []byte) (int, io.ReadCloser, http.Header, error) {
 	base := t.restBase
@@ -290,7 +299,8 @@ func (t *TCPRequester) sseRequest(ctx context.Context, method string, apiPath st
 		}
 		base = url.URL{Scheme: scheme, Host: net.JoinHostPort(t.baseURL.Hostname(), strconv.Itoa(defaultRESTPort))}
 	}
-	return sseSideChannel{base: base, token: t.getAccessToken(), agent: userAgentTCP, signer: t.getRequestSigner(),
+	return sseSideChannel{base: base, agentBase: t.agentBase, forwardTarget: t.getForwardTo(),
+		token: t.getAccessToken(), agent: userAgentTCP, signer: t.getRequestSigner(),
 		clientCert: t.sslClientCert, clientKey: t.sslClientCertKey, caFile: t.sslCAFile}.open(ctx, method, apiPath,
 		queries, headers, body)
 }

@@ -549,17 +549,22 @@ class AppMeshClientTCP extends AppMeshClient {
    * (null=default CA, object=custom ca/cert/key, false=insecure).
    * @param {Array<string, number>|{host: string, port: number}} [tcpAddress=['127.0.0.1', 6062]] - TCP server address
    * @param {number} [restPort=6063] - REST port of the same daemon for the streaming side channel
-   * (followOutput / runTaskStream); also honored as a `restPort` key on the `{host, port}` address object
+   * (followOutput / runTaskStream / streamRun) for local streams; also honored as a `restPort` key on the
+   * `{host, port}` address object
+   * @param {number} [agentPort=6060] - Agent REST port on the same host for the streaming side channel when
+   * `forwardingHost` is set (the engine listener does not stream through node forwarding, the agent relays it);
+   * also honored as an `agentPort` key on the `{host, port}` address object
    */
-  constructor (sslConfig = null, tcpAddress = ['127.0.0.1', 6062], restPort = null) {
+  constructor (sslConfig = null, tcpAddress = ['127.0.0.1', 6062], restPort = null, agentPort = null) {
     // Accept the address-first object form: new AppMeshClientTCP({host, port}, sslConfig)
     if (_isAddressObject(sslConfig)) {
       const addr = sslConfig
       sslConfig = (Array.isArray(tcpAddress) || _isAddressObject(tcpAddress)) ? null : tcpAddress
       tcpAddress = addr
     }
-    if (_isAddressObject(tcpAddress) && restPort == null) {
-      restPort = tcpAddress.restPort
+    if (_isAddressObject(tcpAddress)) {
+      if (restPort == null) restPort = tcpAddress.restPort
+      if (agentPort == null) agentPort = tcpAddress.agentPort
     }
     tcpAddress = _normalizeTcpAddress(tcpAddress)
 
@@ -576,7 +581,10 @@ class AppMeshClientTCP extends AppMeshClient {
     // The SSE side channel (_sseRequest) dials the daemon's REST listener on the same host.
     this._restHost = tcpAddress[0]
     this._restPort = restPort ?? 6063
+    // A forwarded stream dials the agent REST listener instead (see _ensureRestChannel).
+    this._agentPort = agentPort ?? 6060
     this._restChannelClient = null
+    this._agentChannelClient = null
   }
 
   /**
@@ -591,11 +599,14 @@ class AppMeshClientTCP extends AppMeshClient {
       this.tcpTransport.close()
       this.tcpTransport = null
     }
-    if (this._restChannelClient) {
-      // Release the streaming side channel's keep-alive sockets.
-      this._restChannelClient._client.defaults.httpsAgent?.destroy?.()
-      this._restChannelClient = null
+    for (const channel of [this._restChannelClient, this._agentChannelClient]) {
+      if (channel) {
+        // Release the streaming side channel's keep-alive sockets.
+        channel._client.defaults.httpsAgent?.destroy?.()
+      }
     }
+    this._restChannelClient = null
+    this._agentChannelClient = null
   }
 
   /**
@@ -632,9 +643,7 @@ class AppMeshClientTCP extends AppMeshClient {
     }
 
     if (this.forwardingHost) {
-      request.headers[HTTP_HEADER_KEY_X_TARGET_HOST] = this.forwardingHost.includes(':')
-        ? this.forwardingHost
-        : `${this.forwardingHost}:${this.tcpTransport.address[1]}`
+      request.headers[HTTP_HEADER_KEY_X_TARGET_HOST] = this._forwardTargetHeader()
     }
 
     if (options.headers) {
@@ -713,10 +722,13 @@ class AppMeshClientTCP extends AppMeshClient {
     }
 
     // Convert to standard response format matching axios structure
+    const ctKey = Object.keys(response.headers || {}).find(k => k.toLowerCase() === 'content-type')
     const result = {
       status: response.httpStatus,
       statusText: this._getStatusText(response.httpStatus),
       headers: response.headers,
+      // The daemon puts the MIME type in body_msg_type, not a header; expose it like axios's.
+      contentType: response.bodyMsgType || (ctKey ? response.headers[ctKey] : undefined),
       data: this._decodeBody(response, options),
       config: options
     }
@@ -809,29 +821,73 @@ class AppMeshClientTCP extends AppMeshClient {
   }
 
   /**
-   * Lazily build the direct-HTTPS client the streaming side channel uses.
+   * The X-Target-Host value every request of this client carries, the framed ones and the
+   * streaming side channel alike: as given when it has a port, else the target's port is the
+   * one this client dials.
+   * @private
+   */
+  _forwardTargetHeader () {
+    if (!this.forwardingHost) return null
+    return this.forwardingHost.includes(':')
+      ? this.forwardingHost
+      : `${this.forwardingHost}:${this.tcpTransport.address[1]}`
+  }
+
+  /**
+   * Lazily build the direct-HTTPS client the streaming side channel uses, and keep its token
+   * provider, signer and forward target in step with this client.
+   * @private
+   */
+  _syncSideChannel (client) {
+    // Re-sync on every use so a later setBearerToken()/enableRequestSignature() reaches the side channel too.
+    if (this._tokenProvider && client._tokenProvider !== this._tokenProvider) {
+      client.setTokenProvider(this._tokenProvider)
+    }
+    if (client._requestSigner !== this._requestSigner) {
+      client._requestSigner = this._requestSigner
+    }
+    // Sent as given on the agent hop, without the TCP port the framed requests append:
+    // an explicit port names the target's TCP listener, which does not serve streams.
+    const target = this.forwardingHost || null
+    if (client.forwardingHost !== target) client.forwardingHost = target
+    return client
+  }
+
+  /**
+   * The side-channel client a local stream dials: the engine's REST listener on the same host.
    * @private
    */
   _ensureRestChannel () {
     if (!this._restChannelClient) {
       this._restChannelClient = new AppMeshClient(`https://${this._restHost}:${this._restPort}`, this._sslConfig)
     }
-    // Re-sync the token provider on every use so a later setBearerToken() reaches the side channel too.
-    if (this._tokenProvider && this._restChannelClient._tokenProvider !== this._tokenProvider) {
-      this._restChannelClient.setTokenProvider(this._tokenProvider)
-    }
-    return this._restChannelClient
+    return this._syncSideChannel(this._restChannelClient)
   }
 
   /**
-   * Open an SSE stream over direct HTTPS to the daemon's REST listener: the framed transport
-   * answers one buffered frame and cannot carry a chunked event stream (bypassed like the
-   * WSS file data channel); plain request/response routes stay on the framed transport.
+   * The side-channel client a forwarded stream dials: the agent REST listener on the same
+   * host. The engine listener answers X-Target-Host on a stream route with 400, the agent
+   * relays the stream through node forwarding, so the target node runs the task.
+   * @private
+   */
+  _ensureAgentChannel () {
+    if (!this._agentChannelClient) {
+      this._agentChannelClient = new AppMeshClient(`https://${this._restHost}:${this._agentPort}`, this._sslConfig)
+    }
+    return this._syncSideChannel(this._agentChannelClient)
+  }
+
+  /**
+   * Open an SSE stream over direct HTTPS: the framed transport answers one buffered frame and
+   * cannot carry a chunked event stream (bypassed like the WSS file data channel); plain
+   * request/response routes stay on the framed transport. A forwarded stream (`forwardingHost`
+   * set) goes to the agent REST listener with X-Target-Host, a local one to the engine listener.
    * @private
    * @override
    */
   async _sseRequest (method, path, options = {}) {
-    return this._ensureRestChannel()._sseRequest(method, path, options)
+    const channel = this.forwardingHost ? this._ensureAgentChannel() : this._ensureRestChannel()
+    return channel._sseRequest(method, path, options)
   }
 
   /**

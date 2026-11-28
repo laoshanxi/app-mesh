@@ -418,7 +418,12 @@ impl AppMeshClient {
         }
     }
 
-    /// Set the cluster forwarding host.
+    /// Set the cluster forwarding host (`X-Target-Host`), sent as given: a bare host is
+    /// resolved to the server's own service port.
+    ///
+    /// It applies to every call, the streaming ones included. The TCP and WSS clients
+    /// dial the agent REST listener ([`DEFAULT_AGENT_PORT`]) for a forwarded stream; an
+    /// HTTP client on the engine's own listener (port 6063) fails with the daemon's 400.
     pub fn set_forward_to(&self, url: Option<String>) {
         self.req.set_forward_to(url);
     }
@@ -1123,7 +1128,26 @@ impl AppMeshClient {
     /// Run an application synchronously and return `(exit_code, stdout)`.
     ///
     /// `exit_code` is populated from the `X-Exit-Code` header when present.
+    ///
+    /// Output longer than one page ([`SYNC_RUN_OUTPUT_PAGE_BYTES`]) is paged in from the
+    /// run's output endpoint, so the result is complete.
     pub async fn run_app_sync(&self, app: &Application, max_time: i32, lifecycle: i32) -> Result<(Option<i32>, String)> {
+        self.run_app_sync_with_max_output(app, max_time, lifecycle, None).await
+    }
+
+    /// Run an application synchronously with an optional ceiling on the returned output.
+    ///
+    /// `max_output_bytes` (`None`: unlimited): output past the ceiling (exactly at it is
+    /// fine) returns [`AppMeshError::OutputLimitExceeded`] and the run instance is kept.
+    /// The collected bytes are decoded once (UTF-8, lossy), so a character split across
+    /// pages survives.
+    pub async fn run_app_sync_with_max_output(
+        &self,
+        app: &Application,
+        max_time: i32,
+        lifecycle: i32,
+        max_output_bytes: Option<u64>,
+    ) -> Result<(Option<i32>, String)> {
         let query = hmap! {
             HTTP_QUERY_KEY_TIMEOUT => max_time,
             HTTP_QUERY_KEY_LIFECYCLE => lifecycle,
@@ -1146,15 +1170,104 @@ impl AppMeshClient {
             if let Some(h) = resp.headers().get(HTTP_HEADER_KEY_EXIT_CODE) {
                 code = Some(parse_numeric_header(HTTP_HEADER_KEY_EXIT_CODE, h)?);
             }
+            // A full first page keeps the run instance alive for the rest of the output;
+            // untruncated runs carry none of these headers and were already removed.
+            let truncated = |name: &str| resp.headers().get(name).and_then(|v| v.to_str().ok());
+            if let (Some(run_name), Some("1")) =
+                (truncated(HTTP_HEADER_KEY_X_APP_NAME), truncated(HTTP_HEADER_KEY_OUTPUT_TRUNCATED))
+            {
+                let output = self.read_truncated_run_output(&resp, run_name, max_output_bytes).await?;
+                return Ok((code, output));
+            }
         }
         Ok((code, resp.text()?))
+    }
+
+    /// Collects the output pages that follow a full sync-run reply page.
+    ///
+    /// Deletes the run instance once the output was read completely (best effort); it is
+    /// kept when the ceiling is exceeded.
+    async fn read_truncated_run_output(
+        &self,
+        first: &http::Response<Bytes>,
+        run_name: &str,
+        max_output_bytes: Option<u64>,
+    ) -> Result<String> {
+        let mut content = first.bytes().to_vec();
+        let position = match first.headers().get(HTTP_HEADER_KEY_OUTPUT_POS) {
+            Some(pos) => parse_numeric_header(HTTP_HEADER_KEY_OUTPUT_POS, pos)?,
+            None => content.len() as i64,
+        };
+        let mut position = position;
+        // Exactly at the ceiling is accepted; the check must precede the "complete" exit.
+        fn check_ceiling(len: usize, max_output_bytes: Option<u64>, run_name: &str) -> Result<()> {
+            match max_output_bytes {
+                Some(max) if len as u64 > max => Err(AppMeshError::OutputLimitExceeded {
+                    max_output_bytes: max,
+                    app_name: run_name.to_string(),
+                    retention_seconds: SYNC_RUN_TRUNCATED_RETENTION_SECONDS,
+                }),
+                _ => Ok(()),
+            }
+        }
+        let mut complete = false;
+        let result: Result<()> = async {
+            check_ceiling(content.len(), max_output_bytes, run_name)?;
+            loop {
+                let query = hmap! {HTTP_QUERY_KEY_STDOUT_POSITION => position.to_string()};
+                let resp = self
+                    .send(
+                        Method::GET,
+                        &format!("/appmesh/app/{}/output", encode_path_segment(run_name)),
+                        None,
+                        None,
+                        Some(query),
+                        false,
+                    )
+                    .await?;
+                let status = resp.status();
+                if status != StatusCode::OK {
+                    return Err(AppMeshError::RequestFailed { status, message: resp.text()? });
+                }
+                let page = resp.bytes();
+                content.extend_from_slice(page);
+                // The cursor advances by raw bytes, not characters.
+                position += page.len() as i64;
+                check_ceiling(content.len(), max_output_bytes, run_name)?;
+                if page.len() < SYNC_RUN_OUTPUT_PAGE_BYTES {
+                    complete = true;
+                    return Ok(());
+                }
+            }
+        }
+        .await;
+
+        if complete {
+            if let Err(e) = self.delete_app(run_name).await {
+                debug!("Failed to remove sync run application '{}': {}", run_name, e);
+            }
+        }
+        result?;
+        Ok(String::from_utf8_lossy(&content).into_owned())
     }
 
     /// Convenience: run a shell command synchronously. No app name is sent, so
     /// the daemon assigns a unique temporary name per call.
     pub async fn run_sync(&self, command: &str, max_time: i32, lifecycle: i32) -> Result<(Option<i32>, String)> {
+        self.run_sync_with_max_output(command, max_time, lifecycle, None).await
+    }
+
+    /// Convenience: run a shell command synchronously with an output ceiling; see
+    /// [`Self::run_app_sync_with_max_output`].
+    pub async fn run_sync_with_max_output(
+        &self,
+        command: &str,
+        max_time: i32,
+        lifecycle: i32,
+        max_output_bytes: Option<u64>,
+    ) -> Result<(Option<i32>, String)> {
         let app = Application { command: Some(command.to_string()), shell: Some(true), ..Default::default() };
-        self.run_app_sync(&app, max_time, lifecycle).await
+        self.run_app_sync_with_max_output(&app, max_time, lifecycle, max_output_bytes).await
     }
 
     /// Run an application asynchronously and return an [`AppRun`] handle.
@@ -1729,16 +1842,19 @@ async fn check_sse_response(resp: reqwest::Response) -> Result<reqwest::Response
 
 /// Build the REST side channel (client + base URL) shared by the TCP and WSS
 /// transports: same host as the framed transport, daemon REST port (default
-/// 6063), no total request timeout (a follow runs until its end event).
+/// 6063), no total request timeout (a follow runs until its end event), plus the
+/// agent REST listener base a forwarded stream dials (see [`open_sse_side_channel`]).
 pub(crate) fn build_sse_side_channel(
     host: &str,
     rest_port: Option<u16>,
+    agent_port: Option<u16>,
     verify: &crate::tls_config::SslVerify,
     ssl_client_cert: Option<(String, String)>,
     plain: bool,
-) -> Result<(ReqwestClient, String)> {
+) -> Result<(ReqwestClient, String, String)> {
     let scheme = if plain { "http" } else { "https" };
     let base_url = format!("{}://{}:{}", scheme, host, rest_port.unwrap_or(DEFAULT_REST_PORT));
+    let agent_base_url = format!("{}://{}:{}", scheme, host, agent_port.unwrap_or(DEFAULT_AGENT_PORT));
     let client_cert = ssl_client_cert.map(|(cert, key)| crate::tls_config::ClientCert::Pair(cert, key));
     let builder = if plain {
         ReqwestClient::builder()
@@ -1752,18 +1868,45 @@ pub(crate) fn build_sse_side_channel(
         .read_timeout(Duration::from_secs(60))
         .build()
         .map_err(|e| AppMeshError::ConnectionError(format!("Failed to build REST side-channel client: {}", e)))?;
-    Ok((client, base_url))
+    Ok((client, base_url, agent_base_url))
+}
+
+/// Pick the listener a stream dials: a local one the engine REST listener
+/// (`rest_base_url`), a forwarded one the agent REST listener
+/// (`agent_base_url`), which relays `X-Target-Host` on stream routes.
+///
+/// # Errors
+/// [`AppMeshError::UnsupportedFeature`] when a target is set but no agent listener
+/// is known: the stream must fail rather than silently run on the local node.
+pub(crate) fn sse_base_url<'a>(
+    feature: &str,
+    forward_to: Option<&str>,
+    rest_base_url: &'a str,
+    agent_base_url: Option<&'a str>,
+) -> Result<&'a str> {
+    match forward_to.filter(|target| !target.is_empty()) {
+        None => Ok(rest_base_url),
+        Some(target) => agent_base_url.ok_or_else(|| AppMeshError::UnsupportedFeature {
+            feature: format!("{} through node forwarding (X-Target-Host: {})", feature, target),
+            transport: "a client without an agent REST listener address (default port 6060)".into(),
+        }),
+    }
 }
 
 /// Open a `text/event-stream` request over a direct HTTPS connection: the
 /// framed transports cannot carry a chunked stream, so TCP/WSS clients
 /// redirect here (same side-channel shape as their file transfers;
 /// Python `_sse_request`). Stream endpoints sign the empty-string body hash.
-// Two callers; the shape mirrors `Requester::send_streaming`.
+///
+/// With `forward_to` set the request goes to `agent_base_url` with `X-Target-Host`;
+/// without it the engine listener (`base_url`) serves the stream locally. The same
+/// signed headers are valid on either listener: the signature omits the target host.
 #[allow(clippy::too_many_arguments)]
 pub(crate) async fn open_sse_side_channel(
     http: &ReqwestClient,
     base_url: &str,
+    agent_base_url: Option<&str>,
+    forward_to: Option<&str>,
     token: &str,
     signer: Option<&RequestSigner>,
     user_agent: &str,
@@ -1772,6 +1915,7 @@ pub(crate) async fn open_sse_side_channel(
     query: Option<&HashMap<String, String>>,
     body: Option<&[u8]>,
 ) -> Result<reqwest::Response> {
+    let base_url = sse_base_url("streaming", forward_to, base_url, agent_base_url)?;
     let mut url = format!("{}{}", base_url, path);
     // Percent-only wire encoding (space → %20): the daemon keeps a literal '+',
     // so the daemon-visible decoded values match the signed ones.
@@ -1783,6 +1927,9 @@ pub(crate) async fn open_sse_side_channel(
         .request(method.clone(), &url)
         .header(HTTP_HEADER_KEY_USER_AGENT, user_agent)
         .header(HTTP_HEADER_JWT_AUTHORIZATION, format!("{}{}", HTTP_HEADER_AUTH_BEARER, token));
+    if let Some(target) = forward_to.filter(|target| !target.is_empty()) {
+        req = req.header(HTTP_HEADER_KEY_FORWARDING_HOST, target);
+    }
     if let Some(signer) = signer {
         for (key, value) in signer.sign_request(method.as_str(), path, query, None) {
             req = req.header(key, value);

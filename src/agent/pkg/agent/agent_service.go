@@ -71,6 +71,20 @@ func stripInternalClientProof(r *http.Request) {
 	}
 }
 
+// localProcessProof returns the process proof a caller may hand to the engine:
+// only a loopback peer (HttpRequest::isLoopbackPeer) is a managed local process.
+func localProcessProof(r *http.Request) string {
+	host, _, err := net.SplitHostPort(r.RemoteAddr)
+	if err != nil {
+		return ""
+	}
+	ip := net.ParseIP(host)
+	if ip == nil || !ip.IsLoopback() {
+		return ""
+	}
+	return strings.TrimSpace(r.Header.Get(HTTPHeaderKeyAppmeshProcess))
+}
+
 // newForwardPrecheckRequest builds the bearer-only /appmesh/principal/self probe
 // gating X-Target-Host forwarding; the precheck marker exempts it from the
 // daemon's mandatory signature enforcement.
@@ -535,6 +549,11 @@ func HandleAppMeshRequest(w http.ResponseWriter, r *http.Request) {
 	// with their identical value.
 	w.Header().Set("Content-Security-Policy", "default-src 'none'; frame-ancestors 'none'")
 
+	// The daemon accepts process proof only from a loopback peer, which this agent
+	// is for every caller: keep it only when the caller itself is loopback, and
+	// attach it on the local hop alone. The daemon still verifies the key.
+	processKey := localProcessProof(r)
+
 	stripInternalClientProof(r)
 
 	localConn, err := getLocalConnection()
@@ -672,6 +691,9 @@ func HandleAppMeshRequest(w http.ResponseWriter, r *http.Request) {
 		targetConnection = transferConn
 		request.Headers[HTTPUserAgentHeaderName] = UserAgentAppmeshTCP
 		markFileTransferHeaders(request)
+	}
+	if processKey != "" && targetConnection == localConn {
+		request.Headers[HTTPHeaderKeyAppmeshProcess] = processKey
 	}
 
 	resp, sendErr := targetConnection.sendRequestDataWithContext(r.Context(), request)

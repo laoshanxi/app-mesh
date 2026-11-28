@@ -20,8 +20,9 @@ func newRequestFromHTTP(req *http.Request) (*Request, error) {
 	// Remove "Connection" header to avoid proxying it
 	req.Header.Del("Connection")
 	// Process proof is an Engine-injected local secret, never a public proxy
-	// credential. Do not let an external caller smuggle it onto Agent's private
-	// loopback connection to Engine or leave it in request/query logs.
+	// credential: strip it here so no external caller smuggles it onto Agent's
+	// loopback connection to Engine or into logs; the handler re-attaches it for
+	// loopback callers on the local hop only.
 	req.Header.Del("X-AppMesh-Process-Key")
 	query := req.URL.Query()
 	if _, supplied := query["process_key"]; supplied {

@@ -87,3 +87,47 @@ func TestForwardAppMeshRequestKeepsEncodedTarget(t *testing.T) {
 		})
 	}
 }
+
+// TestLocalProcessProof pins who may carry worker process proof through the
+// agent: only a loopback caller, and never through a forwarded target.
+func TestLocalProcessProof(t *testing.T) {
+	const key = "  process-key-1  "
+	cases := []struct {
+		name, remote, want string
+	}{
+		{"ipv4 loopback", "127.0.0.1:5000", "process-key-1"},
+		{"other 127/8 address", "127.9.8.7:5000", "process-key-1"},
+		{"ipv6 loopback", "[::1]:5000", "process-key-1"},
+		{"v4-mapped loopback", "[::ffff:127.0.0.1]:5000", "process-key-1"},
+		{"remote ipv4", "10.1.2.3:5000", ""},
+		{"remote ipv6", "[fd00::1]:5000", ""},
+		{"unparseable peer", "localhost:5000", ""},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			req := httptest.NewRequest(http.MethodGet, "/appmesh/app/wk/task", nil)
+			req.RemoteAddr = tc.remote
+			req.Header.Set(HTTPHeaderKeyAppmeshProcess, key)
+			if got := localProcessProof(req); got != tc.want {
+				t.Fatalf("localProcessProof = %q, want %q", got, tc.want)
+			}
+			stripInternalClientProof(req)
+			if got := req.Header.Get(HTTPHeaderKeyAppmeshProcess); got != "" {
+				t.Fatalf("client header survived stripInternalClientProof: %q", got)
+			}
+		})
+	}
+}
+
+// TestLocalProcessProofDroppedWithoutHeader covers a loopback caller that
+// sends no proof: nothing is invented for it.
+func TestLocalProcessProofDroppedWithoutHeader(t *testing.T) {
+	req := httptest.NewRequest(http.MethodGet, "/appmesh/app/wk/task", nil)
+	if got := localProcessProof(req); got != "" {
+		t.Fatalf("localProcessProof = %q, want empty", got)
+	}
+	req.Header.Set(HTTPHeaderKeyAppmeshProcess, "   ")
+	if got := localProcessProof(req); got != "" {
+		t.Fatalf("blank proof became %q, want empty", got)
+	}
+}

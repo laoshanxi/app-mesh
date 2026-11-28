@@ -168,9 +168,8 @@ from appmesh import AppMeshClient
 
 # Streaming routes are native to the engine listener (default wss/https
 # 6063) and relayed by the agent REST listener (the SDK's default
-# base_url, port 6060) for local requests. Streams do not traverse
-# X-Target-Host forwarding, so point the client at the target engine
-# listener for a forwarded target.
+# base_url, port 6060). The agent REST listener also relays streams to a
+# forwarded target (X-Target-Host).
 client = AppMeshClient("https://127.0.0.1:6063", bearer_token=TOKEN)
 
 # 1) stream a one-shot run
@@ -200,10 +199,8 @@ wait/subscribe APIs for now.
 
 ## Limits and scope
 
-- The agent REST listener (6060) relays streams for local requests only;
-  streams do not traverse node forwarding (`X-Target-Host`), so connect to
-  the target node's engine listener directly (wss/https, default 6063) for
-  a forwarded target. The web UI's 443 reverse proxy passes streaming
+- The agent REST listener (6060) relays streams for local requests and for
+  node forwarding (`X-Target-Host`). The web UI's 443 reverse proxy passes streaming
   responses with response buffering off.
 - Browser `EventSource` cannot set an `Authorization` header; use `fetch`
   with a ReadableStream reader for bearer-authenticated streams.

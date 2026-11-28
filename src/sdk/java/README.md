@@ -10,7 +10,7 @@ Maven Central is the standard channel. No repository or credential setup is need
 <dependency>
     <groupId>io.github.laoshanxi</groupId>
     <artifactId>appmesh</artifactId>
-    <version>3.0.24</version>
+    <version>3.0.25</version>
 </dependency>
 ```
 
@@ -63,7 +63,7 @@ The repository `id` and the server `id` must both be `github`. Maven matches the
 <dependency>
     <groupId>io.github.laoshanxi</groupId>
     <artifactId>appmesh</artifactId>
-    <version>3.0.24</version>
+    <version>3.0.25</version>
 </dependency>
 ```
 
@@ -90,6 +90,18 @@ client.setBearerToken(System.getenv("APPMESH_BEARER_TOKEN"));
 JSONObject app = new JSONObject().put("command", "echo hello from App Mesh");
 Pair<Integer, String> result = client.runAppSync(app, 60);
 System.out.println(result.getValue());
+```
+
+`runAppSync(app, maxTime, lifecycle)` adds the lifecycle in seconds (0 = server default). The daemon answers a sync run one 5 MiB output page at a time; the client reads the following pages itself, so the returned stdout is complete whatever its size. HTTP, TCP and WebSocket clients behave the same.
+
+`runAppSync(app, maxTime, lifecycle, maxOutputBytes)` caps the returned output. When the output is larger, the call throws an `IOException` that names the run instance instead of returning a truncated result, and that instance stays readable on the server for 600 seconds.
+
+```java
+try {
+    Pair<Integer, String> result = client.runAppSync(app, 60, 0, 16L * 1024 * 1024);
+} catch (java.io.IOException e) {
+    // output larger than 16 MiB: the remaining output is still on the named run instance
+}
 ```
 
 `AppMeshClientTCP` and `AppMeshClientWSS` speak the TCP (port 6062) and WebSocket (port 6063) transports. See the `appmesh` package javadoc for the full API.
