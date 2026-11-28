@@ -362,6 +362,11 @@ void AppMeshDaemon::initializeDirectories()
 	// Create working directories. runtime/ holds daemon-private state, share/
 	// is a sticky world-writable exchange area.
 	Utility::createDirectory(config->getWorkDir());
+	// An externally broken work/ mode would hide share/ from the execution users;
+	// createDirectory only chmods on first create, so re-apply the traverse bits.
+	boost::system::error_code workPermsEc;
+	fs::permissions(fs::path(config->getWorkDir()),
+					fs::perms::owner_all | fs::perms::group_exe | fs::perms::others_exe, workPermsEc);
 
 	const auto runtimeDir = config->getRuntimeDir();
 	const auto stdoutDir = (fs::path(runtimeDir) / "stdout").string();
@@ -369,8 +374,9 @@ void AppMeshDaemon::initializeDirectories()
 	const auto shellDir = (fs::path(runtimeDir) / "shell").string();
 	const auto shareDir = config->getWorkShareDir();
 
-	// Stale scripts from an unclean shutdown must not block script names.
+	// Stale scripts and stdin temp files from an unclean shutdown must not linger.
 	Utility::removeDir(shellDir);
+	Utility::removeDir(stdinDir);
 
 	// No chown to the default exec user: runtime/ stays daemon-private and
 	// share/'s sticky-bit owner must stay the daemon user.
@@ -991,7 +997,10 @@ void AppMeshDaemon::cleanupResources()
 
 	try
 	{
-		Utility::removeFile((fs::path(Utility::getHomeDir()) / PID_FILE).string());
+		// A refused unlink (root-owned install directory) is harmless: the lock, not the
+		// file, decides whether a daemon runs.
+		boost::system::error_code ignored;
+		fs::remove(fs::path(Utility::getHomeDir()) / PID_FILE, ignored);
 		LOG_INF << fname << "Resources cleaned up";
 	}
 	catch (const std::exception &ex)

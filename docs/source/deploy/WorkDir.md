@@ -21,18 +21,16 @@ This document is the single specification for the App Mesh work directory layout
 | `runtime/stdout/` | 0700 | Application output files | Refused |
 | `runtime/stdin/` | 0700 | Transient stdin files | Refused |
 | `runtime/shell/` | 0711 | Generated shell scripts | Refused |
-| `runtime/uploads/` | 0700 | HTTP upload cache | Refused |
 | `runtime/.snapshot` | 0600 | High-availability snapshot | Refused |
 | `share/` | 1777 sticky | Shared exchange area; default application working directory | Allowed |
 
-Every directory is owned by the daemon user, except the application workspace, which is owned by its execution user. Modes are POSIX; Windows installs keep the default access rules.
+Every directory is owned by the daemon user. Modes are POSIX; Windows installs keep the default access rules.
 
 ## 3. Where an application runs
 
 - An application without `working_dir` runs in `share/`.
 - An application with `working_dir` runs in that directory.
 - An application inherits the environment of the daemon process, plus its `env` entries.
-- An on-demand run of an existing application uses the workspace named after the base application. An anonymous on-demand run gets a temporary workspace.
 - The daemon process runs with `runtime/` as its working directory. `runtime/` sits two levels below the install root, so `../../script/...` paths in managed application commands keep resolving.
 - The Go agent stages file transfers under `share/` and also runs there.
 
@@ -49,7 +47,7 @@ Every directory is owned by the daemon user, except the application workspace, w
 
 - On-demand run applications are not persistent. Their files follow the same rules and are removed when the run application is removed.
 - Output files survive a daemon restart. `stdout_backup_count` sets how many earlier outputs are kept.
-- Re-registering an application with the same name replaces the definition and keeps the output files and the workspace.
+- Re-registering an application with the same name replaces the definition and keeps the output files.
 - A container application writes its output to the same output files.
 - The daemon never removes a file in `share/`. An application that writes into `share/` leaves its files there after it is deleted.
 

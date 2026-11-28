@@ -7,9 +7,9 @@
 #include "ReplayGuard.h"
 
 /// Per-request anti-replay and signature enforcement (REST.RequestReplayProtection
-/// / REST.RequestSignature). This is the shared decision point for all three
-/// transports: Worker::process feeds it the deserialized request, the drogon
-/// file endpoints feed it the streamed-upload view (no body binding).
+/// / REST.RequestSignature). This is the shared decision point for every
+/// transport: Worker::process feeds it the deserialized request, and the
+/// transfer handlers feed it the streamed-upload view (no body binding).
 ///
 /// evaluate() is pure: it never replies, it decides. Callers own the response.
 class RequestHardening

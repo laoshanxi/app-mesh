@@ -122,6 +122,8 @@ namespace
 		// Workflow secret broker: the daemon owns the master key.
 		if (message.m_method == web::http::methods::POST && path == "/appmesh/internal/workflow/secret")
 			return {PERMISSION_KEY_workflow_secret};
+		if (message.m_method == web::http::methods::GET && path == "/appmesh/applications")
+			return {PERMISSION_KEY_view_all_app};
 		if (message.m_method == web::http::methods::POST && path == "/appmesh/app/run")
 			return {PERMISSION_KEY_run_app_async};
 		if (message.m_method == web::http::methods::GET && path == "/appmesh/labels")
