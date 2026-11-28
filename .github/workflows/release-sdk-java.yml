@@ -31,7 +31,7 @@ jobs:
         with:
           egress-policy: audit
 
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       - name: Setup Maven settings.xml
         run: |
@@ -90,7 +90,7 @@ jobs:
             echo "configured=true" >> "$GITHUB_OUTPUT"
           fi
 
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         if: steps.gate.outputs.configured == 'true'
 
       - uses: actions/setup-java@v5
