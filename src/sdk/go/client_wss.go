@@ -4,10 +4,12 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/url"
 	"os"
 	"path/filepath"
+	"strconv"
 )
 
 // AppMeshClientWSS interacts with the server over WSS transport.
@@ -30,10 +32,21 @@ func NewWSSClient(options Option) (*AppMeshClientWSS, error) {
 	// ensure scheme is wss/ws
 	ensureWScheme(parsed)
 
+	// A forwarded SSE side channel dials the agent REST listener on the same host
+	// (the engine listener behind the WebSocket does not relay X-Target-Host on streams).
+	agentPort := options.AgentPort
+	if agentPort <= 0 {
+		agentPort = defaultAgentPort
+	}
+	agentScheme := "https"
+	if parsed.Scheme == "ws" {
+		agentScheme = "http"
+	}
 	wssRequester := &WSSRequester{
 		WSSConnection: NewWSSConnection(),
 		baseURL:       *parsed,
 		psk:           options.PSK,
+		agentBase:     url.URL{Scheme: agentScheme, Host: net.JoinHostPort(parsed.Hostname(), strconv.Itoa(agentPort))},
 	}
 
 	httpClient, err := newHTTPClientWithRequester(options, wssRequester)
@@ -79,7 +92,8 @@ func (c *AppMeshClientWSS) forwardTarget() string {
 
 // sseRequest opens an SSE stream over a direct HTTPS connection to the same
 // REST listener the WSS control channel runs on: the framed transport cannot
-// carry a chunked stream, so streams bypass it like the file data channel.
+// carry a chunked stream, so streams bypass it like the file data channel. A
+// forwarded stream dials the agent REST listener with X-Target-Host instead.
 func (w *WSSRequester) sseRequest(ctx context.Context, method string, apiPath string, queries url.Values,
 	headers map[string]string, body []byte) (int, io.ReadCloser, http.Header, error) {
 	base := w.baseURL
@@ -89,7 +103,8 @@ func (w *WSSRequester) sseRequest(ctx context.Context, method string, apiPath st
 	case "ws":
 		base.Scheme = "http"
 	}
-	return sseSideChannel{base: base, token: w.getAccessToken(), agent: userAgentWSS, signer: w.getRequestSigner(),
+	return sseSideChannel{base: base, agentBase: w.agentBase, forwardTarget: w.getForwardTo(),
+		token: w.getAccessToken(), agent: userAgentWSS, signer: w.getRequestSigner(),
 		clientCert: w.sslClientCert, clientKey: w.sslClientKey, caFile: w.sslCAFile}.open(ctx, method, apiPath,
 		queries, headers, body)
 }
@@ -179,8 +194,10 @@ func (c *AppMeshClientWSS) DownloadFile(remoteFile, localFile string, applyFileA
 
 // UploadFileContext uploads a file through the WSS control channel plus HTTP(S) streaming data path.
 // When applyFileAttributes is true, local POSIX metadata is sent so the server can recreate it.
+// Optional UploadOptions replace an existing remote file; without them an
+// existing destination answers 409 Conflict.
 func (c *AppMeshClientWSS) UploadFileContext(ctx context.Context, localFile, remoteFile string,
-	applyFileAttributes bool) error {
+	applyFileAttributes bool, opts ...UploadOptions) error {
 	if localFile == "" {
 		return fmt.Errorf("local file path cannot be empty")
 	}
@@ -198,6 +215,7 @@ func (c *AppMeshClientWSS) UploadFileContext(ctx context.Context, localFile, rem
 	headers := map[string]string{
 		headerFilePath: escapeRemoteFilePath(remoteFile),
 	}
+	applyUploadOptions(headers, opts)
 
 	if applyFileAttributes {
 		attrs, err := fileAttributes(localFile)
@@ -242,8 +260,13 @@ func (c *AppMeshClientWSS) UploadFileContext(ctx context.Context, localFile, rem
 	}
 	req = req.WithContext(ctx)
 	req.Header.Set(headerAuthorization, auth)
-	req.Header.Set(headerFilePath, escapeRemoteFilePath(remoteFile))
 	req.Header.Set("Content-Type", "application/octet-stream")
+	// The daemon's data-channel handler applies the POSIX attributes it reads
+	// from this request, so the control-precheck headers (X-File-Path,
+	// X-File-Overwrite, X-File-Mode/User/Group) must ride here too.
+	for key, value := range headers {
+		req.Header.Set(key, value)
+	}
 	if target := c.forwardTarget(); target != "" {
 		req.Header.Set(headerTargetHost, target)
 	}
@@ -269,7 +292,8 @@ func (c *AppMeshClientWSS) UploadFileContext(ctx context.Context, localFile, rem
 }
 
 // UploadFile uploads a local file via the WSS control channel plus HTTP(S) streaming
-// data path.
-func (c *AppMeshClientWSS) UploadFile(localFile, remoteFile string, applyFileAttributes bool) error {
-	return c.UploadFileContext(context.Background(), localFile, remoteFile, applyFileAttributes)
+// data path. Optional UploadOptions replace an existing remote file; without
+// them an existing destination answers 409 Conflict.
+func (c *AppMeshClientWSS) UploadFile(localFile, remoteFile string, applyFileAttributes bool, opts ...UploadOptions) error {
+	return c.UploadFileContext(context.Background(), localFile, remoteFile, applyFileAttributes, opts...)
 }

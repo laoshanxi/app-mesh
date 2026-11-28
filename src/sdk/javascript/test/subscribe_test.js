@@ -331,6 +331,110 @@ await assertAsync('concurrent enableDemuxer creates a single demuxer', async () 
   }
 })
 
+// A scripted TCP transport (payload-level receiveMessage) that answers a slow
+// /appmesh/applications request later than the /subscribe ack, so a stray
+// legacy direct reader would consume the ack as its own response.
+function createScriptedTransport () {
+  const encodeResponse = (req, body) => msgpack.encode({
+    uuid: req.uuid,
+    request_uri: req.request_uri,
+    http_status: 200,
+    body_msg_type: 'application/json',
+    body: Buffer.from(JSON.stringify(body)),
+    headers: {}
+  })
+  return {
+    connected: () => true,
+    async connect () {},
+    inbox: [],
+    waiters: [],
+    slowRequestSeen: null,
+    receiveMessage () {
+      if (this.inbox.length > 0) return Promise.resolve(this.inbox.shift())
+      return new Promise(resolve => this.waiters.push(resolve))
+    },
+    deliver (payload) {
+      const waiter = this.waiters.shift()
+      if (waiter) waiter(payload)
+      else this.inbox.push(payload)
+    },
+    sendMessage (data) {
+      const req = msgpack.decode(data)
+      if (req.request_uri === '/appmesh/applications') {
+        // A slow request (long poll shape) already on the wire when subscribe starts.
+        if (this.slowRequestSeen) this.slowRequestSeen()
+        setTimeout(() => this.deliver(encodeResponse(req, [{ name: 'slow-app' }])), 120)
+      } else if (req.request_uri.endsWith('/subscribe')) {
+        setTimeout(() => this.deliver(encodeResponse(req, {
+          subscription_id: 'sub-race', app_name: 'app', events: ['EXIT']
+        })), 20)
+      }
+    },
+    close () { while (this.waiters.length > 0) this.waiters.shift()(null) }
+  }
+}
+
+const failAfter = (promise, label, ms = 800) => Promise.race([
+  promise,
+  new Promise((_, reject) => setTimeout(() => reject(new Error(`${label} hung`)), ms))
+])
+
+// A subscribe upgrade must not start the demuxer while a legacy direct read is
+// still in flight on the same socket: two readers race for frames, the direct
+// read can consume the subscribe ack (and resolve with it), and the demuxer
+// then drops the other reply — leaving subscribe pending forever.
+await assertAsync('subscribe is not starved by an in-flight direct read', async () => {
+  const transport = createScriptedTransport()
+  const client = new AppMeshClientTCP(false, ['127.0.0.1', 6062])
+  client.tcpTransport = transport
+  try {
+    const slow = client.request('get', '/appmesh/applications')
+    await new Promise(resolve => { transport.slowRequestSeen = resolve })
+
+    const sub = await failAfter(client.subscribe('app', ['EXIT'], () => {}), 'subscribe')
+    const response = await failAfter(slow, 'in-flight request')
+
+    if (sub.subscription_id !== 'sub-race') throw new Error(`bad subscription id: ${sub.subscription_id}`)
+    if (!Array.isArray(response.data) || response.data[0]?.name !== 'slow-app') {
+      throw new Error(`in-flight request received the wrong response: ${JSON.stringify(response.data)}`)
+    }
+  } finally {
+    if (client._demuxer) client._demuxer.stop()
+    client.close()
+  }
+})
+
+// A request already building when the upgrade begins resumes inside the
+// upgrade. It must wait and route by UUID, not open a second reader.
+await assertAsync('request resumed during an upgrade is rerouted, not raced', async () => {
+  const transport = createScriptedTransport()
+  const client = new AppMeshClientTCP(false, ['127.0.0.1', 6062])
+  client.tcpTransport = transport
+  let releaseToken
+  let tokenCalls = 0
+  client.setTokenProvider({
+    getAccessToken: async () => {
+      if (tokenCalls++ === 0) return new Promise(resolve => { releaseToken = resolve })
+      return 'test-token'
+    },
+    canRefresh: () => false
+  })
+  try {
+    const inflight = client.request('get', '/appmesh/applications')
+    releaseToken('test-token') // queues this request's continuation ahead of the upgrade's
+    const sub = await failAfter(client.subscribe('app', ['EXIT'], () => {}), 'subscribe')
+    const response = await failAfter(inflight, 'in-flight request')
+
+    if (sub.subscription_id !== 'sub-race') throw new Error(`bad subscription id: ${sub.subscription_id}`)
+    if (!Array.isArray(response.data) || response.data[0]?.name !== 'slow-app') {
+      throw new Error(`in-flight request received the wrong response: ${JSON.stringify(response.data)}`)
+    }
+  } finally {
+    if (client._demuxer) client._demuxer.stop()
+    client.close()
+  }
+})
+
 // A hostile/corrupt 8-byte header (length near 4 GiB) must be rejected before
 // the accumulation loop allocates, and the socket must be closed.
 await assertAsync('oversized frame length rejected and socket closed', async () => {

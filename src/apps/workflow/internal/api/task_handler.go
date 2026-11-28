@@ -31,6 +31,7 @@ import (
 	"github.com/laoshanxi/app-mesh/src/apps/workflow/internal/dag"
 	"github.com/laoshanxi/app-mesh/src/apps/workflow/internal/logger"
 	"github.com/laoshanxi/app-mesh/src/apps/workflow/internal/parser"
+	"github.com/laoshanxi/app-mesh/src/apps/workflow/internal/secrets"
 	"github.com/laoshanxi/app-mesh/src/apps/workflow/internal/tlsconf"
 	"github.com/laoshanxi/app-mesh/src/apps/workflow/internal/trigger"
 	"github.com/laoshanxi/app-mesh/src/apps/workflow/internal/workdir"
@@ -77,7 +78,8 @@ type Response struct {
 type TaskHandler struct {
 	svc           *trigger.Service
 	wdir          *workdir.Manager
-	client        *appmesh.AppMeshClient // narrow Workflow control capability (registry/event only)
+	client        *appmesh.AppMeshClient // Workflow control capability (registry/event/secret broker)
+	broker        secrets.Broker
 	server        *appmesh.WorkerTCPContext
 	principalHTTP *http.Client
 	engineURL     string
@@ -101,21 +103,27 @@ func NewTaskHandler(svc *trigger.Service, wdir *workdir.Manager, client *appmesh
 		server.CloseConnection()
 		return nil, err
 	}
-	return &TaskHandler{svc: svc, wdir: wdir, client: client, server: server, principalHTTP: principalHTTP,
-		engineURL: engineURL, engineOption: opts}, nil
+	return &TaskHandler{svc: svc, wdir: wdir, client: client, broker: secrets.NewSDKBroker(client),
+		server: server, principalHTTP: principalHTTP, engineURL: engineURL, engineOption: opts}, nil
 }
 
 // newPrincipalHTTPClient builds the Engine principal-lookup REST client.
-// APPMESH_ENGINE_URL overrides the endpoint; otherwise the local listener is
-// used with the scheme matching the resolved transport.
+// APPMESH_ENGINE_URL overrides the endpoint; otherwise the daemon's effective
+// config selects the REST entry: the native WebSocketPort listener when
+// enabled, else the agent's RestListenPort (the only REST entry when the native
+// listener is disabled). The scheme matches the resolved transport.
 func newPrincipalHTTPClient(opts appmesh.Option) (*http.Client, string, error) {
 	engineURL := strings.TrimRight(os.Getenv("APPMESH_ENGINE_URL"), "/")
 	if engineURL == "" {
+		// The daemon's own REST listener serves principal/self directly; the
+		// agent REST proxy answers transient 502s from its pooled upstream
+		// connections, which would fail caller authentication in waves, so it
+		// is used only when the native listener is disabled.
 		scheme := "https"
 		if opts.PlainTransport {
 			scheme = "http"
 		}
-		engineURL = scheme + "://127.0.0.1:6060"
+		engineURL = fmt.Sprintf("%s://127.0.0.1:%d", scheme, tlsconf.RESTPort())
 	}
 	parsed, err := url.Parse(engineURL)
 	if err != nil || (parsed.Scheme != "http" && parsed.Scheme != "https") || parsed.Host == "" {
@@ -255,7 +263,9 @@ func (h *TaskHandler) dispatch(payload string) Response {
 
 // authenticate asks the Engine to validate the Dex bearer and return its immutable
 // Principal and effective authorization. The workflow process never decodes claims as
-// an authority and never calls an Engine-local login endpoint.
+// an authority, never calls an Engine-local login endpoint, and never substitutes a
+// fallback principal: any validation failure fails the action closed, with the error
+// classified so the caller knows whether a retry can succeed.
 func (h *TaskHandler) authenticate(token string) (callerPrincipal, error) {
 	if token == "" {
 		return callerPrincipal{}, fmt.Errorf("Dex access token required")
@@ -267,11 +277,19 @@ func (h *TaskHandler) authenticate(token string) (callerPrincipal, error) {
 	req.Header.Set("Authorization", "Bearer "+token)
 	resp, err := h.principalHTTP.Do(req)
 	if err != nil {
-		return callerPrincipal{}, err
+		return callerPrincipal{}, fmt.Errorf("bearer validation is temporarily unavailable (%v) — "+
+			"transient daemon outage, retry the operation", err)
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
-		return callerPrincipal{}, fmt.Errorf("Engine rejected Dex bearer with HTTP %d", resp.StatusCode)
+		if resp.StatusCode >= http.StatusInternalServerError {
+			// 5xx is the daemon (or its proxy hop) failing the lookup, not the
+			// token being bad: the same bearer succeeds once the wave passes.
+			return callerPrincipal{}, fmt.Errorf("bearer validation is temporarily unavailable "+
+				"(HTTP %d) — transient daemon outage, retry the operation", resp.StatusCode)
+		}
+		return callerPrincipal{}, fmt.Errorf("the access token was rejected by the Engine (HTTP %d) — "+
+			"expired or invalid, re-run logon", resp.StatusCode)
 	}
 	var principal callerPrincipal
 	if err := json.NewDecoder(resp.Body).Decode(&principal); err != nil {
@@ -370,6 +388,39 @@ func (h *TaskHandler) workflowExists(wfName string) bool {
 	return err == nil
 }
 
+// checkAppNamespaceFree refuses registration when the derived pseudo-App name is
+// already taken by an application the workflow engine does not own. AddApp
+// silently upserts, so without this guard registering `zebra` would overwrite a
+// manual app named `workflow-zebra` (and workflow rm would delete it).
+func (h *TaskHandler) checkAppNamespaceFree(appName string) error {
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+	apps, err := h.client.ListAppsContext(ctx)
+	if err != nil {
+		// Fail closed: without the namespace check an AddApp could destroy an
+		// existing app, so registration must not proceed on an unknown state.
+		return fmt.Errorf("cannot verify app name availability (%v) — this is transient, retry the operation", err)
+	}
+	return appNamespaceConflict(apps, appName)
+}
+
+// appNamespaceConflict reports a conflict when appName exists as anything other
+// than a workflow-owned pseudo-App.
+func appNamespaceConflict(apps []appmesh.Application, appName string) error {
+	for _, app := range apps {
+		if app.Name != appName {
+			continue
+		}
+		var meta map[string]string
+		if app.Metadata == nil || json.Unmarshal(*app.Metadata, &meta) != nil || meta["type"] != "workflow" {
+			return fmt.Errorf("conflict: app %q already exists and is not owned by the workflow engine — "+
+				"choose another workflow name or remove the app first", appName)
+		}
+		return nil // workflow-owned pseudo-App: the normal owner-checked overwrite path
+	}
+	return nil
+}
+
 // --- Workflow CRUD ---
 
 func (h *TaskHandler) handleWorkflowAdd(req Request, callerToken, caller string, admin bool) Response {
@@ -410,10 +461,21 @@ func (h *TaskHandler) handleWorkflowAdd(req Request, callerToken, caller string,
 		return Response{Status: "error", Message: "workflow-admin permission is required to register automatic triggers"}
 	}
 
+	// secret_env is protected by the daemon broker before persistence; failure is fatal.
+	protectedContent, err := secrets.ProtectYAML(context.Background(), h.broker, req.Content, wf.Name)
+	if err != nil {
+		return Response{Status: "error", Message: "failed to protect secret_env: " + err.Error()}
+	}
+
 	// Register the daemon App FIRST. If it succeeds, we then write the YAML.
 	// This order avoids orphan YAML on crash between write and AddApp.
 	yamlPath := filepath.Join(h.wdir.BaseDir(), wf.Name, "workflow.yaml")
 	appName := workflowAppPrefix + req.Workflow
+	// AddApp silently upserts: registering over a same-named app the engine does
+	// not own would destroy it (and workflow rm would delete it unrecoverably).
+	if err := h.checkAppNamespaceFree(appName); err != nil {
+		return Response{Status: "error", Message: err.Error()}
+	}
 	trueCmd := "true"
 	// The daemon derives owner_principal_id from this caller-authenticated request.
 	// Workflow also keeps the same immutable Principal ID in metadata so its narrow
@@ -447,12 +509,12 @@ func (h *TaskHandler) handleWorkflowAdd(req Request, callerToken, caller string,
 
 	// Roll back the App registration if YAML write fails so we don't leave an orphan.
 	writeYaml := func() error {
-		// secret_env is stored verbatim in this file, so it must not be world-readable.
+		// secret_env is stored encrypted in this file, so it must not be world-readable.
 		if err := os.MkdirAll(filepath.Dir(yamlPath), 0700); err != nil {
 			return fmt.Errorf("failed to create workflow dir: %w", err)
 		}
 		tmp := yamlPath + ".tmp"
-		if err := os.WriteFile(tmp, []byte(req.Content), 0600); err != nil {
+		if err := os.WriteFile(tmp, []byte(protectedContent), 0600); err != nil {
 			return fmt.Errorf("failed to save YAML: %w", err)
 		}
 		if err := os.Rename(tmp, yamlPath); err != nil {
@@ -493,6 +555,13 @@ func (h *TaskHandler) handleWorkflowList(req Request, caller string, admin bool)
 	defer cancel()
 	apps, err := h.client.ListWorkflowRegistryContext(ctx)
 	if err != nil {
+		if trigger.IsAuthError(err) {
+			// An expired control capability recovers by renewal, not by waiting
+			// for the next ticker: refresh now and tell the caller to retry.
+			h.svc.ControlCapabilityRejected()
+			return Response{Status: "error", Message: "workflow control capability expired; renewal " +
+				"triggered — this is transient, retry the operation"}
+		}
 		return Response{Status: "error", Message: "failed to list workflow registry: " + err.Error()}
 	}
 

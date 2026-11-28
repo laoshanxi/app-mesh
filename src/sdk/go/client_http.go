@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"mime"
 	"net/http"
 	"net/url"
 	"os"
@@ -28,7 +29,9 @@ type AppMeshClient struct {
 type Option struct {
 	AppMeshURI string // URI of the App Mesh server; use "https://127.0.0.1:6060" for HTTP or "127.0.0.1:6062" for TCP.
 	// The target host to which all requests will be forwarded; with this set, AppMeshURI will act as a proxy to
-	// forward requests.
+	// forward requests, the streaming calls (RunTaskStream, FollowOutput, StreamRun) included:
+	// TCP/WSS dial the agent REST listener (AgentPort) for a forwarded stream; an
+	// AppMeshURI on the engine's own listener fails with a 400.
 	ForwardTo string
 
 	// Path to the client certificate file (PEM format), leave empty to disable client authentication.
@@ -80,6 +83,11 @@ type Option struct {
 	// side channel (SSE cannot ride the framed protocol); 0 uses port 6063.
 	// HTTP and WSS already talk to the REST listener.
 	RestPort int
+
+	// AgentPort is the agent REST listener port on the same host that the TCP and
+	// WSS transports dial for a forwarded SSE side channel; 0 uses port 6060. The
+	// engine listener answers X-Target-Host on a stream route with 400.
+	AgentPort int
 }
 
 // NewHTTPClient builds an HTTP-backed client for App Mesh REST APIs.
@@ -651,20 +659,52 @@ func (r *AppMeshClient) WaitContext(ctx context.Context, asyncRun *AppRun, stdou
 	}
 }
 
+// SyncRunOptions tunes the synchronous run calls (RunAppSyncCheckedContext and
+// RunAppSyncWithContext). The zero value matches the behavior of the option-less calls.
+type SyncRunOptions struct {
+	// MaxOutputBytes caps the collected output (<= 0: unlimited). When exceeded an
+	// error is returned instead of a truncated result and the run stays readable for 600 seconds.
+	MaxOutputBytes int64
+}
+
+// Sync run paging: the daemon returns at most one page per response and keeps a
+// truncated run readable for a retention window so the client can read the rest.
+const (
+	syncRunOutputPageBytes           = 5 * 1024 * 1024
+	syncRunTruncatedRetentionSeconds = 600
+)
+
 // RunAppSync runs an application synchronously and returns the exit code plus collected stdout.
+// A reply the daemon reports truncated (X-Output-Truncated) is completed from the
+// run's remaining pages, and the run instance is removed.
 // The exit code is derived from the X-Exit-Code response header when present; when the
 // server omits the header, 0 is returned and is indistinguishable from a real exit code 0.
-// Use RunAppSyncChecked to tell the two cases apart.
+// Use RunAppSyncChecked to tell the two cases apart, or RunAppSyncWithContext to cap the output.
 func (r *AppMeshClient) RunAppSync(app Application, maxTime int, lifecycle int) (int, string, error) {
-	exit, out, _, err := r.RunAppSyncChecked(app, maxTime, lifecycle)
+	return r.RunAppSyncWithContext(context.Background(), app, maxTime, lifecycle, SyncRunOptions{})
+}
+
+// RunAppSyncWithContext is RunAppSync bounded by ctx and tuned by opts.
+func (r *AppMeshClient) RunAppSyncWithContext(ctx context.Context, app Application, maxTime int, lifecycle int,
+	opts SyncRunOptions) (int, string, error) {
+	exit, out, _, err := r.RunAppSyncCheckedContext(ctx, app, maxTime, lifecycle, opts)
 	return exit, out, err
 }
 
 // RunAppSyncChecked runs an application synchronously like RunAppSync, but reports
-// whether the exit code is authoritative: ok is true when the server returned an
+// whether the exit code is authoritative: ok is true when the server returned a
 // X-Exit-Code header (matching the Python SDK, where a missing header yields None).
 func (r *AppMeshClient) RunAppSyncChecked(app Application, maxTime int, lifecycle int) (exitCode int, stdout string,
 	ok bool, err error) {
+	return r.RunAppSyncCheckedContext(context.Background(), app, maxTime, lifecycle, SyncRunOptions{})
+}
+
+// RunAppSyncCheckedContext is RunAppSyncChecked bounded by ctx and tuned by opts.
+// A truncated reply (X-Output-Truncated, X-App-Name, X-Output-Position) is completed
+// from the run's output endpoint, decoded once with the reply's charset, and the run is
+// deleted best-effort. A daemon without these headers takes the single-response path.
+func (r *AppMeshClient) RunAppSyncCheckedContext(ctx context.Context, app Application, maxTime int, lifecycle int,
+	opts SyncRunOptions) (exitCode int, stdout string, ok bool, err error) {
 	appJson, err := json.Marshal(app)
 	if err != nil {
 		return 0, "", false, fmt.Errorf("failed to marshal application: %w", err)
@@ -683,15 +723,91 @@ func (r *AppMeshClient) RunAppSyncChecked(app Application, maxTime int, lifecycl
 	}
 	stdout = string(raw)
 	if code == http.StatusOK {
+		if runName := hdr.Get("X-App-Name"); runName != "" && hdr.Get("X-Output-Truncated") == "1" {
+			stdout, err = r.readTruncatedRunOutput(ctx, raw, hdr, runName, opts.MaxOutputBytes)
+		}
+		if err != nil {
+			return exitCode, "", ok, err
+		}
 		return exitCode, stdout, ok, nil
 	}
 	return exitCode, stdout, ok, newAPIError("sync run", code, stdout)
 }
 
+// readTruncatedRunOutput pages from a full sync run reply: the position advances by
+// raw bytes, a short page ends the output, and an exceeded maxOutputBytes keeps the run.
+func (r *AppMeshClient) readTruncatedRunOutput(ctx context.Context, first []byte, hdr http.Header, runName string,
+	maxOutputBytes int64) (string, error) {
+	position, err := strconv.ParseInt(hdr.Get(headerOutputPosition), 10, 64)
+	if err != nil {
+		return "", fmt.Errorf("truncated sync run reply carries no valid %s header: %v", headerOutputPosition, err)
+	}
+	content := make([]byte, 0, len(first)+syncRunOutputPageBytes)
+	content = append(content, first...)
+	// The ceiling is checked before paging and after every page, the short final one included.
+	overCeiling := func() error {
+		if maxOutputBytes > 0 && int64(len(content)) > maxOutputBytes {
+			return fmt.Errorf("run app sync output exceeds MaxOutputBytes=%d; the rest stays readable on "+
+				"application '%s' for %d seconds", maxOutputBytes, runName, syncRunTruncatedRetentionSeconds)
+		}
+		return nil
+	}
+	if err := overCeiling(); err != nil {
+		return "", err
+	}
+	for {
+		q := url.Values{}
+		q.Set("stdout_position", strconv.FormatInt(position, 10))
+		pageCode, page, _, err := r.req.SendContext(ctx, http.MethodGet, fmt.Sprintf("/appmesh/app/%s/output", runName), q,
+			nil, nil)
+		if err == nil && pageCode != http.StatusOK {
+			err = newAPIError("get app output", pageCode, string(page))
+		}
+		if err != nil {
+			return "", fmt.Errorf("failed to read sync run output at position %d: %w", position, err)
+		}
+		content = append(content, page...)
+		position += int64(len(page))
+		if err := overCeiling(); err != nil {
+			return "", err
+		}
+		if len(page) < syncRunOutputPageBytes {
+			break
+		}
+	}
+	// best-effort cleanup, independent of the caller's context
+	if _, err := r.deleteApp(context.Background(), runName, nil); err != nil {
+		logf("failed to remove sync run application '%s': %v", runName, err)
+	}
+	return decodeSyncRunOutput(content, hdr.Get("Content-Type"))
+}
+
+// decodeSyncRunOutput converts concatenated output bytes to text with the charset
+// of the Content-Type header; absent, UTF-8 and US-ASCII are returned as is.
+func decodeSyncRunOutput(content []byte, contentType string) (string, error) {
+	if contentType == "" {
+		return string(content), nil
+	}
+	mediaType, params, err := mime.ParseMediaType(contentType)
+	if err != nil {
+		return "", fmt.Errorf("run app sync reply has an invalid Content-Type %q: %v", contentType, err)
+	}
+	if !strings.HasPrefix(mediaType, "text/") {
+		return string(content), nil
+	}
+	switch strings.ToLower(params["charset"]) {
+	case "", "utf-8", "utf8", "us-ascii":
+		return string(content), nil
+	}
+	return "", fmt.Errorf("run app sync output charset %q is not supported", params["charset"])
+}
+
 // UploadFile uploads a local file to the remote server.
 // When applyFileAttributes is true, local POSIX mode/owner/group metadata is sent in headers
 // so the server can recreate permissions when supported.
-func (r *AppMeshClient) UploadFile(localFile, remoteFile string, applyFileAttributes bool) error {
+// Optional UploadOptions replace an existing remote file; without them an
+// existing destination answers 409 Conflict.
+func (r *AppMeshClient) UploadFile(localFile, remoteFile string, applyFileAttributes bool, opts ...UploadOptions) error {
 	// Default the remote filename to the local file's base name when omitted.
 	if remoteFile == "" {
 		remoteFile = filepath.Base(localFile)
@@ -708,6 +824,7 @@ func (r *AppMeshClient) UploadFile(localFile, remoteFile string, applyFileAttrib
 
 	// Plain-HTTP transport: POST streams the raw file bytes as the body.
 	headers := map[string]string{headerFilePath: escapeRemoteFilePath(remoteFile)}
+	applyUploadOptions(headers, opts)
 	// POSIX metadata headers; the server recreates permissions and ownership.
 	if applyFileAttributes {
 		attrs, err := fileAttributes(localFile)

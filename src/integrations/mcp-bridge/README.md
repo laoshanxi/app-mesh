@@ -35,7 +35,7 @@ python3 mcp_pipe.py
 ```
 
 The stdio server targets `https://127.0.0.1:6060` by default. Set `APPMESH_URL`
-when the Engine listens elsewhere. See [Authentication](../../../docs/source/Authentication.md)
+when the Engine listens elsewhere. See [Authentication](../../../docs/source/security/Authentication.md)
 for token acquisition.
 
 ## LLM Client Prompt Demo

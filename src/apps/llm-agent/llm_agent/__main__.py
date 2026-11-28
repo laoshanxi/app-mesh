@@ -17,6 +17,7 @@ Env (defaults in parens):
   LLMAGENT_SESSION_TTL_HOURS(168, shared)  LLMAGENT_SESSION_IDLE_MINUTES(30, worker)
   LLMAGENT_SESSION_MAX_HOURS(8, worker)
 """
+from __future__ import annotations
 
 import argparse
 import json
@@ -43,9 +44,19 @@ def _env_int(key, default):
         return default
 
 
+def _parse_server(value: str):
+    """HOST:PORT of the engine TCP API — the worker's task channel. A shifted
+    TcpApiPort must reach the SDK instead of silently dialing the default."""
+    host, sep, port = value.rpartition(":")
+    if not sep or not host or not (port.isdigit() and 0 < int(port) < 65536):
+        raise argparse.ArgumentTypeError(f"invalid host:port: {value!r}")
+    return host, int(port)
+
+
 def main(argv=None):
     p = argparse.ArgumentParser(prog="llm-agent")
-    p.add_argument("--server", default="127.0.0.1:6062", help="App Mesh TCP server host:port")
+    p.add_argument("--server", type=_parse_server, default=("127.0.0.1", 6062), metavar="HOST:PORT",
+                   help="App Mesh TCP server host:port (default 127.0.0.1:6062)")
     p.add_argument("--session-worker", action="store_true", help="run as a single-session worker (Scenario B)")
     p.add_argument("--session-id", default="", help="worker: the session id this worker serves")
     p.add_argument("--version", action="store_true")
@@ -67,12 +78,12 @@ def main(argv=None):
     except OSError as e:
         log.warning("CLAUDE_CONFIG_DIR %s not writable: %s — session history may fail", cfg_dir, e)
     _setup_logging(args, workspace)
-    _warn_if_no_credential()
     common = dict(workspace=workspace, max_iterations=_env_int("LLMAGENT_MAX_ITERATIONS", 0),
-                  history_root=os.path.join(cfg_dir, "projects"))
+                  history_root=os.path.join(cfg_dir, "projects"),
+                  credential_configured=_warn_if_no_credential())
     if args.session_worker:
-        return _run_worker(args, common)
-    return _run_shared(common)
+        return _run_worker(args, common, args.server)
+    return _run_shared(common, args.server)
 
 
 def _setup_logging(args, workspace: str):
@@ -90,7 +101,7 @@ def _setup_logging(args, workspace: str):
         logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s")
 
 
-def _warn_if_no_credential():
+def _warn_if_no_credential() -> bool:
     """A missing model credential surfaces only later as a CLI 'Not logged in' error
     that points at the wrong cause. Say it plainly at startup."""
     present = [k for k in ("ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN",
@@ -99,19 +110,20 @@ def _warn_if_no_credential():
         log.warning("no model credential env (ANTHROPIC_API_KEY / ANTHROPIC_AUTH_TOKEN / "
                     "CLAUDE_CODE_USE_BEDROCK / CLAUDE_CODE_USE_VERTEX) — every turn will fail; "
                     "register one as a secured env var (-z)")
+    return bool(present)
 
 
-def _run_shared(common):
+def _run_shared(common, server):
     handler = Handler(**common)
     ttl = _env_int("LLMAGENT_SESSION_TTL_HOURS", 168) * 3600
     if ttl > 0:
         threading.Thread(target=_reap_loop, args=(common["workspace"], ttl), daemon=True).start()
     log.info("llm-agent shared App started (Claude Agent SDK) — accepting sessions via run_task")
-    _serve(handler)
+    _serve(handler, server)
     return 0
 
 
-def _run_worker(args, common):
+def _run_worker(args, common, server):
     if not args.session_id:
         sys.stderr.write("worker mode requires --session-id\n")
         return 1
@@ -122,7 +134,7 @@ def _run_worker(args, common):
         threading.Thread(target=_worker_reaper, args=(handler, args.session_id, common["workspace"], idle, max_life),
                          daemon=True).start()
     log.info("llm-agent session worker started (Claude Agent SDK) — serving session %s", args.session_id)
-    _serve(handler)
+    _serve(handler, server)
     return 0
 
 
@@ -140,11 +152,11 @@ def _partial_forwarder(ctx):
     return forward
 
 
-def _serve(handler: Handler):
+def _serve(handler: Handler, server):
     """fetch_task → dispatch → send_task_result loop (serial). The request is bracketed
     in-flight so a worker reaper never exits mid-request."""
     from appmesh import AppMeshProcessSupersededError, AppMeshWorkerRejectedError, AppMeshWorkerTCP
-    ctx = AppMeshWorkerTCP()
+    ctx = AppMeshWorkerTCP(tcp_address=server)
     partial = _partial_forwarder(ctx)
     backoff = 1.0
     while True:
@@ -172,7 +184,8 @@ def _serve(handler: Handler):
             # Always answer: an unhandled exception must not leave the caller
             # waiting out the task timeout.
             try:
-                ctx.send_task_result(json.dumps({"status": "error", "message": f"internal error: {e}"}))
+                ctx.send_task_result(json.dumps({"status": "error", "code": "internal_error",
+                                                 "message": f"internal error: {e}"}))
             except Exception:
                 log.error("failed to deliver internal-error task result")
         finally:

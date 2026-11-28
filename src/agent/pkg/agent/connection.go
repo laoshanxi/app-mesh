@@ -4,6 +4,7 @@ package agent
 import (
 	"bufio"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -310,22 +311,41 @@ func (c *Connection) String() string {
 	return c.key
 }
 
+// requestNotSentError marks a failure that happened before the request frame
+// was fully delivered. The peer cannot have parsed the frame, so replaying the
+// request cannot execute it twice.
+type requestNotSentError struct {
+	err error
+}
+
+func (e *requestNotSentError) Error() string { return e.err.Error() }
+
+func (e *requestNotSentError) Unwrap() error { return e.err }
+
+// isRequestNotSent reports whether err marked the request as never delivered.
+// A wait error (connection closed, response channel closed) is not marked:
+// the frame was sent, so only an idempotent request may be replayed.
+func isRequestNotSent(err error) bool {
+	var notSent *requestNotSentError
+	return errors.As(err, &notSent)
+}
+
 // sendRequestDataWithContext serializes and sends request data.
 func (c *Connection) sendRequestDataWithContext(ctx context.Context, request *Request) (*Response, error) {
 	if err := ctx.Err(); err != nil {
-		return nil, fmt.Errorf("context cancelled before sending: %w", err)
+		return nil, &requestNotSentError{fmt.Errorf("context cancelled before sending: %w", err)}
 	}
 
 	// Check if connection is closed
 	select {
 	case <-c.closed:
-		return nil, fmt.Errorf("connection closed")
+		return nil, &requestNotSentError{fmt.Errorf("connection closed")}
 	default:
 	}
 
 	bodyData, err := request.Serialize()
 	if err != nil {
-		return nil, fmt.Errorf("serialize request %s: %w", request.UUID, err)
+		return nil, &requestNotSentError{fmt.Errorf("serialize request %s: %w", request.UUID, err)}
 	}
 
 	logger.Debugf("Sending request: %s %s %s %s", request.ClientAddress, request.HTTPMethod, request.RequestURI,
@@ -339,7 +359,9 @@ func (c *Connection) sendRequestDataWithContext(ctx context.Context, request *Re
 	err = c.SendMessage(ctx, bodyData)
 	c.atomicSendMu.Unlock()
 	if err != nil {
-		return nil, fmt.Errorf("send request %s: %w", request.UUID, err)
+		// The transports close on a partial write, so a send error means the
+		// peer received no complete frame (see requestNotSentError).
+		return nil, &requestNotSentError{fmt.Errorf("send request %s: %w", request.UUID, err)}
 	}
 
 	return c.waitForResponse(ctx, request.UUID, respCh)
@@ -453,6 +475,15 @@ func (c *Connection) sendFileDataWithContext(ctx context.Context, localFile stri
 
 	// Send EOF marker
 	return c.SendMessage(ctx, []byte{})
+}
+
+// refreshLocalConnection evicts the stale pooled local connection unless a
+// concurrent failure already replaced it: closing the replacement would kill
+// its in-flight requests.
+func refreshLocalConnection(stale *Connection) {
+	if remoteConnections.CompareAndDelete(stale.key, stale) {
+		stale.close()
+	}
 }
 
 // deleteConnection closes and removes a connection from the pool.

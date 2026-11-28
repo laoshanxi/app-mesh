@@ -33,19 +33,15 @@ Environment:
 
 # pylint: disable=line-too-long,broad-exception-caught
 
+import json
 import logging
 import os
 from typing import Optional
 from urllib.parse import quote
 
-try:
-    from fastmcp import FastMCP
-    from fastmcp.dependencies import CurrentAccessToken
-    from fastmcp.server.auth import AccessToken
-except ImportError:
-    # Python 3.6 hosts (the legacy line): the stdlib fallback provides the same
-    # surface; see fastmcp_compat.py.
-    from fastmcp_compat import FastMCP, CurrentAccessToken, AccessToken
+from fastmcp import FastMCP
+from fastmcp.dependencies import CurrentAccessToken
+from fastmcp.server.auth import AccessToken
 
 from appmesh import App, AppMeshClient
 
@@ -170,9 +166,28 @@ def run_app_async(
 # --------------------------------------------------------------------------- #
 # Tasks (long-running app messaging)
 # --------------------------------------------------------------------------- #
-@mcp.tool(description="Send a task payload to a long-running application and return its response.")
+def _task_reply(data: str, result: str):
+    """The JSON reply to a session_send request (llm-agent) is returned as an object,
+    so the model reads its fields instead of an escaped string inside a string."""
+    try:
+        request, reply = json.loads(data), json.loads(result)
+    except ValueError:
+        return result
+    if isinstance(request, dict) and request.get("action") == "session_send" and isinstance(reply, dict):
+        return reply
+    return result
+
+
+@mcp.tool(description="Send a task payload to a long-running application and return its response in 'result'. "
+                      "For the llm-agent App the payload is JSON: "
+                      '{"action":"session_send","session_id":"...","input":"..."} asks one turn and continues the '
+                      "conversation when session_id is reused; "
+                      '{"action":"session_close","session_id":"..."} deletes the session. '
+                      "A session_send response is returned as an object: "
+                      "{status:ok,data:{answer,iterations,turn_tokens}} or {status:error,code,message}. "
+                      "Any other payload is returned as the raw response string.")
 def run_task(app_name: str, data: str, timeout: int = 300, token: AccessToken = CurrentAccessToken()) -> dict:
-    return {"result": _client(token).run_task(app_name, data, timeout)}
+    return {"result": _task_reply(data, _client(token).run_task(app_name, data, timeout))}
 
 
 @mcp.tool(description="Cancel the in-flight task of an application.")
@@ -249,7 +264,7 @@ def set_config(config: dict, token: AccessToken = CurrentAccessToken()) -> dict:
 
 
 @mcp.tool(description="Set the daemon log level (e.g. DEBUG, INFO, WARN, ERROR). Returns the effective level.")
-def set_log_level(level: str = "DEBUG", token: AccessToken = CurrentAccessToken()) -> dict:
+def set_log_level(level: str, token: AccessToken = CurrentAccessToken()) -> dict:
     return {"level": _client(token).set_log_level(level)}
 
 

@@ -382,6 +382,19 @@ public class AppMeshClientWSS extends AppMeshClient {
 
     @Override
     public boolean uploadFile(File localFile, String remoteFile, boolean applyFileAttributes) throws IOException {
+        return uploadFile(localFile, remoteFile, applyFileAttributes, false);
+    }
+
+    /**
+     * Upload a file through WSS control messages plus an HTTPS data side channel.
+     *
+     * <p>When {@code applyFileAttributes} is true, local file metadata is sent so the server can
+     * recreate permissions and ownership when supported. When {@code overwrite} is true, an
+     * existing remote file is replaced; the default keeps the server's 409 refusal.
+     */
+    @Override
+    public boolean uploadFile(File localFile, String remoteFile, boolean applyFileAttributes,
+            boolean overwrite) throws IOException {
         File file = localFile;
 
         if (!file.exists()) {
@@ -391,6 +404,9 @@ public class AppMeshClientWSS extends AppMeshClient {
         // Step 1: Request upload via WSS to get Auth token
         Map<String, String> wssHeader = new HashMap<>();
         wssHeader.put(X_FILE_PATH_HEADER, encodeURIComponent(remoteFile));
+        if (overwrite) {
+            wssHeader.put(X_FILE_OVERWRITE_HEADER, "true");
+        }
         HttpURLConnection initResp = request("POST", "/appmesh/file/upload", null, wssHeader, null);
         if (initResp.getResponseCode() != HttpURLConnection.HTTP_OK) {
             throw new IOException("Upload init failed: " + initResp.getResponseCode());
@@ -410,6 +426,9 @@ public class AppMeshClientWSS extends AppMeshClient {
         conn.setRequestProperty(AUTHORIZATION_HEADER, authToken);
         conn.setRequestProperty(X_FILE_PATH_HEADER, encodeURIComponent(remoteFile));
         conn.setRequestProperty("Content-Type", "application/octet-stream");
+        if (overwrite) {
+            conn.setRequestProperty(X_FILE_OVERWRITE_HEADER, "true");
+        }
         // The data side channel is a separate hop: it carries the forwarding header too.
         String targetHost = commonHeaders.get(X_TARGET_HOST_HEADER);
         if (targetHost != null) {

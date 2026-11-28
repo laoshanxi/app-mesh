@@ -189,24 +189,45 @@ async fn run(cli: &Cli, args: &WorkflowRunArgs) -> Result<i32> {
     Ok(0)
 }
 
+/// In-place attempts per follow poll before the iteration counts as failed.
+const FOLLOW_POLL_ATTEMPTS: u32 = 3;
+/// Consecutive iterations with a failed poll tolerated before the stream aborts.
+const FOLLOW_MAX_FAILED_ITERATIONS: u32 = 3;
+
+/// One follow poll with a brief in-place retry: the first request on a
+/// connection the daemon let go idle is the likely failure, and an immediate
+/// retry normally succeeds. Returns the raw task response; only transport
+/// failures surface here (parse issues keep their skip semantics).
+async fn poll_run(client: &Arc<appmesh::AppMeshClientWSS>, action: &str, workflow: &str, run_id: &str) -> Result<String> {
+    let payload = json!({"action" : action, "workflow" : workflow, "run_id" : run_id});
+    let mut last = None;
+    for attempt in 0..FOLLOW_POLL_ATTEMPTS {
+        if attempt > 0 {
+            // Backoff 500ms, then 1s; bounded so a dead engine fails visibly fast.
+            tokio::time::sleep(std::time::Duration::from_millis(500 * attempt as u64)).await;
+        }
+        match client.run_task(WORKFLOW_TRIGGER_APP, with_token(client, payload.clone()), 10).await {
+            Ok(resp) => return Ok(resp),
+            Err(error) => last = Some(anyhow::Error::new(error)),
+        }
+    }
+    Err(last.expect("at least one poll attempt"))
+}
+
 async fn follow_run(client: &Arc<appmesh::AppMeshClientWSS>, workflow: &str, run_id: &str) -> Result<()> {
     let mut log_offset = 0usize;
-    let mut errors = 0u32;
+    let mut failed_iterations = 0u32;
+    let mut last_error = None;
     loop {
         tokio::time::sleep(std::time::Duration::from_secs(2)).await;
 
-        let mut iter_ok = false;
+        // A poll that still fails after the in-place retry is surfaced and
+        // budgeted, never silently skipped: skipped polls delay every flow
+        // line to the end of the run — the burst `run -f` was reported for.
+        let mut failed_polls = 0u32;
 
-        match client
-            .run_task(
-                WORKFLOW_TRIGGER_APP,
-                with_token(client, json!({"action" : "log", "workflow" : workflow, "run_id" : run_id})),
-                10,
-            )
-            .await
-        {
+        match poll_run(client, "log", workflow, run_id).await {
             Ok(resp) => {
-                iter_ok = true;
                 if let Ok(v) = parse_resp(&resp) {
                     if let Some(log) = v["data"].as_str() {
                         // Slice by byte offset only at a valid char boundary; a
@@ -224,19 +245,15 @@ async fn follow_run(client: &Arc<appmesh::AppMeshClientWSS>, workflow: &str, run
                     }
                 }
             }
-            Err(_) => {}
+            Err(error) => {
+                failed_polls += 1;
+                eprintln!("Warning: workflow log poll failed ({}); retrying.", error);
+                last_error = Some(error);
+            }
         }
 
-        match client
-            .run_task(
-                WORKFLOW_TRIGGER_APP,
-                with_token(client, json!({"action" : "run_detail", "workflow" : workflow, "run_id" : run_id})),
-                10,
-            )
-            .await
-        {
+        match poll_run(client, "run_detail", workflow, run_id).await {
             Ok(resp) => {
-                iter_ok = true;
                 if let Ok(v) = parse_resp(&resp) {
                     let status = v["data"]["status"].as_str().unwrap_or("");
                     if status == "success" || status == "failure" || status == "cancelled" {
@@ -244,16 +261,27 @@ async fn follow_run(client: &Arc<appmesh::AppMeshClientWSS>, workflow: &str, run
                     }
                 }
             }
-            Err(_) => {}
+            Err(error) => {
+                failed_polls += 1;
+                eprintln!("Warning: workflow status poll failed ({}); retrying.", error);
+                last_error = Some(error);
+            }
         }
 
-        if iter_ok {
-            errors = 0;
-        } else {
-            errors += 1;
-            if errors >= 5 {
-                bail!("Lost connection while following run");
-            }
+        // Only a fully good iteration restores the failure budget, so a
+        // degraded poll cannot keep the stream silently limping forever.
+        if failed_polls == 0 {
+            failed_iterations = 0;
+            continue;
+        }
+        failed_iterations += 1;
+        if failed_iterations >= FOLLOW_MAX_FAILED_ITERATIONS {
+            bail!(
+                "Lost connection while following run {} {}: {}",
+                workflow,
+                run_id,
+                last_error.expect("a failed iteration always records its cause")
+            );
         }
     }
     Ok(())

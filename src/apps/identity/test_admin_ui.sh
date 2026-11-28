@@ -17,6 +17,7 @@ DEXUSER_APP=${APPMESH_DEXUSER_APP:-/opt/appmesh/apps/dexuser.yaml}
 ISSUER=${APPMESH_AUTH_ISSUER:-http://127.0.0.1:6065/auth}
 TOKEN_URL="${ISSUER}/token"
 REST_ENTRY=${APPMESH_REST_ENTRY:-https://127.0.0.1:6060}
+ADMIN_LISTEN=${APPMESH_AUTH_ADMIN_LISTEN:-127.0.0.1:6068}
 TEST_EMAIL="ci-user@appmesh.local"
 TEST_PASSWORD="Ci-Test-Pw-2026"
 
@@ -40,6 +41,11 @@ for _ in $(seq 1 30); do
 done
 [ "${healthy}" -eq 1 ] || { echo "FAIL: administration UI never became healthy"; exit 1; }
 
+echo "== the administration UI rejects unauthenticated administrative requests =="
+CODE=$(curl --silent --output /dev/null --write-out '%{http_code}' --request POST \
+    "http://${ADMIN_LISTEN}/admin/password/create")
+[ "${CODE}" = "401" ] || { echo "FAIL: an unauthenticated administrative request returned ${CODE}, want 401"; exit 1; }
+
 echo "== add-user creates the identity and binds the role =="
 PRINCIPAL=$(printf '%s' "${TEST_PASSWORD}" | "${LAUNCHER}" add-user "${TEST_EMAIL}" appmesh-viewer)
 [[ "${PRINCIPAL}" == oidc:* ]] || { echo "FAIL: add-user did not report a Principal ID"; exit 1; }
@@ -47,10 +53,11 @@ grep -F "    ${PRINCIPAL}:" "${POLICY}" >/dev/null || { echo "FAIL: role binding
 [ "$(login "${TEST_EMAIL}" "${TEST_PASSWORD}")" = "200" ] || { echo "FAIL: the new user cannot sign in"; exit 1; }
 
 echo "== duplicate add-user fails =="
-if printf '%s' "${TEST_PASSWORD}" | "${LAUNCHER}" add-user "${TEST_EMAIL}" 2>/dev/null; then
+if OUTPUT=$(printf '%s' "${TEST_PASSWORD}" | "${LAUNCHER}" add-user "${TEST_EMAIL}" 2>&1); then
     echo "FAIL: duplicate add-user succeeded"
     exit 1
 fi
+[[ "${OUTPUT}" == *"already exists"* ]] || { echo "FAIL: duplicate add-user did not report the existing identity: ${OUTPUT}"; exit 1; }
 
 echo "== static identities are rejected =="
 if printf '%s' x | "${LAUNCHER}" add-user admin@appmesh.local 2>/dev/null; then

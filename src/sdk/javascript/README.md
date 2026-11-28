@@ -27,6 +27,36 @@ const client = new AppMeshClient();
 client.setBearerToken(process.env.APPMESH_BEARER_TOKEN);
 ```
 
+#### Run an app synchronously
+
+```js
+// Resolves to the exit code (null when the daemon sent none); the stdout handler
+// receives the complete output in one call.
+const exitCode = await client.runAppSync({ command: "cat big.log", shell: true }, (output) => process.stdout.write(output));
+// Optional 5th parameter: reject instead of returning when the output grows past a byte ceiling.
+await client.runAppSync(app, (output) => process.stdout.write(output), 30, 60, 10 * 1024 * 1024);
+```
+
+One `runAppSync` reply carries at most 5 MiB of output. When the output fills a page,
+the SDK pages the rest from the daemon (in raw bytes, decoded once in the charset of the
+first reply) and only then calls the stdout handler, so the complete output is always
+delivered. The same applies to `AppMeshClientTCP`. When the output grows past
+`maxOutputBytes` the call rejects with `AppMeshRequestError` (the message names the run
+instance that keeps the remaining output readable for 600 seconds) instead of returning a
+partial result; the instance is left in place for the daemon to clean up.
+
+#### Forwarding and streaming in a cluster
+
+`client.forwardingHost` (the `X-Target-Host` header) applies to every call, the streaming
+ones included (`runTaskStream`, `followOutput`, `streamRun`): the task runs on the target
+node and its stream is served from there, and a target the gateway cannot reach rejects
+the call with 502 like any other forwarded request. `AppMeshClientTCP` streams over a
+direct HTTPS side channel: a forwarded stream on it dials the agent REST listener on the
+same host (`agentPort`, default 6060), because the engine listener itself answers a
+forwarded stream with 400. An `AppMeshClient` whose base URL points at the engine listener
+(default port 6063) therefore cannot forward a stream: the call rejects with a 400 whose
+message says so; use the agent REST listener (default port 6060) as the base URL.
+
 #### Browser (VUE Example)
 
 ```js
@@ -415,4 +445,4 @@ await server.sendTaskResult(JSON.stringify(result));
 
 ## Behavioral contract
 
-Cross-SDK client guarantees (event demuxer ordering, `__disconnected__` event, buffering caps, timeout/cleanup policy, and bearer authentication) are defined in [SDKContract.md](https://github.com/laoshanxi/app-mesh/blob/main/docs/source/SDKContract.md).
+Cross-SDK client guarantees (event demuxer ordering, `__disconnected__` event, buffering caps, timeout/cleanup policy, and bearer authentication) are defined in [SDKContract.md](https://github.com/laoshanxi/app-mesh/blob/main/docs/source/interfaces/SDKContract.md).

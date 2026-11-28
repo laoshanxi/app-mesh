@@ -15,6 +15,7 @@ import (
 	"github.com/laoshanxi/app-mesh/src/apps/workflow/internal/expression"
 	"github.com/laoshanxi/app-mesh/src/apps/workflow/internal/logger"
 	"github.com/laoshanxi/app-mesh/src/apps/workflow/internal/models"
+	"github.com/laoshanxi/app-mesh/src/apps/workflow/internal/secrets"
 	"github.com/laoshanxi/app-mesh/src/apps/workflow/internal/tlsconf"
 	"github.com/laoshanxi/app-mesh/src/apps/workflow/internal/workdir"
 	appmesh "github.com/laoshanxi/app-mesh/src/sdk/go"
@@ -80,8 +81,15 @@ type Service struct {
 	issueCapability CapabilityIssuer
 	refreshControl  func(context.Context) error
 	fatal           func(reason string)
-	scanFails       int // consecutive scan failures
-	authRejections  int // scan 401s that survived a successful control refresh
+
+	// stateMu guards the scan/control-refresh bookkeeping touched by both the
+	// scan goroutine and task-RPC goroutines (ControlCapabilityRejected). It is
+	// never held across a daemon call; controlRefreshRunning makes the refresh
+	// single-flight so concurrent 401s cannot each hit the Engine.
+	stateMu               sync.Mutex
+	scanFails             int  // consecutive scan failures
+	authRejections        int  // scan 401s that survived a successful control refresh
+	controlRefreshRunning bool // a capability refresh is in flight
 
 	// Backoff for repeated Engine capability issuance failures.
 	controlRefreshFails    int
@@ -348,11 +356,17 @@ func isAuthError(err error) bool {
 	return errors.As(err, &apiErr) && apiErr.StatusCode == http.StatusUnauthorized
 }
 
+// IsAuthError reports whether a daemon call was rejected for an expired or
+// otherwise invalid internal capability (HTTP 401).
+func IsAuthError(err error) bool { return isAuthError(err) }
+
 func (s *Service) scan() {
 	err := ScanWorkflows(s.client, s.registry)
 	if err == nil {
+		s.stateMu.Lock()
 		s.scanFails = 0
 		s.authRejections = 0
+		s.stateMu.Unlock()
 		return
 	}
 
@@ -366,27 +380,43 @@ func (s *Service) scan() {
 		return
 	}
 
+	s.stateMu.Lock()
 	s.scanFails++
-	if s.scanFails >= scanFailsBeforeControlRefresh && s.refreshControl != nil {
+	scanFails := s.scanFails
+	s.stateMu.Unlock()
+	if scanFails >= scanFailsBeforeControlRefresh && s.refreshControl != nil {
 		s.refreshControlCapability("scan failed consecutively")
 	}
 }
 
 // refreshControlCapability reacquires the narrow registry/event capability and
-// reports whether a fresh capability was installed.
+// reports whether a fresh capability was installed. Only one refresh runs at a
+// time, and the state lock is never held across the daemon call.
 func (s *Service) refreshControlCapability(reason string) bool {
+	if s.refreshControl == nil {
+		return false
+	}
 	// Check the cooldown before touching scanFails: resetting it on a suppressed attempt
 	// would restart the three-strike count, so the non-auth path could never fire again
 	// while a cooldown is active.
-	if time.Now().Before(s.controlRefreshCooldown) {
+	s.stateMu.Lock()
+	if s.controlRefreshRunning || time.Now().Before(s.controlRefreshCooldown) {
+		s.stateMu.Unlock()
 		return false
 	}
+	s.controlRefreshRunning = true
 	s.scanFails = 0
+	s.stateMu.Unlock()
 
 	logger.Info("attempting workflow control capability refresh: " + reason)
 	ctx, cancel := context.WithTimeout(context.Background(), CapabilityRequestTimeout)
-	defer cancel()
-	if err := s.refreshControl(ctx); err != nil {
+	err := s.refreshControl(ctx)
+	cancel()
+
+	s.stateMu.Lock()
+	defer s.stateMu.Unlock()
+	s.controlRefreshRunning = false
+	if err != nil {
 		s.controlRefreshFails++
 		backoff := scanInterval << min(s.controlRefreshFails-1, 5)
 		if backoff > controlRefreshMaxBackoff {
@@ -406,17 +436,30 @@ func (s *Service) refreshControlCapability(reason string) bool {
 // noteAuthRejectionAfterRefresh counts scan 401s on a just-refreshed capability;
 // sustained rejection means this process was superseded and must restart.
 func (s *Service) noteAuthRejectionAfterRefresh() {
+	s.stateMu.Lock()
 	s.authRejections++
-	if s.authRejections < authRejectionEscalation {
+	authRejections := s.authRejections
+	if authRejections >= authRejectionEscalation {
+		s.authRejections = 0
+	}
+	s.stateMu.Unlock()
+	if authRejections < authRejectionEscalation {
 		return
 	}
-	s.authRejections = 0
 	const msg = "workflow control capability rejected after successful renewal (process superseded)"
 	if s.fatal != nil {
 		s.fatal(msg)
 		return
 	}
 	logger.Error(msg)
+}
+
+// ControlCapabilityRejected lets task-RPC handlers react to a 401 from a
+// control-capability call immediately instead of waiting for the renewal
+// ticker or the next scan. Rate-limited by the shared cooldown; reports
+// whether a fresh capability was installed.
+func (s *Service) ControlCapabilityRejected() bool {
+	return s.refreshControlCapability("task RPC saw capability rejected")
 }
 
 // triggerRun creates an automatic event run. Cron remains an external trigger
@@ -785,6 +828,8 @@ func (s *Service) engineOptions(wf *models.Workflow, runID, token string, log lo
 		StepLogPathFn: func(jobName, stepName string) string {
 			return s.wdir.StepLogPath(wf.Name, runID, jobName, stepName)
 		},
+		// Daemon-backed crypto; step Apps still derive their OS user from the run owner.
+		SecretBroker: secrets.NewSDKBroker(s.client),
 	}
 }
 

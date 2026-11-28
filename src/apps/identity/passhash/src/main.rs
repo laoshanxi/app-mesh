@@ -10,11 +10,7 @@ const MAX_PASSWORD_LEN: usize = 4096;
 
 fn main() {
     let mut password = Zeroizing::new(Vec::new());
-    if std::io::stdin()
-        .take(MAX_PASSWORD_LEN as u64 + 1)
-        .read_to_end(&mut password)
-        .is_err()
-    {
+    if std::io::stdin().take(MAX_PASSWORD_LEN as u64 + 1).read_to_end(&mut password).is_err() {
         eprintln!("password input is unreadable");
         exit(1);
     }

@@ -28,7 +28,7 @@ Listening ports were added one at a time, without an allocation rule. The engine
 | 6068 | dexuser | 6064 |
 | 6070 | mcp-server | 6071 |
 
-This decision supersedes the port numbers quoted in ADR 0003. Its transport decision does not change.
+This decision supersedes the port numbers quoted in ADR 0003 and ADR 0012. Their transport decisions do not change.
 
 ## Consequences
 

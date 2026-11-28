@@ -437,7 +437,7 @@ pub struct RunArgs {
     #[arg(short = 'T', long = "lifetime", default_value = "216000")]
     pub lifetime: String,
 
-    /// Max wait time (seconds or ISO 8601; >0: poll, <0: wait until exit)
+    /// Max wait time (seconds or ISO 8601; >0: poll, <0: wait until exit and print the whole output)
     #[arg(short = 't', long = "timeout", default_value = "172800", allow_hyphen_values = true)]
     pub timeout: String,
 }

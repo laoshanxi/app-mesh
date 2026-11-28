@@ -1,0 +1,593 @@
+# Built-in authentication: passwords and tokens
+
+This document answers common operational questions about passwords and tokens in
+the built-in authentication mode (`APPMESH_AUTH_MODE=builtin`, see
+[ADR 0009](https://github.com/laoshanxi/app-mesh/blob/main/docs/adr/0009-authentication-service.md)). In `external` mode passwords
+belong to the external identity provider and this document does not apply.
+
+See [Security](Security.md) for the trust model, [CLI](../interfaces/CLI.md) for sign-in
+commands, [Install](../deploy/Install.md) for deployment procedures, and
+[Cluster Authentication](../engine/Cluster.md) for the multi-node
+owner/follower design.
+
+## Questions at a glance
+
+| I want to ... | Do this | Details |
+| --- | --- | --- |
+| Sign in for the first time | Read the generated password with `print-initial-password` | [First sign-in](#first-sign-in) |
+| Choose my own administrator password | Pipe it to `set-initial-password`, then restart | [Choosing your own password](#choosing-your-own-administrator-password) |
+| Set the password when a container starts | Mount a secret file and set `APPMESH_ADMIN_PASSWORD_FILE` | [Container first start](#container-first-start) |
+| Replace a leaked or lost password | `rotate-initial-password`, then restart | [Rotating and forgetting](#rotating-recovering-and-forgetting) |
+| Get a token for CI or an SDK | `automation-token` (machine), `user-token` (user), or `user-token --with-refresh` (token set for a built-in SDK refresh provider) | [Getting a token](#getting-a-token-for-sdk-and-ci) |
+| Manage users, clients, and sessions | Open the administration UI on `http://127.0.0.1:6068` | [Administration UI](#administration-ui) |
+| Add another user | `add-user` with the password on standard input | [Adding a user](#adding-a-user) |
+| Delete a user | `delete-user` with the address | [Deleting a user](#deleting-a-user) |
+| Use a password from the Python SDK | Built-in `PasswordGrantProvider`, a custom `TokenProvider`, or exchange the token first | [Python SDK password sign-in](#using-a-password-from-the-python-sdk) |
+| Turn off the password grant (pure PKCE) | `password_flow: false` in `oidc.yaml` | [Disabling the password grant](#disabling-the-password-grant) |
+| Turn off refresh tokens (short sessions) | `refresh_token: false` in `oidc.yaml` | [Disabling refresh tokens](#disabling-refresh-tokens) |
+| Manage users on Windows | Static admin/guest only; dynamic users need an external IdP | [Windows user management](#windows-user-management) |
+
+All examples use the packaged helper `appmesh-auth.sh` (`appmesh-auth.ps1` on
+Windows, same actions) and the Linux install root `/opt/appmesh`.
+
+## First sign-in
+
+The first bootstrap generates a random administrator password
+(`openssl rand -hex 24`, 48 hex characters). There is intentionally no
+command-line argument or environment variable to preset it: environment values
+leak into `docker inspect`, compose files, CI logs, and `/proc/<pid>/environ`.
+
+Read the password on the authentication owner host:
+
+```shell
+sudo /opt/appmesh/script/appmesh-auth.sh print-initial-password
+
+# Without a terminal, pipe it straight into the CLI:
+sudo /opt/appmesh/script/appmesh-auth.sh print-initial-password \
+  | appm logon --username admin@appmesh.local --password-stdin
+```
+
+Bootstrap state lives in `work/auth/secrets/`. Every file is mode `600`, owned
+by the directory owner, and single-linked. The `appmesh-auth.sh` launcher
+validates all three properties on each use. The daemon applies its own
+owner-only regular-file check to the `secret-master-key` file at startup.
+
+| File | Content |
+| --- | --- |
+| `initial-admin-credentials` | Administrator `username` / `email` / `user_id` / `password_hash` / `password` |
+| `initial-viewer-credentials` | Read-only viewer (`guest@appmesh.local`), same format |
+| `automation-client` | Secret of the `appmesh-automation` confidential client |
+| `secret-master-key` | Encryption key for protected environment values. Include it in every backup of the work directory. |
+
+The `password=` line (plaintext) exists only so that `print-initial-password`
+can display it. The authentication service reads only `password_hash=`.
+
+## Choosing your own administrator password
+
+### `set-initial-password` (recommended)
+
+Pipe the new password to the helper, then restart App Mesh. The password comes
+from standard input — never from an argument or environment variable — and the
+helper applies the same hashing, file-permission, and validation path as
+bootstrap and rotation.
+
+```shell
+# Linux package
+echo 'your-password' | sudo /opt/appmesh/script/appmesh-auth.sh set-initial-password
+sudo systemctl restart appmesh
+
+# Windows package (elevated PowerShell)
+'your-password' | & 'C:\local\appmesh\script\appmesh-auth.ps1' set-initial-password
+Restart-Service AppMeshService
+
+# Container already running (docker exec uses the container user, so file
+# ownership is correct)
+echo 'your-password' | docker exec -i appmesh /opt/appmesh/script/appmesh-auth.sh set-initial-password
+docker restart appmesh
+```
+
+Rules:
+
+- The password is a single line, at most 72 bytes (the bcrypt input limit).
+- A restart is required: the Dex configuration is re-rendered from the
+  credential file at every startup, so the old password stays valid until the
+  restart. Editing `work/auth/dex/dex.yaml` directly never works — it is
+  overwritten.
+- The helper keeps the plaintext `password=` line, so
+  `print-initial-password` still works afterwards.
+
+### Container first start
+
+For a declarative container deployment, mount the password as a file and point
+`APPMESH_ADMIN_PASSWORD_FILE` at it. The variable carries a **path**, not the
+password itself, so the secret stays out of `docker inspect` and compose files.
+This matches the Docker secrets pattern:
+
+```shell
+docker run -d --name appmesh \
+  -v appmesh-work:/opt/appmesh/work \
+  -v /path/to/admin-password:/run/secrets/admin-password:ro \
+  -e APPMESH_ADMIN_PASSWORD_FILE=/run/secrets/admin-password \
+  -p 6060:6060 \
+  laoshanxi/appmesh:latest
+```
+
+The entrypoint applies the file only while no administrator credential exists —
+the first boot. Later `set-initial-password` and `rotate-initial-password`
+changes survive container restarts even when the variable stays set. In
+`external` authentication mode the variable is ignored.
+
+An equivalent pre-seed alternative runs the helper against the volume before
+the first start; bootstrap then keeps the credential instead of generating a
+random one:
+
+```shell
+echo 'your-password' | docker run --rm -i --user 482:482 \
+  -v appmesh-work:/opt/appmesh/work \
+  --entrypoint /opt/appmesh/script/appmesh-auth.sh laoshanxi/appmesh:latest set-initial-password
+```
+
+### Editing the credential file directly (advanced)
+
+Manual editing is what the helper does internally. If you do it by hand, all
+four constraints apply; violating any of them makes the daemon refuse to start:
+
+| Constraint | Value |
+| --- | --- |
+| bcrypt format | `^\$2[aby]\$10\$[./A-Za-z0-9]{53}$` — the cost must be **10** (Python `bcrypt` defaults to 12 and fails validation). Use `/opt/appmesh/bin/passhash`. |
+| Plaintext length | ≤ 72 bytes |
+| File metadata | mode `600`, owner identical to the directory owner, exactly one hard link. In the container the owner is uid/gid **482**. |
+| Identity fields | `username` / `email` / `user_id` must match the [constants](#identities-and-clients) verbatim. |
+
+Write through a temporary file in the same directory and `mv` it into place to
+preserve ownership.
+
+## Rotating, recovering, and forgetting
+
+| Command | Semantics |
+| --- | --- |
+| `rotate-initial-password` | Generates a new random password and writes hash and plaintext. **Until the restart the old password still works and the new one does not;** after the restart they switch. This is the only recovery path for a lost password. |
+| `forget-initial-password` | Removes only the plaintext line. The hash is unchanged, so the existing password keeps working; `print-initial-password` stops working. |
+
+Two points are easy to get backwards:
+
+- `forget` does **not** change the password. It only makes the plaintext
+  unrecoverable. Use `rotate` (or `set-initial-password`) to change it.
+- The leftover hash is not a credential. Using it as a password returns `401`,
+  although it corresponds to the same password. Plaintext and hash are not
+  cross-validated, so if they disagree only `print-initial-password` lies.
+
+## Administration UI
+
+App Mesh has no user directory. The authentication service owns identities; App
+Mesh stores only the authorization record of a verified subject. The bundled
+administration UI — the `dexuser` System App, served by `bin/dexuser` — manages
+the authentication-service objects: users, OAuth clients, and sessions.
+It does not manage App Mesh authorization records. Set those through
+`add-user` or the REST API.
+
+The UI listens on loopback only (`http://127.0.0.1:6068`). Its administration
+pages require a session, which the web UI's **Security > Users** page opens for
+the signed-in user (the `principal-set` permission is required). Without the web
+UI, manage users with `add-user` and `delete-user`.
+
+Key facts:
+
+- Users are created under **Passwords → Create a password** and can sign in
+  immediately. The packaged `admin@appmesh.local` and `guest@appmesh.local`
+  identities are static and cannot be changed here.
+- A user created in the UI has no App Mesh role. Use
+  [`add-user`](#adding-a-user) to create and bind in one step, or set the role
+  through the REST API: `POST /appmesh/principal/<principal-id>` with
+  `{"roles": ["appmesh-viewer"]}`.
+- The UI's demonstration pages (Flows, Token tools) use an unregistered
+  `example-app` OAuth client; only the administration pages are supported.
+- `APPMESH_AUTH_ADMIN_LISTEN` changes the UI listener; the underlying gRPC API
+  listens on `127.0.0.1:6067` (`APPMESH_AUTH_GRPC_LISTEN`). Keep both on
+  loopback: the UI admits every account of the deployment (see
+  [Security](Security.md#administration-interfaces)).
+
+### Disabling the administration UI
+
+Set `APPMESH_AUTH_ADMIN_UI=off` to disable the UI. In the container image the
+entrypoint rewrites the bundled `apps/dexuser.yaml` definition to
+`enabled: false` before the first start, so the daemon never starts the App.
+On a package installation the same variable makes the launcher's `admin-ui`
+action idle: the `dexuser` App stays up for health checks but serves nothing.
+
+The `dexuser` App is a **system** App: once disabled it cannot be re-enabled
+through the application REST API, so no remote caller can turn it back on.
+Re-enabling requires local access — set `APPMESH_AUTH_ADMIN_UI=on` (or remove
+the variable) and restart.
+
+`add-user` and `delete-user` go through this UI, so they need it running.
+
+## Adding a user
+
+`add-user` creates the identity (through the administration UI, which must be
+running) and binds its authorization role in one step:
+
+```shell
+printf '%s' 'Alice-Pw-2026' | sudo /opt/appmesh/script/appmesh-auth.sh add-user alice@corp.local appmesh-viewer
+```
+
+The administration UI is the only management transport; there is no direct
+gRPC path. When the UI is disabled (`APPMESH_AUTH_ADMIN_UI=off`, see
+[Disabling the administration UI](#disabling-the-administration-ui)) the
+command fails with a reachability error — that coupling is deliberate, so
+disabling the UI disables user management with it.
+
+The password comes from standard input so it never appears in `ps` or CI logs.
+The command prints the Principal ID to standard output; the role argument
+defaults to `appmesh-viewer` and must exist in the authorization policy.
+
+The command rejects the static `admin@appmesh.local` / `guest@appmesh.local`
+identities and requires built-in mode on the authentication owner. A running
+Engine adopts the new binding on the user's first request — no restart is
+needed. If the user has already authenticated before the binding was written,
+the Engine holds a role-less record for that Principal; apply the role through
+the REST API in that case — the command prints the exact
+`POST /appmesh/principal/<principal-id>` request when the Engine is running.
+
+## Deleting a user
+
+```shell
+sudo /opt/appmesh/script/appmesh-auth.sh delete-user alice@corp.local
+```
+
+Removes the identity and its role binding. The command prints the `user_id` and
+the Principal ID when it can recover them from the administration UI. When it
+cannot, it reports that no Principal record was removed. The user can no longer
+sign in. A running Engine keeps its in-memory copy of the Principal: remove it
+through the REST API (`DELETE /appmesh/principal/<principal-id>`) or restart,
+otherwise the next Engine policy save writes the binding back.
+
+Unlike the REST API's DELETE, which keeps an auditable tombstone
+(`status: tombstoned`), this launcher hard-deletes the Principal block from the
+on-disk policy — the right tool for a full cleanup.
+
+## Windows user management
+
+The Windows authentication-service build is CGO-free; its SQLite storage runs
+through the pure-Go `modernc.org/sqlite` driver. Identities created with
+`add-user`, refresh tokens, and consent survive restarts exactly as on Linux —
+the database lives in `work\auth\dex\dex.db` under the App Mesh root, and the
+`add-user` / `delete-user` commands work as documented above.
+
+## Disabling the password grant
+
+Pure PKCE deployments can turn off the OAuth resource-owner password grant in
+built-in mode:
+
+```yaml
+# config/oidc.yaml
+OIDC:
+  password_flow: false
+```
+
+or with `APPMESH_AUTH_PASSWORD_FLOW=false`. The setting takes effect in two
+places:
+
+- The Engine stops advertising `password` in the `flows` list of
+  `/appmesh/auth/config`, so the CLI automatically picks PKCE or device
+  sign-in instead.
+- `appmesh-auth.sh` / `appmesh-auth.ps1` render the Dex `grantTypes` without
+  `"password"`, so the token endpoint rejects `grant_type=password`:
+  `user-token` and direct password grants (including the
+  [Python SDK example](#using-a-password-from-the-python-sdk)) stop working.
+
+Browser sign-in of local password users still works — the Dex password
+database and `passwordConnector: local` stay enabled — and `automation-token`
+(`client_credentials`) is unaffected. In `external` mode the Engine never
+advertises the password flow and this setting has no effect.
+
+## Disabling refresh tokens
+
+Deployments that want short-lived sessions can turn off refresh tokens in
+built-in mode:
+
+```yaml
+# config/oidc.yaml
+OIDC:
+  refresh_token: false
+```
+
+or with `APPMESH_AUTH_REFRESH_TOKEN=false`. The setting takes effect in two
+places:
+
+- The Engine advertises `"refresh_token": false` in `/appmesh/auth/config`, so
+  the CLI stops requesting `offline_access` and the Python/Rust `OAuthClient`
+  drop the scope as well. Older daemons omit the key; clients treat it as
+  enabled.
+- `appmesh-auth.sh` / `appmesh-auth.ps1` render the Dex `grantTypes` without
+  `"refresh_token"`, so no refresh tokens are issued or usable.
+
+Sessions then end at access-token expiry (30 minutes): the CLI reports
+"session expired, run 'appm logon' again" instead of attempting a refresh.
+Issuing a token set with `user-token --with-refresh` fails fast in this
+configuration, and a built-in SDK refresh-token provider pointed at this
+issuer gets its grant rejected (`invalid_grant`) and clears its state.
+Caller-owned `TokenProvider` implementations are unaffected — their refresh
+credentials never come from this issuer. In `external` mode the identity
+provider owns the token policy and this setting has no effect.
+
+The companion `refresh_token_max_lifetime` (env
+`APPMESH_AUTH_REFRESH_TOKEN_MAX_LIFETIME`, format `<number>s|m|h`, default
+`168h`) caps how long a refresh chain can live even while refresh tokens stay
+enabled: it renders as Dex `expiry.refreshTokens.absoluteLifetime`, and
+rotation does not extend it — after the cap the user must sign in again.
+
+## Getting a token for SDK and CI
+
+The `appm` CLI reads the access token from `APPMESH_BEARER_TOKEN` itself. The
+SDK libraries do not: pass the token to the client, for example
+`AppMeshClient(bearer_token=...)`, or supply a `TokenProvider` — the provider
+contract (get access token / `can_refresh` / one refresh after a 401 /
+`clear`) exists in every SDK, Go, Java, and JavaScript included, so the
+Python patterns below apply analogously elsewhere. Every SDK also ships a
+built-in refresh-token provider fed from a
+[token set](#token-set--access--refresh-token-long-running-sdk-processes).
+Pick one of three sources depending on the identity you need.
+
+### Password grant — user identity (administrator permissions)
+
+On the authentication owner host, pipe the password to `user-token`; only the
+access token is printed:
+
+```shell
+echo 'your-password' | sudo /opt/appmesh/script/appmesh-auth.sh user-token
+export APPMESH_BEARER_TOKEN=$(echo 'your-password' | sudo /opt/appmesh/script/appmesh-auth.sh user-token)
+
+# Another built-in identity, or a container:
+echo 'guest-password' | sudo /opt/appmesh/script/appmesh-auth.sh user-token guest@appmesh.local
+echo 'your-password' | docker exec -i appmesh /opt/appmesh/script/appmesh-auth.sh user-token
+```
+
+The command wraps the password grant against the local authentication service
+(public client `appmesh-cli`, scope `openid audience:server:client_id:appmesh-api`).
+From a remote machine, run the same grant against the agent endpoint
+`https://<host>:6060/auth/token` — the agent proxies the issuer path, so the
+client never needs to resolve the internal issuer address:
+
+```shell
+export APPMESH_BEARER_TOKEN=$(curl -s -u "appmesh-cli:" -X POST \
+    https://<host>:6060/auth/token \
+    --data-urlencode grant_type=password \
+    --data-urlencode "username=admin@appmesh.local" \
+    --data-urlencode "password=your-password" \
+    --data-urlencode "scope=openid audience:server:client_id:appmesh-api" \
+  | python3 -c 'import sys,json;print(json.load(sys.stdin)["access_token"])')
+```
+
+- Port 6065 is the loopback authentication service; remote clients use the
+  agent port 6060 instead.
+- The audience scope is colon-separated: `audience:server:client_id:appmesh-api`.
+  Writing `...client_id=appmesh-api` returns
+  `400 invalid_request: Unrecognized scope(s)` — that error means the scope is
+  misspelled.
+
+### `automation-token` — machine identity (unattended)
+
+```shell
+export APPMESH_BEARER_TOKEN=$(sudo /opt/appmesh/script/appmesh-auth.sh automation-token)
+```
+
+- Uses the `appmesh-automation` confidential client with the
+  `client_credentials` grant; no human password is involved.
+- The principal carries the `appmesh-maintenance` role (5 permissions; see
+  [Roles](#roles)). Application registration and `run_task` return `403`.
+- Available only on the built-in authentication **owner** node.
+- Access tokens live 30 minutes, so refresh them periodically. The packaged
+  Prometheus stack re-mints every 5 minutes.
+
+### Token set — access + refresh token (long-running SDK processes)
+
+Add `--with-refresh` (PowerShell: `-WithRefresh`) to `user-token` to mint a
+full token set: the password grant runs with `offline_access` added to the
+scope and the whole grant response is printed as JSON:
+
+```shell
+echo 'your-password' | sudo /opt/appmesh/script/appmesh-auth.sh user-token --with-refresh
+# {"access_token":"...","refresh_token":"...","expires_in":1799,"token_type":"Bearer"}
+```
+
+Without the flag the output is unchanged (access token only). The command
+fails fast when the deployment disabled refresh tokens
+([Disabling refresh tokens](#disabling-refresh-tokens)) and fails when the
+grant response carries no `refresh_token`. The remote equivalent appends
+`offline_access` to the scope of the same password grant against
+`https://<host>:6060/auth/token` and takes `access_token`, `refresh_token`,
+and `expires_in` from the JSON response.
+
+Feed the set to the built-in refresh-token provider of your SDK. Each one
+implements the same `TokenProvider` contract, so the Engine client code path
+is unchanged:
+
+```python
+from appmesh import AppMeshClient, OAuthClient
+
+provider = OAuthClient.from_token_set(
+    token_url="https://host:6060/auth/token",  # no discovery; refresh-only instance
+    client_id="appmesh-cli",
+    access_token=tok["access_token"],
+    refresh_token=tok["refresh_token"],
+    expires_in=tok["expires_in"],
+    appmesh_client=client,
+    ssl_verify=False,  # for test environments only
+)
+c = AppMeshClient(base_url="https://host:6060", token_provider=provider)
+```
+
+| Language | Constructor |
+| --- | --- |
+| Python | `OAuthClient.from_token_set(token_url=..., client_id="appmesh-cli", access_token=..., refresh_token=..., expires_in=..., appmesh_client=..., ssl_verify=...)` |
+| Rust | `OAuthClient::from_token_set(token_url, access_token, refresh_token, TokenSetProviderOptions{ client_id, expires_in, allow_plain_http })` — `TokenSetProviderOptions` is exported from the `appmesh` crate root |
+| Go | `NewRefreshTokenProvider(RefreshTokenConfig{TokenURL, ClientID, AccessToken, RefreshToken, ExpiresIn, HTTPClient})` |
+| Java | `new appmesh.RefreshTokenProvider(tokenUrl, accessToken, refreshToken, expiresInSeconds)`; an overload adds `clientId` |
+| JavaScript | `new RefreshTokenProvider({ tokenUrl, clientId, accessToken, refreshToken, expiresIn, httpClient })`, exported from the package entry alongside `StaticAccessTokenProvider` |
+
+Shared provider behavior (identical across SDKs):
+
+- The token endpoint URL must be HTTPS; plain HTTP is accepted only on
+  loopback (`127.0.0.1` / `localhost` / `::1`). Rust additionally offers an
+  `allow_plain_http` opt-in.
+- The provider refreshes proactively within `max(30s, 10% of lifetime)` of
+  expiry; when `expires_in` is unknown (`0`/`None`), it refreshes only after
+  a 401.
+- The refresh grant posts `grant_type=refresh_token&refresh_token=...&client_id=...`
+  to the token endpoint; the stored refresh token is replaced only when the
+  response carries a new one — Dex rotation with `reuseInterval: 5m` means an
+  absent token keeps the old one valid.
+- Racing refreshes coalesce: `refresh_access_token(rejected_token)` returns
+  the current token without a grant when the rejected token is no longer the
+  stored one.
+- `invalid_grant` clears both tokens (`can_refresh` → false); transient or
+  network errors keep the state.
+- Tokens are held in memory only — the SDK never persists them (the CLI's
+  `0600` session file remains the persistence story); `clear()` wipes both.
+- The 168h `refresh_token_max_lifetime` absolute cap still applies: after it,
+  mint a new token set (run the grant again).
+
+Prefer a token set over `automation-token` when the SDK process should act
+under a user identity with that user's roles; `automation-token` is a
+maintenance machine identity, and its `client_credentials` grant has no
+refresh token, so automation callers keep re-minting.
+
+### Sign-in capabilities by entry point
+
+| Entry point | Password grant | Client credentials | PKCE / device | Refresh |
+| --- | --- | --- | --- | --- |
+| `appmesh-auth.sh user-token` | ✅ | — | — | — by default; ✅ with `--with-refresh` (full token set) |
+| `appmesh-auth.sh automation-token` | — | ✅ | — | — |
+| CLI `appm logon` | ✅ `--password` / `--password-stdin` / `--username` (only when advertised) | — | ✅ automatic, or `--device` / `--browser` | ✅ (session file) |
+| Rust SDK `OAuthClient` | ✅ `password_login()` | — | ✅ | ✅ built-in refresh-token provider (`from_token_set`) or custom `TokenProvider` |
+| Python SDK `OAuthClient` | ✅ `PasswordGrantProvider` | — | ✅ | ✅ built-in refresh-token provider (`from_token_set`) or custom `TokenProvider` |
+| Go / Java / JS SDK | — | — | — | ✅ built-in `RefreshTokenProvider` or custom `TokenProvider`; static bearer setters still available (Go `SetToken`, Java `setBearerToken`, JS `setBearerToken`) |
+
+Without flags, the CLI selects the method from the advertised flows and the
+local display: browser authorization on a desktop computer, and device
+authorization on a headless computer. It uses the password grant only when the
+caller selects it and the Engine advertises the flow.
+
+The CLI never prints tokens: `appm loginfo` shows the principal and the expiry
+only, and it needs a stored session. Use the grant or `automation-token` when
+you need the raw token. With `APPMESH_BEARER_TOKEN` set, the CLI uses the token
+as-is until it expires — no session file, no refresh. A bearer token alone is
+not enough for `appm loginfo`; it exits nonzero without a session file.
+
+## Using a password from the Python SDK
+
+`AppMeshClient` accepts a `bearer_token` or a `token_provider`. The built-in
+`PasswordGrantProvider` runs the password grant inside the SDK: it mints an
+access token on first use, re-mints shortly before expiry (the access token
+lives only 30 minutes), and re-authenticates once after an Engine 401. With
+`password_file` the file is re-read on every grant, so a password rotation
+takes effect without a process restart:
+
+```python
+from appmesh import AppMeshClient, PasswordGrantProvider
+
+provider = PasswordGrantProvider(
+    token_url="https://host:6060/auth/token",  # HTTPS, or plain HTTP on loopback only
+    username="admin@appmesh.local",
+    password_file="/etc/appmesh/agent-password",  # or password="your-password"
+    ssl_verify=False,  # for test environments only
+)
+c = AppMeshClient(base_url="https://host:6060",
+                  token_provider=provider,
+                  ssl_verify=False)
+print(c.get_current_principal()["roles"])  # ['appmesh-admin']
+```
+
+A bad-credentials response from the issuer — `access_denied` on the bundled
+Dex, `invalid_grant` on RFC 6749 issuers — permanently disables the provider;
+network and transient errors keep the token state, so the next call retries.
+The password never crosses into the Engine client — only access tokens do.
+
+The simpler equivalent is to run the password grant outside the SDK and pass
+the result as `bearer_token`. A caller-written `TokenProvider` subclass
+following the same contract also works — the rest of the SDK code does not
+change.
+
+Other SDKs take the token directly — Go `client.SetToken(...)`, Rust
+`client.set_token(...)`, Java `setBearerToken(...)`, JavaScript
+`client.setBearerToken(...)`, C++ `setBearerToken(...)` — or accept a
+caller-implemented `TokenProvider` (Go `Option.TokenProvider`, Java
+`Builder.tokenProvider(...)`, JavaScript `setTokenProvider(...)`, C++
+`ClientConfig.tokenProvider`) following the same contract as the Python
+example above.
+
+## Reference
+
+### Request signatures and replay protection
+
+An access token authenticates the caller. A deployment that also needs per-request integrity or replay rejection enables the request hardening layers. These are independent of OAuth: issue a signing API key, then enable `REST.RequestReplayProtection` and `REST.RequestSignature`. See the Security guide, section "Request replay protection and signatures".
+
+The order matters: with `REST.RequestSignature: enforce` every authenticated route, including `POST /appmesh/security/apikeys`, requires a valid signature. A fresh deployment that enforces from the first boot cannot issue a key over the API, and a principal that revokes its last key cannot issue itself a new one.
+
+Recovery when no valid key remains:
+
+1. On the daemon host, set `REST.RequestSignature: audit` (or `off`) in the effective configuration and reload with SIGHUP — mode changes apply without a restart.
+2. Issue a new key with `POST /appmesh/security/apikeys` using a bearer token.
+3. Set the mode back to `enforce` and reload again.
+
+A principal without any key can also be re-keyed by an administrator who still holds a valid key: the issue endpoint accepts `{"principal": "<id>"}` with the `principal-update` permission.
+
+### Identities and clients
+
+| Item | Value |
+| --- | --- |
+| Administrator | `admin@appmesh.local` / username `admin` / user ID `2d1c8c38-3898-4c89-a78b-3caa42f203c1` |
+| Read-only viewer | `guest@appmesh.local` / username `guest` / user ID `93ad39b4-eb6f-4945-97a1-3366451867fb` |
+| Automation client | `appmesh-automation` (confidential; the principal is derived from the client ID and stays stable across secret regeneration) |
+
+OAuth clients defined in `src/apps/identity/dex.yaml`:
+
+| Client ID | Type | Purpose |
+| --- | --- | --- |
+| `appmesh-api` | public | Audience target |
+| `appmesh-cli` | public | CLI and native clients (RFC 8252) |
+| `appmesh-web` | public | Browser authorization code + PKCE |
+| `appmesh-mcp-user` | public | MCP clients (Dex has no dynamic registration); PKCE S256 is mandatory — third-party MCP clients follow the MCP spec's authorization code + PKCE flow; a client that cannot reach the issuer presents a password-flow token instead |
+| `appmesh-automation` | confidential | `client_credentials` for CI and unattended jobs |
+
+### Lifetimes
+
+| Item | Value |
+| --- | --- |
+| Access token | 30 minutes (JWT `exp - iat` = 1800 seconds; the grant response reports `expires_in: 1799`) |
+| Signing keys | 6 hours |
+| Refresh token | Rotates on every use; `reuseInterval: 5m`; idle expiry `validIfNotUsedFor: 168h`; absolute cap `absoluteLifetime: 168h` (configurable via `oidc.yaml` `refresh_token_max_lifetime`) — rotation does not extend it |
+
+Every SDK ships a built-in refresh-token provider fed from a
+[token set](#token-set--access--refresh-token-long-running-sdk-processes), and
+all SDKs also support refresh through a caller-implemented `TokenProvider`
+(see [Sign-in capabilities by entry point](#sign-in-capabilities-by-entry-point));
+only the full OAuth clients (PKCE / device grants) remain Python- and
+Rust-only. When refresh tokens are disabled
+([Disabling refresh tokens](#disabling-refresh-tokens)), long-running
+processes must re-authenticate after the access token expires.
+
+### Roles
+
+| Role | Permissions |
+| --- | --- |
+| `appmesh-admin` | All 29 permissions, including `app-reg`, `app-run-task`, `file-delete`, `host-forward`, `principal-set`, `role-set`, `workflow-admin` |
+| `appmesh-maintenance` | `app-control`, `app-manage-all`, `app-view-all`, `config-view`, `host-resource-view` |
+| `appmesh-workflow-runner` | `app-delete`, `app-output-view`, `app-reg`, `app-run-async`, `app-run-task`, `app-subscribe`, `app-view`, `host-forward`, `label-view`; bound to workflow step applications |
+| `appmesh-viewer` | `app-view-all`, `app-view`, `app-output-view`, `config-view`, `host-resource-view`, `label-view`, `role-view` |
+
+The full permission list lives in `src/daemon/security/authorization.yaml`.
+
+### Ports
+
+[Ports.md](../deploy/Ports.md) is the port specification. The identity listeners are:
+
+| Port | Owner | Purpose |
+| --- | --- | --- |
+| 6065 | authentication service | Issuer and token endpoint |
+| 6066 | authentication service | Telemetry (`/healthz`) |
+| 6067 | authentication service | Administrative gRPC API, mutual TLS, loopback only (drives the administration UI) |
+| 6068 | administration UI | `dexuser` System App web UI, loopback only |
+
+Clients reach the issuer through the agent on 6060, which proxies the issuer path.

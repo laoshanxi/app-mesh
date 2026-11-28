@@ -56,10 +56,7 @@ def _quarantine_corrupt(exc):
 	target = _FILE.with_name(f"{_FILE.name}.corrupt-{int(time.time())}")
 	os.replace(_FILE, target)
 	for suffix in ("-journal", "-wal", "-shm"):  # 旁车属于旧库，残留会被 SQLite 当热日志回放进新空库
-		try:
-			_FILE.with_name(_FILE.name + suffix).unlink()
-		except OSError:  # py3.6: 无 missing_ok 参数，不存在即跳过
-			pass
+		_FILE.with_name(_FILE.name + suffix).unlink(missing_ok=True)
 	print(f"[approval] 账本损坏（{exc}），已隔离到 {target} 并重建空账本", file=sys.stderr, flush=True)
 
 

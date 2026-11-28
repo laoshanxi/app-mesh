@@ -1,0 +1,112 @@
+## Build
+
+App Mesh is implemented by modern C++ (C++17), require g++ version 8 or later, there are 2 ways to setup App Mesh build environment.
+
+Build host support RHEL, Ubuntu, Debian and Fedora distributions with X86 or ARM architecture.
+
+### Option 1: Setup build environment on local host
+
+The general way build all dependencies on local Linux host, this will build all the dependency libraries and need some time to finish.
+
+```shell
+$ git clone --depth=1 https://github.com/laoshanxi/app-mesh.git
+$ sudo bash app-mesh/script/bootstrap/install_openssl.sh
+$ sudo bash app-mesh/script/bootstrap/install_build_deps.sh
+# clean
+$ rm -rf app-mesh appmesh.tmp
+```
+
+After environment was setup with above steps, use bellow steps to build App Mesh.
+
+```shell
+cd app-mesh
+mkdir build; cd build; cmake ..; make; make pack
+```
+
+Run the test targets after `make`:
+
+```shell
+make python_tests      # Python SDK
+make go_tests          # Go SDK
+make workflow_tests    # Workflow engine (unit + E2E)
+make rust_tests        # Rust CLI
+```
+
+The C++ Catch2 suites live in `test/`, but `add_subdirectory(test)` is disabled
+in `CMakeLists.txt`, so the build registers no CTest case. `make test ARGS="-V"`
+therefore runs nothing.
+
+### Option 2: Build by docker image
+
+The simple way is use docker image `laoshanxi/appmesh:build_centos8` to build App Mesh directly which already have compiler and dependencies installed.
+
+```shell
+cd app-mesh
+docker run --rm -v $(pwd):$(pwd) -w $(pwd) laoshanxi/appmesh:build_centos8 sh -c "mkdir build;cd build;cmake ..;make;make pack"
+```
+
+Build a Docker image to compile C++ application is a reliable and easy way to handle third party dependencies, anyone could use this docker image to build package without prepare a C++ environment.
+
+There are different Dockerfile(s) with different compiler version could be selected to generate the Docker image:
+
+- docker/Dockerfile.build_centos8
+- docker/Dockerfile.build_ubuntu22
+- docker/Dockerfile.build_ubuntu24
+- docker/Dockerfile.build_ubuntu
+- docker/Dockerfile.build_debian13
+
+The Docker image build process is simple with this:
+
+```shell
+TAG_NAME=build_ubuntu24
+IMAGE_NAME=laoshanxi/appmesh:${TAG_NAME}
+
+git clone --depth=1 https://github.com/laoshanxi/app-mesh.git
+cd app-mesh
+
+! docker rmi -f ${IMAGE_NAME}
+! docker rmi ubuntu:24.04
+docker build --no-cache -f docker/Dockerfile.${TAG_NAME} -t ${IMAGE_NAME} .
+docker push ${IMAGE_NAME}
+```
+
+The public pre-build Docker images can be used to build binary directly:
+
+- laoshanxi/appmesh:build_centos8
+- laoshanxi/appmesh:build_ubuntu22
+- laoshanxi/appmesh:build_ubuntu24
+- laoshanxi/appmesh:build_debian13
+
+### Windows
+
+Run the bootstrap once as Administrator (installs the MSVC/vcpkg dependencies,
+Go tools including the Dex server for local debugging, Rust, NSIS, and the
+EnVar NSIS plugin), then build:
+
+```powershell
+.\script\bootstrap\install_build_deps.ps1
+cmake -S . -B build -G "Visual Studio 17 2022" -A x64 `
+  -DCMAKE_TOOLCHAIN_FILE=C:/vcpkg/scripts/buildsystems/vcpkg.cmake `
+  -DVCPKG_TARGET_TRIPLET=x64-windows
+cmake --build build --config Release --parallel
+cmake --build build --config Release --target pack   # NSIS installer in build\
+```
+
+Windows packages include `dex.exe`, `passhash.exe`, the protected
+`identity` App, and the native `appmesh-auth.ps1` launcher; see [Install](../deploy/Install.md)
+for the deployment flow and the real-machine verification checklist.
+
+## Library dependencies
+
+The daemon links these libraries:
+
+- [MessagePack](https://github.com/msgpack/msgpack-c)
+- [boostorg/boost](https://github.com/boostorg/boost)
+- [yaml-cpp](https://github.com/jbeder/yaml-cpp)
+- [jupp0r/prometheus-cpp](https://github.com/jupp0r/prometheus-cpp)
+- [zemasoft/wildcards](https://github.com/zemasoft/wildcards)
+- [mariusbancila/croncpp](https://github.com/mariusbancila/croncpp)
+- [spdlog](https://github.com/gabime/spdlog)
+- [concurrentqueue](https://github.com/cameron314/concurrentqueue)
+- [drogon](https://github.com/drogonframework/drogon)
+- [jsoncpp](https://github.com/open-source-parsers/jsoncpp)

@@ -292,7 +292,14 @@ func (r *AppMeshClient) openSseStream(ctx context.Context, op string, method str
 	if code != http.StatusOK {
 		raw, _ := io.ReadAll(respBody) // error responses are small
 		respBody.Close()
-		return nil, newAPIError(op, code, string(raw))
+		apiErr := newAPIError(op, code, string(raw))
+		if (code == http.StatusNotFound || code == http.StatusMethodNotAllowed) && r.getForwardTo() != "" {
+			// The agent forwards "host:port" to that port: an explicit TCP port lands the
+			// stream on a listener without stream routes.
+			apiErr.text += fmt.Sprintf("; the forward target %q names the target's TCP listener, which serves no"+
+				" streams: use a bare host (or the target's agent REST port, 6060)", r.getForwardTo())
+		}
+		return nil, apiErr
 	}
 	return &SseStream{
 		body:    respBody,
@@ -426,15 +433,19 @@ func (r *AppMeshClient) SendInputContext(ctx context.Context, appName string, da
 
 // sseSideChannel opens SSE over a direct HTTPS connection to the daemon REST
 // listener: the framed TCP/WSS transports cannot carry a chunked stream, so
-// streams bypass framing like the WSS file data channel (never forwarded).
+// streams bypass framing like the WSS file data channel. A forwarded stream
+// (forwardTarget set) dials agentBase, the agent REST listener, with
+// X-Target-Host; without an agent base it fails instead of streaming locally.
 type sseSideChannel struct {
-	base       url.URL        // REST listener base (scheme + host:port)
-	token      string         // bearer for the direct request
-	agent      string         // transport-specific User-Agent
-	signer     *requestSigner // opt-in HMAC request signing (nil = off)
-	clientCert string         // client certificate file (PEM), empty disables
-	clientKey  string         // client certificate key file
-	caFile     string         // trusted CA file/dir, empty skips verification
+	base          url.URL        // REST listener base (scheme + host:port)
+	agentBase     url.URL        // agent REST listener base for forwarded streams
+	forwardTarget string         // X-Target-Host value; empty streams locally
+	token         string         // bearer for the direct request
+	agent         string         // transport-specific User-Agent
+	signer        *requestSigner // opt-in HMAC request signing (nil = off)
+	clientCert    string         // client certificate file (PEM), empty disables
+	clientKey     string         // client certificate key file
+	caFile        string         // trusted CA file/dir, empty skips verification
 }
 
 // open performs the side-channel request and returns the response body unread;
@@ -445,6 +456,19 @@ func (c sseSideChannel) open(ctx context.Context, method string, apiPath string,
 		return 0, nil, nil, fmt.Errorf("streaming requires a bearer token")
 	}
 	u := c.base
+	if c.forwardTarget != "" {
+		// A caller-supplied X-Target-Host ("" disables) wins, as on framed requests.
+		if override, set := headers[headerTargetHost]; set {
+			c.forwardTarget = override
+		}
+		if c.forwardTarget != "" {
+			if c.agentBase.Host == "" {
+				return 0, nil, nil, fmt.Errorf("%s through node forwarding (X-Target-Host: %s) is not supported by this"+
+					" transport: the agent REST listener address is unknown", opForPath(apiPath), c.forwardTarget)
+			}
+			u = c.agentBase
+		}
+	}
 	u.Path = path.Join(u.Path, apiPath)
 	if len(queries) > 0 {
 		if c.signer != nil {
@@ -463,7 +487,11 @@ func (c sseSideChannel) open(ctx context.Context, method string, apiPath string,
 	for k, v := range headers {
 		req.Header.Set(k, v)
 	}
+	if c.forwardTarget != "" {
+		req.Header.Set(headerTargetHost, c.forwardTarget)
+	}
 	// Streamed endpoints sign the empty-string body hash (documented exemption).
+	// The signature covers method, path, query and body hash, not the target host.
 	if err := signHTTPRequest(req, queries, c.signer); err != nil {
 		return 0, nil, nil, err
 	}

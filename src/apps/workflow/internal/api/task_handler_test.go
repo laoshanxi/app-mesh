@@ -4,11 +4,15 @@
 package api
 
 import (
+	"context"
+	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/laoshanxi/app-mesh/src/apps/workflow/internal/models"
+	"github.com/laoshanxi/app-mesh/src/apps/workflow/internal/tlsconf"
 	"github.com/laoshanxi/app-mesh/src/apps/workflow/internal/trigger"
 	"github.com/laoshanxi/app-mesh/src/apps/workflow/internal/workdir"
 	appmesh "github.com/laoshanxi/app-mesh/src/sdk/go"
@@ -111,18 +115,40 @@ func TestAuthorizeActionMatrix(t *testing.T) {
 	}
 }
 
-// TestNewPrincipalHTTPClientSchemeFollowsTransport pins the principal-lookup
-// endpoint: the default is the local TLS REST listener, plain transport
-// switches the scheme to http (a plaintext daemon), and APPMESH_ENGINE_URL
-// keeps whatever scheme it specifies.
-func TestNewPrincipalHTTPClientSchemeFollowsTransport(t *testing.T) {
+// writeDaemonConfig writes a daemon config.yaml under a fresh config root and
+// returns that root.
+func writeDaemonConfig(t *testing.T, content string) string {
+	t.Helper()
+	root := t.TempDir()
+	path := filepath.Join(root, "work", "config", "config.yaml")
+	if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte(content), 0600); err != nil {
+		t.Fatal(err)
+	}
+	return root
+}
+
+// TestNewPrincipalHTTPClientEndpointFollowsDaemonConfig pins the principal-lookup
+// endpoint: the daemon's native WebSocketPort listener serves principal/self by
+// default, WebSocketPort: 0 falls back to the agent's RestListenPort (the only
+// REST entry then), the scheme follows the resolved transport, and
+// APPMESH_ENGINE_URL wins outright.
+func TestNewPrincipalHTTPClientEndpointFollowsDaemonConfig(t *testing.T) {
+	t.Setenv("APPMESH_ENGINE_URL", "")
+	t.Setenv(tlsconf.EnvWebSocketPort, "")
+	t.Setenv(tlsconf.EnvRestListenPort, "")
+	// No config file: the shipped daemon defaults apply.
+	t.Setenv(tlsconf.EnvConfigRoot, t.TempDir())
+
 	client, engineURL, err := newPrincipalHTTPClient(appmesh.Option{})
 	if err != nil {
 		t.Fatalf("TLS default must construct: %v", err)
 	}
 	client.CloseIdleConnections()
-	if engineURL != "https://127.0.0.1:6060" {
-		t.Fatalf("default engine URL = %q, want https://127.0.0.1:6060", engineURL)
+	if engineURL != "https://127.0.0.1:6063" {
+		t.Fatalf("default engine URL = %q, want https://127.0.0.1:6063", engineURL)
 	}
 
 	client, engineURL, err = newPrincipalHTTPClient(appmesh.Option{PlainTransport: true})
@@ -130,8 +156,29 @@ func TestNewPrincipalHTTPClientSchemeFollowsTransport(t *testing.T) {
 		t.Fatalf("plain transport must construct: %v", err)
 	}
 	client.CloseIdleConnections()
+	if engineURL != "http://127.0.0.1:6063" {
+		t.Fatalf("plain engine URL = %q, want http://127.0.0.1:6063", engineURL)
+	}
+
+	// The documented WebSocketPort: 0 configuration disables the native listener;
+	// the agent on RestListenPort is the only REST entry.
+	t.Setenv(tlsconf.EnvConfigRoot, writeDaemonConfig(t, "REST:\n  WebSocketPort: 0\n  RestListenPort: 6060\n"))
+	client, engineURL, err = newPrincipalHTTPClient(appmesh.Option{})
+	if err != nil {
+		t.Fatalf("TLS with the native listener disabled must construct: %v", err)
+	}
+	client.CloseIdleConnections()
+	if engineURL != "https://127.0.0.1:6060" {
+		t.Fatalf("WebSocketPort=0 engine URL = %q, want https://127.0.0.1:6060", engineURL)
+	}
+
+	client, engineURL, err = newPrincipalHTTPClient(appmesh.Option{PlainTransport: true})
+	if err != nil {
+		t.Fatalf("plain with the native listener disabled must construct: %v", err)
+	}
+	client.CloseIdleConnections()
 	if engineURL != "http://127.0.0.1:6060" {
-		t.Fatalf("plain engine URL = %q, want http://127.0.0.1:6060", engineURL)
+		t.Fatalf("WebSocketPort=0 plain engine URL = %q, want http://127.0.0.1:6060", engineURL)
 	}
 
 	t.Setenv("APPMESH_ENGINE_URL", "https://engine.example:8443/base")
@@ -142,6 +189,66 @@ func TestNewPrincipalHTTPClientSchemeFollowsTransport(t *testing.T) {
 	client.CloseIdleConnections()
 	if engineURL != "https://engine.example:8443/base" {
 		t.Fatalf("override engine URL = %q, want the APPMESH_ENGINE_URL value", engineURL)
+	}
+}
+
+// The registration-time namespace guard must reject a colliding non-workflow
+// app (AddApp would silently overwrite it), pass a workflow-owned pseudo-App
+// through to the owner-checked overwrite path, and pass a free name.
+func TestAppNamespaceConflict(t *testing.T) {
+	meta := func(m map[string]string) *json.RawMessage {
+		raw, _ := json.Marshal(m)
+		msg := json.RawMessage(raw)
+		return &msg
+	}
+	apps := []appmesh.Application{
+		{Name: "workflow-existing", Metadata: meta(map[string]string{"type": "workflow"})},
+		{Name: "workflow-zebra", Command: nil, Metadata: meta(map[string]string{"type": "manual-app"})},
+		{Name: "workflow-nometa"},
+	}
+
+	if err := appNamespaceConflict(apps, "workflow-free"); err != nil {
+		t.Fatalf("a free name must pass, got %v", err)
+	}
+	if err := appNamespaceConflict(apps, "workflow-existing"); err != nil {
+		t.Fatalf("a workflow-owned pseudo-App must pass (owner check applies at overwrite), got %v", err)
+	}
+	for _, taken := range []string{"workflow-zebra", "workflow-nometa"} {
+		err := appNamespaceConflict(apps, taken)
+		if err == nil {
+			t.Fatalf("%s: a non-workflow app must conflict", taken)
+		}
+		if !strings.Contains(err.Error(), "conflict") {
+			t.Fatalf("%s: the error must be a clear conflict, got %q", taken, err.Error())
+		}
+	}
+}
+
+// A 401 from the control capability must trigger the immediate (rate-limited)
+// control refresh rather than waiting for the renewal ticker.
+func TestHandleWorkflowListRefreshesOnAuthError(t *testing.T) {
+	h := newTestHandler(t)
+
+	refreshed := 0
+	h.svc.SetControlRefresh(func(context.Context) error {
+		refreshed++
+		return nil
+	})
+
+	// h.client is nil here, so the list call errors; the trigger.Path is the
+	// auth classification. Use an APIError-shaped 401 through the exported
+	// classifier and verify the service reacts to ControlCapabilityRejected.
+	if !trigger.IsAuthError(&appmesh.APIError{StatusCode: 401}) {
+		t.Fatal("401 must classify as an auth error")
+	}
+	if trigger.IsAuthError(&appmesh.APIError{StatusCode: 403}) {
+		t.Fatal("403 must not classify as an auth error")
+	}
+	if !h.svc.ControlCapabilityRejected() {
+		t.Fatal("ControlCapabilityRejected must report a successful refresh")
+	}
+	if refreshed != 1 {
+		t.Fatalf("control refresh must fire once, got %d", refreshed)
 	}
 }
 

@@ -245,6 +245,9 @@ class TransportClientMixin:
         The framed transport cannot carry a chunked event stream, so streaming endpoints
         bypass it (like the WSS file data channel); without a bearer token the daemon
         answers 401.
+
+        A forwarded stream (``forward_to`` set) dials the agent REST listener (``agent_port``)
+        with ``X-Target-Host``: the engine listener rejects that header on stream routes.
         """
         from urllib import parse as _parse
 
@@ -253,8 +256,13 @@ class TransportClientMixin:
         if token:
             headers[self._HTTP_HEADER_KEY_AUTH] = f"Bearer {token}"
         # Same empty-body hash exemption as the streamed file side channels.
+        # The signature covers method, path, query and the empty body hash, never the
+        # target host: the same signed headers are valid on either listener.
         self._append_signature_headers(headers, method.value.replace("_STREAM", ""), path, query)
         url = _parse.urljoin(self.base_url, path)
+        if self.forward_to:
+            url = _parse.urljoin(self._agent_base_url, path)
+            headers[self._HTTP_HEADER_KEY_X_TARGET_HOST] = self.forward_to
         request_kwargs = {
             "url": url,
             "headers": headers,
@@ -274,10 +282,15 @@ class TransportClientMixin:
         try:
             resp.raise_for_status()
         except requests.exceptions.HTTPError as e:
-            # 404/405 on a streaming route: the base_url likely points at the agent
-            # REST listener, which carries no streaming routes — say so.
-            raise AppMeshRequestError(f"SSE request failed: {e}{route_hint(resp.status_code)}",
-                                      resp.status_code) from e
+            # 404/405 on a streaming route: the base_url endpoint does not serve it
+            # (an older engine, or a proxy without the streaming location) — say so.
+            hint = route_hint(resp.status_code)
+            if self.forward_to and resp.status_code in (HTTPStatus.NOT_FOUND, HTTPStatus.METHOD_NOT_ALLOWED):
+                # The agent forwards "host:port" to that port: an explicit TCP port lands the
+                # stream on a listener without stream routes.
+                hint += (f" The forward target {self.forward_to!r} names the target's TCP listener, which serves no"
+                         " streams: use a bare host (or the target's agent REST port, 6060).")
+            raise AppMeshRequestError(f"SSE request failed: {e}{hint}", resp.status_code) from e
         return resp
 
     def add_app(self, app: App, subscribe_events: Optional[list] = None, callback: Optional[EventCallback] = None) -> App:

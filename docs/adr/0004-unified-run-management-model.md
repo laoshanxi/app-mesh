@@ -3,8 +3,11 @@
 ## Status
 
 Proposed, with the identity portion superseded by ADR 0009. Step-result isolation and
-cancel propagation are implemented; the unified Run API, single-mode engine, and external
-trigger model remain proposals.
+cancel propagation are implemented; the unified Run API and single-mode engine remain
+proposals. The external **cron** portion of the trigger model was revised in October
+2026: schedule triggers are now dispatched inside the engine (see "Schedule triggers"
+below); `app_event` remains engine-internal as before, and arbitrary external
+wrappers remain a proposal.
 
 ## Context
 
@@ -90,6 +93,23 @@ Step results are job-scoped internally so parallel jobs cannot overwrite one ano
 Cancellation marks the Run cancelled, deletes every active temporary step App, and records
 each affected step as cancelled. The engine tracks `{run_id, job, step} -> app_name` for
 this purpose.
+
+### Schedule triggers (revised October 2026)
+
+The original decision made cron an external App Mesh App that calls the Run API with a
+credential. That has no workable identity on a standard install: the daemon's
+environment has no interactive `appm` session, and `APPMESH_BEARER_TOKEN` dies with
+the 30-minute access token — a periodic workflow would silently stop minutes after
+setup. `automation-token` (client_credentials) carries no `run_task` permission and
+is equally short-lived.
+
+`on: schedule` is therefore dispatched by the engine itself, exactly like `on:
+app_event`: the fire creates an automatic Run under a short-lived Engine-local
+capability; no user bearer and no credential at rest. Registration still requires
+`workflow-admin`, invalid cron expressions are rejected at registration, missed
+periods are skipped rather than back-filled, and runs record `source:
+schedule:<cron>`. An external cron App remains possible for callers that already
+hold a suitable credential, but it is no longer the documented path.
 
 ## Consequences
 

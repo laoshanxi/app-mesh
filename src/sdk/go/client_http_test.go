@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"os"
+	"path/filepath"
 	"sync"
 	"testing"
 
@@ -435,4 +436,23 @@ func TestNewHTTPClientRejectsPartialSignatureOption(t *testing.T) {
 	require.NoError(t, err, "a complete pair must construct")
 	defer client.Close()
 	require.NotNil(t, httpSigner(t, client))
+}
+
+// UploadFile must send X-File-Overwrite only when the caller opts in: the
+// engine refuses an existing destination with 409 unless the header is present.
+func TestUploadFileOverwriteHeader(t *testing.T) {
+	src := filepath.Join(t.TempDir(), "local.txt")
+	require.NoError(t, os.WriteFile(src, []byte("payload"), 0o600))
+
+	client, fake := newFakeClient(http.StatusOK, `{"status":"success"}`)
+
+	require.NoError(t, client.UploadFile(src, "/remote/file.txt", false, UploadOptions{Overwrite: true}))
+	require.NotEmpty(t, fake.sent)
+	assert.Equal(t, "true", fake.sent[0].header["X-File-Overwrite"])
+
+	fake.sent = nil
+	require.NoError(t, client.UploadFile(src, "/remote/file.txt", false))
+	require.NotEmpty(t, fake.sent)
+	_, present := fake.sent[0].header["X-File-Overwrite"]
+	assert.False(t, present, "default upload must not send the overwrite header")
 }

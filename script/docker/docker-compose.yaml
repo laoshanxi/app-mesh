@@ -7,15 +7,13 @@
 # identical string on every node and client.
 #
 # In-network usage (the issuer hostname resolves only inside the network):
-#   appm -H wss://appmesh_master:6063 -F appmesh_slave1 logon
+#   appm -H wss://appmesh_master:6063 -F appmesh_slave1 logon --auth-allow-http
 #   appm -H wss://appmesh_master:6063 -F appmesh_slave1 view
-# From the host, a CLI uses the published master ports and routes the issuer
-# traffic through the loopback-published Dex port. The cluster issuer is plain
-# HTTP on the protected compose network, so the login opts in explicitly:
-#   appm -H https://127.0.0.1:6060 --auth-access-url http://127.0.0.1:6065/auth --auth-allow-http logon
-# Point --auth-access-url at a proxy entry (agent, or the published web UI at
-# https://127.0.0.1/auth) instead to get the same login page the browser sees,
-# logo included; the raw Dex port serves no login assets.
+# The CLI speaks WSS on 6063, not the REST port 6060 (the Go agent). The master's
+# TLS material lives in the appmesh_tls volume: the CA survives container
+# re-creation, and the followers and the MCP service mount only that ca.pem
+# (a read-only subpath mount) to verify the engine — the private keys never
+# leave the master.
 # The optional docker-compose.vault.yaml layer replaces the self-signed
 # generation with central issuance: every node's leaf certificates come from
 # the Vault PKI engine (APPMESH_SSL_SOURCE=vault).
@@ -25,6 +23,18 @@
 # group id), or point the agent at a remote daemon via DOCKER_HOST. A socket
 # mount without group access stays silently lazy — the node never reports a
 # Docker capability and nothing errors.
+# Host ports use the daemon defaults:
+#   trust the CA once: docker cp appmesh_master:/opt/appmesh/ssl/ca.pem ./master-ca.pem
+#   REST/SDK clients: https://127.0.0.1:6060
+#   SDK TCP transport (events, workers): 127.0.0.1:6062
+#   CLI and SDK WSS transport: wss://127.0.0.1:6063, e.g.
+#     appm -H wss://127.0.0.1:6063 --ca-cert ./master-ca.pem logon \
+#       --auth-access-url http://127.0.0.1:6065/auth --auth-allow-http
+#   host password/device flows: http://127.0.0.1:6065/auth
+#   host MCP clients: http://127.0.0.1:6070/mcp with a password-flow token
+# Only the first sign-in (administrator enrollment) must run inside the master
+# container: enrollment accepts a loopback client only (see "First sign-in in
+# the compose cluster" in docs/source/engine/Cluster.md).
 name: appmesh_cluster
 services:
   appmesh_master:
@@ -46,6 +56,27 @@ services:
       # Bind the Dex listener to the protected compose network for followers.
       # Never publish this plaintext listener beyond a protected network.
       - APPMESH_AUTH_LISTEN=0.0.0.0:6065
+      # Cluster authorization replication (owner side): the accept list at
+      # APPMESH_AUTH_REPLICATION_TOKEN_FILE holds one bearer per follower
+      # ("<token> <label>").
+      # The declared follower set is provisioned at bootstrap with per-follower
+      # token files in the shared volume (projected-secret pattern): each
+      # follower mounts exactly its own file (subpath mount below), so
+      # revoking one follower never touches the others and no follower reads
+      # the accept list or a sibling's token. Deployments that prefer a
+      # secrets service layer docker-compose.vault.yaml on top.
+      - APPMESH_AUTH_REPLICATION_TOKEN_FILE=/opt/appmesh/work/auth/replication/replication-token
+      - APPMESH_AUTH_REPLICATION_FOLLOWERS=appmesh_slave1 appmesh_slave2 appmesh_llm
+    volumes:
+      # Keep the generated TLS material in a named volume: the CA survives
+      # container re-creation. The followers and the MCP service mount only
+      # its ca.pem (a read-only subpath mount) to verify the engine; the
+      # private keys stay with the master.
+      - appmesh_tls:/opt/appmesh/ssl
+      # Replication credentials, written by this owner only. Each follower
+      # projects exactly its own token file out of the volume (see the
+      # follower services); no follower mounts the volume itself.
+      - appmesh_replication:/opt/appmesh/work/auth/replication
     healthcheck:
       # Gates follower startup on authentication readiness. The daemon's
       # prewarm tolerates a short residual gap, and restart: always recovers.
@@ -56,10 +87,11 @@ services:
       start_period: 30s
     ports:
       - "443:443" # for appmesh_ui
-      - "6060:6060" # master REST API for host CLI/SDK
+      - "6060:6060" # Go agent REST API for host REST clients and SDKs
+      - "6062:6062" # engine TCP API: SDK TCP transport, event subscriptions, workers
+      - "6063:6063" # engine WSS/HTTPS listener: CLI (appm speaks WSS) and SDK WSS clients
       # Issuer route for host-side password/device flows only. The port is
-      # plaintext and binds to host loopback; use --auth-access-url on the CLI.
-      # Remove it if unneeded.
+      # plaintext and binds to host loopback. Remove it if unneeded.
       - "127.0.0.1:6065:6065"
     cap_drop:
       - ALL
@@ -74,8 +106,23 @@ services:
   appmesh_ui:
     restart: always
     image: laoshanxi/appmesh-ui
+    # network_mode re-attaches the UI to the master's namespace, but a master
+    # container restart leaves a running UI in an orphaned namespace (443 dead,
+    # nothing re-creates it). restart: true makes compose recreate the UI
+    # whenever the master restarts.
     depends_on:
-      - appmesh_master
+      appmesh_master:
+        condition: service_healthy
+        restart: true
+    # The image exits by itself after 60s of upstream unreachability and restart: always
+    # re-creates the container. The probe reports only and must not kill: probes run
+    # during start_period too, before the image has bound 443.
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsk https://localhost:443/health >/dev/null 2>&1"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 70s
     # Shares the master's network namespace. The image itself waits for the
     # loopback API upstream before nginx binds 443, and exits after 60s of
     # unreachability so restart: always re-creates the container into the
@@ -103,6 +150,84 @@ services:
       # issuer path. The issuer route resolves only inside the network, so a
       # follower cannot derive the entry and carries the owner value.
       - APPMESH_AUTH_BROWSER_ENTRY=https://127.0.0.1/auth
+      # Cluster authorization replication (follower side): pull the owner's
+      # policy so a follower serves forwarded requests without a manual
+      # authorization.yaml copy. Each follower presents its OWN token file,
+      # projected read-only out of the shared volume; revoke or rotate one
+      # follower without touching the others.
+      - APPMESH_AUTH_REPLICATION_FROM=https://appmesh_master:6063
+      - APPMESH_AUTH_REPLICATION_TOKEN_FILE=/opt/appmesh/work/auth/replication/appmesh_slave1.token
+      - APPMESH_AUTH_REPLICATION_CA=/mnt/appmesh-tls/ca.pem
+    volumes:
+      # Only this follower's own replication token, projected read-only out
+      # of the shared volume (subpath mount; the owner bootstrap creates the
+      # file before the health gate lets followers start): a follower must
+      # not see the accept list, the owner's material, or a sibling's token.
+      # The policy is pulled from the owner's engine listener over TLS,
+      # verified with the owner CA below. Under the Vault layer the same
+      # projected path carries the follower's AppRole credential instead.
+      - type: volume
+        source: appmesh_replication
+        target: /opt/appmesh/work/auth/replication/appmesh_slave1.token
+        read_only: true
+        volume:
+          subpath: appmesh_slave1.token
+      # Only the owner CA, never its private keys: the follower verifies the
+      # owner's engine listener with it and serves TLS under its own
+      # self-signed (or, under the Vault layer, centrally issued) identity.
+      - type: volume
+        source: appmesh_tls
+        target: /mnt/appmesh-tls/ca.pem
+        read_only: true
+        volume:
+          subpath: ca.pem
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "1"
+
+
+  # LLM node: same daemon with the llm-agent app preinstalled and enabled
+  # (laoshanxi/appmesh:llm). Register an API key before first use, e.g. a
+  # gateway token: appm -F appmesh_llm add -D @/opt/appmesh/apps/llm-agent.yaml \
+  #   -z ANTHROPIC_AUTH_TOKEN=<key> -e ANTHROPIC_BASE_URL=<gateway-url> --force
+  appmesh_llm:
+    hostname: appmesh_llm
+    container_name: appmesh_llm
+    restart: always
+    image: laoshanxi/appmesh:llm
+    mem_limit: 4G
+    depends_on:
+      appmesh_master:
+        condition: service_healthy
+    environment:
+      - APPMESH_REST_PrometheusExporterListenPort=6061
+      - APPMESH_AUTH_ROLE=follower
+      - APPMESH_AUTH_ISSUER=http://appmesh_master:6065/auth
+      - APPMESH_AUTH_ACCESS_URL=http://appmesh_master:6065/auth
+      - APPMESH_AUTH_BROWSER_ENTRY=https://127.0.0.1/auth
+      - APPMESH_AUTH_REPLICATION_FROM=https://appmesh_master:6063
+      - APPMESH_AUTH_REPLICATION_TOKEN_FILE=/opt/appmesh/work/auth/replication/appmesh_llm.token
+      - APPMESH_AUTH_REPLICATION_CA=/mnt/appmesh-tls/ca.pem
+    volumes:
+      # Own token + owner CA only, like appmesh_slave1 above.
+      - type: volume
+        source: appmesh_replication
+        target: /opt/appmesh/work/auth/replication/appmesh_llm.token
+        read_only: true
+        volume:
+          subpath: appmesh_llm.token
+      - type: volume
+        source: appmesh_tls
+        target: /mnt/appmesh-tls/ca.pem
+        read_only: true
+        volume:
+          subpath: ca.pem
     cap_drop:
       - ALL
     security_opt:
@@ -129,6 +254,23 @@ services:
       - APPMESH_AUTH_ACCESS_URL=http://appmesh_master:6065/auth
       # Same browser entry as the master; it fronts the issuer path.
       - APPMESH_AUTH_BROWSER_ENTRY=https://127.0.0.1/auth
+      - APPMESH_AUTH_REPLICATION_FROM=https://appmesh_master:6063
+      - APPMESH_AUTH_REPLICATION_TOKEN_FILE=/opt/appmesh/work/auth/replication/appmesh_slave2.token
+      - APPMESH_AUTH_REPLICATION_CA=/mnt/appmesh-tls/ca.pem
+    volumes:
+      # Own token + owner CA only, like appmesh_slave1 above.
+      - type: volume
+        source: appmesh_replication
+        target: /opt/appmesh/work/auth/replication/appmesh_slave2.token
+        read_only: true
+        volume:
+          subpath: appmesh_slave2.token
+      - type: volume
+        source: appmesh_tls
+        target: /mnt/appmesh-tls/ca.pem
+        read_only: true
+        volume:
+          subpath: ca.pem
     cap_drop:
       - ALL
     security_opt:
@@ -139,22 +281,57 @@ services:
         max-size: "10m"
         max-file: "1"
 
-  appmesh_slave3:
-    hostname: appmesh_slave3
-    container_name: appmesh_slave3
+  # MCP server as its own process: the laoshanxi/appmesh:mcp image ships
+  # src/integrations/mcp-server with its Python dependencies baked in. It is
+  # an OAuth resource server: it validates caller tokens against the master's
+  # Dex and forwards the same token to the engine, which enforces RBAC.
+  # The OAuth metadata advertises the in-network issuer, which a host client
+  # cannot resolve; pass a password-flow token instead
+  # (http://127.0.0.1:6065/auth, scope audience:server:client_id:appmesh-api).
+  appmesh_mcp:
+    hostname: appmesh_mcp
+    container_name: appmesh_mcp
     restart: always
-    image: laoshanxi/appmesh
-    mem_limit: 3G
+    image: laoshanxi/appmesh:mcp
     depends_on:
       appmesh_master:
         condition: service_healthy
     environment:
-      - APPMESH_REST_PrometheusExporterListenPort=6061
-      - APPMESH_AUTH_ROLE=follower
+      # The engine through the Go agent front, verified with the shared CA.
+      - APPMESH_URL=https://appmesh_master:6060
+      - APPMESH_CA=/mnt/appmesh-tls/ca.pem
+      # Same issuer as every node and client; plaintext inside the network.
       - APPMESH_AUTH_ISSUER=http://appmesh_master:6065/auth
       - APPMESH_AUTH_ACCESS_URL=http://appmesh_master:6065/auth
-      # Same browser entry as the master; it fronts the issuer path.
-      - APPMESH_AUTH_BROWSER_ENTRY=https://127.0.0.1/auth
+      - APPMESH_AUTH_AUDIENCE=appmesh-api
+      # Advertise the published loopback entry to host AI clients.
+      - APPMESH_MCP_PUBLIC_URL=http://127.0.0.1:6070
+      # The file tools return curl commands that run on the host, where the
+      # in-network engine name does not resolve.
+      - APPMESH_DAEMON_PUBLIC_URL=https://127.0.0.1:6060
+      # No outbound pypi version probe from the MCP container.
+      - FASTMCP_CHECK_FOR_UPDATES=off
+    volumes:
+      # Only the master CA (a read-only subpath mount of the shared
+      # appmesh_tls volume): the server verifies the engine with it; the
+      # master's private keys are shared with no other service.
+      - type: volume
+        source: appmesh_tls
+        target: /mnt/appmesh-tls/ca.pem
+        read_only: true
+        volume:
+          subpath: ca.pem
+    ports:
+      # MCP endpoint for host AI clients. Plaintext on host loopback only,
+      # the same posture as the Dex port; the bearer token carries the auth.
+      - "127.0.0.1:6070:6070"
+    healthcheck:
+      # RFC 9728 protected-resource metadata is always public.
+      test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:6070/.well-known/oauth-protected-resource/mcp', timeout=5)"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
     cap_drop:
       - ALL
     security_opt:
@@ -164,3 +341,11 @@ services:
       options:
         max-size: "10m"
         max-file: "1"
+
+volumes:
+  # The master's TLS material; only its ca.pem is shared (read-only subpath
+  # mounts) with the followers and the MCP service.
+  appmesh_tls:
+  # Cluster replication credentials; written by the owner. Each follower
+  # mounts exactly its own <label>.token as a read-only subpath mount.
+  appmesh_replication:

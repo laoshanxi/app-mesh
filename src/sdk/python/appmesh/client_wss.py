@@ -56,6 +56,7 @@ class AppMeshClientWSS(TransportClientMixin, AppMeshClient):
         ssl_client_cert: Optional[Union[str, Tuple[str, str]]] = None,
         *,
         plain_transport: bool = False,
+        agent_port: int = 6060,
         bearer_token: Optional[str] = None,
         token_provider: Optional[TokenProvider] = None,
         api_key: Optional[str] = None,
@@ -73,6 +74,10 @@ class AppMeshClientWSS(TransportClientMixin, AppMeshClient):
             ssl_client_cert: SSL client certificate:
               - str: Path to single PEM with cert+key
               - tuple: (cert_path, key_path)
+            agent_port: Port of the agent REST listener on the same host, used by the
+              streaming side channel (follow_output / run_task_stream / stream_run) when
+              ``forward_to`` is set: the engine listener does not stream through node
+              forwarding, the agent relays it; default 6060.
             bearer_token: Caller-owned access token.
             token_provider: Provider that supplies and refreshes access tokens.
             api_key: API key id for opt-in HMAC request signing (see
@@ -94,6 +99,9 @@ class AppMeshClientWSS(TransportClientMixin, AppMeshClient):
         # Rust SDK's WSS client).
         host, port = wss_address
         scheme = "http" if plain_transport else "https"
+        # A forwarded stream (_sse_request) dials the agent REST listener: it relays
+        # X-Target-Host, which the engine listener behind the WebSocket rejects on streams.
+        self._agent_base_url = f"{scheme}://{host}:{agent_port}"
         super().__init__(
             base_url=f"{scheme}://{host}:{port}",
             ssl_verify=ssl_verify,
@@ -188,17 +196,26 @@ class AppMeshClientWSS(TransportClientMixin, AppMeshClient):
             except requests.exceptions.HTTPError as e:
                 raise AppMeshRequestError(f"File download failed: {e}") from e
 
-    def upload_file(self, local_file: str, remote_file: Optional[str] = None, preserve_permissions: bool = False) -> None:
+    def upload_file(
+        self,
+        local_file: str,
+        remote_file: Optional[str] = None,
+        preserve_permissions: bool = False,
+        overwrite: bool = False,
+    ) -> None:
         """Upload a local file through the WSS control channel plus HTTPS data channel.
 
         Args:
             local_file: Local file path.
             remote_file: Remote destination path; defaults to the local file's basename.
             preserve_permissions: Send local file permissions/ownership metadata when available.
+            overwrite: Replace an existing remote file; the default keeps the server's 409 refusal.
         """
         if not remote_file:
             remote_file = Path(local_file).name
         header = {AppMeshClient._HTTP_HEADER_KEY_X_FILE_PATH: parse.quote(remote_file)}
+        if overwrite:
+            header[AppMeshClient._HTTP_HEADER_KEY_X_FILE_OVERWRITE] = "true"
         # Control-channel precheck (permission/existence); raises on failure.
         self._request_http(AppMeshClient._Method.POST, path="/appmesh/file/upload", header=header)
         token = self._get_bearer_token()
@@ -215,6 +232,8 @@ class AppMeshClientWSS(TransportClientMixin, AppMeshClient):
             AppMeshClient._HTTP_HEADER_KEY_AUTH: f"Bearer {token}",
             AppMeshClient._HTTP_HEADER_KEY_X_FILE_PATH: parse.quote(remote_file),
         }
+        if overwrite:
+            header[AppMeshClient._HTTP_HEADER_KEY_X_FILE_OVERWRITE] = "true"
         # The data side channel is a separate hop: it carries the forwarding header too.
         if self.forward_to:
             header[AppMeshClient._HTTP_HEADER_KEY_X_TARGET_HOST] = self.forward_to

@@ -30,7 +30,7 @@ extensions = [
 
 # apidoc configuration
 apidoc_module_dir = sdk_python_path
-apidoc_output_dir = "api"
+apidoc_output_dir = "interfaces/api"
 apidoc_excluded_paths = ["test"]
 apidoc_separate_modules = False
 apidoc_toc_file = False

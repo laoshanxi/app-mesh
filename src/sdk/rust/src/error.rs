@@ -40,6 +40,10 @@ pub enum AppMeshError {
     TransportDisconnected,
     /// Operation cancelled by the caller (e.g. AppMeshWorker::stop)
     Cancelled,
+    /// Sync-run output grew past `max_output_bytes` (`run_app_sync_with_max_output`).
+    /// The run instance is kept, so the remaining output stays readable until the daemon
+    /// purges it `retention_seconds` after the run.
+    OutputLimitExceeded { max_output_bytes: u64, app_name: String, retention_seconds: u64 },
     /// Generic error (use sparingly)
     Other(String),
 }
@@ -119,6 +123,11 @@ impl fmt::Display for AppMeshError {
             Self::AppRemoved => write!(f, "App removed before exit"),
             Self::TransportDisconnected => write!(f, "Transport disconnected before exit"),
             Self::Cancelled => write!(f, "Operation cancelled"),
+            Self::OutputLimitExceeded { max_output_bytes, app_name, retention_seconds } => write!(
+                f,
+                "Run output exceeds max_output_bytes={} bytes; the rest stays readable on application '{}' for {} seconds",
+                max_output_bytes, app_name, retention_seconds
+            ),
             Self::Other(msg) => write!(f, "{}", msg),
         }
     }

@@ -192,6 +192,7 @@ macro_rules !define_transport_builder
 								  danger_accept_invalid_certs : bool,
 								  plain_transport : bool,
 								  rest_port : Option<u16>,
+								  agent_port : Option<u16>,
 								  request_signer : Option<RequestSigner>,
 							  }
 
@@ -268,6 +269,16 @@ pub fn rest_port(mut self, port : u16) -> Self
 	self
 }
 
+/// Agent REST port on the same host for the SSE streaming side channel when a
+/// forward target is set with `set_forward_to` (default 6060). The engine
+/// listener does not stream through node forwarding; the agent relays it, so
+/// `follow_output` / `run_task_stream` / `stream_run` are served by the target node.
+pub fn agent_port(mut self, port : u16) -> Self
+{
+	self.agent_port = Some(port);
+	self
+}
+
 /// Attach an HMAC-SHA256 request signer (opt-in). Every framed request then
 /// carries `X-Request-Key`, `X-Timestamp`, `X-Nonce` (the framed uuid), and
 /// `X-Signature` per `docs/source/Security.md`.
@@ -295,7 +306,7 @@ pub fn build(self)
 	let verify = if self.danger_accept_invalid_certs || self.plain_transport { crate::tls_config::SslVerify::False }
 	else {crate::tls_config::resolve_ssl_verify(self.ssl_ca_cert) ? };
 
-		let client = <$client>::new_with_verify(address, verify, ssl_client_cert, self.plain_transport, self.rest_port) ? ;
+		let client = <$client>::new_with_verify(address, verify, ssl_client_cert, self.plain_transport, self.rest_port, self.agent_port) ? ;
 	if let Some(signer) = self.request_signer
 	{
 		client.set_request_signer(Some(signer));

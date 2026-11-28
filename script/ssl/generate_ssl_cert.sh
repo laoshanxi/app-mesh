@@ -26,7 +26,7 @@ readonly CERT_VALIDITY_HOURS="19800h"
 readonly CA_VALIDITY_DAYS=3650
 readonly CA_VALIDITY_HOURS="87600h"
 # Cluster sharing: APPMESH_SSL_EXTRA_SAN adds peer names to the SAN list; the
-# APPMESH_SSL_CA_* pair signs with an existing CA (see ClusterAuthDesign.md).
+# APPMESH_SSL_CA_* pair signs with an existing CA (see docs/source/engine/Cluster.md).
 readonly EXTRA_SAN_HOSTS="${APPMESH_SSL_EXTRA_SAN:-}"
 readonly SHARED_CA_CERT="${APPMESH_SSL_CA_CERT:-}"
 readonly SHARED_CA_KEY="${APPMESH_SSL_CA_KEY:-}"

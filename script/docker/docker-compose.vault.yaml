@@ -194,21 +194,21 @@ services:
         volume:
           subpath: appmesh_slave1.vault-token
 
-  appmesh_slave3:
+  appmesh_llm:
     # Hyphenated alias + SAN coverage like the other followers.
     networks:
       default:
         aliases:
-          - appmesh-slave3
+          - appmesh-llm
     environment:
       - APPMESH_AUTH_REPLICATION_TOKEN_SOURCE=vault
       - APPMESH_AUTH_REPLICATION_TOKEN_VAULT_ADDR=http://appmesh_vault:8200
-      - APPMESH_AUTH_REPLICATION_TOKEN_VAULT_TOKEN_FILE=/opt/appmesh/work/auth/replication/appmesh_slave3.token
-      - APPMESH_AUTH_REPLICATION_LABEL=appmesh_slave3
+      - APPMESH_AUTH_REPLICATION_TOKEN_VAULT_TOKEN_FILE=/opt/appmesh/work/auth/replication/appmesh_llm.token
+      - APPMESH_AUTH_REPLICATION_LABEL=appmesh_llm
       - APPMESH_SSL_SOURCE=vault
       - APPMESH_SSL_VAULT_ADDR=http://appmesh_vault:8200
-      - APPMESH_SSL_VAULT_TOKEN_FILE=/opt/appmesh/work/auth/replication/appmesh_slave3.token
-      - APPMESH_SSL_EXTRA_SAN=appmesh-slave3
+      - APPMESH_SSL_VAULT_TOKEN_FILE=/opt/appmesh/work/auth/replication/appmesh_llm.token
+      - APPMESH_SSL_EXTRA_SAN=appmesh-llm
       - APPMESH_AUTH_ISSUER=http://appmesh-master:6065/auth
       - APPMESH_AUTH_ACCESS_URL=http://appmesh-master:6065/auth
       - APPMESH_AUTH_REPLICATION_FROM=https://appmesh-master:6063
@@ -216,10 +216,10 @@ services:
       # AppRole credential projected at the base bearer path, like slave1.
       - type: volume
         source: appmesh_replication
-        target: /opt/appmesh/work/auth/replication/appmesh_slave3.token
+        target: /opt/appmesh/work/auth/replication/appmesh_llm.token
         read_only: true
         volume:
-          subpath: appmesh_slave3.vault-token
+          subpath: appmesh_llm.vault-token
 
   appmesh_slave2:
     # Hyphenated alias + SAN coverage like the other followers.
@@ -264,11 +264,6 @@ volumes:
   appmesh_vault_audit:
   appmesh_vault_init:
   appmesh_vault_owner:
-  # Replication credentials written by the owner bootstrap; each follower
-  # projects exactly its own credential file out of it (subpath mounts).
-  # Declared here because the legacy base compose carries no replication
-  # plumbing of its own.
-  appmesh_replication:
 
 configs:
   vault_config:

@@ -9,12 +9,6 @@ The MCP server validates the caller access token. It forwards the same token to 
 
 The MCP server does not receive a password. It does not issue or exchange a token.
 
-Python 3.6 hosts (this legacy line on Ubuntu 18.04) run the same server on the standard
-library: when `fastmcp` is not importable, `fastmcp_compat.py` serves the Streamable
-HTTP transport (JSON responses, no SSE channel) with the same OAuth resource-server
-behavior — token verification is delegated to the Engine, which is the token's audience
-and authority anyway. Python >= 3.10 hosts get the full `fastmcp` server automatically.
-
 ## Install
 
 ```shell
@@ -85,8 +79,12 @@ File tools return a `curl` command. The MCP server does not read file bytes. The
 
 Set `APPMESH_TOKEN` to an App Mesh access token before you run a returned command.
 
+## Tasks
+
+`run_task` returns the response string of the application. For an llm-agent `session_send` request, it returns the parsed JSON reply, so the model reads `data.answer` or `code` directly. See the [llm-agent README](../../apps/llm-agent/README.md) for the request and reply format.
+
 ## Authorization
 
 The Engine uses the authenticated principal for ownership and RBAC. Register the MCP application with a principal that has only the required permissions.
 
-See [SDK Behavioral Contract](../../../docs/source/SDKContract.md) for bearer behavior. See [Security](../../../docs/source/Security.md) for trust boundaries.
+See [SDK Behavioral Contract](../../../docs/source/interfaces/SDKContract.md) for bearer behavior. See [Security](../../../docs/source/security/Security.md) for trust boundaries.

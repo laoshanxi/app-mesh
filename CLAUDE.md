@@ -62,7 +62,7 @@ Default to surfacing uncertainty, not hiding it.
 
 ## Project Overview
 
-App Mesh is a C++11/14 Linux application management platform — one secure daemon to run, schedule, and remote-control apps across machines, with Dex/OIDC bearer authentication, Principal-based RBAC, REST/WebSocket/TCP interfaces, and SDKs in Python, Go, Rust, Java, JavaScript, and C++. This `legacy` branch is the low-platform maintenance line: CentOS 7 (GCC 4.8) and Ubuntu 18 (GCC 7) only, with libwebsockets as the single HTTPS/WSS transport. The `drogon` branch is the high-platform line.
+App Mesh is a C++17 cross-platform (Linux/macOS/Windows) application management platform — one secure daemon to run, schedule, and remote-control apps across machines, with Dex/OIDC bearer authentication, Principal-based RBAC, REST/WebSocket/TCP interfaces, and SDKs in Python, Go, Rust, Java, and JavaScript.
 
 ## Ports
 
@@ -70,15 +70,15 @@ The `REST` section of `src/daemon/config.yaml` defines three port keys (env over
 
 | Port | Config key | Bound by | Transport / purpose |
 |------|------------|----------|---------------------|
-| 6060 | `RestListenPort` | Go agent | Agent HTTPS entry — reverse-proxies REST/WSS to the daemon over TCP 6062. Clients treat this as the primary management surface. The daemon never binds this port; it only uses the value to build URLs (OIDC, Docker API). |
+| 6060 | `RestListenPort` | Go agent | Agent HTTPS entry — reverse-proxies REST/WSS to the daemon over TCP 6062; primary client surface, never bound by the daemon |
 | 6062 | `TcpApiPort` | daemon | TCP API — msgpack-framed protocol used by SDK clients (`ClientTCP`) and by the agent's proxy/forwarding path |
-| 6063 | `WebSocketPort` | daemon | Single libwebsockets listener serving both HTTPS REST and WSS — SDK clients (`ClientWSS`) and event subscribe |
+| 6063 | `WebSocketPort` | daemon | Single listener serving both HTTPS REST and WSS — SDK clients (`ClientWSS`), event subscribe, and daemon-to-daemon forwarding |
 
-All ports authenticate the same Dex bearer. Additional ports: Dex itself listens on 6065 (issuer) and 6066 (telemetry healthz) when the bundled auth stack runs; the Dex administration web UI (the `dexuser` System App, `bin/dexuser` built from the Dex fork's `examples/example-app`) listens on **6068**, loopback only, driven by the Dex administrative gRPC API on 6067 (mutual TLS, loopback). The Go agent's Prometheus exporter uses the fixed convention **6061** when enabled (`APPMESH_REST_PrometheusExporterListenPort`, default `0` = off; all docker-compose deployments enable 6061).
+All ports authenticate the same Dex bearer. Additional ports: Dex 6065 (issuer) / 6066 (healthz), the `dexuser` admin UI 6068 (loopback, gRPC 6067), and the agent's Prometheus exporter 6061 (`APPMESH_REST_PrometheusExporterListenPort`, default off).
 
 ## Binary Inspection Tools
 
-When analyzing built binaries or debugging native issues, binary-inspection tooling is allowed and encouraged: `otool`/`nm`/`strings`/`dSYMutil` on macOS (Linux: `objdump`/`readelf`/`ldd`), and language servers (LSP/clangd via the IDE) for code navigation. Prefer these over guesswork when verifying symbol presence, linked libraries, stripped symbols, or crash backtraces.
+Binary-inspection tooling (`otool`/`nm`/`strings` on macOS, `objdump`/`readelf`/`ldd` on Linux, LSP/clangd) is allowed and encouraged — prefer it over guesswork for symbols, linked libraries, or backtraces.
 
 ## Build & Test
 
@@ -95,8 +95,8 @@ cmake .. -DAPPMESH_NO_TESTS=1 && make -j$(nproc)
 # Package (.deb/.rpm via nfpm)
 make pack
 
-# Test targets. CTest itself has no registered case: add_subdirectory(test) is
-# disabled in CMakeLists.txt, so `make test ARGS="-V"` runs nothing.
+# Test targets. `make test` runs the registered C++ CTest cases (test_datetime,
+# test_timer, test_utility; Catch2 is a vendored single header, no network).
 # python_tests needs a live daemon plus APPMESH_TEST_ACCESS_TOKEN, and fails
 # (not skips) without them. go_tests and rust_tests skip their live-daemon
 # cases when APPMESH_BEARER_TOKEN is absent.
@@ -109,7 +109,7 @@ make rust_tests
 make cppcheck
 
 # Docker build (no local deps needed)
-docker run --rm -v $(pwd):$(pwd) -w $(pwd) laoshanxi/appmesh:build_ubuntu18 \
+docker run --rm -v $(pwd):$(pwd) -w $(pwd) laoshanxi/appmesh:build_ubuntu22 \
   sh -c "mkdir build && cd build && cmake .. && make && make pack"
 
 # CLI build (Rust)
@@ -127,13 +127,11 @@ go test ./src/sdk/go/ -test.v
 cd src/sdk/rust && cargo test
 ```
 
-CMake targets `python_tests`, `go_tests`, `workflow_tests`, and `rust_tests` also exist.
-
 ## Architecture
 
 ### Daemon (`src/daemon/`)
 
-The core service. Initialization flows through `main.cpp`: ACE framework init → config → SSL → security → app recovery → REST server → worker pool → ACE reactor event loop.
+The core service. Initialization flows through `main.cpp`: framework init → config → SSL → security → app recovery → REST server → worker pool → main monitoring loop. Child processes run on Boost.Process V2 over `ProcessService` (single-threaded asio loop: exit waits, stdout pumps, exit finalization); `TimerManager` is a separate asio timer thread.
 
 **Key subsystems:**
 
@@ -144,37 +142,29 @@ The core service. Initialization flows through `main.cpp`: ACE framework init �
 | `process/` | Process wrappers: native (`AppProcess`), Docker CLI (`DockerProcess`), Docker API (`DockerApiProcess`), cgroup resource limits (`LinuxCgroup`) |
 | `security/` | Dex-only OIDC verification, immutable Principal mapping, authorization roles, secret protection, and process HMAC PSK |
 
-**Singletons** (ACE_Singleton pattern, access via `::instance()`):
+**Singletons** (Meyers singletons, access via `::instance()`; the names below are plain aliases):
 
-| Macro | Class | Header |
+| Alias | Class | Header |
 |-------|-------|--------|
 | `RESTHANDLER` | `RestHandler` | `rest/RestHandler.h` |
 | `WORKER` | `Worker` | `rest/Worker.h` |
 | `EVENT_DISPATCHER` | `EventDispatcher` | `rest/EventDispatcher.h` |
 
-`HMACVerifier` (`security/HMACVerifier.h`) is not a singleton: each managed system process spawn (Agent, Workflow) gets its own instance holding a fresh pre-shared key.
+`HMACVerifier` is not a singleton — each managed system spawn (Agent, Workflow) gets a fresh instance; `Configuration`, `Security`, `ResourceCollection`, `PersistManager`, and `HealthCheckTask` use `static instance()`.
 
-Other singletons use `static instance()`: `Configuration`, `Security`, `ResourceCollection`, `PersistManager`, and `HealthCheckTask`.
-
-**Request flow:** Client → `SocketServer` (accept) → `SocketStream` (parse HTTP) → `WORKER` queue (lock-free `moodycamel::BlockingConcurrentQueue`) → `RestHandler` (regex-based route dispatch) → handler method → response.
+**Request flow:** Client → `DrogonAdaptor` (HTTPS/WSS) or `TcpAdaptor` (TCP 6062) in `rest/drogon/` → `WORKER` queue (lock-free `moodycamel::BlockingConcurrentQueue`) → `RestHandler` (regex-based route dispatch) → handler method → response.
 
 ### Common Library (`src/common/`)
 
 Shared C++ library used by the daemon. Notable:
-- `StreamLogger.h` — logging macros (`LOG_DBG`, `LOG_INF`, `LOG_WAR`, `LOG_ERR`) wrapping spdlog
+- `StreamLogger.h` — logging macros (`LOG_DBG`, `LOG_INF`, `LOG_WAR`, `LOG_ERR`)
 - `Utility.h` — string ops, file helpers, ID generation
-- `DateTime.h` / `DurationParse.h` — time and duration parsing
-- `JwtHelper.h` — bearer normalization and unverified token parsing used only alongside OIDC verification
+- `JwtHelper.h` — unverified token parsing, used only alongside OIDC verification
 - `RestClient.h` — HTTP client for inter-service calls
-- `lwsservice/` — libwebsockets listener (HTTPS REST + WSS on one port)
 
 ### CLI (`src/cli/`)
 
-`appm` command-line tool, written in Rust. Uses clap for argument parsing and the Rust SDK (`src/sdk/rust`) for WSS communication with the daemon. Key structure:
-- `src/main.rs` — entry point, clap command definitions
-- `src/commands/` — subcommand handlers (Dex bearer import, app management, config, file, run)
-- `tests/integration_test.rs` — CLI argument parsing and subcommand tests (no daemon needed)
-- `tests/remote_test.rs` — integration tests against a running daemon (run with `--ignored`)
+`appm` command-line tool in Rust (clap + the Rust SDK over WSS). `src/commands/` holds the subcommand handlers; `tests/integration_test.rs` runs without a daemon, `tests/remote_test.rs` needs one (`--ignored`).
 
 ### Agent (`src/agent/`)
 
@@ -189,26 +179,26 @@ REST proxy service for the daemon (`appmesh`), written in Go. Accepts HTTP reque
 | `go/` | Go | HTTP, TCP, WSS |
 | `java/` | Java | HTTP, TCP, WSS |
 | `javascript/` | JavaScript | HTTP, TCP |
-| `cpp/` | C++ | HTTP |
 
-Each SDK provides client libraries for interacting with the daemon plus a server-side interface for receiving tasks.
+Each SDK also provides a server-side interface for receiving tasks.
 
 ### Integrations (`src/integrations/`)
 
-Ecosystem connectors that bridge App Mesh with external systems. MCP integration enables AI agents to manage applications via MCP. Two flavors:
-- `mcp-server/` — standalone MCP OAuth Resource Server over **Streamable HTTP**. It validates Dex access tokens against the canonical issuer, may reach Dex through a separately configured access address, and forwards the caller bearer unchanged to App Mesh. It does not mint a second token or expose an upstream IdP. Designed to run as an App Mesh App.
-- `mcp-bridge/` — a stdio MCP server plus `mcp_pipe.py`, a stdio↔WebSocket tunnel for relaying a local MCP server out to a remote LLM gateway.
-- `mqtt/` — MQTT bridge scripts and broker config for IoT scenarios (example-grade).
+Ecosystem connectors bridging App Mesh with external systems:
+- `mcp-server/` — standalone MCP OAuth Resource Server (Streamable HTTP); validates Dex tokens and forwards the caller bearer to App Mesh. Runs as an App Mesh App.
+- `mcp-bridge/` — stdio MCP server plus `mcp_pipe.py`, a stdio↔WebSocket tunnel to a remote LLM gateway.
+- `mqtt/` — MQTT bridge scripts for IoT scenarios (example-grade).
 
 ### LLM Agent (`src/apps/llm-agent/`)
 
-LLM agent runtime that runs **as an App Mesh App** (Python package `llm_agent`). A thin wrapper around the official **Claude Agent SDK** (built on Claude Code — runs Claude by default, but can also target other models: Bedrock/Vertex, or DeepSeek/Qwen/GLM/MiniMax/OpenAI via an Anthropic-compatible endpoint). The SDK drives a Claude Code CLI as a subprocess; the `claude-agent-sdk` wheel bundles that CLI (no Node.js needed). The default Docker image keeps the llm-agent App package and `claude-agent-sdk` out of the base runtime; use the `llm_agent` Docker target / `laoshanxi/appmesh:llm` image when this optional App is needed. The agent loop, tools (Claude Code's built-in Read/Write/Edit/Bash/…), and conversation history are all the SDK's; llm-agent only routes `session_send`/`session_close` over the task RPC and gives each session a stable workdir (`<workspace>/<session_id>`) that keys the SDK's on-disk history (continuing a session = same `session_id`). Two roles: a shared App for batch/DAG (Scenario A) and an admin-provisioned per-session worker App for interactive streaming (Scenario B). No auth/quota/tenant in the agent itself — the daemon authorizes `run_task` (RBAC + the worker App's `permission`); the model credential is a secured env var (`ANTHROPIC_API_KEY` for the Anthropic API; the backend's equivalent otherwise). See `src/apps/llm-agent/README.md`.
+Optional LLM agent runtime, run as an App Mesh App (Python package `llm_agent`). A thin wrapper around the Claude Agent SDK: the SDK owns the agent loop, tools, and history; llm-agent only routes `session_send`/`session_close` over the task RPC and keys each session to a stable workdir. The daemon does the authorization (RBAC on `run_task`); the model credential is a secured env var. Not in the base Docker image — use the `llm_agent` target / `laoshanxi/appmesh:llm`. See `src/apps/llm-agent/README.md`.
 
 ## Code Conventions
 
-- C++ standard: C++11 (GCC < 5, CentOS 7) or C++14 (everything else, Ubuntu 18); the branch is Linux-only. `-Wall` enabled. Code must compile under C++11; polyfills for `std::make_unique` and `std::exchange` are in `src/common/Utility.h`.
+- C++ standard: C++17 (GCC 8+/Clang), C++20 on Windows. `-Wall` enabled.
 - CamelCase for classes, `m_` prefix for member variables.
 - Logging: `LOG_DBG << "msg";` — never `std::cout` or `printf`.
+- Comments: keep them short. One line when one line is enough. No metrics, no restating the code, no history.
 - Config env overrides: `APPMESH_<Section>_<Key>` (e.g. `APPMESH_REST_RestListenPort=6060`).
 - REST API spec: `src/daemon/rest/openapi.yaml` (OpenAPI 3.1.0) — keep this in sync with handler changes.
 - Technical documentation: write in ASD-STE100 Simplified Technical English.
@@ -216,7 +206,7 @@ LLM agent runtime that runs **as an App Mesh App** (Python package `llm_agent`).
 
 ## Key Dependencies
 
-C++ (daemon): ACE (networking/threading/reactor), Boost, OpenSSL, spdlog, nlohmann/json, yaml-cpp, jwt-cpp, prometheus-cpp, libwebsockets (the HTTPS/WSS transport), libcurl, uriparser, msgpack, Crypto++, croncpp, moodycamel concurrent queue.
+C++ (daemon): Boost (incl. Boost.Process V2 ≥1.86, boost::interprocess), OpenSSL, spdlog, jsoncpp (JSON DOM), yaml-cpp, jwt-cpp, prometheus-cpp, Drogon + trantor (HTTP/WSS/TCP transport; pulls c-ares, brotli), uriparser, msgpack, croncpp, moodycamel concurrent queue.
 
 Rust (CLI): clap, tokio, rustls, serde/serde_json/serde_yaml, anyhow. The CLI depends on the Rust SDK crate (`src/sdk/rust`).
 

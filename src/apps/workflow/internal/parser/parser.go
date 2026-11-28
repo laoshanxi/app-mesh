@@ -50,6 +50,17 @@ func LoadWorkflow(path string) (*models.Workflow, error) {
 		delete(raw, true)
 	}
 
+	// A bare trigger key (`workflow_call:` with no value) means "enabled with no
+	// inputs" in GitHub Actions semantics, but YAML decodes it as null, which
+	// would drop the trigger and make the workflow silently not callable.
+	if onMap, ok := raw["on"].(map[string]any); ok {
+		for _, trigger := range []string{"manual", "workflow_dispatch", "workflow_call"} {
+			if v, ok := onMap[trigger]; ok && v == nil {
+				onMap[trigger] = map[string]any{}
+			}
+		}
+	}
+
 	// Re-marshal the fixed map, then unmarshal into the Workflow struct.
 	fixed, err := yaml.Marshal(raw)
 	if err != nil {

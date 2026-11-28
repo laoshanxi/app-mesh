@@ -17,14 +17,21 @@ const CONSTANTS = Object.freeze({
   HTTP_USER_AGENT: "appmesh/javascript",
   DEFAULT_RUN_APP_TIMEOUT_SECONDS: "P2D",
   DEFAULT_RUN_APP_LIFECYCLE_SECONDS: "P2DT12H",
+  // A sync-run reply of this size is a full page; the daemon keeps that run for
+  // SYNC_RUN_TRUNCATED_RETENTION_SECONDS so the client can read the rest.
+  SYNC_RUN_OUTPUT_PAGE_BYTES: 5 * 1024 * 1024,
+  SYNC_RUN_TRUNCATED_RETENTION_SECONDS: 600,
   HTTP_HEADER_KEY_AUTH: "Authorization",
   HTTP_HEADER_KEY_X_TARGET_HOST: "X-Target-Host",
   HTTP_HEADER_KEY_X_FILE_PATH: "X-File-Path",
+  HTTP_HEADER_KEY_X_FILE_OVERWRITE: "X-File-Overwrite",
   HTTP_HEADER_KEY_X_FILE_MODE: "X-File-Mode",
   HTTP_HEADER_KEY_X_FILE_USER: "X-File-User",
   HTTP_HEADER_KEY_X_FILE_GROUP: "X-File-Group",
   HTTP_HEADER_KEY_X_OUTPUT_POSITION: "X-Output-Position",
   HTTP_HEADER_KEY_X_EXIT_CODE: "X-Exit-Code",
+  HTTP_HEADER_KEY_X_OUTPUT_TRUNCATED: "X-Output-Truncated",
+  HTTP_HEADER_KEY_X_APP_NAME: "X-App-Name",
   HTTP_HEADER_KEY_X_INPUT_CLOSE: "X-Input-Close",
   HTTP_HEADER_KEY_X_SUBSCRIPTION_ID: "X-Subscription-Id",
   HTTP_HEADER_KEY_X_APPMESH_PROCESS_KEY: "X-AppMesh-Process-Key",
@@ -221,6 +228,82 @@ function parseDuration(duration) {
   seconds += durationObject.seconds;
 
   return seconds;
+}
+
+/**
+ * Normalize a response body to raw bytes. Buffer stays a Buffer (Node, also the TCP
+ * transport); ArrayBuffer / typed arrays become a Uint8Array view over the same memory;
+ * anything else (a string from a stubbed transport) is UTF-8 encoded.
+ * @param {*} data - Response body
+ * @returns {Uint8Array} Raw body bytes
+ * @private
+ */
+function _toBytes(data) {
+  if (typeof Buffer !== "undefined" && Buffer.isBuffer(data)) return data;
+  if (data instanceof ArrayBuffer) return new Uint8Array(data);
+  if (ArrayBuffer.isView(data)) return new Uint8Array(data.buffer, data.byteOffset, data.byteLength);
+  return new TextEncoder().encode(data == null ? "" : String(data));
+}
+
+/**
+ * Concatenate raw byte chunks.
+ * @param {Uint8Array[]} chunks - Byte chunks (Buffers or Uint8Arrays)
+ * @returns {Uint8Array} One contiguous byte sequence
+ * @private
+ */
+function _concatBytes(chunks) {
+  if (typeof Buffer !== "undefined") {
+    return Buffer.concat(chunks.map(c => Buffer.isBuffer(c) ? c : Buffer.from(c.buffer, c.byteOffset, c.byteLength)));
+  }
+  let total = 0;
+  for (const chunk of chunks) total += chunk.byteLength;
+  const joined = new Uint8Array(total);
+  let offset = 0;
+  for (const chunk of chunks) {
+    joined.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  return joined;
+}
+
+/**
+ * The Content-Type of a response: the header, or (framed transport) the body type
+ * the daemon put in the message instead of a header.
+ * @param {Object} response - Response object
+ * @returns {*} Content-Type value or undefined
+ * @private
+ */
+function _responseContentType(response) {
+  return _getHeader(response.headers, "content-type") || (response.contentType == null ? undefined : response.contentType);
+}
+
+/**
+ * The charset of a Content-Type header value, or null when none is declared.
+ * @param {*} contentType - Content-Type header value
+ * @returns {string|null} Charset label as sent by the server
+ * @private
+ */
+function _charsetOf(contentType) {
+  const match = /charset\s*=\s*"?([\w!#$%&*+\-.^`|~]+)"?/i.exec(String(contentType || ""));
+  return match ? match[1] : null;
+}
+
+/**
+ * Decode bytes in the given charset (UTF-8 when null or unsupported by this runtime).
+ * Malformed sequences are replaced, like axios's own text decoding.
+ * @param {Uint8Array} bytes - Raw bytes
+ * @param {string|null} charset - Charset label
+ * @returns {string} Decoded text
+ * @private
+ */
+function _decodeBytes(bytes, charset) {
+  for (const label of [charset, "utf-8"]) {
+    if (!label) continue;
+    try {
+      return new TextDecoder(label).decode(bytes);
+    } catch (error) { /* unsupported label: fall back to UTF-8 */ }
+  }
+  return new TextDecoder("utf-8").decode(bytes);
 }
 
 /**
@@ -965,34 +1048,112 @@ class AppMeshClient {
 
   /**
    * Run an app synchronously and stream the returned stdout body to `stdoutHandler`.
+   *
+   * A reply is at most one page (SYNC_RUN_OUTPUT_PAGE_BYTES). A full page is followed by
+   * the rest, read from the output endpoint: `stdoutHandler` gets the complete output once.
    * @param {Object} app - App configuration
    * @param {Function} [stdoutHandler=defaultOutputHandler] - Stdout handler callback(data, position)
    * @param {number|string} [maxTime] - Max runtime
    * @param {number|string} [lifecycle] - Lifecycle time
+   * @param {number|null} [maxOutputBytes=null] - Ceiling on the total output in bytes
+   * (`null`: unlimited). Exceeding it rejects; the run instance is then left in place.
    * @returns {Promise<number|null>} Exit code parsed from `X-Exit-Code`, or `null` when absent
+   * @throws {AppMeshRequestError} The output exceeds `maxOutputBytes`.
    */
   async runAppSync(app, stdoutHandler = defaultOutputHandler, maxTime = CONSTANTS.DEFAULT_RUN_APP_TIMEOUT_SECONDS,
-    lifecycle = CONSTANTS.DEFAULT_RUN_APP_LIFECYCLE_SECONDS) {
+    lifecycle = CONSTANTS.DEFAULT_RUN_APP_LIFECYCLE_SECONDS, maxOutputBytes = null) {
     const params = {
       timeout: parseDuration(maxTime),
       lifecycle: parseDuration(lifecycle)
     };
 
-    const response = await this._request("post", "/appmesh/app/syncrun", app, { params });
+    // Raw bytes: pages are joined as bytes and decoded once (a character may span pages).
+    const response = await this._request("post", "/appmesh/app/syncrun", app, {
+      params, config: { responseType: "arraybuffer" }
+    });
     let exitCode = null;
 
-    if (stdoutHandler) {
-      stdoutHandler(response.data, 0);
-    }
     if (response.status === 200) {
       // axios lowercases header names; the TCP transport keeps the daemon's exact case
       const exitCodeHeader = _getHeader(response.headers, CONSTANTS.HTTP_HEADER_KEY_X_EXIT_CODE);
       if (exitCodeHeader) {
         exitCode = parseInt(exitCodeHeader, 10);
       }
+      // A full page keeps the run instance alive for the client to page the rest.
+      // Older daemons send neither header: the reply is the whole output.
+      const runName = _getHeader(response.headers, CONSTANTS.HTTP_HEADER_KEY_X_APP_NAME);
+      const truncated = _getHeader(response.headers, CONSTANTS.HTTP_HEADER_KEY_X_OUTPUT_TRUNCATED);
+      if (runName && String(truncated) === "1") {
+        const positionHeader = _getHeader(response.headers, CONSTANTS.HTTP_HEADER_KEY_X_OUTPUT_POSITION);
+        const output = await this._readTruncatedRunOutput(response, runName, maxOutputBytes,
+          positionHeader ? parseInt(positionHeader, 10) : NaN);
+        if (stdoutHandler) {
+          stdoutHandler(output, 0);
+        }
+        return exitCode;
+      }
+    }
+
+    if (stdoutHandler) {
+      stdoutHandler(_decodeBytes(_toBytes(response.data), _charsetOf(_responseContentType(response))), 0);
     }
 
     return exitCode;
+  }
+
+  /**
+   * Page the output that follows a full sync-run reply and delete the run instance.
+   * @param {Object} first - The sync-run response: raw bytes in `data`, charset in `Content-Type`
+   * @param {string} runName - Run instance name (`X-App-Name`)
+   * @param {number|null} maxOutputBytes - Byte ceiling, `null` for no limit
+   * @param {number} position - Byte offset to continue from (`X-Output-Position` of the reply)
+   * @returns {Promise<string>} The complete output, decoded once in the charset of `first`
+   * @throws {AppMeshRequestError} The output exceeds `maxOutputBytes`; the run is kept.
+   * @private
+   */
+  async _readTruncatedRunOutput(first, runName, maxOutputBytes, position) {
+    const chunks = [_toBytes(first.data)];
+    if (!Number.isFinite(position)) {
+      // No offset header: continue right after the first page.
+      position = chunks[0].byteLength;
+    }
+    const exceeds = () => {
+      const total = chunks.reduce((sum, chunk) => sum + chunk.byteLength, 0);
+      if (maxOutputBytes !== null && maxOutputBytes !== undefined && total > maxOutputBytes) {
+        throw new AppMeshRequestError(
+          `run output exceeds maxOutputBytes=${maxOutputBytes}; the rest stays readable on application ` +
+          `'${runName}' for ${CONSTANTS.SYNC_RUN_TRUNCATED_RETENTION_SECONDS} seconds`,
+          first.status);
+      }
+    };
+    exceeds();
+    let complete = false;
+    try {
+      while (true) {
+        const page = await this._request("get", `/appmesh/app/${runName}/output`, null, {
+          params: { stdout_position: String(position) }, config: { responseType: "arraybuffer" }
+        });
+        const bytes = _toBytes(page.data);
+        chunks.push(bytes);
+        // Offset advances by raw bytes; the ceiling is checked before the short page ends the loop.
+        position += bytes.byteLength;
+        exceeds();
+        if (bytes.byteLength < CONSTANTS.SYNC_RUN_OUTPUT_PAGE_BYTES) {
+          complete = true;
+          break;
+        }
+      }
+    } finally {
+      // Best effort: the daemon removes the run when the retention ends.
+      if (complete) {
+        try {
+          await this.deleteApp(runName);
+        } catch (error) {
+          console.warn(`Warning: Failed to remove sync run application '${runName}':`, error.message);
+        }
+      }
+    }
+    return _decodeBytes(_concatBytes(chunks), _charsetOf(_responseContentType(first)));
   }
 
   /**
@@ -1348,8 +1509,10 @@ class AppMeshClient {
    * @param {string} [filePath=null] - Remote target path; defaults to the basename of localFile
    * @param {boolean} [applyAttrs=false] - In Node.js, send local permission bits plus
    * user/group (names when resolvable locally, numeric ids otherwise)
+   * @param {boolean} [overwrite=false] - Replace an existing remote file; the
+   * default keeps the server's 409 refusal
    */
-  async uploadFile(localFile, filePath = null, applyAttrs = false) {
+  async uploadFile(localFile, filePath = null, applyAttrs = false, overwrite = false) {
     if (!filePath) {
       // Node.js passes a path string; browser passes a File (use its name)
       const sourceName = typeof localFile === 'string' ? localFile : localFile && localFile.name;
@@ -1359,6 +1522,9 @@ class AppMeshClient {
       filePath = sourceName.split(/[\\/]/).pop();
     }
     const headers = { [CONSTANTS.HTTP_HEADER_KEY_X_FILE_PATH]: encodeURIComponent(filePath) };
+    if (overwrite) {
+      headers[CONSTANTS.HTTP_HEADER_KEY_X_FILE_OVERWRITE] = 'true';
+    }
     let body;
 
     if (ENV.isNode) {
@@ -1682,7 +1848,9 @@ class AppMeshClient {
   /**
    * Open a server-sent-events stream as a streamed response. Plain HTTP by design: SSE
    * frames cannot ride a framed (TCP/WSS) transport, so framed subclasses redirect this
-   * hook to direct HTTPS (the WSS file data side-channel shape).
+   * hook to direct HTTPS (the WSS file data side-channel shape). `forwardingHost` is carried
+   * like on any request: the agent REST listener (default port 6060) relays the stream; the
+   * engine's own listener answers a forwarded stream with 400.
    *
    * @private
    * @param {string} method - HTTP method ('get' or 'post')
@@ -1725,9 +1893,20 @@ class AppMeshClient {
         for await (const chunk of response.data) chunks.push(chunk);
         detail = Buffer.concat(chunks).toString("utf8");
       } catch (_) { /* socket already gone — raise a status-only error */ }
-      const message = detail
+      let message = detail
         ? this._extractErrorMessage(detail)
         : `SSE request failed with status ${response.status}`;
+      if (this.forwardingHost) {
+        if (response.status === 400) {
+          // Only the engine's own listener refuses X-Target-Host on a stream route.
+          message += `; streaming through node forwarding (forwardingHost=${this.forwardingHost}) is relayed by` +
+            ` the agent REST listener (default port 6060): point the client at it, not at the engine listener`;
+        } else if (response.status === 404 || response.status === 405) {
+          // A forwarded stream that lands on the target's TCP listener finds no stream route.
+          message += `; a forwarded stream needs X-Target-Host to name the target without its TCP port` +
+            ` (forwardingHost=${this.forwardingHost}): use a bare host or the target's agent REST port (6060)`;
+        }
+      }
       throw new AppMeshError(message, response.status, detail || null);
     }
     return response;
@@ -1742,6 +1921,11 @@ class AppMeshClient {
   _extractErrorMessage(responseData) {
     if (!responseData) {
       return "Unknown error";
+    }
+
+    if (typeof Buffer !== "undefined" && Buffer.isBuffer(responseData)) {
+      // Binary-typed body over the TCP transport: same handling as an ArrayBuffer.
+      return this._extractErrorMessage(responseData.toString("utf8"));
     }
 
     if (responseData instanceof ArrayBuffer) {

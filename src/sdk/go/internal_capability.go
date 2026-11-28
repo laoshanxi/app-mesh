@@ -92,6 +92,64 @@ func (r *AppMeshClient) CleanupWorkflowOrphansContext(ctx context.Context) (int,
 	return response.Removed, nil
 }
 
+// WorkflowSecretValue is one secret slot in a Workflow secret broker request.
+type WorkflowSecretValue struct {
+	Key   string `json:"key"`
+	Value string `json:"value"`
+}
+
+// ProtectWorkflowSecretsContext encrypts plaintext workflow secret values with
+// the daemon's node master key; the engine never reads the key file.
+func (r *AppMeshClient) ProtectWorkflowSecretsContext(ctx context.Context, workflow string,
+	values []WorkflowSecretValue) ([]WorkflowSecretValue, error) {
+	return r.workflowSecretsContext(ctx, "protect", workflow, values)
+}
+
+// UnprotectWorkflowSecretsContext decrypts workflow secret values bound to the
+// workflow name and key by the daemon.
+func (r *AppMeshClient) UnprotectWorkflowSecretsContext(ctx context.Context, workflow string,
+	values []WorkflowSecretValue) ([]WorkflowSecretValue, error) {
+	return r.workflowSecretsContext(ctx, "unprotect", workflow, values)
+}
+
+func (r *AppMeshClient) workflowSecretsContext(ctx context.Context, op, workflow string,
+	values []WorkflowSecretValue) ([]WorkflowSecretValue, error) {
+	request := struct {
+		Op       string                `json:"op"`
+		Workflow string                `json:"workflow"`
+		Secrets  []WorkflowSecretValue `json:"secrets"`
+	}{Op: op, Workflow: workflow, Secrets: values}
+	body, err := json.Marshal(request)
+	if err != nil {
+		return nil, fmt.Errorf("marshal workflow secret request: %w", err)
+	}
+	status, raw, _, err := r.req.SendContext(ctx, http.MethodPost,
+		"/appmesh/internal/workflow/secret", nil, map[string]string{"Content-Type": "application/json"},
+		bytes.NewReader(body))
+	if err != nil {
+		return nil, fmt.Errorf("workflow secret %s: %w", op, err)
+	}
+	if status != http.StatusOK {
+		return nil, newAPIError("workflow secret "+op, status, string(raw))
+	}
+	var response struct {
+		Secrets []WorkflowSecretValue `json:"secrets"`
+	}
+	if err := json.Unmarshal(raw, &response); err != nil {
+		return nil, fmt.Errorf("decode workflow secret response: %w", err)
+	}
+	if len(response.Secrets) != len(values) {
+		return nil, fmt.Errorf("Engine returned %d workflow secrets for %d inputs", len(response.Secrets), len(values))
+	}
+	for i := range response.Secrets {
+		if response.Secrets[i].Key != values[i].Key {
+			return nil, fmt.Errorf("Engine returned workflow secret %q in place of %q",
+				response.Secrets[i].Key, values[i].Key)
+		}
+	}
+	return response.Secrets, nil
+}
+
 // ListWorkflowRegistryContext returns only Engine-registered workflow
 // definitions. The endpoint accepts the managed Workflow controller capability
 // over loopback TCP and is intentionally narrower than ListAppsContext.

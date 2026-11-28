@@ -214,12 +214,6 @@ pub async fn logon(cli: &Cli, args: &LogonArgs) -> Result<i32> {
             .context("First administrator setup failed. Run 'appm logon' once on the authentication owner host")?;
         eprintln!("Assigned the first App Mesh administrator.");
     }
-    let session = StoredSession::new(engine_endpoint.clone(), oauth_config, tokens);
-    config::save_session(&session)?;
-    // The endpoint proved reachable and authenticated, so it may become the
-    // remembered default even when it was passed explicitly with -H.
-    crate::client::remember_engine_endpoint(cli)?;
-
     let principal_name = principal
         .get("display_name")
         .and_then(serde_json::Value::as_str)
@@ -235,6 +229,12 @@ pub async fn logon(cli: &Cli, args: &LogonArgs) -> Result<i32> {
                 .map(short_principal)
         })
         .unwrap_or_else(|| "authenticated principal".to_string());
+    let session = StoredSession::new(engine_endpoint.clone(), oauth_config, tokens, Some(principal_name.clone()));
+    config::save_session(&session)?;
+    // The endpoint proved reachable and authenticated, so it may become the
+    // remembered default even when it was passed explicitly with -H.
+    crate::client::remember_engine_endpoint(cli)?;
+
     eprintln!("Logged on to <{}> as {}.", engine_endpoint, principal_name);
     Ok(0)
 }

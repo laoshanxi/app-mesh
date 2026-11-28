@@ -26,7 +26,7 @@ import (
 	appmesh "github.com/laoshanxi/app-mesh/src/sdk/go"
 )
 
-var controlOperations = []string{"app-view-all", "app-subscribe"}
+var controlOperations = []string{"app-view-all", "app-subscribe", "workflow-secret"}
 
 func main() {
 	var server, clusterNodes string

@@ -21,7 +21,8 @@ SDK User Capabilities
 │   └── Resource Governance and Isolation
 └── Platform Capabilities
     ├── Secure Access and Multi-Tenancy
-    └── Node Operations and Data Exchange
+    ├── Node Operations and Data Exchange
+    └── AI and LLM Integration
 ```
 
 ## 1. Application Hosting
@@ -168,6 +169,26 @@ of remote work.
 
 **User value:** applications can automate the setup, execution, observation, and
 result-retrieval cycle through one platform.
+
+## 9. AI and LLM Integration
+
+App Mesh gives AI agents a governed place to run: the same hosting, execution,
+and permissions model used by every other workload.
+
+- Host an LLM agent as a managed application and drive it through the task RPC,
+  with live streaming of partial results.
+- Give each conversation its own isolated session worker and workspace, removed
+  on session close.
+- Trigger agent jobs from schedules and application events; treat the model's
+  answer as a first-class workflow variable.
+- Route different pipeline stages to different model providers.
+- Expose the platform to AI clients (Claude Code, Codex) through an MCP server
+  with full RBAC.
+- Let coding agents build and test on a remote node through the remote sandbox,
+  with no SSH keys or rsync.
+
+**User value:** AI workloads run under the same security, scheduling, and
+observation model as the rest of the platform. See [AI and LLM](engine/LLM.md).
 
 ## Scope Notes
 

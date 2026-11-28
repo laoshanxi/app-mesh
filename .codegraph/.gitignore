@@ -17,3 +17,6 @@ cache/
 
 # CodeGraph daemon PID file
 daemon.pid
+
+# CodeGraph daemon socket
+daemon.sock

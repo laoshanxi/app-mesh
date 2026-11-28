@@ -1,5 +1,5 @@
 # request_signature.py
-"""Opt-in HMAC-SHA256 request signing (docs/source/Security.md, "Request replay
+"""Opt-in HMAC-SHA256 request signing (docs/source/security/Security.md, "Request replay
 protection and signatures").
 
 The signature is an integrity layer on top of bearer authentication, produced
@@ -45,7 +45,7 @@ __all__ = [
     "signed_headers",
 ]
 
-# Signature header names (docs/source/Security.md, "Signature format")
+# Signature header names (docs/source/security/Security.md, "Signature format")
 HEADER_KEY_ID = "X-Request-Key"
 HEADER_TIMESTAMP = "X-Timestamp"
 HEADER_NONCE = "X-Nonce"
@@ -67,7 +67,7 @@ FILE_ENDPOINT_EMPTY_HASH_PATHS = frozenset(
 # The WSS HTTPS data-channel routes carry a "/ws" suffix that selects the
 # transfer channel, not the signed resource: the daemon's
 # RequestHardening::canonicalFileRoute signs these routes without the trailing
-# "/ws" (docs/source/Security.md, "Request replay protection and signatures").
+# "/ws" (docs/source/security/Security.md, "Request replay protection and signatures").
 FILE_ENDPOINT_WS_SIGNING_PATHS = {
     "/appmesh/file/upload/ws": "/appmesh/file/upload",
     "/appmesh/file/download/ws": "/appmesh/file/download",

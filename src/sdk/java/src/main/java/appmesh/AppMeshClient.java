@@ -1,5 +1,6 @@
 package appmesh;
 
+import java.io.ByteArrayOutputStream;
 import java.io.Closeable;
 import java.io.File;
 import java.io.FileInputStream;
@@ -11,6 +12,7 @@ import java.io.UnsupportedEncodingException;
 import java.net.HttpURLConnection;
 import java.net.URL;
 import java.net.URLEncoder;
+import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
 import java.time.LocalDateTime;
 import java.util.HashMap;
@@ -43,8 +45,11 @@ public class AppMeshClient implements Closeable {
     static final String BEARER_PREFIX = "Bearer ";
     static final String X_TARGET_HOST_HEADER = "X-Target-Host";
     static final String X_FILE_PATH_HEADER = "X-File-Path";
+    static final String X_FILE_OVERWRITE_HEADER = "X-File-Overwrite";
     static final String X_EXIT_CODE_HEADER = "X-Exit-Code";
     static final String X_OUTPUT_POSITION_HEADER = "X-Output-Position";
+    static final String X_OUTPUT_TRUNCATED_HEADER = "X-Output-Truncated";
+    static final String X_APP_NAME_HEADER = "X-App-Name";
     static final String X_INPUT_CLOSE_HEADER = "X-Input-Close";
     static final String X_SEND_FILE_SOCKET_HEADER = "X-Send-File-Socket";
     static final String X_RECV_FILE_SOCKET_HEADER = "X-Recv-File-Socket";
@@ -54,6 +59,13 @@ public class AppMeshClient implements Closeable {
     private static final String CONTENT_TYPE_HEADER = "Content-Type";
     private static final String ACCEPT_HEADER = "Accept";
     private static final String JSON_CONTENT_TYPE = "application/json";
+
+    // The daemon answers a sync run with one output page and keeps the run only for a
+    // short retention once that page is full.
+    /** Maximum size of one sync-run output page, in bytes (visible for tests). */
+    static final int SYNC_RUN_OUTPUT_PAGE_BYTES = 5 * 1024 * 1024;
+    /** Seconds a truncated sync-run instance stays readable before the daemon removes it. */
+    static final int SYNC_RUN_TRUNCATED_RETENTION_SECONDS = 600;
 
     private static final int DEFAULT_CONNECT_TIMEOUT_MS = 30_000;
     private static final int DEFAULT_READ_TIMEOUT_MS = 300_000;
@@ -790,6 +802,36 @@ public class AppMeshClient implements Closeable {
      */
     public Pair<Integer, String> runAppSync(JSONObject appJson, int maxTime, int lifecycle)
             throws Exception {
+        return runAppSync(appJson, maxTime, lifecycle, 0);
+    }
+
+    /**
+     * Run an application synchronously (overload without lifecycle).
+     */
+    public Pair<Integer, String> runAppSync(JSONObject appJson, int maxTime) throws Exception {
+        return runAppSync(appJson, maxTime, 0, 0);
+    }
+
+    /**
+     * Run an application synchronously (blocking), with a ceiling on the returned output.
+     *
+     * <p>The daemon answers with a single output page (5 MiB). When the output fills that page,
+     * the remaining pages are read from the run's output endpoint and concatenated, so the
+     * returned stdout is complete regardless of size. The temporary run instance is removed
+     * once everything has been read.
+     *
+     * @param appJson        application JSON definition
+     * @param maxTime        maximum execution time in seconds
+     * @param lifecycle      application lifecycle time (0 = server default)
+     * @param maxOutputBytes maximum size of the returned stdout in bytes, 0 or negative for no
+     *                        limit. When the output exceeds it, an {@link IOException} is thrown
+     *                        instead of returning a truncated result; the run instance is then
+     *                        left on the server for a 600 second retention so the rest of the
+     *                        output can still be read.
+     * @return (exitCode, stdout) pair
+     */
+    public Pair<Integer, String> runAppSync(JSONObject appJson, int maxTime, int lifecycle, long maxOutputBytes)
+            throws Exception {
         Map<String, String> query = new HashMap<>();
         query.put("timeout", String.valueOf(maxTime));
         if (lifecycle > 0) {
@@ -805,14 +847,104 @@ public class AppMeshClient implements Closeable {
                 LOGGER.log(Level.WARNING, "Failed to parse exit code header", e);
             }
         }
+        String runName = conn.getHeaderField(X_APP_NAME_HEADER);
+        int status = conn.getResponseCode();
+        if (runName != null && !runName.isEmpty() && status >= 200 && status < 300
+                && "1".equals(conn.getHeaderField(X_OUTPUT_TRUNCATED_HEADER))) {
+            return Pair.of(exitCode, readTruncatedRunOutput(conn, runName, maxOutputBytes));
+        }
         return Pair.of(exitCode, Utils.readResponseSafe(conn));
     }
 
     /**
-     * Run an application synchronously (overload without lifecycle).
+     * Read the output pages that follow a full sync-run reply page, then drop the run instance.
+     *
+     * <p>Exactly {@code maxOutputBytes} bytes is accepted.
+     *
+     * @throws IOException when the output exceeds {@code maxOutputBytes} (the run instance is kept)
+     *                     or a page cannot be read
      */
-    public Pair<Integer, String> runAppSync(JSONObject appJson, int maxTime) throws Exception {
-        return runAppSync(appJson, maxTime, 0);
+    private String readTruncatedRunOutput(HttpURLConnection first, String runName, long maxOutputBytes)
+            throws IOException {
+        ByteArrayOutputStream output = new ByteArrayOutputStream();
+        byte[] firstPage = Utils.readResponseBytes(first);
+        output.write(firstPage, 0, firstPage.length);
+
+        String positionHeader = first.getHeaderField(X_OUTPUT_POSITION_HEADER);
+        long position;
+        try {
+            position = Long.parseLong(positionHeader);
+        } catch (NumberFormatException e) {
+            throw new IOException("Sync run '" + runName + "' returned an invalid X-Output-Position: "
+                    + positionHeader, e);
+        }
+
+        boolean complete = false;
+        try {
+            // Checked after every page, the short final one included.
+            checkSyncRunOutputCeiling(output.size(), maxOutputBytes, runName);
+            while (true) {
+                Map<String, String> query = new HashMap<>();
+                query.put("stdout_position", String.valueOf(position));
+                HttpURLConnection pageConn = request("GET", "/appmesh/app/" + encodeURIComponent(runName) + "/output",
+                        null, null, query);
+                if (pageConn.getResponseCode() != HttpURLConnection.HTTP_OK) {
+                    throw new IOException("Reading sync run '" + runName + "' output failed with status "
+                            + pageConn.getResponseCode() + ": " + Utils.readErrorResponse(pageConn));
+                }
+                byte[] page = Utils.readResponseBytes(pageConn);
+                output.write(page, 0, page.length);
+                // Positions are byte offsets; a page shorter than a full page (or empty) ends the output.
+                position += page.length;
+                checkSyncRunOutputCeiling(output.size(), maxOutputBytes, runName);
+                if (page.length < SYNC_RUN_OUTPUT_PAGE_BYTES) {
+                    complete = true;
+                    break;
+                }
+            }
+        } finally {
+            // Best effort: the daemon removes the run when the retention ends. A failed or
+            // abandoned read keeps the instance so the output can still be recovered.
+            if (complete) {
+                try {
+                    deleteApp(runName);
+                } catch (Exception e) {
+                    LOGGER.log(Level.WARNING, "Failed to remove sync run application '" + runName + "'", e);
+                }
+            }
+        }
+        return new String(output.toByteArray(), responseCharset(first));
+    }
+
+    /**
+     * Throw when the sync-run output collected so far is over the ceiling ({@code maxOutputBytes}
+     * of 0 or less means no limit; exactly the ceiling is accepted).
+     */
+    private static void checkSyncRunOutputCeiling(int collectedBytes, long maxOutputBytes, String runName)
+            throws IOException {
+        if (maxOutputBytes > 0 && collectedBytes > maxOutputBytes) {
+            throw new IOException("Sync run output exceeds maxOutputBytes=" + maxOutputBytes
+                    + "; the remaining output stays readable on application '" + runName + "' for "
+                    + SYNC_RUN_TRUNCATED_RETENTION_SECONDS + " seconds");
+        }
+    }
+
+    /** Charset declared by the response {@code Content-Type}, UTF-8 when absent or unknown. */
+    private static Charset responseCharset(HttpURLConnection conn) {
+        String contentType = conn.getContentType();
+        if (contentType != null) {
+            for (String part : contentType.split(";")) {
+                String parameter = part.trim();
+                if (parameter.regionMatches(true, 0, "charset=", 0, "charset=".length())) {
+                    try {
+                        return Charset.forName(parameter.substring("charset=".length()).replace("\"", ""));
+                    } catch (IllegalArgumentException ignored) {
+                        // fall through to UTF-8
+                    }
+                }
+            }
+        }
+        return StandardCharsets.UTF_8;
     }
 
     /**
@@ -1116,6 +1248,18 @@ public class AppMeshClient implements Closeable {
     }
 
     /**
+     * Upload a local file to the remote server.
+     *
+     * <p>When {@code preservePermissions} is true, local file metadata is sent in headers so the
+     * server can recreate permissions and ownership when supported. When {@code overwrite} is
+     * true, an existing remote file is replaced; the default keeps the server's 409 refusal.
+     */
+    public boolean uploadFile(String localFilePath, String remoteFile, boolean preservePermissions,
+            boolean overwrite) throws IOException {
+        return uploadFile(new File(localFilePath), remoteFile, preservePermissions, overwrite);
+    }
+
+    /**
      * Upload a local file to the remote server. Uses the local file's name as the remote file name.
      */
     public boolean uploadFile(String localFilePath, boolean preservePermissions) throws IOException {
@@ -1132,8 +1276,26 @@ public class AppMeshClient implements Closeable {
      * server can recreate permissions and ownership when supported.
      */
     public boolean uploadFile(File localFile, String remoteFile, boolean preservePermissions) throws IOException {
+        return uploadFile(localFile, remoteFile, preservePermissions, false);
+    }
+
+    /**
+     * Upload a local file to the remote server.
+     *
+     * <p>Plain-HTTP transport: POST streams the raw file bytes as the body; the agent
+     * proxy accepts the same route.
+     *
+     * <p>When {@code preservePermissions} is true, local file metadata is sent in headers so the
+     * server can recreate permissions and ownership when supported. When {@code overwrite} is
+     * true, an existing remote file is replaced; the default keeps the server's 409 refusal.
+     */
+    public boolean uploadFile(File localFile, String remoteFile, boolean preservePermissions,
+            boolean overwrite) throws IOException {
         Map<String, String> headers = new HashMap<>(commonHeaders());
         headers.put(X_FILE_PATH_HEADER, encodeURIComponent(remoteFile));
+        if (overwrite) {
+            headers.put(X_FILE_OVERWRITE_HEADER, "true");
+        }
 
         File file = localFile;
         if (!file.exists()) {

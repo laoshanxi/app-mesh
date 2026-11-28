@@ -84,7 +84,7 @@ fi
 # Underscore hostnames are rejected either way (Vault drops underscore SANs;
 # enforce_hostnames is back at its default true), so nodes use the hyphenated
 # alias and the bootstrap maps underscore names onto it.
-PKI_DOMAINS="${APPMESH_PKI_ALLOWED_DOMAINS:-localhost,appmesh-master,appmesh-slave1,appmesh-slave2,appmesh-slave3,appmesh-client}"
+PKI_DOMAINS="${APPMESH_PKI_ALLOWED_DOMAINS:-localhost,appmesh-master,appmesh-slave1,appmesh-slave2,appmesh-llm,appmesh-client}"
 echo "PKI role appmesh-node issues for domains: ${PKI_DOMAINS}"
 vault write pki/roles/appmesh-node \
     allowed_domains="${PKI_DOMAINS}" allow_bare_domains=true allow_subdomains=false \

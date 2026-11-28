@@ -217,6 +217,7 @@ pub async fn build_client_with_auth(cli: &Cli) -> Result<Arc<AppMeshClientWSS>> 
                         binding.engine_endpoint.clone(),
                         binding.oauth.clone(),
                         new_tokens.clone(),
+                        binding.principal.clone(),
                     ))?;
                     *lock_known(&known) = new_tokens.clone();
                 }
@@ -290,6 +291,85 @@ pub async fn build_client_with_auth(cli: &Cli) -> Result<Arc<AppMeshClientWSS>> 
 /// Lock the mirrored token set without propagating a poisoned lock.
 fn lock_known(known: &Mutex<TokenSet>) -> MutexGuard<'_, TokenSet> {
     known.lock().unwrap_or_else(|error| error.into_inner())
+}
+
+/// One refresh attempt after an Engine 401 rejected the stored session.
+///
+/// `Ok(true)` means the session was renewed here (or a parallel CLI already
+/// rotated a live grant onto disk), so the command is worth one retry. A dead
+/// grant (invalid_grant: revoked, expired, or consumed refresh token) removes
+/// the session file that could only ever produce bare 401s and returns the
+/// actionable error instead. `Ok(false)` keeps the reported error untouched —
+/// nothing to renew, or the refresh failed transiently and the session stays.
+pub async fn recover_session_after_unauthorized(cli: &Cli) -> Result<bool> {
+    // A bearer-token import owns the credential for this invocation; there is
+    // no refresh grant and no session of ours to renew.
+    if std::env::var(ENV_BEARER_TOKEN).is_ok_and(|value| !value.trim().is_empty()) {
+        return Ok(false);
+    }
+    let endpoint = get_current_endpoint(cli)?;
+    let Some(session) = config::load_session(&endpoint)? else {
+        return Ok(false);
+    };
+    let Some(used_refresh) = session.tokens.refresh_token.clone() else {
+        return Ok(false);
+    };
+    // The authentication service being unreachable means no refresh can be
+    // attempted; the original 401 already describes the outage well enough.
+    let Ok(oauth) = OAuthClient::discover(session.oauth.clone()).await else {
+        return Ok(false);
+    };
+    oauth.restore(session.tokens.clone())?;
+    match oauth.refresh().await {
+        Ok(tokens) => {
+            // Persist the rotated grant only while the disk still holds the one
+            // this refresh consumed; a parallel CLI's newer set wins.
+            config::with_session_lock(&session, |latest| {
+                if matches!(
+                    config::decide_session_update(Some(used_refresh.as_str()), latest.as_ref(), &session),
+                    config::SessionUpdate::Write
+                ) {
+                    config::save_session(&config::StoredSession::new(
+                        session.engine_endpoint.clone(),
+                        session.oauth.clone(),
+                        tokens.clone(),
+                        session.principal.clone(),
+                    ))?;
+                }
+                Ok(())
+            })?;
+            Ok(true)
+        }
+        Err(error) if !oauth.can_refresh() => {
+            // Only a file that still holds the grant that just died is ours to
+            // remove; delete it under the lock so a parallel refresh cannot
+            // slip a verdict between this check and the removal.
+            let removed = config::with_session_lock(&session, |latest| {
+                if matches!(
+                    config::decide_session_update(Some(used_refresh.as_str()), latest.as_ref(), &session),
+                    config::SessionUpdate::Write
+                ) {
+                    config::delete_session(&session)?;
+                    Ok(true)
+                } else {
+                    Ok(false)
+                }
+            })?;
+            if removed {
+                anyhow::bail!(
+                    "The sign-in session for {} was invalidated ({}): the refresh token was revoked, expired, or \
+                     already consumed elsewhere. The stored session was removed. Run 'appm logon' again.",
+                    endpoint,
+                    error
+                );
+            }
+            // A parallel CLI holds a newer grant on disk; the retry reloads it.
+            Ok(true)
+        }
+        // Transient refresh failure (authentication-service outage, network):
+        // keep the session and the original error.
+        Err(_) => Ok(false),
+    }
 }
 
 fn build_wss(host: String, port: u16, tls: &config::DaemonTlsConfig) -> Result<Arc<AppMeshClientWSS>> {
@@ -438,6 +518,7 @@ mod tests {
                 token_type: "Bearer".into(),
                 scope: None,
             },
+            None,
         )
     }
 

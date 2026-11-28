@@ -13,6 +13,7 @@ install(
     DESTINATION "lib/llm-agent"
     COMPONENT configs
     FILES_MATCHING PATTERN "*.py"
+    PATTERN "__pycache__" EXCLUDE
 )
 
 # 1b. requirements.txt — shipped so the Docker image (and operators) can install deps

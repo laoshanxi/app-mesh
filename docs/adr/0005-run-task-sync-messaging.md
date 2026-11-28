@@ -73,7 +73,7 @@ id / HTTP/2 stream id) is a secondary backstop never actually reached twice.
 
 - **Client → daemon:** JWT + RBAC `app-run-task` + per-app access check.
 - **App → daemon:** the spawned process authenticates `GET`/`PUT` with its **process
-  key** (`AppProcess::getkey()`), an unguessable per-process capability token (cf.
+  key** (`AppProcess::getKey()`), an unguessable per-process capability token (cf.
   GitHub Actions runner registration token) — hence no RBAC on the app-side verbs.
 
 ### Cancel

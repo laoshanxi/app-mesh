@@ -33,7 +33,7 @@ docker run -d -m 8g --restart=always \
 App Mesh accepts OAuth access tokens. Acquire a token through the standard
 Authorization Code with PKCE, Device Authorization, or an approved service-client flow,
 then provide it through the environment. The issuer and the authentication-service route
-may be configured independently; see [Security](../Security.md).
+may be configured independently; see [Security](../security/Security.md).
 
 ```shell
 export APPMESH_BEARER_TOKEN="$(your-oauth-client)"

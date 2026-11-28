@@ -33,6 +33,7 @@ const HTTP_HEADER_KEY_X_RECV_FILE_SOCKET = 'X-Recv-File-Socket'
 // Wire-header names come from the shared CONSTANTS block.
 const HTTP_HEADER_KEY_USER_AGENT = CONSTANTS.HTTP_USER_AGENT_HEADER_NAME
 const HTTP_HEADER_KEY_X_FILE_PATH = CONSTANTS.HTTP_HEADER_KEY_X_FILE_PATH
+const HTTP_HEADER_KEY_X_FILE_OVERWRITE = CONSTANTS.HTTP_HEADER_KEY_X_FILE_OVERWRITE
 const HTTP_HEADER_KEY_AUTH = CONSTANTS.HTTP_HEADER_KEY_AUTH
 const HTTP_HEADER_KEY_X_TARGET_HOST = CONSTANTS.HTTP_HEADER_KEY_X_TARGET_HOST
 const HTTP_HEADER_KEY_X_SUBSCRIPTION_ID = CONSTANTS.HTTP_HEADER_KEY_X_SUBSCRIPTION_ID
@@ -548,17 +549,22 @@ class AppMeshClientTCP extends AppMeshClient {
    * (null=default CA, object=custom ca/cert/key, false=insecure).
    * @param {Array<string, number>|{host: string, port: number}} [tcpAddress=['127.0.0.1', 6062]] - TCP server address
    * @param {number} [restPort=6063] - REST port of the same daemon for the streaming side channel
-   * (followOutput / runTaskStream); also honored as a `restPort` key on the `{host, port}` address object
+   * (followOutput / runTaskStream / streamRun) for local streams; also honored as a `restPort` key on the
+   * `{host, port}` address object
+   * @param {number} [agentPort=6060] - Agent REST port on the same host for the streaming side channel when
+   * `forwardingHost` is set (the engine listener does not stream through node forwarding, the agent relays it);
+   * also honored as an `agentPort` key on the `{host, port}` address object
    */
-  constructor (sslConfig = null, tcpAddress = ['127.0.0.1', 6062], restPort = null) {
+  constructor (sslConfig = null, tcpAddress = ['127.0.0.1', 6062], restPort = null, agentPort = null) {
     // Accept the address-first object form: new AppMeshClientTCP({host, port}, sslConfig)
     if (_isAddressObject(sslConfig)) {
       const addr = sslConfig
       sslConfig = (Array.isArray(tcpAddress) || _isAddressObject(tcpAddress)) ? null : tcpAddress
       tcpAddress = addr
     }
-    if (_isAddressObject(tcpAddress) && restPort == null) {
-      restPort = tcpAddress.restPort
+    if (_isAddressObject(tcpAddress)) {
+      if (restPort == null) restPort = tcpAddress.restPort
+      if (agentPort == null) agentPort = tcpAddress.agentPort
     }
     tcpAddress = _normalizeTcpAddress(tcpAddress)
 
@@ -567,10 +573,18 @@ class AppMeshClientTCP extends AppMeshClient {
     this.tcpTransport = new TCPTransport(tcpAddress, sslConfig)
     this._demuxer = null
     this._demuxerEnablePromise = null
+    // Upgrading from a legacy direct read to the demuxer must not put two
+    // readers on one socket; these track the transition and in-flight reads.
+    this._demuxerStarting = false
+    this._directReads = 0
+    this._directReadWaiters = []
     // The SSE side channel (_sseRequest) dials the daemon's REST listener on the same host.
     this._restHost = tcpAddress[0]
     this._restPort = restPort ?? 6063
+    // A forwarded stream dials the agent REST listener instead (see _ensureRestChannel).
+    this._agentPort = agentPort ?? 6060
     this._restChannelClient = null
+    this._agentChannelClient = null
   }
 
   /**
@@ -585,11 +599,14 @@ class AppMeshClientTCP extends AppMeshClient {
       this.tcpTransport.close()
       this.tcpTransport = null
     }
-    if (this._restChannelClient) {
-      // Release the streaming side channel's keep-alive sockets.
-      this._restChannelClient._client.defaults.httpsAgent?.destroy?.()
-      this._restChannelClient = null
+    for (const channel of [this._restChannelClient, this._agentChannelClient]) {
+      if (channel) {
+        // Release the streaming side channel's keep-alive sockets.
+        channel._client.defaults.httpsAgent?.destroy?.()
+      }
     }
+    this._restChannelClient = null
+    this._agentChannelClient = null
   }
 
   /**
@@ -598,6 +615,13 @@ class AppMeshClientTCP extends AppMeshClient {
    * @override
    */
   async _request (method, path, body = null, options = {}) {
+    // A subscribe upgrade in progress owns the read side; wait for it so this
+    // request is routed by UUID instead of racing the new reader for frames
+    // (the subscribe ack could otherwise resolve this request, stranding
+    // subscribe). The wait precedes construction so signatures stay fresh.
+    if (this._demuxerStarting) {
+      await this._demuxerEnablePromise
+    }
     if (!this.tcpTransport.connected()) {
       await this.tcpTransport.connect()
     }
@@ -619,9 +643,7 @@ class AppMeshClientTCP extends AppMeshClient {
     }
 
     if (this.forwardingHost) {
-      request.headers[HTTP_HEADER_KEY_X_TARGET_HOST] = this.forwardingHost.includes(':')
-        ? this.forwardingHost
-        : `${this.forwardingHost}:${this.tcpTransport.address[1]}`
+      request.headers[HTTP_HEADER_KEY_X_TARGET_HOST] = this._forwardTargetHeader()
     }
 
     if (options.headers) {
@@ -676,21 +698,37 @@ class AppMeshClientTCP extends AppMeshClient {
       }
       response = await respPromise
     } else {
-      // Legacy synchronous mode: read directly.
-      this.tcpTransport.sendMessage(serialized)
-      const respData = await this.tcpTransport.receiveMessage()
-      if (!respData || respData.length === 0) {
-        this.tcpTransport.close()
-        throw new Error('Socket connection broken')
+      // An upgrade claimed the read side while this request was being built;
+      // nothing has been sent yet, so rebuild behind the upgrade (fresh token
+      // and signature) and route by UUID instead of opening a second reader.
+      if (this._demuxerStarting) {
+        await this._demuxerEnablePromise
+        return this._request(method, path, body, options)
       }
-      response = new ResponseMessage().deserialize(respData)
+      // Legacy synchronous mode: read directly. Track the read so a concurrent
+      // subscribe waits for this response before starting the demuxer.
+      this._directReads++
+      try {
+        this.tcpTransport.sendMessage(serialized)
+        const respData = await this.tcpTransport.receiveMessage()
+        if (!respData || respData.length === 0) {
+          this.tcpTransport.close()
+          throw new Error('Socket connection broken')
+        }
+        response = new ResponseMessage().deserialize(respData)
+      } finally {
+        this._releaseDirectRead()
+      }
     }
 
     // Convert to standard response format matching axios structure
+    const ctKey = Object.keys(response.headers || {}).find(k => k.toLowerCase() === 'content-type')
     const result = {
       status: response.httpStatus,
       statusText: this._getStatusText(response.httpStatus),
       headers: response.headers,
+      // The daemon puts the MIME type in body_msg_type, not a header; expose it like axios's.
+      contentType: response.bodyMsgType || (ctKey ? response.headers[ctKey] : undefined),
       data: this._decodeBody(response, options),
       config: options
     }
@@ -783,29 +821,73 @@ class AppMeshClientTCP extends AppMeshClient {
   }
 
   /**
-   * Lazily build the direct-HTTPS client the streaming side channel uses.
+   * The X-Target-Host value every request of this client carries, the framed ones and the
+   * streaming side channel alike: as given when it has a port, else the target's port is the
+   * one this client dials.
+   * @private
+   */
+  _forwardTargetHeader () {
+    if (!this.forwardingHost) return null
+    return this.forwardingHost.includes(':')
+      ? this.forwardingHost
+      : `${this.forwardingHost}:${this.tcpTransport.address[1]}`
+  }
+
+  /**
+   * Lazily build the direct-HTTPS client the streaming side channel uses, and keep its token
+   * provider, signer and forward target in step with this client.
+   * @private
+   */
+  _syncSideChannel (client) {
+    // Re-sync on every use so a later setBearerToken()/enableRequestSignature() reaches the side channel too.
+    if (this._tokenProvider && client._tokenProvider !== this._tokenProvider) {
+      client.setTokenProvider(this._tokenProvider)
+    }
+    if (client._requestSigner !== this._requestSigner) {
+      client._requestSigner = this._requestSigner
+    }
+    // Sent as given on the agent hop, without the TCP port the framed requests append:
+    // an explicit port names the target's TCP listener, which does not serve streams.
+    const target = this.forwardingHost || null
+    if (client.forwardingHost !== target) client.forwardingHost = target
+    return client
+  }
+
+  /**
+   * The side-channel client a local stream dials: the engine's REST listener on the same host.
    * @private
    */
   _ensureRestChannel () {
     if (!this._restChannelClient) {
       this._restChannelClient = new AppMeshClient(`https://${this._restHost}:${this._restPort}`, this._sslConfig)
     }
-    // Re-sync the token provider on every use so a later setBearerToken() reaches the side channel too.
-    if (this._tokenProvider && this._restChannelClient._tokenProvider !== this._tokenProvider) {
-      this._restChannelClient.setTokenProvider(this._tokenProvider)
-    }
-    return this._restChannelClient
+    return this._syncSideChannel(this._restChannelClient)
   }
 
   /**
-   * Open an SSE stream over direct HTTPS to the daemon's REST listener: the framed transport
-   * answers one buffered frame and cannot carry a chunked event stream (bypassed like the
-   * WSS file data channel); plain request/response routes stay on the framed transport.
+   * The side-channel client a forwarded stream dials: the agent REST listener on the same
+   * host. The engine listener answers X-Target-Host on a stream route with 400, the agent
+   * relays the stream through node forwarding, so the target node runs the task.
+   * @private
+   */
+  _ensureAgentChannel () {
+    if (!this._agentChannelClient) {
+      this._agentChannelClient = new AppMeshClient(`https://${this._restHost}:${this._agentPort}`, this._sslConfig)
+    }
+    return this._syncSideChannel(this._agentChannelClient)
+  }
+
+  /**
+   * Open an SSE stream over direct HTTPS: the framed transport answers one buffered frame and
+   * cannot carry a chunked event stream (bypassed like the WSS file data channel); plain
+   * request/response routes stay on the framed transport. A forwarded stream (`forwardingHost`
+   * set) goes to the agent REST listener with X-Target-Host, a local one to the engine listener.
    * @private
    * @override
    */
   async _sseRequest (method, path, options = {}) {
-    return this._ensureRestChannel()._sseRequest(method, path, options)
+    const channel = this.forwardingHost ? this._ensureAgentChannel() : this._ensureRestChannel()
+    return channel._sseRequest(method, path, options)
   }
 
   /**
@@ -899,9 +981,11 @@ class AppMeshClientTCP extends AppMeshClient {
    * @param {string} [filePath=null] - Remote destination path; defaults to the basename of localFile
    * @param {boolean} [applyAttrs=false] - Send local mode and best-effort user/group name
    * metadata so the server can recreate permissions and ownership when supported
+   * @param {boolean} [overwrite=false] - Replace an existing remote file; the
+   * default keeps the server's 409 refusal
    * @override
    */
-  async uploadFile(localFile, filePath = null, applyAttrs = false) {
+  async uploadFile(localFile, filePath = null, applyAttrs = false, overwrite = false) {
     this._ensureNoActiveDemuxer()
     if (!filePath) filePath = localFile.split(/[\\/]/).pop()
     if (!fs.existsSync(localFile)) {
@@ -912,6 +996,9 @@ class AppMeshClientTCP extends AppMeshClient {
       [HTTP_HEADER_KEY_X_FILE_PATH]: encodeURIComponent(filePath),
       'Content-Type': 'text/plain',
       [HTTP_HEADER_KEY_X_SEND_FILE_SOCKET]: 'true'
+    }
+    if (overwrite) {
+      headers[HTTP_HEADER_KEY_X_FILE_OVERWRITE] = 'true'
     }
 
     // Add file attributes
@@ -952,6 +1039,9 @@ class AppMeshClientTCP extends AppMeshClient {
 
   /**
    * Subscribe to app events over TCP.
+   *
+   * Resolves when the daemon acknowledges the subscription; it does not wait
+   * for the first event. Later events are delivered to `callback`.
    *
    * @param {string} appName - Application name, or "*" for all apps.
    * @param {string[]} [events] - Event types: "START", "EXIT", "STDOUT", etc.
@@ -1042,6 +1132,28 @@ class AppMeshClientTCP extends AppMeshClient {
   }
 
   /**
+   * Resolve when no legacy direct read owns the socket.
+   * @private
+   */
+  _waitForDirectReads () {
+    if (this._directReads === 0) return Promise.resolve()
+    return new Promise(resolve => this._directReadWaiters.push(resolve))
+  }
+
+  /**
+   * Account for a finished legacy direct read and wake a waiting upgrade.
+   * @private
+   */
+  _releaseDirectRead () {
+    this._directReads--
+    if (this._directReads === 0 && this._directReadWaiters.length > 0) {
+      const waiters = this._directReadWaiters
+      this._directReadWaiters = []
+      for (const resolve of waiters) resolve()
+    }
+  }
+
+  /**
    * Enable demuxer for concurrent request-response and event routing.
    * Serialized: two concurrent subscribe() calls on an unconnected transport
    * would otherwise both await connect() and both create a demuxer — two read
@@ -1054,13 +1166,23 @@ class AppMeshClientTCP extends AppMeshClient {
       await this._demuxerEnablePromise
       return
     }
+    // Set before any await so requests starting during the upgrade route through
+    // the demuxer instead of opening a second, competing direct read.
+    this._demuxerStarting = true
     this._demuxerEnablePromise = (async () => {
-      if (!this.tcpTransport.connected()) {
-        await this.tcpTransport.connect()
-      }
-      if (!this._demuxer || !this._demuxer._running) {
-        this._demuxer = new MessageDemuxer(this.tcpTransport)
-        this._demuxer.start()
+      try {
+        if (!this.tcpTransport.connected()) {
+          await this.tcpTransport.connect()
+        }
+        // A legacy direct read consumes frames itself; starting the demuxer now
+        // would race it and can strand either response forever.
+        await this._waitForDirectReads()
+        if (!this._demuxer || !this._demuxer._running) {
+          this._demuxer = new MessageDemuxer(this.tcpTransport)
+          this._demuxer.start()
+        }
+      } finally {
+        this._demuxerStarting = false
       }
     })()
     try {

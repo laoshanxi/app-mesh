@@ -300,6 +300,21 @@ paths:
     put:
       tags: [Applications]
       summary: Register or update a non-system application
+      parameters:
+        - name: subscribe_events
+          in: query
+          required: false
+          description: >-
+            Comma-separated event names; registers a subscription together with
+            the application on persistent transports (TCP or WebSocket).
+            Matching is case-insensitive.
+          schema:
+            type: array
+            items:
+              type: string
+              enum: [START, EXIT, STDOUT, HEALTH, STATUS, REMOVED, ALL]
+            style: form
+            explode: false
       requestBody:
         required: true
         content:
@@ -311,6 +326,7 @@ paths:
         "401": { $ref: "#/components/responses/Unauthorized" }
         "403": { $ref: "#/components/responses/Forbidden" }
         "404": { $ref: "#/components/responses/NotFound" }
+        "409": { description: Name conflicts with an application that differs only by letter case. }
     delete:
       tags: [Applications]
       summary: Delete a non-system application
@@ -352,46 +368,6 @@ paths:
         "401": { $ref: "#/components/responses/Unauthorized" }
         "403": { $ref: "#/components/responses/Forbidden" }
 
-  /appmesh/app/{name}/output/stream:
-    parameters:
-      - $ref: "#/components/parameters/AppName"
-    get:
-      tags: [Applications]
-      summary: Stream application output over server-sent events
-      description: |
-        Replays stdout from the byte cursor, then (follow=true) keeps pushing
-        live output until the run exits, the application is removed, or the
-        overall timeout elapses. The server reconciles replay and live frames
-        by the byte cursor. Requires the app-output-view permission and read
-        access to the target application.
-      parameters:
-        - name: stdout_position
-          in: query
-          required: false
-          schema: { type: integer, minimum: 0 }
-        - name: process_uuid
-          in: query
-          required: false
-          schema: { type: string }
-        - name: follow
-          in: query
-          required: false
-          schema: { type: boolean, default: true }
-        - name: timeout
-          in: query
-          required: false
-          schema: { type: integer, minimum: 0, maximum: 86400 }
-      responses:
-        "200":
-          description: SSE stream of stdout/end events.
-          content:
-            text/event-stream:
-              schema: { type: string }
-        "401": { $ref: "#/components/responses/Unauthorized" }
-        "403": { $ref: "#/components/responses/Forbidden" }
-        "404": { $ref: "#/components/responses/NotFound" }
-        "405": { description: Output streaming requires a plain HTTP connection. }
-
   /appmesh/app/{name}/health:
     parameters:
       - $ref: "#/components/parameters/AppName"
@@ -422,6 +398,22 @@ paths:
     post:
       tags: [Applications]
       summary: Run a command synchronously
+      description: >-
+        Returns at most 5 MiB of output. A full page carries X-Output-Truncated: 1,
+        X-Output-Position (where the rest starts) and X-App-Name (the run); the run
+        stays registered for 10 minutes so the rest can be read from the output
+        endpoint.
+      parameters:
+        - name: timeout
+          in: query
+          required: false
+          schema: { type: integer, minimum: 0 }
+          description: Seconds the daemon waits before it kills the run.
+        - name: lifecycle
+          in: query
+          required: false
+          schema: { type: integer, minimum: 0 }
+          description: Retention of the run after exit, in seconds. Raised to timeout when smaller.
       requestBody:
         required: true
         content:
@@ -569,6 +561,45 @@ paths:
         "412": { description: Process key superseded by a newer process instance. }
         "404": { $ref: "#/components/responses/NotFound" }
 
+  /appmesh/app/{name}/output/stream:
+    parameters:
+      - $ref: "#/components/parameters/AppName"
+    get:
+      tags: [Applications]
+      summary: Stream application output over server-sent events
+      description: |
+        Replays stdout from the byte cursor, then (follow=true) keeps pushing
+        live output until the run exits, the application is removed, or the
+        overall timeout elapses. The server reconciles replay and live frames
+        by the byte cursor. Requires the app-output-view permission and read
+        access to the target application.
+      parameters:
+        - name: stdout_position
+          in: query
+          required: false
+          schema: { type: integer, minimum: 0 }
+        - name: process_uuid
+          in: query
+          required: false
+          schema: { type: string }
+        - name: follow
+          in: query
+          required: false
+          schema: { type: boolean, default: true }
+        - name: timeout
+          in: query
+          required: false
+          schema: { type: integer, minimum: 0, maximum: 86400 }
+      responses:
+        "200":
+          description: SSE stream of stdout/end events.
+          content:
+            text/event-stream:
+              schema: { type: string }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
   /appmesh/app/{name}/input:
     parameters:
       - $ref: "#/components/parameters/AppName"
@@ -663,6 +694,10 @@ paths:
       tags: [Configuration]
       summary: Update runtime configuration
       description: >-
+        REST.RequestSignature and REST.RequestReplayProtection (off | audit |
+        enforce) and REST.RequestReplayWindowSeconds (10-3600, default 300)
+        govern request signing and replay protection; all three reload with
+        SIGHUP, and an invalid mode value keeps the previous setting.
         REST.SSL.SSLEnabled is startup-only: posting it back unchanged is an
         accepted no-op, changing it is rejected with 400 (set it in
         config.yaml and restart).
@@ -672,10 +707,107 @@ paths:
         "401": { $ref: "#/components/responses/Unauthorized" }
         "403": { $ref: "#/components/responses/Forbidden" }
 
+  /appmesh/security/apikeys:
+    get:
+      tags: [Authorization]
+      summary: List request-signing API keys
+      description: >-
+        Lists the caller's keys as {key_id, principal, created_at}; the secret
+        is never returned. The all query parameter lists every principal's
+        keys and requires the principal-list permission.
+      parameters:
+        - name: all
+          in: query
+          required: false
+          schema: { type: string }
+          description: Any value selects the admin view (principal-list permission required).
+      responses:
+        "200":
+          description: API key list without secrets.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    key_id: { type: string }
+                    principal: { type: string }
+                    created_at: { type: integer, format: int64 }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+    post:
+      tags: [Authorization]
+      summary: Issue a request-signing API key
+      description: >-
+        Issues a key for the caller, or for the principal named in the body
+        when the caller holds the principal-update permission. The secret is
+        returned exactly once in this response (Cache-Control: no-store). Not
+        issued for the system principal. Bootstrap note: with
+        REST.RequestSignature=enforce every authenticated route, this one
+        included, requires a valid signature, so issue a key before enabling
+        enforce.
+      parameters:
+        - $ref: "#/components/parameters/RequestSignatureKey"
+        - $ref: "#/components/parameters/RequestSignatureTimestamp"
+        - $ref: "#/components/parameters/RequestSignatureNonce"
+        - $ref: "#/components/parameters/RequestSignatureSignature"
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                principal: { type: string, description: Target principal; defaults to the caller. }
+      responses:
+        "200":
+          description: The issued key; the only response that ever contains the secret.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  key_id: { type: string }
+                  principal: { type: string }
+                  secret: { type: string }
+                  created_at: { type: integer, format: int64 }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /appmesh/security/apikey/{key_id}:
+    delete:
+      tags: [Authorization]
+      summary: Revoke a request-signing API key
+      description: >-
+        Revokes the caller's own key, or any key with the principal-update
+        permission. Revocation is immediate on the issuing node and reaches
+        followers with the replication pull interval.
+      parameters:
+        - name: key_id
+          in: path
+          required: true
+          schema: { type: string }
+        - $ref: "#/components/parameters/RequestSignatureKey"
+        - $ref: "#/components/parameters/RequestSignatureTimestamp"
+        - $ref: "#/components/parameters/RequestSignatureNonce"
+        - $ref: "#/components/parameters/RequestSignatureSignature"
+      responses:
+        "204": { description: Revoked. }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
   /appmesh/file/download:
     get:
       tags: [Files]
       summary: Download a file
+      description: >-
+        Plain-HTTP transports receive the file bytes as the response body
+        (application/octet-stream with Content-Disposition). The TCP and
+        WebSocket control transports use the socket-transfer exchange on this
+        same route instead; their SDKs handle it internally.
       parameters:
         - name: X-File-Path
           in: header
@@ -683,28 +815,76 @@ paths:
           schema: { type: string }
           description: Remote file path as percent-encoded UTF-8 (space as %20, not +).
       responses:
-        "200": { description: File stream negotiation response. }
+        "200":
+          description: The file bytes.
+          headers:
+            Content-Disposition:
+              schema: { type: string }
+              description: attachment; filename= (RFC 5987 filename* for non-ASCII names).
+            X-File-Mode:
+              schema: { type: string }
+              description: POSIX permission bits of the file as a decimal integer (493 for 0755).
+            X-File-User:
+              schema: { type: string }
+              description: Owner user name, or the uid when the name cannot be resolved.
+            X-File-Group:
+              schema: { type: string }
+              description: Owner group name, or the gid when the name cannot be resolved.
+          content:
+            application/octet-stream:
+              schema: { type: string, format: binary }
+        "400": { description: The path is not a regular file. }
         "401": { $ref: "#/components/responses/Unauthorized" }
         "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { description: File not found. }
 
   /appmesh/file/upload:
     post:
       tags: [Files]
       summary: Upload a file
+      description: >-
+        Plain-HTTP transports send the raw file bytes as the request body
+        (multipart/form-data is refused with 400). The co-located agent proxy
+        additionally accepts multipart for older clients. The TCP and WebSocket
+        control transports use the socket-transfer exchange on this same route
+        instead; their SDKs handle it internally.
       parameters:
         - name: X-File-Path
           in: header
           required: true
           schema: { type: string }
           description: Remote file path as percent-encoded UTF-8 (space as %20, not +).
+        - name: X-File-Mode
+          in: header
+          required: false
+          schema: { type: string }
+          description: >-
+            POSIX permission bits to apply, as a decimal integer in the range 0-511
+            (493 for 0755). Octal text such as "755" is rejected and logged.
+        - name: X-File-User
+          in: header
+          required: false
+          schema: { type: string }
+          description: Owner user name or uid applied to the uploaded file.
+        - name: X-File-Group
+          in: header
+          required: false
+          schema: { type: string }
+          description: Owner group name or gid applied to the uploaded file.
         - name: X-File-Overwrite
           in: header
           required: false
           schema: { type: string, enum: ["true"] }
           description: Set to "true" to replace an existing file; any other value is ignored.
+      requestBody:
+        required: true
+        content:
+          application/octet-stream:
+            schema: { type: string, format: binary }
       responses:
-        "200": { description: File stream negotiation response. }
-        "400": { description: The destination is a directory or a symlink leaf. }
+        "201": { description: File stored. }
+        "200": { description: File stored (agent proxy surface). }
+        "400": { $ref: "#/components/responses/BadRequest" }
         "401": { $ref: "#/components/responses/Unauthorized" }
         "403": { $ref: "#/components/responses/Forbidden" }
         "409": { description: File already exists. }
@@ -747,7 +927,12 @@ paths:
         schema: { type: string }
     put:
       tags: [Labels]
-      summary: Set a host label
+      summary: Set a host label. The value travels in the required query parameter `value`.
+      parameters:
+        - name: value
+          in: query
+          required: true
+          schema: { type: string }
       responses:
         "200": { description: Label saved. }
         "401": { $ref: "#/components/responses/Unauthorized" }
@@ -756,7 +941,7 @@ paths:
       tags: [Labels]
       summary: Delete a host label
       responses:
-        "200": { description: Label deleted. }
+        "200": { description: Label deleted. A label that does not exist also returns 200. }
         "401": { $ref: "#/components/responses/Unauthorized" }
         "403": { $ref: "#/components/responses/Forbidden" }
 
@@ -818,6 +1003,35 @@ components:
             offline_access: Allow refresh tokens for trusted clients.
 
   parameters:
+    RequestSignatureKey:
+      name: X-Request-Key
+      in: header
+      required: true
+      schema: { type: string }
+      description: The API key id naming the signing secret (POST /appmesh/security/apikeys issues both).
+    RequestSignatureTimestamp:
+      name: X-Timestamp
+      in: header
+      required: true
+      schema: { type: string }
+      description: Epoch seconds, at most 12 digits; accepted within the replay window plus a 30 s clock-skew allowance.
+    RequestSignatureNonce:
+      name: X-Nonce
+      in: header
+      required: true
+      schema: { type: string }
+      description: Unique per request, at most 128 bytes, no whitespace; remembered for the replay window plus 30 s.
+    RequestSignatureSignature:
+      name: X-Signature
+      in: header
+      required: true
+      schema: { type: string }
+      description: >-
+        Hex HMAC-SHA256 over the canonical string "METHOD\nPATH\nQUERY\n
+        BODY_SHA256_HEX\nTIMESTAMP\nNONCE". PATH is the percent-encoded
+        request path as sent on the wire; QUERY sorts the decoded parameters
+        as key=value joined with &. File-route bodies hash as the empty
+        string; other request headers are not covered.
     PrincipalId:
       name: principal_id
       in: path
@@ -832,8 +1046,16 @@ components:
       name: events
       in: query
       required: false
-      description: Comma-separated application event names. The server default selects all supported events.
-      schema: { type: string }
+      description: >-
+        Comma-separated application event names. The server default selects all
+        supported events. Matching is case-insensitive.
+      schema:
+        type: array
+        items:
+          type: string
+          enum: [START, EXIT, STDOUT, HEALTH, STATUS, REMOVED, ALL]
+        style: form
+        explode: false
     SubscriptionId:
       name: subscription_id
       in: query
@@ -908,6 +1130,13 @@ components:
         connector_id: { type: string }
         status: { type: string, enum: [active, disabled, tombstoned] }
         execution_user: { type: string }
+        sandbox:
+          type: object
+          description: >-
+            Sandbox mode of the applications this Principal owns. Absent when the
+            Principal follows the node default (Sandbox.Mode).
+          properties:
+            mode: { type: string, enum: [off, write, strict] }
         roles:
           type: array
           items: { type: string }
@@ -919,6 +1148,14 @@ components:
       properties:
         status: { type: string, enum: [active, disabled, tombstoned] }
         execution_user: { type: string }
+        sandbox:
+          type: object
+          properties:
+            mode:
+              type: string
+              description: >-
+                off | write | strict overrides the node default for the applications
+                of this Principal. An empty string removes the override.
         roles:
           type: array
           items: { type: string }
@@ -953,7 +1190,9 @@ components:
             Share bits for principals other than the owner, encoded as two decimal
             digits <other><group>. Only the tens (other) digit is enforced:
             1 = deny, 2 = read, 3 = read and write (write implies read).
-            0 (default) makes the application accessible to every principal.
+            Absent defaults to 11 (owner-only); 0 makes the application accessible
+            to every principal and must be requested explicitly.
+            Accepted values: 0, or 10-39 with the first digit 1, 2 or 3.
             Holders of app-view-all bypass these bits for read access and holders
             of app-manage-all for every operation.
         execution_user:
@@ -1000,10 +1239,34 @@ components:
         shell:
           type: boolean
           description: Run the command through a generated shell script instead of a direct exec.
+        stdin:
+          type: string
+          enum: [none, pipe]
+          description: >-
+            "pipe" keeps the daemon-side stdin write end open so the input API
+            can inject bytes while the process runs; cannot be combined with
+            metadata and is not supported for container applications.
         session_login:
           type: boolean
           description: Start the process as a login session (sudo --login semantics).
         working_dir: { type: string, description: Working directory for the process. }
+        sandbox_mode:
+          type: string
+          enum: [off, write, strict]
+          readOnly: true
+          description: >-
+            File system sandbox of the process. Present on native applications only;
+            containers are isolated by Docker and system applications are not sandboxed.
+            A running process reports the mode it was started with, an idle application
+            reports the mode of its next start. write limits writes to sandbox_workdir
+            and work/share; strict also limits reads to the system read baseline.
+        sandbox_workdir:
+          type: string
+          readOnly: true
+          description: >-
+            Private working directory of the application under work/workspaces.
+            Present when sandbox_mode is not off. An application with sandbox_mode
+            other than off must not set working_dir.
         docker_image: { type: string, description: Docker image to run instead of a local command. }
         env:
           type: object
@@ -1028,8 +1291,8 @@ components:
         interval:
           type: [integer, string]
           description: >-
-            Fixed-period schedule: seconds, or a duration string such as
-            "1m30s". Mutually exclusive with cron_schedule.
+            Fixed-period schedule: an integer number of seconds, or an ISO 8601
+            duration such as "PT1M30S". Mutually exclusive with cron_schedule.
         cron_schedule:
           type: string
           description: >-
@@ -1040,8 +1303,8 @@ components:
           type: [integer, string]
           description: >-
             Grace before the daemon terminates the previous run of a periodic
-            application, and delay before removal cleanup: seconds, or a
-            duration string such as "1m30s".
+            application, and delay before removal cleanup: an integer number of
+            seconds, or an ISO 8601 duration such as "PT1M30S".
         start_time:
           type: integer
           description: Epoch seconds from which the application may run.

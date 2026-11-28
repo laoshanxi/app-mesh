@@ -2,12 +2,14 @@ package engine
 
 import (
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
 	"github.com/laoshanxi/app-mesh/src/apps/workflow/internal/models"
+	"github.com/laoshanxi/app-mesh/src/apps/workflow/internal/secrets"
 )
 
 // Recovery fixtures run with a nil daemon client: a command step that actually
@@ -164,6 +166,71 @@ func TestKillAllSparesFinallySteps(t *testing.T) {
 	}
 	if !finallyKept {
 		t.Fatal("finally step entry must survive KillAll")
+	}
+}
+
+// A job-level secret_env decryption failure must still take the normal terminal
+// path: remaining steps are marked skipped, finally cleanup still runs, and the
+// job result reaches checkpoints and OnJobDone. Returning early would leave a
+// failed job without a recorded result and skip cleanup.
+// failingSecretBroker rejects every decrypt, proving the secret_env failure path.
+type failingSecretBroker struct{}
+
+func (failingSecretBroker) Protect(context.Context, string, []secrets.Entry) ([]secrets.Entry, error) {
+	return nil, nil
+}
+
+func (failingSecretBroker) Unprotect(context.Context, string, []secrets.Entry) ([]secrets.Entry, error) {
+	return nil, errors.New("broker unavailable")
+}
+
+func TestJobSecretEnvFailureRunsFinallyAndRecordsJobDone(t *testing.T) {
+	wf := &models.Workflow{
+		Name: "sealed",
+		Jobs: map[string]*models.Job{
+			"publish": {
+				Name:      "publish",
+				SecretEnv: map[string]string{"TOKEN": "sp1:not-valid-base64"},
+				Steps: []models.Step{
+					{Name: "upload", Type: models.StepCommand, Command: "true"},
+				},
+				Finally: []models.Step{
+					// A malformed condition fails before any client call, so a nil
+					// daemon client still proves the finally loop ran.
+					{Name: "cleanup", Type: models.StepCommand, Command: "true", Condition: "broken(("},
+				},
+			},
+		},
+	}
+	var doneStatus string
+	var snap map[string]map[string]any
+	var persisted map[string]any
+	code, _ := RunWithContext(context.Background(), wf, nil, nil, "run-secret", 0, Options{
+		SecretBroker: failingSecretBroker{},
+		OnJobDone: func(_, status, _ string, steps map[string]map[string]any) {
+			doneStatus = status
+			snap = steps
+		},
+		OnStepPersist: func(_, stepName string, data map[string]any) {
+			if stepName == "cleanup" {
+				persisted = data
+			}
+		},
+	})
+	if code != 1 {
+		t.Fatalf("exit %d, want 1 (job-level secret_env failure must fail the run)", code)
+	}
+	if doneStatus != models.StatusFailure {
+		t.Fatalf("OnJobDone status = %q, want failure", doneStatus)
+	}
+	if s := snap["upload"]; s == nil || s["status"] != models.StatusSkipped {
+		t.Fatalf("unreached step result = %v, want skipped", s)
+	}
+	if s := snap["cleanup"]; s == nil || s["status"] != models.StatusFailure {
+		t.Fatalf("finally step result = %v, want failure (finally must still run)", s)
+	}
+	if persisted == nil || persisted["status"] != models.StatusFailure {
+		t.Fatalf("finally step result not persisted: %v", persisted)
 	}
 }
 
@@ -446,7 +513,7 @@ jobs:
 	var snap map[string]map[string]any
 	code, _ := RunWithContext(context.Background(), wf, nil, nil, "run9", 0, Options{
 		WorkflowBaseDir: dir,
-		OnJobDone: func(_, _ string, _ string, steps map[string]map[string]any) { snap = steps },
+		OnJobDone:       func(_, _ string, _ string, steps map[string]map[string]any) { snap = steps },
 	})
 	if code != 1 {
 		t.Fatalf("exit %d, want 1 (an undeclared outputs key must fail the referencing step)", code)

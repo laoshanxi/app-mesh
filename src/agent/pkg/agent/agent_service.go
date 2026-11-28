@@ -71,6 +71,20 @@ func stripInternalClientProof(r *http.Request) {
 	}
 }
 
+// localProcessProof returns the process proof a caller may hand to the engine:
+// only a loopback peer (HttpRequest::isLoopbackPeer) is a managed local process.
+func localProcessProof(r *http.Request) string {
+	host, _, err := net.SplitHostPort(r.RemoteAddr)
+	if err != nil {
+		return ""
+	}
+	ip := net.ParseIP(host)
+	if ip == nil || !ip.IsLoopback() {
+		return ""
+	}
+	return strings.TrimSpace(r.Header.Get(HTTPHeaderKeyAppmeshProcess))
+}
+
 // newForwardPrecheckRequest builds the bearer-only /appmesh/principal/self probe
 // gating X-Target-Host forwarding; the precheck marker exempts it from the
 // daemon's mandatory signature enforcement.
@@ -149,6 +163,28 @@ func getLocalConnection() (*Connection, error) {
 	// keep the repeated failures at debug level.
 	warnTCPDialFallback(err)
 	return getOrCreateWSSConnection(localWSSAddr, config.ConfigData.REST.SSL.VerifyServer)
+}
+
+// idempotentHTTPMethod reports whether replaying the request cannot apply its
+// effect twice on the daemon.
+func idempotentHTTPMethod(method string) bool {
+	switch method {
+	case http.MethodGet, http.MethodHead, http.MethodOptions:
+		return true
+	default:
+		return false
+	}
+}
+
+// retryLocalRequest reports whether a failed request to the local daemon may be
+// replayed on a fresh connection: only when it provably never reached the
+// daemon or its method is idempotent, and never after a client abort (evicting
+// the shared pooled connection would close every other in-flight request).
+func retryLocalRequest(ctx context.Context, method string, err error) bool {
+	if ctx.Err() != nil {
+		return false
+	}
+	return isRequestNotSent(err) || idempotentHTTPMethod(method)
 }
 
 // getDelegateClient lazily builds the shared HTTP client for forwarding requests
@@ -513,6 +549,11 @@ func HandleAppMeshRequest(w http.ResponseWriter, r *http.Request) {
 	// with their identical value.
 	w.Header().Set("Content-Security-Policy", "default-src 'none'; frame-ancestors 'none'")
 
+	// The daemon accepts process proof only from a loopback peer, which this agent
+	// is for every caller: keep it only when the caller itself is loopback, and
+	// attach it on the local hop alone. The daemon still verifies the key.
+	processKey := localProcessProof(r)
+
 	stripInternalClientProof(r)
 
 	localConn, err := getLocalConnection()
@@ -536,6 +577,15 @@ func HandleAppMeshRequest(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		validation, validationErr := validateForwardBearer(r.Context(), localConn, authorization)
+		if validationErr != nil && retryLocalRequest(r.Context(), http.MethodGet, validationErr) {
+			// The precheck rides the same pooled connection; apply the same
+			// stale-connection retry as the main hop.
+			refreshLocalConnection(localConn)
+			if freshConn, freshErr := getLocalConnection(); freshErr == nil {
+				localConn, targetConnection = freshConn, freshConn
+				validation, validationErr = validateForwardBearer(r.Context(), localConn, authorization)
+			}
+		}
 		if validationErr != nil {
 			logger.Errorf("Failed to validate forwarding authentication: %v", validationErr)
 			utils.HTTPError(w, "authentication service is unavailable", http.StatusServiceUnavailable)
@@ -606,6 +656,12 @@ func HandleAppMeshRequest(w http.ResponseWriter, r *http.Request) {
 			query.Del("subscribe_events")
 			r.URL.RawQuery = query.Encode()
 		}
+		// SSE endpoints stream incrementally only on the engine's HTTP listener;
+		// the framed channel buffers whole responses, so relay these instead.
+		if isStreamRequest(r) {
+			relayStreamRequest(w, r)
+			return
+		}
 	}
 
 	request, err := newRequestFromHTTP(r)
@@ -636,8 +692,24 @@ func HandleAppMeshRequest(w http.ResponseWriter, r *http.Request) {
 		request.Headers[HTTPUserAgentHeaderName] = UserAgentAppmeshTCP
 		markFileTransferHeaders(request)
 	}
+	if processKey != "" && targetConnection == localConn {
+		request.Headers[HTTPHeaderKeyAppmeshProcess] = processKey
+	}
 
 	resp, sendErr := targetConnection.sendRequestDataWithContext(r.Context(), request)
+	if sendErr != nil && targetConnection == localConn && retryLocalRequest(r.Context(), request.HTTPMethod, sendErr) {
+		// The daemon idle-closes pooled connections, so the first request on a
+		// stale entry fails; retry once on a freshly dialed connection so the
+		// staleness costs latency, never a 502. Only a request that cannot have
+		// executed is replayed (retryLocalRequest), under a fresh UUID so a late
+		// reply to the lost attempt can never be taken for this one.
+		refreshLocalConnection(localConn)
+		if freshConn, freshErr := getLocalConnection(); freshErr == nil {
+			localConn, targetConnection = freshConn, freshConn
+			request.UUID = appmesh.NewRequest().UUID
+			resp, sendErr = freshConn.sendRequestDataWithContext(r.Context(), request)
+		}
+	}
 	if sendErr != nil {
 		logger.Errorf("Failed to send request to server with error: %v", sendErr)
 
@@ -651,7 +723,11 @@ func HandleAppMeshRequest(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Reply to client
-	resp.writeToHTTPResponse(w, r)
+	if err := resp.writeToHTTPResponse(w, r); err != nil {
+		// The failure already answered the client; never stream a staged
+		// upload onward for a request that has failed.
+		return
+	}
 
 	// Handle file upload after response to client
 	if resp.TempUploadFilePath != "" {
@@ -663,13 +739,84 @@ func HandleAppMeshRequest(w http.ResponseWriter, r *http.Request) {
 			if targetConnection != localConn {
 				deleteConnection(targetConnection)
 			}
-			// Don't return error to client since response was already sent
+			// Nothing reached the client yet for an upload: the success status
+			// is only staged until the daemon transfer completes, so a lost
+			// transfer fails the request instead of acking data never stored.
+			utils.HTTPError(w, "failed to store the file: "+sendErr.Error(), http.StatusBadGateway)
 		}
 	}
 }
 
+// isStreamRequest reports whether the request targets one of the engine's SSE
+// endpoints, which stream incrementally only on the engine's HTTP listener.
+func isStreamRequest(r *http.Request) bool {
+	switch {
+	case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/output/stream"):
+		return true
+	case r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/task/stream"):
+		return true
+	}
+	return false
+}
+
+// relayStreamRequest proxies an SSE request to the local engine's HTTP
+// listener, where the response streams chunk by chunk.
+func relayStreamRequest(w http.ResponseWriter, r *http.Request) {
+	scheme := "https"
+	if !config.ConfigData.REST.SSL.Enabled() {
+		scheme = "http"
+	}
+	target := &url.URL{Scheme: scheme, Host: localWSSAddr, Path: r.URL.Path, RawPath: r.URL.RawPath,
+		RawQuery: r.URL.RawQuery}
+	// The daemon's REST listener enforces the same mutual TLS as its frame
+	// ports; the shared delegate client carries no client certificate, so with
+	// REST.SSL.VerifyClient the relay handshake would be rejected.
+	client, err := newStreamRelayClient()
+	if err != nil {
+		logger.Errorf("Failed to prepare the stream relay client: %v", err)
+		utils.HTTPError(w, "failed to forward request", http.StatusBadGateway)
+		return
+	}
+	defer client.CloseIdleConnections()
+	logger.Debugf("Relaying stream request: %s %s", r.Method, target)
+	forwardWithClient(w, r, target, client)
+}
+
+// newStreamRelayClient builds the SSE relay's HTTP client from the daemon dial
+// material (configured client certificate plus CA when server verification is
+// on). A plaintext deployment has no certificate material to present.
+func newStreamRelayClient() (*http.Client, error) {
+	tlsConfig := &tls.Config{MinVersion: tls.VersionTLS12}
+	if !config.ConfigData.REST.SSL.Enabled() {
+		return &http.Client{Transport: newAgentTransport(tlsConfig)}, nil
+	}
+	verifyServer := config.ConfigData.REST.SSL.VerifyServer
+	clientCert, clientCertKey, caPath := resolveTLSMaterial(verifyServer)
+	tlsConfig.InsecureSkipVerify = !verifyServer
+	if caPath != "" {
+		ca, err := appmesh.LoadCA(caPath)
+		if err != nil {
+			return nil, fmt.Errorf("load the stream relay CA %q: %w", caPath, err)
+		}
+		tlsConfig.RootCAs = ca
+	}
+	if clientCert != "" && clientCertKey != "" {
+		cert, err := appmesh.LoadCertificatePair(clientCert, clientCertKey)
+		if err != nil {
+			return nil, fmt.Errorf("load the stream relay client certificate: %w", err)
+		}
+		tlsConfig.Certificates = []tls.Certificate{cert}
+	}
+	return &http.Client{Transport: newAgentTransport(tlsConfig)}, nil
+}
+
 // ForwardAppMeshRequest forwards the incoming request to another host and copies the response back.
 func ForwardAppMeshRequest(w http.ResponseWriter, r *http.Request, forwardingHost *url.URL) {
+	forwardWithClient(w, r, forwardingHost, getDelegateClient())
+}
+
+// forwardWithClient forwards the request through the given HTTP client.
+func forwardWithClient(w http.ResponseWriter, r *http.Request, forwardingHost *url.URL, client *http.Client) {
 	// A bare host must not fall back to the scheme default port (443): use the configured REST listen port
 	targetHost := forwardingHost.Host
 	if forwardingHost.Port() == "" {
@@ -693,8 +840,8 @@ func ForwardAppMeshRequest(w http.ResponseWriter, r *http.Request, forwardingHos
 	}
 	req.Header = r.Header.Clone() // Copy headers from the original request
 
-	// Forward the request to the target server using the shared HTTP client
-	resp, err := getDelegateClient().Do(req)
+	// Forward the request to the target server using the provided HTTP client
+	resp, err := client.Do(req)
 	if err != nil {
 		logger.Errorf("Forward request failed with error: %v", err)
 		utils.HTTPError(w, "failed to forward request", http.StatusBadGateway)
@@ -712,11 +859,28 @@ func ForwardAppMeshRequest(w http.ResponseWriter, r *http.Request, forwardingHos
 	// Copy the status code from the forwarded response
 	w.WriteHeader(resp.StatusCode)
 
-	// Copy the response body to the original response
-	_, err = io.Copy(w, resp.Body)
+	// Copy the response body to the original response, flushing per chunk so
+	// streaming answers (SSE) pass through incrementally.
+	_, err = io.Copy(flushingResponseWriter{ResponseWriter: w}, resp.Body)
 	if err != nil {
 		utils.HTTPError(w, "Failed to copy response body", http.StatusInternalServerError)
 	}
+}
+
+// flushingResponseWriter flushes after every write so proxied streaming bodies
+// reach the client chunk by chunk instead of buffering until completion.
+type flushingResponseWriter struct {
+	http.ResponseWriter
+}
+
+func (f flushingResponseWriter) Write(b []byte) (int, error) {
+	n, err := f.ResponseWriter.Write(b)
+	if n > 0 {
+		if flusher, ok := f.ResponseWriter.(http.Flusher); ok {
+			flusher.Flush()
+		}
+	}
+	return n, err
 }
 
 // decodeFilePathHeader decodes the percent-encoded X-File-Path header into the

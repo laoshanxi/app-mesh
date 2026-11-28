@@ -87,7 +87,7 @@ yaml_value() {
         printf '%s' "${fallback}"
         return
     }
-    # mawk 1.3.3 (Ubuntu 18.04) has no POSIX character classes; use plain space/tab.
+    # mawk 1.3.3 has no POSIX character classes; use plain space/tab.
     value=$(awk -v wanted="${key}:" '$1 == wanted { $1=""; sub(/^[ \t]+/, ""); gsub(/^"|"$/, ""); print; exit }' "${file}")
     if [[ -n "${value}" ]]; then
         printf '%s' "${value}"
@@ -793,8 +793,8 @@ forget_initial_password() {
 # Serve the Dex administration web UI (bin/dexuser, built from the fork's
 # examples/example-app). It talks to the Dex administrative gRPC API over
 # mutual TLS, so it requires the same TLS material that gates the gRPC listener
-# in render_dex_config. The UI has no authentication of its own and therefore
-# listens on loopback only.
+# in render_dex_config. The UI admits any session or access token of the
+# authentication service without a role check, so it listens on loopback only.
 admin_ui() {
     [[ ! -L "${ADMIN_UI_BIN}" && -f "${ADMIN_UI_BIN}" && -x "${ADMIN_UI_BIN}" ]] || {
         echo "The administration UI is unavailable: ${ADMIN_UI_BIN}" >&2
@@ -981,9 +981,8 @@ oidc_subject_for_user_id() {
 # POST one form to the administration UI (the dexuser System App, loopback
 # only). The UI answers every administrative write with a redirect: ?notice=
 # on success and ?error= on failure, so the Location header carries the result.
-# The administration routes require proof: the automation bearer goes with the
-# request ("the bearer for the engine's scripts"), and a 401/403 is an error,
-# never a success.
+# The administration routes require the automation bearer; only the ?notice=
+# redirect confirms a write; any other answer is a rejection.
 admin_ui_post() {
     local path=$1
     shift
@@ -991,26 +990,25 @@ admin_ui_post() {
     listen=${APPMESH_AUTH_ADMIN_LISTEN:-127.0.0.1:6068}
     token=$(request_automation_token 2>/dev/null || true)
     if ! headers=$(curl --silent --show-error --max-time 10 --request POST \
-        --output /dev/null --dump-header - --write-out '%{http_code}' \
+        --output /dev/null --dump-header - --write-out '\n%{http_code}' \
         ${token:+--header "Authorization: Bearer ${token}"} \
         "http://${listen}${path}" "$@"); then
         echo "The administration UI is not reachable at http://${listen}; the dexuser System App must be running (see APPMESH_AUTH_ADMIN_UI)" >&2
         return 1
     fi
     status=${headers##*$'\n'}
-    case "${status}" in
-        401|403)
-            echo "The administration UI rejected the request (${status})" >&2
-            return 1
-            ;;
-    esac
     location=$(printf '%s\n' "${headers}" | sed -n 's/^[Ll]ocation:[[:space:]]*//p' | tr -d '\r' | tail -n 1)
-    case "${location}" in
-        *error=*)
-            detail=${location##*error=}
+    case "${location#*\?}" in
+        notice=*) ;;
+        error=*)
+            detail=${location#*\?error=}
             detail=${detail//+/ }
             detail=$(printf '%b' "${detail//%/\\x}")
             echo "The administration UI rejected the request: ${detail}" >&2
+            return 1
+            ;;
+        *)
+            echo "The administration UI did not confirm the request (HTTP ${status})" >&2
             return 1
             ;;
     esac
@@ -1159,8 +1157,7 @@ delete_user() {
 
     # The Principal binding keys on the OIDC subject, which embeds the user_id.
     # Recover it from the UI password list before the entry disappears; the
-    # column layout mirrors the fork's admin.html passwords table. The page is
-    # an administration route: the automation bearer goes with the request.
+    # column layout mirrors the fork's admin.html passwords table.
     local listen list_page user_id="" token
     listen=${APPMESH_AUTH_ADMIN_LISTEN:-127.0.0.1:6068}
     token=$(request_automation_token 2>/dev/null || true)

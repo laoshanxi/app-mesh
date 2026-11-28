@@ -29,7 +29,7 @@ from . import request_signature
 from .app import App
 from .app_output import AppOutput
 from .app_run import AppRun, OutputHandler
-from .exceptions import AppMeshAuthError, AppMeshConnectionError, AppMeshRequestError
+from .exceptions import AppMeshAuthError, AppMeshConnectionError, AppMeshError, AppMeshRequestError
 from .streaming import SseEnd, end_from_payload, iter_sse_events, raise_on_error_end, route_hint
 from .token_provider import StaticAccessTokenProvider, TokenProvider
 
@@ -37,6 +37,22 @@ logger = logging.getLogger(__name__)
 
 # SSE stream routes sign the empty-body hash, the same exemption set as the JS SDK.
 _EMPTY_BODY_EXEMPT_STREAM_RE = re.compile(r"^/appmesh/app/[^/]+/(output|task)/stream$")
+
+
+def _error_detail(resp) -> str:
+    """The engine's reason from an error response, as a ``": reason"`` suffix ('' when absent)."""
+    if resp is None:
+        return ""
+    try:
+        body = resp.text
+    except Exception:  # noqa: BLE001 - the detail is best effort, never masks the status error
+        return ""
+    try:
+        body = json.loads(body).get("message", "")
+    except ValueError:
+        pass
+    body = " ".join(str(body).split())
+    return f": {body[:300]}" if body else ""
 
 
 class _RejectAllCookiesPolicy(DefaultCookiePolicy):
@@ -157,12 +173,19 @@ class AppMeshClient:
     _HTTP_HEADER_KEY_USER_AGENT = "User-Agent"
     _HTTP_HEADER_KEY_X_TARGET_HOST = "X-Target-Host"
     _HTTP_HEADER_KEY_X_FILE_PATH = "X-File-Path"
+    _HTTP_HEADER_KEY_X_FILE_OVERWRITE = "X-File-Overwrite"
     _HTTP_HEADER_KEY_X_FILE_MODE = "X-File-Mode"
     _HTTP_HEADER_KEY_X_FILE_USER = "X-File-User"
     _HTTP_HEADER_KEY_X_FILE_GROUP = "X-File-Group"
     _HTTP_HEADER_KEY_X_OUTPUT_POSITION = "X-Output-Position"
+    _HTTP_HEADER_KEY_X_OUTPUT_TRUNCATED = "X-Output-Truncated"
+    _HTTP_HEADER_KEY_X_APP_NAME = "X-App-Name"
     _HTTP_HEADER_KEY_X_EXIT_CODE = "X-Exit-Code"
     _HTTP_HEADER_KEY_X_INPUT_CLOSE = "X-Input-Close"
+    # The daemon answers a sync run with one output page and keeps the run only
+    # for a short retention once that page is full.
+    _SYNC_RUN_OUTPUT_PAGE_BYTES = 5 * 1024 * 1024
+    _SYNC_RUN_TRUNCATED_RETENTION_SECONDS = 600
 
     @unique
     class _Method(Enum):
@@ -435,11 +458,13 @@ class AppMeshClient:
         - "hostname:port" or "IP:port" → uses specified port
 
         Returns:
-            str: Target host (e.g., "node" or "node:6060"), or empty string if unset.
+            str: Target host (e.g., "node" or "node:6062"), or empty string if unset.
 
         Notes:
             Every target node must trust the same issuer and App Mesh resource audience.
-            If port is omitted, the current service port is used.
+            If port is omitted, the current service port is used. It applies to the
+            streaming calls (follow_output, run_task_stream, stream_run) as well: the
+            stream is served by the target node.
 
         Warning:
             Shared, per-client state read by every request; ``AppRun.wait()`` temporarily
@@ -452,8 +477,8 @@ class AppMeshClient:
         """Set target host for forwarding.
 
         Examples:
-            >>> client.forward_to = "backend-node:6060"  # Use specific port
-            >>> client.forward_to = "backend-node"       # Server resolves its own service port
+            >>> client.forward_to = "backend-node"       # Server resolves its own TCP port (6062)
+            >>> client.forward_to = "backend-node:6062"  # Use specific port (the target's TCP API port)
             >>> client.forward_to = None                 # Disable forwarding
         """
         self._forward_to = host
@@ -801,12 +826,19 @@ class AppMeshClient:
         finally:
             r.close()
 
-    def upload_file(self, local_file: str, remote_file: Optional[str] = None, preserve_permissions: bool = False) -> None:
+    def upload_file(
+        self,
+        local_file: str,
+        remote_file: Optional[str] = None,
+        preserve_permissions: bool = False,
+        overwrite: bool = False,
+    ) -> None:
         """Upload a local file (``remote_file`` defaults to the local file's basename).
 
         Plain-HTTP transport: POST streams the raw file bytes as the body; the
         agent proxy accepts the same route. ``preserve_permissions`` sends local
-        POSIX metadata so the server can recreate it.
+        POSIX metadata so the server can recreate it. ``overwrite`` replaces an
+        existing remote file; the default keeps the server's 409 refusal.
         """
         if not remote_file:
             remote_file = os.path.basename(local_file)
@@ -815,6 +847,8 @@ class AppMeshClient:
             raise FileNotFoundError(f"Local file not found: {local_file}")
 
         header = {self._HTTP_HEADER_KEY_X_FILE_PATH: parse.quote(remote_file)}
+        if overwrite:
+            header[self._HTTP_HEADER_KEY_X_FILE_OVERWRITE] = "true"
         if preserve_permissions:
             header.update(self._get_file_attributes(local_path))
 
@@ -911,10 +945,17 @@ class AppMeshClient:
         try:
             return self._request_http(method, path=path, query=query, body=body)
         except AppMeshRequestError as e:
-            # 404/405 on a streaming route almost always means base_url points at
-            # the agent REST listener, which carries no streaming routes — say so.
+            # 404/405 on a streaming route means the request reached neither the
+            # engine listener nor the agent's local relay — explain the routes.
             if e.status_code in (HTTPStatus.NOT_FOUND, HTTPStatus.METHOD_NOT_ALLOWED):
                 raise AppMeshRequestError(f"{e}{route_hint(e.status_code)}", e.status_code) from e
+            if e.status_code == HTTPStatus.BAD_REQUEST and self.forward_to:
+                # The engine listener behind base_url refuses X-Target-Host on stream routes;
+                # say why instead of leaving a bare 400.
+                raise AppMeshRequestError(
+                    f"{e} Streaming through node forwarding (forward_to={self.forward_to!r}) needs the agent REST"
+                    f" listener (default port 6060) as base_url; {self.base_url} does not relay forwarded streams.",
+                    e.status_code) from e
             raise
 
     def run_task_stream(self, app_name: str, data: str, timeout: int = 300) -> Iterator[str]:
@@ -922,9 +963,11 @@ class AppMeshClient:
 
         Streaming counterpart of run_task(): the worker may push any number of partials
         (``worker.send_task_partial``) before its final reply, each yielded in order.
-        The streaming routes live on the engine's native listener (default wss/https
-        6063; via the web UI, 443) — a client left at the default ``base_url`` (the
-        agent REST listener, port 6060) has no streaming routes and gets 404/405.
+        The streaming routes are native to the engine listener (default wss/https
+        6063); the agent REST listener (the default ``base_url``, port 6060) relays
+        them and also forwards them: with ``forward_to`` set the task runs on the
+        target node, like run_task(). Only a ``base_url`` on the engine listener itself
+        cannot forward a stream (it answers 400, raised as AppMeshRequestError).
 
         Args:
             app_name: Name of the target application (as registered in App Mesh).
@@ -973,10 +1016,10 @@ class AppMeshClient:
 
         Replays from ``stdout_position``, then (with ``follow=True``) yields live output
         until exit/removal/timeout; the server de-duplicates the replay/live boundary,
-        so no polling or position bookkeeping is needed here. Streaming routes are
-        served on the engine's native listener (default wss/https 6063; via the web
-        UI, 443) — not the agent REST listener on the default ``base_url`` port 6060
-        (see ``run_task_stream``).
+        so no polling or position bookkeeping is needed here. The engine serves the
+        streaming routes natively (default wss/https 6063); the agent REST listener
+        on the default ``base_url`` (port 6060) relays them, through node forwarding
+        too (see ``run_task_stream``).
 
         Args:
             app_name: Name of the target application.
@@ -1027,8 +1070,9 @@ class AppMeshClient:
 
         Equivalent to run_app_async() + follow_output() + delete_app(); serves continuous-output
         processes (model inference, log producers) that the fully-buffered run_app_sync()
-        cannot show until completion. Like ``follow_output``, this needs the engine's
-        native listener (default wss/https 6063), not the agent REST listener 6060.
+        cannot show until completion. Like ``follow_output``, this uses the streaming
+        routes (engine-native 6063, relayed by the agent REST listener 6060), so a
+        ``forward_to`` target runs the app and serves its stream on the target node.
 
         Args:
             app: An ``App`` instance or a shell command string (same contract as run_app_async).
@@ -1188,6 +1232,7 @@ class AppMeshClient:
         app: Union[App, str],
         max_time: Union[int, str] = _DURATION_TWO_DAYS_ISO,
         lifecycle: Union[int, str] = _DURATION_TWO_DAYS_HALF_ISO,
+        max_output_bytes: Optional[int] = None,
     ) -> Tuple[Union[int, None], str]:
         """Synchronously run an application remotely, blocking until completion, and return the result.
 
@@ -1205,6 +1250,8 @@ class AppMeshClient:
                 ``lifecycle``; integer seconds or ISO 8601 duration). The daemon purges at
                 window expiry or ~60s after exit (the grace keeps output readable for late
                 pollers), so ``lifecycle`` must cover ``max_time`` plus result collection.
+            max_output_bytes: Ceiling for the returned output; exceeding it raises
+                ``AppMeshRequestError`` instead of returning a truncated result.
 
         Returns:
             ``(exit_code, stdout_text)``. ``exit_code`` is ``None`` when the server did not return
@@ -1221,15 +1268,54 @@ class AppMeshClient:
                 "timeout": str(self._parse_duration(max_time)),
                 "lifecycle": str(self._parse_duration(lifecycle)),
             },
-            raise_on_fail=False,
         )
 
         exit_code = None
-        if resp.status_code == HTTPStatus.OK:
-            if self._HTTP_HEADER_KEY_X_EXIT_CODE in resp.headers:
-                exit_code = int(resp.headers[self._HTTP_HEADER_KEY_X_EXIT_CODE])
+        if self._HTTP_HEADER_KEY_X_EXIT_CODE in resp.headers:
+            exit_code = int(resp.headers[self._HTTP_HEADER_KEY_X_EXIT_CODE])
+
+        run_name = resp.headers.get(self._HTTP_HEADER_KEY_X_APP_NAME)
+        if run_name and resp.headers.get(self._HTTP_HEADER_KEY_X_OUTPUT_TRUNCATED) == "1":
+            return exit_code, self._read_truncated_run_output(resp, run_name, max_output_bytes)
 
         return exit_code, resp.text
+
+    def _read_truncated_run_output(self, first: requests.Response, run_name: str,
+                                   max_output_bytes: Optional[int]) -> str:
+        """Read the output pages that follow a full sync-run reply page, then drop the run."""
+        content = first.content
+        position = int(first.headers[self._HTTP_HEADER_KEY_X_OUTPUT_POSITION])
+        complete = False
+
+        def check_ceiling() -> None:
+            if max_output_bytes is not None and len(content) > max_output_bytes:
+                raise AppMeshRequestError(
+                    f"run output exceeds max_output_bytes={max_output_bytes}; the rest stays readable on "
+                    f"application '{run_name}' for {self._SYNC_RUN_TRUNCATED_RETENTION_SECONDS} seconds",
+                    first.status_code)
+
+        try:
+            check_ceiling()
+            while True:
+                page = self._request_http(
+                    AppMeshClient._Method.GET,
+                    path=f"/appmesh/app/{run_name}/output",
+                    query={"stdout_position": str(position)},
+                ).content
+                content += page
+                position += len(page)
+                check_ceiling()
+                if len(page) < self._SYNC_RUN_OUTPUT_PAGE_BYTES:
+                    complete = True
+                    break
+        finally:
+            # Best effort: the daemon removes the run when the retention ends.
+            if complete:
+                try:
+                    self.delete_app(run_name)
+                except AppMeshError as e:
+                    logger.debug("Failed to remove sync run application '%s': %s", run_name, e)
+        return content.decode(first.encoding or first.apparent_encoding or "utf-8", errors="replace")
 
     def _request_http(
         self,
@@ -1350,7 +1436,7 @@ class AppMeshClient:
 
                 if raise_on_fail:
                     if resp.status_code in (HTTPStatus.UNAUTHORIZED, HTTPStatus.FORBIDDEN):
-                        raise AppMeshAuthError(f"HTTP {resp.status_code}: {resp.reason}", resp.status_code)
+                        raise AppMeshAuthError(f"HTTP {resp.status_code}: {resp.reason}{_error_detail(resp)}", resp.status_code)
                     resp.raise_for_status()
 
                 return resp
@@ -1359,4 +1445,4 @@ class AppMeshClient:
 
         except requests.exceptions.RequestException as e:
             status = getattr(getattr(e, "response", None), "status_code", None)
-            raise AppMeshRequestError(f"HTTP request failed: {e}", status) from e
+            raise AppMeshRequestError(f"HTTP request failed: {e}{_error_detail(getattr(e, 'response', None))}", status) from e

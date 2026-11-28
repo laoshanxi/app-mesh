@@ -313,10 +313,10 @@ public class SubPubFixesTest {
         }
 
         // ...and a separate client instance (its own connection) transfers fine.
-        // The remote path must sit in the exchangeable work/tmp scratch: the daemon jails transfers there.
+        // The remote path must sit in the exchangeable work/share area: the daemon jails transfers there.
         try (AppMeshClientTCP plain = liveTCPClient()) {
-            assertTrue(plain.uploadFile(new File("/etc/hosts"), "/opt/appmesh/work/tmp/e2e-java-seed", true));
-            assertTrue(plain.downloadFile("/opt/appmesh/work/tmp/e2e-java-seed", "/tmp/e2e-java-plain", false));
+            assertTrue(plain.uploadFile(new File("/etc/hosts"), "/opt/appmesh/work/share/e2e-java-seed", true));
+            assertTrue(plain.downloadFile("/opt/appmesh/work/share/e2e-java-seed", "/tmp/e2e-java-plain", false));
         }
     }
 

@@ -10,14 +10,12 @@ Runtime: the ``claude-agent-sdk`` wheel bundles the Claude Code CLI it drives as
 subprocess (no Node.js needed). The Claude API key comes from ``ANTHROPIC_API_KEY`` in
 the App's secured env (Bedrock/Vertex via the usual ``CLAUDE_CODE_USE_*`` env).
 
-On hosts without the SDK (the legacy line's Python 3.6 — the SDK needs >= 3.10) the
-same surface is provided by ``claude_sdk_compat``, which drives the Claude Code CLI
-directly with the identical stream-json protocol.
-
 Tools are Claude Code's full built-in tool set (Bash included) running in the session
 ``cwd``; ``permission_mode`` defaults to ``bypassPermissions`` so an unattended worker
 never blocks on a prompt. Override via ``LLMAGENT_ALLOWED_TOOLS`` / ``LLMAGENT_PERMISSION_MODE``.
 """
+from __future__ import annotations
+
 import asyncio
 import logging
 import os
@@ -26,17 +24,6 @@ from dataclasses import dataclass
 from .types import StreamFn
 
 log = logging.getLogger("llm_agent.claude_sdk")
-
-
-def _run_async(coro):
-    """asyncio.run arrived in 3.7; provide the 3.6 equivalent inline."""
-    if hasattr(asyncio, "run"):
-        return asyncio.run(coro)
-    loop = asyncio.new_event_loop()
-    try:
-        return loop.run_until_complete(coro)
-    finally:
-        loop.close()
 
 
 @dataclass
@@ -55,12 +42,8 @@ def _cli_stderr_line(line: str) -> None:
 
 def _options(cwd: str, continue_conversation: bool, max_iterations: int):
     """ClaudeAgentOptions for one turn. Imported lazily so the module loads (and tests
-    inject a fake engine) without the SDK / Node CLI present. The official SDK is
-    preferred; Python 3.6 hosts fall back to the stream-json compat layer."""
-    try:
-        from claude_agent_sdk import ClaudeAgentOptions
-    except ImportError:
-        from .claude_sdk_compat import ClaudeAgentOptions
+    inject a fake engine) without the SDK / Node CLI present."""
+    from claude_agent_sdk import ClaudeAgentOptions
     mode = os.environ.get("LLMAGENT_PERMISSION_MODE") or "bypassPermissions"
     _allow_root_skip_permissions(mode)
     kw = {"permission_mode": mode, "stderr": _cli_stderr_line}
@@ -98,10 +81,7 @@ def _allow_root_skip_permissions(mode: str) -> None:
 
 
 async def _run(prompt: str, options, stream: StreamFn) -> Result:
-    try:
-        from claude_agent_sdk import query, AssistantMessage, TextBlock, ResultMessage
-    except ImportError:
-        from .claude_sdk_compat import query, AssistantMessage, TextBlock, ResultMessage
+    from claude_agent_sdk import query, AssistantMessage, TextBlock, ResultMessage
     text, res = [], Result()
     async for msg in query(prompt=prompt, options=options):
         if isinstance(msg, AssistantMessage):
@@ -128,4 +108,4 @@ def run_turn(user_input: str, *, cwd: str, continue_conversation: bool,
              max_iterations: int, stream: StreamFn) -> Result:
     """Run one turn through the Claude Agent SDK. ``continue_conversation`` resumes the
     prior conversation in ``cwd`` (False on the first turn — a fresh conversation)."""
-    return _run_async(_run(user_input, _options(cwd, continue_conversation, max_iterations), stream))
+    return asyncio.run(_run(user_input, _options(cwd, continue_conversation, max_iterations), stream))
